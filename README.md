@@ -15,7 +15,7 @@
 
 ## 🛠️ Technical Overview
 
-This project aims to combine Directus for user management/API with minimal additional implementation to create a comprehensive AI gateway. The implementation follows a phased approach:
+This project aims to combine [Directus](https://github.com/directus/directus) for user management/API with minimal additional implementation to create a comprehensive AI gateway. The implementation follows a phased approach:
 
 1.  **Data Model and Administrative Interface:**
     * Implementation of "Teams" and "Organizations" within the data model.
@@ -70,19 +70,21 @@ The gateway server processes requests, interacts with the Directus API for token
 * Visualized through Directus dashboards?
 * `/metrics` endpoint for system monitoring.
 
-## ❓ Open Questions
-
-* Integration of Open Policy Agent (OPA) for authorization and policy enforcement?
 
 ## 🚀 Implementation Roadmap
 
 1.  Docker Compose setup for PostgreSQL and Directus.
-2.  Database migration tool integration (Alembic, Prisma Migrate).
+2.  Database migration tool integration (Alembic, Prisma Migrate, ...).
 3.  Database schema definition.
 4.  Setup container for database migrations.
 5.  Directus configuration and template export (`directus-template-cli`).
-6.  Automated Directus template application or migration container modification.
+6.  Automated Directus template application in separate container or modification of database migration container.
 7.  API gateway server development using FastAPI.
+
+## ❓ Open Questions
+
+* Integration of Open Policy Agent (OPA) for authorization and policy enforcement?
+* Can the Directus template be managed through database migration tools?
 
 ## 🔗 Relevant Links
 

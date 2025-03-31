@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./docs/assets/Aqueduct Icon.png" width="33%" alt="Aqueduct AI Gateway Logo" />
+  <img src="./docs/assets/Aqueduct Icon.png" width="50%" alt="Aqueduct AI Gateway Logo" />
 </div>
 
 # Aqueduct AI Gateway

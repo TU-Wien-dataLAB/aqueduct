@@ -1,10 +1,21 @@
- ## 💫 Overview 
-We need an AI API gateway that unifies access to LLMs and handles token management and authentication. It also tracks usage and can deny requests based on the number of requests, token usage or API cost of an external provider.
+<div align="center" min-width="100%">
+    <img src="./docs/assets/Aqueduct Icon.png" width="33%" />
+</div>
+
+
+# Aqueduct AI Gateway
+
+![GitHub License](https://img.shields.io/github/license/tu-wien-datalab/aqueduct)
+![GitHub last commit](https://img.shields.io/github/last-commit/tu-wien-datalab/aqueduct)
+
+
+The goal of this project is to replace paid solutions for AI gateways by implementing a simple but effective free open-source solution. 
+
+## 💫 Overview 
+
+We require an AI API gateway that unifies access to LLMs and handles token management and authentication. It also tracks usage and can deny requests based on the number of requests, token usage or API cost of an external provider.
 A solution is already implemented called Token Validator that handles authentication of tokens over an API: https://github.com/TU-Wien-dataLAB/token-validator
 
-
-## 🎯 Goals
-The goal of this project is to replace paid solutions for AI gateways by implementing a simple but effective solution on our own. 
 
 ## 🏆 Proposed Solution 
 The plan is to extend the existing simplistic Token Validator in 3 steps that extend the functionality while being useable at any stage. To keep the implementation simple, we will not implement the whole API definition ourselves but instead will rely mostly on API-pass-through and only parse requests from the necessary endpoints (e.g. to track token usage). The user-management API + UI will be implemented using Directus.
@@ -18,10 +29,10 @@ The plan is to extend the existing simplistic Token Validator in 3 steps that ex
 4. (Optional) The gateway can be implemented to "terminate" the connections and provide a stable OpenAI-based API interface itself, while the backends can be configured through adapters. The pros of the pass-through approach are that API changes in the providers are available without any modifications, however, the cons are that results might be different for different models/model providers.
 
 ## 💎 Details
-The frontend will be implemented in Angular, while the backend API server is written in Python and uses FastAPI endpoints.
 
+![Architecgure](./docs/assets/AI%20Gateway%20Architecture.excalidraw.svg "AI Gateway Architecture")
 
-The nodes in the AI Gateway server represent transformations of the request.
+The nodes in the AI Gateway server represent transformations of the request. The gateway queries the Direcuts API for token information and updates the usage of the token after the request. The UI is provided by Directus.
 
 UI Users can have the following access rights:
 

@@ -1,7 +1,7 @@
 {
   "id": 1,
-  "project_name": "Directus",
-  "project_url": null,
+  "project_name": "Aqueduct AI Gateway",
+  "project_url": "https://github.com/TU-Wien-dataLAB/aqueduct",
   "project_color": "#3395FF",
   "project_logo": "db623a75-a53e-42a4-bad3-f4506bfa9845",
   "public_foreground": null,
@@ -34,7 +34,7 @@
     {
       "type": "module",
       "id": "files",
-      "enabled": true
+      "enabled": false
     },
     {
       "type": "module",

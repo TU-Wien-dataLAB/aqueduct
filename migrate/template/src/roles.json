@@ -28,15 +28,5 @@
     "children": null,
     "policies": null,
     "users": null
-  },
-  {
-    "id": "d3513c18-fdff-4739-85dd-bb43b50f1863",
-    "name": "Administrator",
-    "icon": "verified",
-    "description": "$t:admin_description",
-    "parent": null,
-    "children": null,
-    "policies": null,
-    "users": null
   }
 ]

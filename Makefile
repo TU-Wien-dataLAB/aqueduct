@@ -27,6 +27,8 @@ extract:
 	# Replace whatever content was in the template with an empty list
 	find ./migrate/template/src/content -type f -exec sh -c 'echo "[]" > "$$1"' sh {} \;
 	echo "[]" > ./migrate/template/src/users.json
+	# Remove Administrator role from roles.json as it will be added again in the Directus initialization
+	jq 'map(select(.name != "Administrator"))' ./migrate/template/src/roles.json > temp.json && mv temp.json ./migrate/template/src/roles.json
 
 
 # Target to display help information

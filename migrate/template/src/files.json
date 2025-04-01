@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "id": "db623a75-a53e-42a4-bad3-f4506bfa9845",
+    "storage": "local",
+    "filename_disk": "db623a75-a53e-42a4-bad3-f4506bfa9845.png",
+    "filename_download": "db623a75-a53e-42a4-bad3-f4506bfa9845.png",
+    "title": "Aqueduct Icon",
+    "type": "image/png",
+    "folder": null,
+    "uploaded_by": "0a758699-4c18-4f2d-9ba0-ec767a55caa3",
+    "created_on": "2025-04-01T15:55:28.218Z",
+    "modified_by": null,
+    "modified_on": "2025-04-01T15:55:28.232Z",
+    "charset": null,
+    "filesize": "47037",
+    "width": 1024,
+    "height": 1024,
+    "duration": null,
+    "embed": null,
+    "description": null,
+    "location": null,
+    "tags": null,
+    "metadata": {},
+    "focal_point_x": null,
+    "focal_point_y": null,
+    "tus_id": null,
+    "tus_data": null,
+    "uploaded_on": "2025-04-01T15:55:28.231Z"
+  }
+]

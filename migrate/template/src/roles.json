@@ -20,20 +20,20 @@
     "users": null
   },
   {
-    "id": "77f8d0a1-c0fa-4b3b-a911-f068e6ccf0f4",
-    "name": "Administrator",
-    "icon": "verified",
-    "description": "$t:admin_description",
+    "id": "c5ee7646-a695-417b-9964-aae9c0f301e2",
+    "name": "Org-Admin",
+    "icon": "supervisor_account",
+    "description": "Manages organizations.",
     "parent": null,
     "children": null,
     "policies": null,
     "users": null
   },
   {
-    "id": "c5ee7646-a695-417b-9964-aae9c0f301e2",
-    "name": "Org-Admin",
-    "icon": "supervisor_account",
-    "description": "Manages organizations.",
+    "id": "d3513c18-fdff-4739-85dd-bb43b50f1863",
+    "name": "Administrator",
+    "icon": "verified",
+    "description": "$t:admin_description",
     "parent": null,
     "children": null,
     "policies": null,

@@ -2322,13 +2322,13 @@
     }
   },
   {
-    "collection": "directus_users",
-    "field": "Token",
+    "collection": "Endpoint",
+    "field": "Model",
     "type": "alias",
     "schema": null,
     "meta": {
-      "collection": "directus_users",
-      "field": "Token",
+      "collection": "Endpoint",
+      "field": "Model",
       "special": [
         "o2m"
       ],
@@ -2338,63 +2338,7 @@
       "display_options": null,
       "readonly": false,
       "hidden": false,
-      "sort": 1,
-      "width": "full",
-      "translations": null,
-      "note": null,
-      "conditions": null,
-      "required": false,
-      "group": null,
-      "validation": null,
-      "validation_message": null
-    }
-  },
-  {
-    "collection": "directus_users",
-    "field": "Organization",
-    "type": "alias",
-    "schema": null,
-    "meta": {
-      "collection": "directus_users",
-      "field": "Organization",
-      "special": [
-        "o2m"
-      ],
-      "interface": "list-o2m",
-      "options": null,
-      "display": null,
-      "display_options": null,
-      "readonly": false,
-      "hidden": false,
-      "sort": 2,
-      "width": "full",
-      "translations": null,
-      "note": null,
-      "conditions": null,
-      "required": false,
-      "group": null,
-      "validation": null,
-      "validation_message": null
-    }
-  },
-  {
-    "collection": "directus_users",
-    "field": "Team",
-    "type": "alias",
-    "schema": null,
-    "meta": {
-      "collection": "directus_users",
-      "field": "Team",
-      "special": [
-        "m2m"
-      ],
-      "interface": "list-m2m",
-      "options": null,
-      "display": null,
-      "display_options": null,
-      "readonly": false,
-      "hidden": false,
-      "sort": 3,
+      "sort": 9,
       "width": "full",
       "translations": null,
       "note": null,
@@ -2520,13 +2464,13 @@
     }
   },
   {
-    "collection": "Endpoint",
-    "field": "Model",
+    "collection": "directus_users",
+    "field": "Token",
     "type": "alias",
     "schema": null,
     "meta": {
-      "collection": "Endpoint",
-      "field": "Model",
+      "collection": "directus_users",
+      "field": "Token",
       "special": [
         "o2m"
       ],
@@ -2536,7 +2480,63 @@
       "display_options": null,
       "readonly": false,
       "hidden": false,
-      "sort": 9,
+      "sort": 1,
+      "width": "full",
+      "translations": null,
+      "note": null,
+      "conditions": null,
+      "required": false,
+      "group": null,
+      "validation": null,
+      "validation_message": null
+    }
+  },
+  {
+    "collection": "directus_users",
+    "field": "Organization",
+    "type": "alias",
+    "schema": null,
+    "meta": {
+      "collection": "directus_users",
+      "field": "Organization",
+      "special": [
+        "o2m"
+      ],
+      "interface": "list-o2m",
+      "options": null,
+      "display": null,
+      "display_options": null,
+      "readonly": false,
+      "hidden": false,
+      "sort": 2,
+      "width": "full",
+      "translations": null,
+      "note": null,
+      "conditions": null,
+      "required": false,
+      "group": null,
+      "validation": null,
+      "validation_message": null
+    }
+  },
+  {
+    "collection": "directus_users",
+    "field": "Team",
+    "type": "alias",
+    "schema": null,
+    "meta": {
+      "collection": "directus_users",
+      "field": "Team",
+      "special": [
+        "m2m"
+      ],
+      "interface": "list-m2m",
+      "options": null,
+      "display": null,
+      "display_options": null,
+      "readonly": false,
+      "hidden": false,
+      "sort": 3,
       "width": "full",
       "translations": null,
       "note": null,

@@ -20,26 +20,6 @@
     "app_access": true
   },
   {
-    "id": "6c2d5261-ffd6-4c91-922c-619d137989ba",
-    "name": "Administrator",
-    "icon": "verified",
-    "description": "$t:admin_description",
-    "ip_access": null,
-    "enforce_tfa": false,
-    "admin_access": true,
-    "app_access": true
-  },
-  {
-    "id": "80e7d0a8-dc2b-498c-b4ef-0ccdfc0468e6",
-    "name": "Administrator",
-    "icon": "verified",
-    "description": "$t:admin_description",
-    "ip_access": null,
-    "enforce_tfa": false,
-    "admin_access": true,
-    "app_access": true
-  },
-  {
     "id": "abf8a154-5b1c-4a46-ac9c-7300570f4f17",
     "name": "$t:public_label",
     "icon": "public",
@@ -57,6 +37,16 @@
     "ip_access": null,
     "enforce_tfa": false,
     "admin_access": false,
+    "app_access": true
+  },
+  {
+    "id": "e4a59a26-3d96-4d56-84cc-f538e3125f20",
+    "name": "Administrator",
+    "icon": "verified",
+    "description": "$t:admin_description",
+    "ip_access": null,
+    "enforce_tfa": false,
+    "admin_access": true,
     "app_access": true
   }
 ]

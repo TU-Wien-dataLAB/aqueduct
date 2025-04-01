@@ -505,33 +505,6 @@
     },
     {
       "collection": "Endpoint",
-      "field": "Model",
-      "type": "alias",
-      "meta": {
-        "collection": "Endpoint",
-        "conditions": null,
-        "display": null,
-        "display_options": null,
-        "field": "Model",
-        "group": null,
-        "hidden": false,
-        "interface": "list-o2m",
-        "note": null,
-        "options": null,
-        "readonly": false,
-        "required": false,
-        "sort": 9,
-        "special": [
-          "o2m"
-        ],
-        "translations": null,
-        "validation": null,
-        "validation_message": null,
-        "width": "full"
-      }
-    },
-    {
-      "collection": "Endpoint",
       "field": "url",
       "type": "string",
       "meta": {
@@ -614,6 +587,33 @@
         "has_auto_increment": false,
         "foreign_key_table": null,
         "foreign_key_column": null
+      }
+    },
+    {
+      "collection": "Endpoint",
+      "field": "Model",
+      "type": "alias",
+      "meta": {
+        "collection": "Endpoint",
+        "conditions": null,
+        "display": null,
+        "display_options": null,
+        "field": "Model",
+        "group": null,
+        "hidden": false,
+        "interface": "list-o2m",
+        "note": null,
+        "options": null,
+        "readonly": false,
+        "required": false,
+        "sort": 9,
+        "special": [
+          "o2m"
+        ],
+        "translations": null,
+        "validation": null,
+        "validation_message": null,
+        "width": "full"
       }
     },
     {
@@ -1942,62 +1942,6 @@
     },
     {
       "collection": "Team",
-      "field": "users",
-      "type": "alias",
-      "meta": {
-        "collection": "Team",
-        "conditions": null,
-        "display": null,
-        "display_options": null,
-        "field": "users",
-        "group": null,
-        "hidden": false,
-        "interface": null,
-        "note": null,
-        "options": null,
-        "readonly": false,
-        "required": false,
-        "sort": 7,
-        "special": [
-          "m2m"
-        ],
-        "translations": null,
-        "validation": null,
-        "validation_message": null,
-        "width": "full"
-      }
-    },
-    {
-      "collection": "Team",
-      "field": "Organization",
-      "type": "alias",
-      "meta": {
-        "collection": "Team",
-        "conditions": null,
-        "display": null,
-        "display_options": null,
-        "field": "Organization",
-        "group": null,
-        "hidden": false,
-        "interface": "list-o2m",
-        "note": null,
-        "options": {
-          "enableCreate": false
-        },
-        "readonly": false,
-        "required": false,
-        "sort": 8,
-        "special": [
-          "o2m"
-        ],
-        "translations": null,
-        "validation": null,
-        "validation_message": null,
-        "width": "full"
-      }
-    },
-    {
-      "collection": "Team",
       "field": "name",
       "type": "string",
       "meta": {
@@ -2037,6 +1981,62 @@
         "has_auto_increment": false,
         "foreign_key_table": null,
         "foreign_key_column": null
+      }
+    },
+    {
+      "collection": "Team",
+      "field": "Organization",
+      "type": "alias",
+      "meta": {
+        "collection": "Team",
+        "conditions": null,
+        "display": null,
+        "display_options": null,
+        "field": "Organization",
+        "group": null,
+        "hidden": false,
+        "interface": "list-o2m",
+        "note": null,
+        "options": {
+          "enableCreate": false
+        },
+        "readonly": false,
+        "required": false,
+        "sort": 8,
+        "special": [
+          "o2m"
+        ],
+        "translations": null,
+        "validation": null,
+        "validation_message": null,
+        "width": "full"
+      }
+    },
+    {
+      "collection": "Team",
+      "field": "users",
+      "type": "alias",
+      "meta": {
+        "collection": "Team",
+        "conditions": null,
+        "display": null,
+        "display_options": null,
+        "field": "users",
+        "group": null,
+        "hidden": false,
+        "interface": null,
+        "note": null,
+        "options": null,
+        "readonly": false,
+        "required": false,
+        "sort": 7,
+        "special": [
+          "m2m"
+        ],
+        "translations": null,
+        "validation": null,
+        "validation_message": null,
+        "width": "full"
       }
     },
     {

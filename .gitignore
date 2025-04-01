@@ -2,3 +2,4 @@ data
 extensions
 uploads
 .directus-template-cli
+.DS_Store

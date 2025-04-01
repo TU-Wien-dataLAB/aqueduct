@@ -1,0 +1,62 @@
+[
+  {
+    "id": "20432753-bf2c-434e-81b6-a0ad4faac42f",
+    "name": "User",
+    "icon": "account_circle",
+    "description": null,
+    "ip_access": null,
+    "enforce_tfa": false,
+    "admin_access": false,
+    "app_access": true
+  },
+  {
+    "id": "2f330e12-a88b-4865-a5f0-bfc3e49063f5",
+    "name": "Team-Admin",
+    "icon": "supervised_user_circle",
+    "description": null,
+    "ip_access": null,
+    "enforce_tfa": false,
+    "admin_access": false,
+    "app_access": true
+  },
+  {
+    "id": "6c2d5261-ffd6-4c91-922c-619d137989ba",
+    "name": "Administrator",
+    "icon": "verified",
+    "description": "$t:admin_description",
+    "ip_access": null,
+    "enforce_tfa": false,
+    "admin_access": true,
+    "app_access": true
+  },
+  {
+    "id": "80e7d0a8-dc2b-498c-b4ef-0ccdfc0468e6",
+    "name": "Administrator",
+    "icon": "verified",
+    "description": "$t:admin_description",
+    "ip_access": null,
+    "enforce_tfa": false,
+    "admin_access": true,
+    "app_access": true
+  },
+  {
+    "id": "abf8a154-5b1c-4a46-ac9c-7300570f4f17",
+    "name": "$t:public_label",
+    "icon": "public",
+    "description": "$t:public_description",
+    "ip_access": null,
+    "enforce_tfa": false,
+    "admin_access": false,
+    "app_access": false
+  },
+  {
+    "id": "be343267-5816-4e6d-acfe-58df4de98fb5",
+    "name": "Org-Admin",
+    "icon": "supervisor_account",
+    "description": null,
+    "ip_access": null,
+    "enforce_tfa": false,
+    "admin_access": false,
+    "app_access": true
+  }
+]

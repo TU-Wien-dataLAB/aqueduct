@@ -1,0 +1,11 @@
+{
+  "author": "",
+  "description": "",
+  "directusTemplate": true,
+  "files": [
+    "src"
+  ],
+  "name": "directus-template-aqueduct-ai-gateway",
+  "templateName": "Aqueduct AI Gateway",
+  "version": "1.0.0"
+}

@@ -84,7 +84,6 @@ The gateway server processes requests, interacts with the Directus API for token
 ## ❓ Open Questions
 
 * Integration of Open Policy Agent (OPA) for authorization and policy enforcement?
-* Can the Directus template be managed through database migration tools?
 
 ## 🔗 Relevant Links
 

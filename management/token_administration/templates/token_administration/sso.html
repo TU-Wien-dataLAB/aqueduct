@@ -1,16 +1,35 @@
-{% extends "token_administration/base.html" %}
+{# templates/your_app/sso_base.html (Consider renaming for clarity if it's primarily a base) #}
+{% extends "token_administration/base.html" %} {# Or your absolute base template #}
 
-{% block title %}Login{% endblock %}
+{% block title %}
+  {# Define a more specific block for the page title that child templates can override #}
+  {% block page_title %}Login{% endblock page_title %}
+{% endblock %}
 
 {% block content %}
   {% if not user.is_authenticated %}
+    {# --- Unauthenticated Content --- #}
+    {# This section is shown only if the user is NOT logged in. #}
+    {# Child template content will NOT be rendered in this case. #}
     <div class="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow">
-      <h2 class="text-2xl font-semibold mb-4">Login</h2>
+      <h2 class="text-2xl font-semibold mb-4">Login Required</h2>
+      <p class="mb-4 text-center">You need to log in to access this page.</p>
       <a href="{% url 'oidc_authentication_init' %}" class="block text-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
         Login with {{ OIDC_PROVIDER }}
       </a>
     </div>
   {% else %}
-    <p class="text-center text-lg">You're already logged in as {{ user.email }}.</p>
+    {# --- Authenticated Content Wrapper --- #}
+    {# This section is shown only if the user IS logged in. #}
+    {# Child templates will inject their content into the block below. #}
+    {% block authenticated_page_content %}
+      {# --- Default Authenticated Content --- #}
+      {# This is the default content shown IF this template (sso_base.html) #}
+      {# is rendered directly AND the user is authenticated. #}
+      {# Child templates extending this will REPLACE this block's content. #}
+      <p class="text-center text-lg">You're already logged in as {{ user.email }}.</p>
+      {# If this template should *never* be rendered directly when logged in, #}
+      {# you could leave this block empty or show a generic message/redirect. #}
+    {% endblock authenticated_page_content %}
   {% endif %}
 {% endblock %}

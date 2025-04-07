@@ -17,18 +17,18 @@
 
 This project aims to combine [Directus](https://github.com/directus/directus) for user management/API with minimal additional implementation to create a comprehensive AI gateway. The implementation follows a phased approach:
 
-1.  **Data Model and Administrative Interface:**
+1. **Data Model and Administrative Interface:**
     * Implementation of "Teams" and "Organizations" within the data model.
     * Development of an administrative UI using Directus for user and team management.
     * Focus on authentication and basic management functionalities.
 
-2.  **Gateway Relay and Usage Tracking:**
+2. **Gateway Relay and Usage Tracking:**
     * Development of a gateway server to relay requests to LLM providers.
     * Implementation of request parsing for usage tracking.
     * Database schema optimization for write-heavy usage logging.
     * Implementation of request buffering for usage logging.
 
-3.  **Multi-Provider Support and Advanced Features:**
+3. **Multi-Provider Support and Advanced Features:**
     * Extension of the data model to include "Models" representing LLM endpoints.
     * Implementation of a `/models` endpoint to list available models.
     * Request routing to specific provider endpoints based on model selection.
@@ -37,7 +37,7 @@ This project aims to combine [Directus](https://github.com/directus/directus) fo
     * Implementation of model cooldown and retry logic.
     * Implementation of MCP tool calling endpoints.
 
-4.  **(Optional) API Abstraction:**
+4. **(Optional) API Abstraction:**
     * Implementation of a stable API interface (e.g., OpenAI-compatible).
     * Development of backend adapters for different LLM providers.
 
@@ -73,17 +73,19 @@ The gateway server processes requests, interacts with the Directus API for token
 
 ## 🚀 Implementation Roadmap
 
-1.  Docker Compose setup for PostgreSQL and Directus.
-2.  Database migration tool integration (Alembic, Prisma Migrate, ...).
-3.  Database schema definition.
-4.  Setup container for database migrations.
-5.  Directus configuration and template export (`directus-template-cli`).
-6.  Automated Directus template application in separate container or modification of database migration container.
-7.  API gateway server development using FastAPI.
+1. Docker Compose setup for PostgreSQL and Directus.
+2. Database migration tool integration (Alembic, Prisma Migrate, ...).
+3. Database schema definition.
+4. Setup container for database migrations.
+5. Directus configuration and template export (`directus-template-cli`).
+6. Automated Directus template application in separate container or modification of database migration container.
+7. API gateway server development using FastAPI.
 
 ## ❓ Open Questions
 
 * Integration of Open Policy Agent (OPA) for authorization and policy enforcement?
+* Count validation not possible yet ([gh-issue #13354](https://github.com/directus/directus/issues/13354)) but workaround using Flows seems to be possible: [https://github.com/directus/directus/discussions/16802](https://github.com/directus/directus/discussions/16802)
+* Can we create custom UI components for token creation?
 
 ## 🔗 Relevant Links
 

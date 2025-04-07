@@ -69,7 +69,7 @@ OIDC_OP_TOKEN_ENDPOINT = os.environ.get('OIDC_OP_TOKEN_ENDPOINT')
 OIDC_OP_USER_ENDPOINT = os.environ.get('OIDC_OP_USER_ENDPOINT')
 
 LOGIN_REDIRECT_URL = 'tokens'  # Where to redirect after successful login
-LOGOUT_REDIRECT_URL = ''  # Where to redirect after successful logout
+LOGOUT_REDIRECT_URL = '/'  # Where to redirect after successful logout
 
 OIDC_PROVIDER = 'SSO'
 

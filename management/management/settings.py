@@ -71,7 +71,12 @@ OIDC_OP_USER_ENDPOINT = os.environ.get('OIDC_OP_USER_ENDPOINT')
 LOGIN_REDIRECT_URL = 'tokens'  # Where to redirect after successful login
 LOGOUT_REDIRECT_URL = '/'  # Where to redirect after successful logout
 
+# Aqueduct Settings ------------------------------------------------------
+
+MAX_USER_TOKENS = 3
+
 OIDC_PROVIDER = 'SSO'
+
 
 def my_org_name_extractor(groups: list[str]) -> str | None:
     # Your custom logic to extract the organization name from groups
@@ -81,9 +86,10 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
     return None
 
 
-ORG_NAME_FROM_GROUPS_FUNCTION = my_org_name_extractor
+ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = my_org_name_extractor
 ADMIN_GROUP = "ds-ray-cluster"  # the admin group name
 
+# ------------------------------------------------------------------------
 
 ROOT_URLCONF = 'management.urls'
 

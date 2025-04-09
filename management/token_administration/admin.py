@@ -10,7 +10,7 @@ from .models import Org, Team, UserProfile, ServiceAccount, Token, Request, Mode
 class ProfileInline(admin.StackedInline):
     model = UserProfile
     can_delete = False
-    verbose_name_plural = 'employee'
+    verbose_name_plural = 'Profiles'
 
 
 # Define a new User admin

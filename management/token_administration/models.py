@@ -1,7 +1,11 @@
 # models.py
+import secrets
+from typing import Literal
+
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.contrib.auth.models import Group
 
 
 class Org(models.Model):
@@ -55,6 +59,33 @@ class UserProfile(models.Model):
         blank=True
     )
 
+    @property
+    def group(self) -> Literal['admin', 'org-admin', 'team-admin', 'user']:
+        g = self.user.groups
+        if g.filter(name='admin').exists():
+            return 'admin'
+        elif g.filter(name='org-admin').exists():
+            return 'org-admin'
+        elif g.filter(name='team-admin').exists():
+            return 'team-admin'
+        elif g.filter(name='user').exists():
+            return 'user'
+        else:
+            raise ValidationError('User has no group')
+
+    @group.setter
+    def group(self, group: Literal['admin', 'org-admin', 'team-admin', 'user']):
+        print("setting group")
+        if group not in ['admin', 'org-admin', 'team-admin', 'user']:
+            raise ValueError(f'Group {group} does not exist!')
+
+        try:
+            g = self.group
+            self.user.group.remove(g)
+        except ValidationError:
+            pass
+        self.user.groups.add(Group.objects.get(name=group))
+
     def clean(self):
         """
         Validation moved from the old User model.
@@ -79,8 +110,7 @@ class UserProfile(models.Model):
                     )
 
     def __str__(self):
-        # Access username from the related user object
-        return f"Profile for {self.user.username} ({self.org.name})"
+        return f"{self.user.email} ({self.org.name})"
 
 
 class ServiceAccount(models.Model):
@@ -96,16 +126,15 @@ class ServiceAccount(models.Model):
         unique_together = ('name', 'team')
 
     def __str__(self):
-        return f"SA: {self.name} (Team: {self.team.name})"
+        return f"{self.name} (Team: {self.team.name})"
 
 
 class Token(models.Model):
     """
     Represents an authentication token (e.g., API Key), associated with a User
     and optionally a Service Account.
-    NOTE: Review if this is needed alongside django-oauth-toolkit's tokens.
     """
-    name = models.CharField(max_length=255, blank=True)  # Optional label
+    name = models.CharField(max_length=255, null=False)
     # Link to the standard Django User model
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,  # Use settings.AUTH_USER_MODEL
@@ -129,14 +158,42 @@ class Token(models.Model):
     # unless null=True is added to the user field, which doesn't seem intended here.
 
     def __str__(self):
-        user_identifier = self.user.username  # Use username or another field from the auth user
         if self.service_account:
-            # Clarify the relationship in the string representation
-            return f"Token '{self.name or self.key[:8]}' created by User {user_identifier} for SA {self.service_account.name}"
+            return f"'{self.name}' ({self.service_account.name})"
         else:
-            return f"Token '{self.name or self.key[:8]}' for User {user_identifier}"
+            return f"'{self.name}'"
 
-    # TODO: Add logic to generate the 'key' on save if it doesn't exist
+    @staticmethod
+    def generate_key() -> str:
+        """Generates a unique token key."""
+        return secrets.token_urlsafe(nbytes=32)
+
+    def save(self, *args, **kwargs):
+        """Generates the 'key' on save if it doesn't exist."""
+        if not self.key:
+            self.key = self.generate_key()
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        """
+        Validates that a user can only generate a configurable number of tokens
+        per user (tokens not associated with a service account).
+        """
+        if not self.service_account:
+            max_tokens = getattr(settings, 'MAX_USER_TOKENS', 3)
+            token_count = Token.objects.filter(user=self.user, service_account__isnull=True).count()
+            if self.pk is None:  # Check if the token is being created
+                if token_count >= max_tokens:
+                    raise ValidationError(
+                        f"Users can only have a maximum of {max_tokens} tokens not associated with a service account."
+                    )
+            else:  # If the token is being updated, exclude the current token from the count
+                existing_tokens = Token.objects.filter(user=self.user, service_account__isnull=True).exclude(pk=self.pk)
+                if existing_tokens.count() >= max_tokens:
+                    raise ValidationError(
+                        f"Users can only have a maximum of {max_tokens} tokens not associated with a service account."
+                    )
+        super().clean()
 
 
 class Request(models.Model):
@@ -153,18 +210,18 @@ class Request(models.Model):
     # TODO: Add other relevant fields: endpoint_url, method, status_code, response_time_ms, request_data, response_data etc.
 
     def __str__(self):
-        return f"Request {self.id} via Token {self.token_id} at {self.timestamp}"
+        return f"{self.id}"
 
 
 class Endpoint(models.Model):
     """Represents an API endpoint, likely serving multiple Models."""
     name = models.CharField(max_length=255, unique=True)  # Added unique=True
 
-    # Add more fields like path, description, etc.
+    # TODO: Add more fields like path, description, etc.
 
     def __str__(self):
         model_count = self.models.count()
-        return f"Endpoint: {self.name} ({model_count} model{'s' if model_count != 1 else ''})"
+        return f"{self.name} ({model_count} model{'s' if model_count != 1 else ''})"
 
 
 class Model(models.Model):
@@ -176,7 +233,7 @@ class Model(models.Model):
         related_name='models'
     )
 
-    # Add more fields like version, description, file_path, etc.
+    # TODO: Add more fields like version, description, file_path, etc.
 
     def __str__(self):
-        return f"{self.name} (Endpoint: {self.endpoint.name})"
+        return f"{self.name} ({self.endpoint.name})"

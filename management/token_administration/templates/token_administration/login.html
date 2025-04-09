@@ -1,0 +1,13 @@
+{% extends 'token_administration/base.html' %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+  <div class="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow">
+    <h2 class="text-2xl font-semibold mb-4">Login Required</h2>
+    <p class="mb-4 text-center">You need to log in to access this page.</p>
+    <a href="{% url 'oidc_authentication_init' %}" class="block text-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+      Login with {{ OIDC_PROVIDER }}
+    </a>
+  </div>
+{% endblock %}

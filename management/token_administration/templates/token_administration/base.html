@@ -6,30 +6,10 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
 </head>
 <body class="bg-gray-100 text-gray-900">
-<header class="bg-white shadow p-4 flex justify-between items-center">
-    <h1 class="text-xl font-semibold">{% block header %}Aqueduct AI Gateway{% endblock %}</h1>
-    <div>
-        {% if user.is_authenticated %}
-            <span class="mr-4">Signed in as <strong>{{ user.email }}</strong></span>
-            <a href="{% url 'admin:index' %}"
-               class="ml-2 mr-2 bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm font-medium transition">
-                Admin Panel
-            </a>
-            <form action="{% url 'oidc_logout' %}" method="post" class="inline">
-                {% csrf_token %}
-                <button type="submit" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded">Logout</button>
-            </form>
-        {% else %}
-            <a href="{% url 'oidc_authentication_init' %}"
-               class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded">
-                Login with {{ OIDC_PROVIDER }}
-            </a>
-        {% endif %}
-    </div>
-</header>
+    {% include 'token_administration/header.html' %}
 
-<main class="p-6">
-    {% block content %}{% endblock %}
-</main>
+    <main class="p-6">
+        {% block content %}{% endblock %}
+    </main>
 </body>
 </html>

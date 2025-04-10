@@ -90,6 +90,12 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
 ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = my_org_name_extractor
 ADMIN_GROUP = "ds-ray-cluster"  # the admin group name
 
+EXTRA_NAV_LINKS = {
+    'GitHub': 'https://github.com/TU-Wien-dataLAB/aqueduct',  # Example external link
+    # 'API Status': '/status/',  # Example internal path
+    # 'About Us': 'about_page',  # Example named URL (assuming you have url(..., name='about_page'))
+}
+
 # ------------------------------------------------------------------------
 
 ROOT_URLCONF = 'management.urls'
@@ -104,6 +110,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # Aqueduct processors
+                'token_administration.context_processors.settings'
             ],
         },
     },

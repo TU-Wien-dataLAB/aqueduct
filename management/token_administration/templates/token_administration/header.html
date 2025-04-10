@@ -1,18 +1,42 @@
-<header class="navbar bg-base-100 shadow-md">
+{% load static %}
+
+<header class="navbar bg-base-100 shadow-md print:hidden">
     <div class="navbar-start">
-        <h1 class="text-xl font-semibold">{% block header %}Aqueduct AI Gateway{% endblock %}</h1>
-    </div>
-    <div class="navbar-end">
+        {# --- Logo and Site Title --- #}
+        <a href="/" class="flex items-center gap-2"> {# Link logo/title to home page #}
+            <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="{{ settings.SITE_NAME|default:'Logo' }}"
+                 class="h-8 w-auto">
+            <span class="text-xl font-semibold hidden sm:inline">
+                {% block header %}{{ settings.SITE_NAME|default:'Aqueduct AI Gateway' }}{% endblock %}
+            </span>
+        </a>
         {% if user.is_authenticated %}
-            <span class="mr-4 hidden md:block">Signed in as <strong>{{ user.email }}</strong></span>
-            <a href="{% url 'admin:index' %}"
-               class="btn btn-sm btn-primary mr-2">
-                Admin Panel
-            </a>
-            <form action="{% url 'oidc_logout' %}" method="post" class="inline">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-error">Logout</button>
-            </form>
+            <span class="ml-4 text-sm">Signed in as <strong>{{ user.email }}</strong></span>
         {% endif %}
+    </div>
+
+    <div class="navbar-end">
+        <ul class="menu menu-horizontal px-1 items-center space-x-1">
+            {# Extra Links from settings.py #}
+            {% for name, external_url in settings.EXTRA_NAV_LINKS.items %}
+                <li>
+                    <a href="{{ external_url }}" class="flex items-center gap-1 hover:underline">
+                        <img src="{% static 'icons/external.svg' %}" alt="(external)" class="w-4 h-4">
+                        {{ name }}
+                    </a>
+                </li>
+            {% endfor %}
+
+            {# Standard Links/Actions for Authenticated Users #}
+            {% if user.is_authenticated %}
+                <li><a href="{% url 'admin:index' %}" class="btn btn-sm btn-ghost">Admin Panel</a></li>
+                <li>
+                    <form action="{% url 'oidc_logout' %}" method="post" class="p-0 inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-error">Logout</button>
+                    </form>
+                </li>
+            {% endif %}
+        </ul>
     </div>
 </header>

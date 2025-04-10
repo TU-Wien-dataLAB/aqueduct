@@ -1,8 +1,9 @@
 {% extends 'token_administration/base.html' %}
+{% load static %}
 
 {% block content %}
 
-    
+
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-semibold mb-4">Team {{ team.name }}</h1>
         {# TODO: check if user is org-admin or team-admin to add user #}
@@ -14,7 +15,8 @@
         {% if team.member_profiles.all %}
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for profile in team.member_profiles.all %}
-                    <li class="list-row flex justify-between items-center">
+                    <li class="list-row ">
+                        <img src="{% static 'icons/user-circle.svg' %}" alt="(user)" class="w-5">
                         <span class="font-medium">{{ profile.user.email }}</span>
                         <span class="text-sm opacity-50">
                                 {{ profile.user.custom_auth_tokens.count }} Tokens

@@ -1,4 +1,4 @@
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.http import HttpResponse
 from django.conf import settings
 from django.views.generic import TemplateView
@@ -31,20 +31,24 @@ def tokens(request):
 @login_required
 def org(request):
     # TODO: only show teams user is part of if group is 'team-admin' or 'user'
-    return render(request, 'token_administration/org.html', context={})
+    context = {
+        "is_org_admin": request.user.profile.is_org_admin(request.user.profile.org)
+    }
+    return render(request, 'token_administration/org.html', context=context)
 
 
 @login_required
 def team_create(request):
     # Add logic here to handle the team creation form
     # return render(request, 'your_template_directory/team_create.html')
-    # TODO: only org-admin can create teams
+    if not request.user.profile.is_org_admin(request.user.profile.org):
+        return HttpResponse('Unauthorized', status=401)
     return HttpResponse("Team Creation")
 
 
 @login_required
 def team(request, id: int):
     t = get_object_or_404(Team, id=id)
-    # TODO: only show team if user is part of it if group is 'team-admin' or 'user'
-    context = {'team': t}
+    context = {'team': t,
+               "is_team_admin": request.user.profile.is_team_admin(t)}
     return render(request, 'token_administration/team.html', context)

@@ -4,7 +4,7 @@ from typing import Literal
 
 from django.db import models
 from django.conf import settings
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.contrib.auth.models import Group
 
 
@@ -33,8 +33,6 @@ class Team(models.Model):
         return f"{self.name} ({self.org.name})"
 
 
-# Removed the custom User model
-
 class UserProfile(models.Model):
     """
     Holds additional information related to the built-in Django User model.
@@ -55,62 +53,124 @@ class UserProfile(models.Model):
     # Teams relationship moved here
     teams = models.ManyToManyField(
         Team,
+        through='TeamMembership',
         related_name='member_profiles',  # Changed related_name for clarity
         blank=True
     )
 
     @property
-    def group(self) -> Literal['admin', 'org-admin', 'team-admin', 'user']:
+    def group(self) -> Literal['admin', 'org-admin', 'user']:
         g = self.user.groups
         if g.filter(name='admin').exists():
             return 'admin'
         elif g.filter(name='org-admin').exists():
             return 'org-admin'
-        elif g.filter(name='team-admin').exists():
-            return 'team-admin'
         elif g.filter(name='user').exists():
             return 'user'
         else:
             raise ValidationError('User has no group')
 
     @group.setter
-    def group(self, group: Literal['admin', 'org-admin', 'team-admin', 'user']):
-        print("setting group")
-        if group not in ['admin', 'org-admin', 'team-admin', 'user']:
+    def group(self, group: Literal['admin', 'org-admin', 'user']):
+        print(f"Setting group to: {group}")  # Keep for debugging if needed
+        if group not in ['admin', 'org-admin', 'user']:
             raise ValueError(f'Group {group} does not exist!')
 
+        # Clear existing groups first
+        self.user.groups.clear()
+        # Add the new group
         try:
-            g = self.group
-            self.user.group.remove(g)
-        except ValidationError:
-            pass
-        self.user.groups.add(Group.objects.get(name=group))
+            group_obj = Group.objects.get(name=group)
+            self.user.groups.add(group_obj)
+        except Group.DoesNotExist:
+            # Handle case where the group doesn't exist in DB (shouldn't happen with check above)
+            raise ObjectDoesNotExist(f"The group '{group}' does not exist in the database.")
 
     def clean(self):
         """
         Validation moved from the old User model.
         Ensures assigned teams belong to the user's profile organization.
-        Note: Runs on save() via forms/admin, but not on direct M2M .add()/.set() unless explicitly called.
         """
         super().clean()
-        # Check only if org is set (it should be, unless profile is being created incomplete)
         if hasattr(self, 'org') and self.org is not None:
-            # Check teams only if the M2M relationship has been saved (i.e., self.pk exists)
-            # or if being added through a form where teams might be present before saving the profile itself.
-            # Using try-except is safer if teams manager isn't available yet.
             try:
-                teams_to_check = self.teams.all()
-            except ValueError:  # Happens if UserProfile instance isn't saved yet
-                teams_to_check = []
+                # Check teams staged for addition/setting before saving the profile
+                # This requires accessing the M2M field manager's state if possible,
+                # or relying on form validation primarily.
+                # Checking self.teams.all() only works after the profile is saved
+                # and M2M relations are added.
+                # A robust check often happens in the form or view layer before saving.
+                # For simplicity here, we assume it's checked post-save or via forms.
+                if self.pk:  # Only check if the profile instance exists in DB
+                    for team in self.teams.all():
+                        if team.org != self.org:
+                            raise ValidationError(
+                                f"Team '{team.name}' (Org: {team.org.name}) does not belong to the profile's organization '{self.org.name}'."
+                            )
+            except ValueError:  # Can happen if M2M is accessed before PK exists
+                pass  # Skip check if profile is not saved yet
 
-            for team in teams_to_check:
-                if team.org != self.org:
-                    raise ValidationError(
-                        f"Team '{team.name}' (Org: {team.org.name}) does not belong to the profile's organization '{self.org.name}'."
-                    )
+    def is_org_admin(self, org_to_check: Org) -> bool:
+        """
+        Checks if the user is an administrator for the given organization.
+        Rules:
+        1. Superusers are admins of everything.
+        2. Users with the 'org-admin' group are admins ONLY of their own organization.
+        """
+        if self.user.is_superuser:
+            return True
+        try:
+            user_group = self.group  # Use the property to get the group name
+            if user_group == 'org-admin':
+                # Check if the profile's org matches the org being checked
+                return self.org == org_to_check
+        except ValidationError:  # Raised if user has no valid group
+            return False  # Or handle as an error depending on requirements
+        return False  # Default case (e.g., 'user' group)
+
+    def is_team_admin(self, team_to_check: Team) -> bool:
+        """
+        Checks if the user is an administrator for the given team.
+        Rules:
+        1. If the user is an admin of the team's organization, they are admin of the team.
+        2. Otherwise, check the specific TeamMembership for the 'is_admin' flag.
+        """
+        # First, check if they are an admin of the team's parent organization
+        if self.is_org_admin(team_to_check.org):
+            return True
+
+        # If not an org admin, check the specific membership for this team
+        try:
+            # Assuming TeamMembership model exists and is related via user_profile
+            membership = self.teammembership_set.get(team=team_to_check)
+            return membership.is_admin
+        except ObjectDoesNotExist:  # Changed from TeamMembership.DoesNotExist for clarity
+            # No specific membership record found for this user and team
+            return False
+        except AttributeError:
+            # Handle case where TeamMembership model/relationship isn't set up correctly
+            # Log this error during development
+            print(
+                f"Error: 'teammembership_set' related manager not found on UserProfile. Is TeamMembership model defined correctly with a ForeignKey to UserProfile?")
+            return False
+
+
+class TeamMembership(models.Model):
+    user_profile = models.ForeignKey(UserProfile, on_delete=models.CASCADE)
+    team = models.ForeignKey(Team, on_delete=models.CASCADE)
+
+    # Your extra data about the relationship
+    is_admin = models.BooleanField(default=False)
+    date_added = models.DateField(auto_now_add=True)
+
+    # TODO: Add any other fields relevant to the membership itself
+
+    class Meta:
+        # Ensure a user can only be in a team once
+        unique_together = ('user_profile', 'team')
 
     def __str__(self):
-        return f"{self.user.email} ({self.org.name})"
+        return f"{self.user_profile} in {self.team}{' (Admin)' if self.is_admin else ''}"
 
 
 class ServiceAccount(models.Model):

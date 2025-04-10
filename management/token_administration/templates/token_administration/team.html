@@ -3,11 +3,12 @@
 
 {% block content %}
 
-
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-semibold mb-4">Team {{ team.name }}</h1>
-        {# TODO: check if user is org-admin or team-admin to add user #}
-        <a href="{% url 'team_create' %}" class="btn btn-primary btn-sm">Add User</a>
+        {# check if user can update team memberships #}
+        {% if is_team_admin %}
+            <a href="{% url 'team_create' %}" class="btn btn-primary btn-sm">Add User</a>
+        {% endif %}
     </div>
 
     <div class="mb-4">

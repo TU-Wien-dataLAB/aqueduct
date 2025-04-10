@@ -7,7 +7,6 @@ def apply_migration(apps, schema_editor):
     Group = apps.get_model('auth', 'Group')
     Group.objects.bulk_create([
         Group(name='user'),
-        Group(name='team-admin'),
         Group(name='org-admin'),
         Group(name='admin'),
     ])
@@ -18,7 +17,6 @@ def revert_migration(apps, schema_editor):
     Group.objects.filter(
         name__in=[
             'user',
-            'team-admin',
             'org-admin',
             'admin'
         ]

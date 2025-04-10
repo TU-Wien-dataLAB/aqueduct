@@ -1,0 +1,29 @@
+{% extends 'token_administration/base.html' %}
+
+{% block content %}
+
+    
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-semibold mb-4">Team {{ team.name }}</h1>
+        {# TODO: check if user is org-admin or team-admin to add user #}
+        <a href="{% url 'team_create' %}" class="btn btn-primary btn-sm">Add User</a>
+    </div>
+
+    <div class="mb-4">
+        <h2 class="text-xl font-semibold mb-2">Users</h2>
+        {% if team.member_profiles.all %}
+            <ul class="list bg-base-100 rounded-box shadow-md">
+                {% for profile in team.member_profiles.all %}
+                    <li class="list-row flex justify-between items-center">
+                        <span class="font-medium">{{ profile.user.email }}</span>
+                        <span class="text-sm opacity-50">
+                                {{ profile.user.custom_auth_tokens.count }} Tokens
+                            </span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-gray-500">No teams available.</p>
+        {% endif %}
+    </div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends 'token_administration/base.html' %}
+
+{% block content %}
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">{{ user.profile.org.name }}</h1>
+        {# TODO: check if user is org-admin to create new team #}
+        <a href="{% url 'team_create' %}" class="btn btn-primary btn-sm">Create New Team</a>
+    </div>
+
+    <div class="mb-4">
+        <h2 class="text-xl font-semibold mb-2">Teams</h2>
+        {% if user.profile.org.teams.all %}
+            <ul class="list bg-base-100 rounded-box shadow-md">
+                {% for team in user.profile.org.teams.all %}
+                    <li>
+                        <a href="/team/{{ team.id }}"
+                           class="list-row flex justify-between items-center hover:bg-gray-100">
+                            <span class="font-medium">{{ team.name }}</span>
+                            <span class="text-sm opacity-50">
+                                {{ team.member_profiles.count }} Members
+                            </span>
+                        </a>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-gray-500">No teams available.</p>
+        {% endif %}
+    </div>
+{% endblock %}

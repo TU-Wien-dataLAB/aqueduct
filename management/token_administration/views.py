@@ -133,7 +133,10 @@ class TeamCreateView(BaseTeamView, CreateView):
         # Assign the org (fetched in dispatch) to the instance
         form.instance.org = self.org
         # Let CreateView handle the actual saving and redirect
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        # Add a success message
+        messages.success(self.request, f"Team '{form.instance.name}' has been created successfully.")
+        return response
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

@@ -1,3 +1,5 @@
+{% load static %}
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -12,17 +14,38 @@
 <main class="p-6">
     {% block content %}{% endblock %}
 
-    {% if messages %}
-        <div class="mb-4 space-y-2">
-            {% for message in messages %}
-                <div role="alert"
-                     class="alert {% if message.tags == 'success' %}alert-success{% elif message.tags == 'error' %}alert-error{% else %}alert-info{% endif %} shadow-md">
-                    {# ... SVG icons and message content ... #}
-                    <span>{{ message }}</span>
-                </div>
-            {% endfor %}
-        </div>
-    {% endif %}
+    <div class="fixed bottom-0 left-0 w-full z-50">
+        {% if messages %}
+            <div class="m-4 space-y-2">
+                {% for message in messages %}
+                    <div role="alert"
+                         class="alert
+            {% if message.tags == 'success' %}alert-success
+            {% elif message.tags == 'error' %}alert-error
+            {% else %}alert-info
+            {% endif %}
+            shadow-md w-full md:w-auto">
+
+                        {# Icon Section: Use appropriate SVG or img tag. Added shrink-0 and explicit size #}
+                        {% if message.tags == 'success' %}
+                            <img src="{% static 'icons/check.svg' %}" alt="Success Icon" class="h-6 w-6 shrink-0">
+
+                        {% elif message.tags == 'error' %}
+                            <img src="{% static 'icons/error.svg' %}" alt="Error Icon" class="h-6 w-6 shrink-0">
+
+                        {% else %} {# Info or default icon #}
+                            <img src="{% static 'icons/info.svg' %}" alt="Info Icon" class="h-6 w-6 shrink-0">
+                        {% endif %}
+
+                        {# Text Section: Removed the wrapper span and problematic classes #}
+                        <span>{{ message }}</span>
+
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+
 </main>
 </body>
 </html>

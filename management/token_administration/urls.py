@@ -9,10 +9,10 @@ urlpatterns = [
     path(r'admin/login/', views.SSOTemplateView.as_view(), name='admin_sso'),
 
     path('', RedirectView.as_view(url='/tokens/', permanent=True)),
-    path("tokens/", views.tokens, name="tokens"),
+    path("tokens/", views.TokensView.as_view(), name="tokens"),
 
-    path(r'org/', views.org, name="org"),
-    path('team/create/', views.team_create, name='team_create'),
-    path('team/<int:id>', views.team, name='team'),
+    path(r'org/', views.OrgView.as_view(), name="org"),
+    path('team/create/', views.TeamCreateView.as_view(), name='team_create'),
+    path('team/<int:id>', views.TeamDetailView.as_view(), name='team'),
 
 ]

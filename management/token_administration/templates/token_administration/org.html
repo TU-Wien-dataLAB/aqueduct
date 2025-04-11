@@ -12,9 +12,9 @@
 
     <div class="mb-4">
         <h2 class="text-xl font-semibold mb-2">Teams</h2>
-        {% if user.profile.org.teams.all %}
+        {% if teams.all %}
             <ul class="list bg-base-100 rounded-box shadow-md">
-                {% for team in user.profile.org.teams.all %}
+                {% for team in teams.all %}
                     <li>
                         <a href="/team/{{ team.id }}"
                            class="list-row hover:bg-gray-100">

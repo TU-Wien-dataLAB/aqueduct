@@ -13,6 +13,7 @@ urlpatterns = [
 
     path(r'org/', views.OrgView.as_view(), name="org"),
     path('team/create/', views.TeamCreateView.as_view(), name='team_create'),
+    path('team/<int:id>/delete/', views.TeamDeleteView.as_view(), name='team_delete'),
     path('team/<int:id>', views.TeamDetailView.as_view(), name='team'),
 
 ]

@@ -1,0 +1,24 @@
+{% extends 'token_administration/base.html' %}
+
+{% block content %}
+    <div class="max-w-lg mx-auto mt-8">
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-xl font-bold mb-4">Confirm Deletion</h2>
+
+                <p>Are you sure you want to delete the {{ object_type_name|default:"item" }}:
+                    <strong>{{ object_name|default:object }}</strong>?
+                </p>
+                <p class="text-sm text-error mt-2">This action cannot be undone.</p>
+
+                <form method="post" action="">
+                    {% csrf_token %}
+                    <div class="card-actions justify-end mt-6">
+                        <a href="{{ cancel_url|default:'javascript:history.back()' }}" class="btn btn-ghost">Cancel</a>
+                        <button type="submit" class="btn btn-error">Confirm Delete</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+{% endblock %}

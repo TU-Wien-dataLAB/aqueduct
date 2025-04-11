@@ -3,14 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <title>Aqueduct AI Gateway</title>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css"/>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
 <body class="bg-gray-100 text-gray-900 h-screen">
-    {% include 'token_administration/header.html' %}
+{% include 'token_administration/header.html' %}
 
-    <main class="p-6">
-        {% block content %}{% endblock %}
-    </main>
+<main class="p-6">
+    {% block content %}{% endblock %}
+
+    {% if messages %}
+        <div class="mb-4 space-y-2">
+            {% for message in messages %}
+                <div role="alert"
+                     class="alert {% if message.tags == 'success' %}alert-success{% elif message.tags == 'error' %}alert-error{% else %}alert-info{% endif %} shadow-md">
+                    {# ... SVG icons and message content ... #}
+                    <span>{{ message }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</main>
 </body>
 </html>

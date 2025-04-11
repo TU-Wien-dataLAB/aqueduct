@@ -15,14 +15,19 @@
         {% if teams.all %}
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for team in teams.all %}
-                    <li>
-                        <a href="/team/{{ team.id }}"
-                           class="list-row hover:bg-gray-100">
+                    <li class="flex justify-between items-center hover:bg-gray-100">
+                        <a href="/team/{{ team.id }}" class="list-row flex-grow">
                             <img src="{% static 'icons/team.svg' %}" alt="(team)" class="w-5">
                             <span class="font-medium">{{ team.name }}</span>
                             <span class="text-sm opacity-50">
-                                {{ team.member_profiles.count }} Members
-                            </span>
+                            {{ team.member_profiles.count }} Members
+                        </span>
+                            {% if is_org_admin %}
+                                <a href="{% url 'team_delete' team.id %}" class="btn btn-error btn-sm btn-square mr-2"
+                                   title="Delete {{ team.name }}">
+                                    <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4">
+                                </a>
+                            {% endif %}
                         </a>
                     </li>
                 {% endfor %}
@@ -31,4 +36,48 @@
             <p class="text-gray-500">No teams available.</p>
         {% endif %}
     </div>
+
+    <!-- Dialog for confirming deletion -->
+    <div id="deleteDialog" class="modal hidden">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg">Confirm Deletion</h3>
+            <p class="py-4">Are you sure you want to delete this team?</p>
+            <div class="modal-action">
+                <button class="btn" onclick="closeDeleteDialog()">Cancel</button>
+                <button class="btn btn-error" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+      let teamIdToDelete = null;
+
+      function openDeleteDialog(teamId) {
+        teamIdToDelete = teamId;
+        document.getElementById('deleteDialog').classList.remove('hidden');
+      }
+
+      function closeDeleteDialog() {
+        teamIdToDelete = null;
+        document.getElementById('deleteDialog').classList.add('hidden');
+      }
+
+      function confirmDelete() {
+        if (teamIdToDelete) {
+          fetch(`/team/${teamIdToDelete}/delete/`, {
+            method: 'POST',
+            headers: {
+              'X-CSRFToken': '{{ csrf_token }}',
+            },
+          }).then(response => {
+            if (response.ok) {
+              location.reload();
+            } else {
+              alert('Failed to delete the team.');
+            }
+          });
+        }
+        closeDeleteDialog();
+      }
+    </script>
 {% endblock %}

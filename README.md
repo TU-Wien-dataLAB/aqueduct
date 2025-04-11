@@ -15,11 +15,11 @@
 
 ## 🛠️ Technical Overview
 
-This project aims to combine [Directus](https://github.com/directus/directus) for user management/API with minimal additional implementation to create a comprehensive AI gateway. The implementation follows a phased approach:
+This project aims to use Django for user management/API with minimal additional implementation to create a comprehensive AI gateway. The implementation follows a phased approach:
 
 1. **Data Model and Administrative Interface:**
     * Implementation of "Teams" and "Organizations" within the data model.
-    * Development of an administrative UI using Directus for user and team management.
+    * Development of an administrative UI using Django for user and team management.
     * Focus on authentication and basic management functionalities.
 
 2. **Gateway Relay and Usage Tracking:**
@@ -36,6 +36,7 @@ This project aims to combine [Directus](https://github.com/directus/directus) fo
     * Development of a `/metrics` endpoint for monitoring.
     * Implementation of model cooldown and retry logic.
     * Implementation of MCP tool calling endpoints.
+    * Implementation of daily usage quotas/limits for models.
 
 4. **(Optional) API Abstraction:**
     * Implementation of a stable API interface (e.g., OpenAI-compatible).
@@ -45,7 +46,7 @@ This project aims to combine [Directus](https://github.com/directus/directus) fo
 
 ![AI Gateway Architecture](./docs/assets/AI%20Gateway%20Architecture.excalidraw.svg "AI Gateway Architecture")
 
-The gateway server processes requests, interacts with the Directus API for token management, and updates usage logs. Directus provides a UI with role-based access control:
+The gateway server processes requests, interacts with the Django API for token verification, and updates usage logs. Django frontend provides a UI with role-based access control:
 
 **Role-Based Access Control (RBAC):**
 
@@ -62,33 +63,25 @@ The gateway server processes requests, interacts with the Directus API for token
 * Specific admin group used to assign Admins.
 * Org-Admin management by Admin in UI (boolean flag).
 * Default team with configurable usage limits.
-* Automatic role assignment via Directus flows upon user login.
+* Automatic role assignment upon user login.
 
 **Usage Reporting and Metrics:**
 
 * Usage reports based on user roles (team, organization, global).
-* Visualized through Directus dashboards?
-* `/metrics` endpoint for system monitoring.
+* `/metrics` endpoint for system monitoring + usage.
 
 
 ## 🚀 Implementation Roadmap
 
-1. Docker Compose setup for PostgreSQL and Directus.
-2. Database migration tool integration (Alembic, Prisma Migrate, ...).
-3. Database schema definition.
-4. Setup container for database migrations.
-5. Directus configuration and template export (`directus-template-cli`).
-6. Automated Directus template application in separate container or modification of database migration container.
-7. API gateway server development using FastAPI.
+1. Implementation user management in Django.
+2. Implementation of gateway server with basic features using user management as service.
+3. Create docker compose setup.
+4. Extension of gateway/management service for more advanced features.
 
 ## ❓ Open Questions
 
 * Integration of Open Policy Agent (OPA) for authorization and policy enforcement?
-* Count validation not possible yet ([gh-issue #13354](https://github.com/directus/directus/issues/13354)) but workaround using Flows seems to be possible: [https://github.com/directus/directus/discussions/16802](https://github.com/directus/directus/discussions/16802)
-* Can we create custom UI components for token creation?
 
 ## 🔗 Relevant Links
 
-* [Directus](https://directus.io)
-* [directus-template-cli](https://github.com/directus-labs/directus-template-cli)
 * [Token Validator](https://github.com/TU-Wien-dataLAB/token-validator)

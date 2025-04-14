@@ -75,6 +75,7 @@ LOGIN_URL = '/login/'  # Where to redirect if user is not logged in
 # Aqueduct Settings ------------------------------------------------------
 
 MAX_USER_TOKENS = 3
+MAX_SERVICE_ACCOUNTS_PER_TEAM = 10
 
 OIDC_PROVIDER = 'SSO'
 

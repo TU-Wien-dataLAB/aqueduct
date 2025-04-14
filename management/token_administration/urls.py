@@ -16,4 +16,13 @@ urlpatterns = [
     path('team/<int:id>/delete/', views.TeamDeleteView.as_view(), name='team_delete'),
     path('team/<int:id>', views.TeamDetailView.as_view(), name='team'),
 
+    path('team/<int:id>/service-accounts/add/',
+         views.ServiceAccountCreateView.as_view(),
+         name='service_account_create'),
+    path('service-accounts/<int:service_account_id>/delete/',
+         views.ServiceAccountDeleteView.as_view(),
+         name='service_account_delete'),
+    path('service-accounts/<int:service_account_id>/transfer/',
+         views.service_account_transfer,
+         name='service_account_transfer'),
 ]

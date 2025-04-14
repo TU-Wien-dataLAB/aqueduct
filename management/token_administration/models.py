@@ -186,7 +186,51 @@ class ServiceAccount(models.Model):
         unique_together = ('name', 'team')
 
     def __str__(self):
-        return f"{self.name} (Team: {self.team.name})"
+        return f"{self.name} (Team: {self.team.name if self.team_id else 'N/A'})" # Handle case where team might not be set yet
+
+    def clean(self):
+        """
+        Validates that the associated team does not exceed the maximum
+        number of service accounts allowed.
+        """
+        super().clean()
+
+        # This check only makes sense if the team field is actually set.
+        # During object creation via a form that *doesn't* include the 'team' field,
+        # self.team might be None or raise an exception when accessed before being saved,
+        # depending on how the instance is constructed prior to clean().
+        # It relies on the team being assigned *before* clean() is called.
+        if self.team_id:
+            try:
+                # Get the actual team object - needed if not already loaded
+                # This might cause an extra query if team wasn't select_related
+                team_instance = self.team
+                limit = getattr(settings, 'MAX_SERVICE_ACCOUNTS_PER_TEAM', 10)
+
+                # Query existing accounts for this team
+                query = ServiceAccount.objects.filter(team=team_instance)
+
+                # If updating an existing instance, exclude self from the count
+                if self.pk:
+                    query = query.exclude(pk=self.pk)
+
+                current_count = query.count()
+
+                # Check if adding this one would exceed the limit
+                # This check is primarily for *new* instances (self.pk is None)
+                if current_count >= limit:
+                     # Raising ValidationError here will attach the error to the form
+                     # if called via form.is_valid()
+                    raise ValidationError({
+                        # You can attach the error to a specific field or make it non-field
+                        # None: f"Team '{team_instance.name}' has reached the maximum limit of {limit} service accounts."
+                        'team': f"Team '{team_instance.name}' has reached the maximum limit of {limit} service accounts." # Attach to team conceptually
+                    })
+
+            except Team.DoesNotExist:
+                # This case shouldn't happen if ForeignKey validation runs,
+                # but good to handle defensively.
+                raise ValidationError("Associated team does not exist.")
 
 
 class Token(models.Model):
@@ -204,7 +248,7 @@ class Token(models.Model):
     # This structure implies the Token is *created by* a User, potentially *for* a Service Account.
     service_account = models.OneToOneField(
         ServiceAccount,  # Removed quotes as ServiceAccount is defined above
-        on_delete=models.SET_NULL,  # Allows Token to exist if SA is deleted, links SA creation to token? Review this.
+        on_delete=models.CASCADE,
         related_name='token',
         null=True,
         blank=True

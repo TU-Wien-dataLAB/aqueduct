@@ -33,10 +33,11 @@ This project aims to use Django for user management/API with minimal additional 
     * Implementation of a `/models` endpoint to list available models.
     * Request routing to specific provider endpoints based on model selection.
     * Implementation of granular access control based on models and usage limits.
-    * Development of a `/metrics` endpoint for monitoring.
+    * Implementation of a `/metrics` endpoint for monitoring.
     * Implementation of model cooldown and retry logic.
-    * Implementation of MCP tool calling endpoints.
+    * Implementation of MCP tool calling server endpoints e.g. from the [MCP Server list](https://github.com/modelcontextprotocol/servers?tab=readme-ov-file).
     * Implementation of daily usage quotas/limits for models.
+    * Simple chat interface to try models.
 
 4. **(Optional) API Abstraction:**
     * Implementation of a stable API interface (e.g., OpenAI-compatible).

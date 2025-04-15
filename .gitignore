@@ -5,6 +5,7 @@ uploads
 .DS_Store
 venv
 .idea
+.vscode
 
 # Created by https://www.toptal.com/developers/gitignore/api/django
 # Edit at https://www.toptal.com/developers/gitignore?templates=django

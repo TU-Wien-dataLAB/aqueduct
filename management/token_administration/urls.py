@@ -23,6 +23,6 @@ urlpatterns = [
          views.ServiceAccountDeleteView.as_view(),
          name='service_account_delete'),
     path('service-accounts/<int:service_account_id>/transfer/',
-         views.service_account_transfer,
+         views.ServiceAccountTransferView.as_view(),
          name='service_account_transfer'),
 ]

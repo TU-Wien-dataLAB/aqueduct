@@ -117,10 +117,10 @@ class UserProfile(models.Model):
         1. Superusers are admins of everything.
         2. Users with the 'org-admin' group are admins ONLY of their own organization.
         """
-        if self.user.is_superuser:
-            return True
         try:
             user_group = self.group  # Use the property to get the group name
+            if user_group == 'admin':  # Use admin group independent of super-user status to quickly debug in Admin UI.
+                return True
             if user_group == 'org-admin':
                 # Check if the profile's org matches the org being checked
                 return self.org == org_to_check
@@ -186,7 +186,7 @@ class ServiceAccount(models.Model):
         unique_together = ('name', 'team')
 
     def __str__(self):
-        return f"{self.name} (Team: {self.team.name if self.team_id else 'N/A'})" # Handle case where team might not be set yet
+        return f"{self.name} (Team: {self.team.name if self.team_id else 'N/A'})"  # Handle case where team might not be set yet
 
     def clean(self):
         """
@@ -219,12 +219,13 @@ class ServiceAccount(models.Model):
                 # Check if adding this one would exceed the limit
                 # This check is primarily for *new* instances (self.pk is None)
                 if current_count >= limit:
-                     # Raising ValidationError here will attach the error to the form
-                     # if called via form.is_valid()
+                    # Raising ValidationError here will attach the error to the form
+                    # if called via form.is_valid()
                     raise ValidationError({
                         # You can attach the error to a specific field or make it non-field
                         # None: f"Team '{team_instance.name}' has reached the maximum limit of {limit} service accounts."
-                        'team': f"Team '{team_instance.name}' has reached the maximum limit of {limit} service accounts." # Attach to team conceptually
+                        'team': f"Team '{team_instance.name}' has reached the maximum limit of {limit} service accounts."
+                        # Attach to team conceptually
                     })
 
             except Team.DoesNotExist:

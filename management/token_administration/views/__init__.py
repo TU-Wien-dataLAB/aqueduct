@@ -7,3 +7,4 @@ from .service_account import (
     ServiceAccountTransferView
 )
 from .tokens import UserTokensView, TokenCreateView, TokenDeleteView
+from .models import ModelListView

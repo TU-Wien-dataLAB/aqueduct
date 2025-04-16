@@ -1,0 +1,60 @@
+{% extends 'token_administration/base.html' %}
+{% load static %}
+
+{% block header %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">{{ title }}</h1>
+        {# Add a button here if needed in the future #}
+    </div>
+
+    {% if endpoints %}
+        <div class="space-y-8">
+            {% for endpoint in endpoints %}
+                <div class="mb-8">
+                    <div class="list bg-base-100 rounded-box shadow-md p-4">
+                        <h2 class="text-xl font-semibold mb-3">Endpoint: {{ endpoint.name }}</h2>
+                        <p class="text-sm text-gray-600 mb-1"><span class="font-medium">Internal URL:</span> {{ endpoint.url }}</p>
+                        {% if endpoint.description %}
+                            <p class="text-sm text-gray-600 mb-4"><span class="font-medium">Description:</span> {{ endpoint.description }}</p>
+                        {% endif %}
+
+                        <h3 class="text-lg font-medium mt-4 mb-3">Models</h3>
+                        {% if endpoint.models.all %}
+                            <div class="overflow-x-auto">
+                                <table class="table table-sm w-full">
+                                    <thead>
+                                    <tr class="bg-base-200">
+                                        <th>Model Name</th>
+                                        <th>Display Name</th>
+                                        <th>Description</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {% for model in endpoint.models.all %}
+                                        <tr>
+                                            <td class="font-mono">{{ model.name }}</td>
+                                            <td>{{ model.display_name }}</td>
+                                            <td>{{ model.description|default:"-" }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p class="text-gray-500 italic">No models associated with this endpoint.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info shadow-lg">
+            <img src="{% static 'icons/info.svg' %}" alt="Info Icon" class="h-6 w-6 shrink-0">
+            <span>No endpoints found.</span>
+        </div>
+    {% endif %}
+</div>
+{% endblock %} 

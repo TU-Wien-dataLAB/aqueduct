@@ -7,7 +7,13 @@
 <div class="container mx-auto px-4 py-6">
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-3xl font-bold">{{ title }}</h1>
-        {# Add a button here if needed in the future #}
+        {# Add buttons for admin users #}
+        {% if user.profile.is_admin %}
+            <div class="space-x-2">
+                <a href="{% url 'admin:token_administration_endpoint_add' %}" class="btn btn-primary btn-sm">Create Endpoint</a>
+                <a href="{% url 'admin:token_administration_model_add' %}" class="btn btn-primary btn-sm">Create Model</a>
+            </div>
+        {% endif %}
     </div>
 
     {% if endpoints %}

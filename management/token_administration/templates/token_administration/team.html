@@ -37,7 +37,7 @@
                                 {# Transfer button: Form POSTs directly to the transfer view #}
                                 <form action="{% url 'service_account_transfer' sa.id %}" method="post" class="inline">
                                     {% csrf_token %}
-                                    <button type="submit" class="btn btn-xs btn-outline btn-warning"
+                                    <button type="submit" class="btn btn-sm btn-outline btn-warning"
                                             onclick="return confirm('Transfer ownership of {{ sa.name|escapejs }} to yourself?');">
                                         Transfer to Me
                                     </button>
@@ -45,7 +45,7 @@
 
                                 {# Delete button: Link (GET request) to the DeleteView confirmation page #}
                                 <a href="{% url 'service_account_delete' sa.id %}"
-                                   class="btn btn-xs btn-outline btn-error">
+                                   class="btn btn-sm btn-outline btn-error">
                                     Delete
                                 </a>
                             </div>
@@ -93,7 +93,7 @@
                                         {% csrf_token %}
                                         <input type="hidden" name="profile_id" value="{{ member.profile.id }}">
                                         <input type="hidden" name="action" value="remove">
-                                        <button type="submit" class="btn btn-xs btn-outline btn-warning"
+                                        <button type="submit" class="btn btn-sm btn-outline btn-warning"
                                             onclick="return confirm('Remove team admin status from {{ member.profile.user.email|escapejs }}?');">
                                             Remove Team Admin
                                         </button>
@@ -103,7 +103,7 @@
                                         {% csrf_token %}
                                         <input type="hidden" name="profile_id" value="{{ member.profile.id }}">
                                         <input type="hidden" name="action" value="add">
-                                        <button type="submit" class="btn btn-xs btn-outline btn-success"
+                                        <button type="submit" class="btn btn-sm btn-outline btn-success"
                                             onclick="return confirm('Make {{ member.profile.user.email|escapejs }} a team admin?');">
                                             Make Team Admin
                                         </button>

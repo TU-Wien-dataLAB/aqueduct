@@ -18,9 +18,9 @@ from ..forms import ServiceAccountForm
 
 
 # --- Create View ---
-# Uses BaseTeamView to get the team context for creation.
 # Uses TeamAdminRequiredMixin to ensure the user has admin rights on that team.
-class ServiceAccountCreateView(TeamAdminRequiredMixin, BaseTeamView, CreateView):
+# Uses BaseTeamView to get the team context for creation.
+class ServiceAccountCreateView(BaseTeamView, TeamAdminRequiredMixin, CreateView):
     """
     Handles creation of Service Accounts within a specific Team.
     Requires Team Admin privileges for that team.

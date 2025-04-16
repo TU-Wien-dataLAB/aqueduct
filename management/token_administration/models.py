@@ -1,6 +1,7 @@
 # models.py
+import dataclasses
 import secrets
-from typing import Literal
+from typing import Literal, Optional
 
 from django.db import models
 from django.conf import settings
@@ -8,18 +9,85 @@ from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.contrib.auth.models import Group
 
 
-class Org(models.Model):
+@dataclasses.dataclass(frozen=True)  # frozen=True makes instances immutable
+class LimitSet:
+    """Represents a resolved set of rate limits."""
+    requests_per_minute: Optional[int] = None
+    input_tokens_per_minute: Optional[int] = None
+    output_tokens_per_minute: Optional[int] = None
+
+    # Add future limit fields here with default None
+
+    @classmethod
+    def from_objects(cls, specific_limiter: Optional['LimitMixin'], org_limiter: Optional['LimitMixin']) -> 'LimitSet':
+        """
+        Creates a LimitSet by resolving limits from a specific limiter
+        (like Team or UserProfile) and a fallback Org limiter object.
+
+        Args:
+            specific_limiter: The object with the primary limits (e.g., Team, UserProfile).
+            org_limiter: The object with the fallback limits (Org).
+
+        Returns:
+            A LimitSet instance with the effectively resolved limits.
+        """
+
+        # Helper to resolve a single limit field value using the hierarchy
+        def _resolve(field_name: str) -> Optional[int]:
+            # Get value from the specific level first
+            # Use getattr for safe access, defaulting to None if field absent
+            specific_value = getattr(specific_limiter, field_name, None) if specific_limiter else None
+            if specific_value is not None:
+                # Return immediately if a specific limit is set
+                return specific_value
+
+            return getattr(org_limiter, field_name, None) if org_limiter else None
+
+        return cls(
+            requests_per_minute=_resolve('requests_per_minute'),
+            input_tokens_per_minute=_resolve('input_tokens_per_minute'),
+            output_tokens_per_minute=_resolve('output_tokens_per_minute'),
+        )
+
+
+class LimitMixin(models.Model):
+    """
+    An abstract base model providing common rate limit fields.
+    Set fields to None to indicate no specific limit at this level (use fallback).
+    """
+    requests_per_minute = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum requests allowed per minute. Null means use fallback or no limit."
+    )
+    input_tokens_per_minute = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum input tokens allowed per minute. Null means use fallback or no limit."
+    )
+    output_tokens_per_minute = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum output tokens allowed per minute. Null means use fallback or no limit."
+    )
+
+    class Meta:
+        abstract = True  # Important: Makes this a mixin, no DB table created
+
+
+class Org(LimitMixin, models.Model):
     """Represents an Organization."""
     name = models.CharField(max_length=255, unique=True)
-    orig_name = models.CharField(max_length=255, unique=True)
 
     def __str__(self):
         return self.name
 
 
-class Team(models.Model):
+class Team(LimitMixin, models.Model):
     """Represents a Team within an Organization."""
     name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+
     org = models.ForeignKey(
         Org,
         on_delete=models.CASCADE,
@@ -33,7 +101,7 @@ class Team(models.Model):
         return f"{self.name} ({self.org.name})"
 
 
-class UserProfile(models.Model):
+class UserProfile(LimitMixin, models.Model):
     """
     Holds additional information related to the built-in Django User model.
     Each Django User should have one corresponding UserProfile.
@@ -44,13 +112,13 @@ class UserProfile(models.Model):
         on_delete=models.CASCADE,
         related_name='profile'  # Access profile from user: user.profile
     )
-    # Org relationship moved here
+
     org = models.ForeignKey(
         Org,
         on_delete=models.PROTECT,  # Keep PROTECT if you don't want to delete Org if profiles exist
         related_name='user_profiles'  # Changed related_name
     )
-    # Teams relationship moved here
+
     teams = models.ManyToManyField(
         Team,
         through='TeamMembership',
@@ -72,7 +140,6 @@ class UserProfile(models.Model):
 
     @group.setter
     def group(self, group: Literal['admin', 'org-admin', 'user']):
-        print(f"Setting group to: {group}")  # Keep for debugging if needed
         if group not in ['admin', 'org-admin', 'user']:
             raise ValueError(f'Group {group} does not exist!')
 
@@ -92,23 +159,23 @@ class UserProfile(models.Model):
         Ensures assigned teams belong to the user's profile organization.
         """
         super().clean()
-        if hasattr(self, 'org') and self.org is not None:
-            try:
-                # Check teams staged for addition/setting before saving the profile
-                # This requires accessing the M2M field manager's state if possible,
-                # or relying on form validation primarily.
-                # Checking self.teams.all() only works after the profile is saved
-                # and M2M relations are added.
-                # A robust check often happens in the form or view layer before saving.
-                # For simplicity here, we assume it's checked post-save or via forms.
-                if self.pk:  # Only check if the profile instance exists in DB
-                    for team in self.teams.all():
-                        if team.org != self.org:
-                            raise ValidationError(
-                                f"Team '{team.name}' (Org: {team.org.name}) does not belong to the profile's organization '{self.org.name}'."
-                            )
-            except ValueError:  # Can happen if M2M is accessed before PK exists
-                pass  # Skip check if profile is not saved yet
+        # Assumes self.org is always set due to non-nullable ForeignKey.
+        # Check teams only if the profile instance exists in the DB (has a PK).
+        # This prevents issues when accessing M2M relations before the instance is saved.
+        if self.pk:
+            for team in self.teams.all(): # Query M2M relationship
+                if team.org != self.org:
+                    raise ValidationError(
+                        f"Team '{team.name}' (Org: {team.org.name}) does not belong to the profile's organization '{self.org.name}'."
+                    )
+            # No need for the try/except ValueError, as self.pk ensures the instance is saved.
+
+    def is_admin(self) -> bool:
+        """Checks if the user has the global 'admin' group."""
+        try:
+            return self.group == 'admin'
+        except ValidationError: # Raised if user has no valid group assigned
+            return False
 
     def is_org_admin(self, org_to_check: Org) -> bool:
         """
@@ -141,18 +208,18 @@ class UserProfile(models.Model):
 
         # If not an org admin, check the specific membership for this team
         try:
-            # Assuming TeamMembership model exists and is related via user_profile
+            # Assumes TeamMembership model exists and is related via user_profile
+            # Django ensures 'teammembership_set' exists if TeamMembership has a ForeignKey to UserProfile.
             membership = self.teammembership_set.get(team=team_to_check)
             return membership.is_admin
-        except ObjectDoesNotExist:  # Changed from TeamMembership.DoesNotExist for clarity
+        except ObjectDoesNotExist:
             # No specific membership record found for this user and team
             return False
-        except AttributeError:
-            # Handle case where TeamMembership model/relationship isn't set up correctly
-            # Log this error during development
-            print(
-                f"Error: 'teammembership_set' related manager not found on UserProfile. Is TeamMembership model defined correctly with a ForeignKey to UserProfile?")
-            return False
+        # Removed overly defensive AttributeError check. If 'teammembership_set' is missing,
+        # it indicates a fundamental model setup error that should not be caught here.
+
+    def __str__(self):
+        return f"{self.user.email} (Profile - {self.org.name})"
 
 
 class TeamMembership(models.Model):
@@ -162,8 +229,6 @@ class TeamMembership(models.Model):
     # Your extra data about the relationship
     is_admin = models.BooleanField(default=False)
     date_added = models.DateField(auto_now_add=True)
-
-    # TODO: Add any other fields relevant to the membership itself
 
     class Meta:
         # Ensure a user can only be in a team once
@@ -176,6 +241,7 @@ class TeamMembership(models.Model):
 class ServiceAccount(models.Model):
     """Represents a Service Account, typically associated with a Team."""
     name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
     team = models.ForeignKey(
         Team,
         on_delete=models.CASCADE,
@@ -254,7 +320,6 @@ class Token(models.Model):
         null=True,
         blank=True
     )
-    # You likely need a field for the actual token key/secret
     key = models.CharField(max_length=128, unique=True, editable=False)  # Example field
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)  # Optional expiry
@@ -300,19 +365,77 @@ class Token(models.Model):
                     )
         super().clean()
 
+    def get_limit(self) -> 'LimitSet':
+        """
+        Determines the effective rate limits for this token, returning a LimitSet dataclass.
+        Assumes database integrity for related objects.
+
+        Hierarchy Rules:
+        - Service Account Token: Uses Team limits, falls back to Org limits.
+        - User Token: Uses UserProfile limits, falls back to Org limits.
+        """
+        # Fetch the current token instance with potentially needed related objects
+        # Using select_related is efficient as it avoids subsequent DB queries
+        token_instance = Token.objects.select_related(
+            'user__profile__org',  # Needed for User Tokens
+            'service_account__team__org'  # Needed for Service Account Tokens
+        ).get(pk=self.pk)  # Assumes the token instance exists
+
+        # Determine the primary (specific) and fallback (org) limit sources
+        if token_instance.service_account:
+            # Path for Service Account Tokens
+            team = token_instance.service_account.team  # Team holds specific SA limits
+            org = team.org  # Team's Org holds fallback limits
+            return LimitSet.from_objects(team, org)
+        else:
+            # Path for standard User Tokens
+            profile = token_instance.user.profile  # UserProfile holds specific user limits
+            org = profile.org  # Profile's Org holds fallback limits
+            return LimitSet.from_objects(profile, org)
+
 
 class Request(models.Model):
     """Represents a request made using a custom Token."""
-    # This model seems tied to your custom Token model.
-    token_usage = models.IntegerField(default=0)  # What does this track? Count per request or total on token?
+    input_tokens = models.PositiveIntegerField(default=0, help_text="Tokens consumed by the input for this request")
+    output_tokens = models.PositiveIntegerField(default=0, help_text="Tokens generated by the output for this request")
     token = models.ForeignKey(
         Token,
         on_delete=models.CASCADE,  # If Token is deleted, delete its associated Requests
         related_name='requests'
     )
+    model = models.ForeignKey(
+        'Model',
+        on_delete=models.CASCADE,
+        related_name='requests'
+    )
     timestamp = models.DateTimeField(auto_now_add=True)
 
-    # TODO: Add other relevant fields: endpoint_url, method, status_code, response_time_ms, request_data, response_data etc.
+    # Additional fields (endpoint_url removed)
+    method = models.CharField(
+        max_length=16,
+        blank=True,
+        help_text="HTTP method used (e.g., GET, POST, etc.)"
+    )
+    status_code = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="HTTP status code returned by the endpoint"
+    )
+    response_time_ms = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Time taken to respond, in milliseconds"
+    )
+    user_agent = models.CharField(
+        max_length=256,
+        blank=True,
+        help_text="User agent string of the client making the request"
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="IP address from which the request originated"
+    )
 
     def __str__(self):
         return f"{self.id}"
@@ -320,9 +443,9 @@ class Request(models.Model):
 
 class Endpoint(models.Model):
     """Represents an API endpoint, likely serving multiple Models."""
-    name = models.CharField(max_length=255, unique=True)  # Added unique=True
-
-    # TODO: Add more fields like path, description, etc.
+    name = models.CharField(max_length=255, unique=True)
+    url = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True)
 
     def __str__(self):
         model_count = self.models.count()
@@ -330,15 +453,18 @@ class Endpoint(models.Model):
 
 
 class Model(models.Model):
-    """Represents a computational model (e.g., ML model)."""
+    """Represents a LLM model."""
     name = models.CharField(max_length=255, unique=True)
+    display_name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True)
     endpoint = models.ForeignKey(
         Endpoint,
         on_delete=models.CASCADE,  # If endpoint is deleted, delete associated models
         related_name='models'
     )
 
-    # TODO: Add more fields like version, description, file_path, etc.
+    class Meta:
+        unique_together = ('name', 'endpoint')
 
     def __str__(self):
         return f"{self.name} ({self.endpoint.name})"

@@ -21,6 +21,9 @@
                             <span class="text-sm opacity-50 flex-shrink-0">
                                 Created: {{ token.created_at|date:"Y-m-d" }}
                             </span>
+                            <span class="text-sm opacity-50 flex-shrink-0 ml-2">
+                                Token: {{ token.key }}
+                            </span>
                         </div>
                         <!-- Optionally, add a delete button here -->
                     </li>
@@ -38,10 +41,13 @@
                 {% for sa in service_accounts %}
                     <li class="list-row flex justify-between items-center">
                         <div class="flex items-center flex-grow mr-4 overflow-hidden">
-                            <img src="{% static 'icons/user-circle.svg' %}" alt="Service Account" class="w-5 mr-2 flex-shrink-0">
+                            <img src="{% static 'icons/key.svg' %}" alt="Service Account" class="w-5 mr-2 flex-shrink-0">
                             <span class="font-medium truncate mr-2">{{ sa.name }}</span>
                             <span class="text-sm opacity-50 flex-shrink-0">
                                 Team: {{ sa.team.name }}
+                            </span>
+                            <span class="text-sm opacity-50 flex-shrink-0 ml-2">
+                                Token: {{ sa.token.key }}
                             </span>
                         </div>
                     </li>

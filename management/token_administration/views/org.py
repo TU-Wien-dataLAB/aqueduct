@@ -13,4 +13,5 @@ class OrgView(BaseAqueductView, TemplateView):
         # Pass org admin status and list of teams to the template
         context['is_org_admin'] = self.is_org_admin()
         context['teams'] = self.get_teams_for_user()
+        context['org_object'] = self.org  # Add the org object itself
         return context

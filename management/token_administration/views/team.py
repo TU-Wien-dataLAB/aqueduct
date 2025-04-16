@@ -169,6 +169,8 @@ class TeamDetailView(BaseTeamView, DetailView):
         # is_team_admin checks org admin status implicitly
         context['is_team_admin'] = self.profile.is_team_admin(self.team)
 
+        context['org_object'] = self.team_org # Pass the org object for limit display
+
         context['service_accounts'] = self.team.service_accounts.select_related(
             'token__user__profile'
         ).all()

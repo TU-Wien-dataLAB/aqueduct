@@ -1,0 +1,33 @@
+<div class="stats stats-vertical lg:stats-horizontal shadow w-full bg-white">
+
+  <div class="stat">
+    <div class="stat-title">Requests/Minute</div>
+    <div class="stat-value text-secondary">{{ primary_limit_object.requests_per_minute|default:"-" }}</div>
+    <div class="stat-desc">{{ primary_title|default:"Limit" }}</div>
+    {% if secondary_limit_object %}
+      <div class="stat-value text-xs text-gray-500 pt-1">{{ secondary_limit_object.requests_per_minute|default:"-" }}</div>
+      <div class="stat-desc text-xs">{{ secondary_title|default:"Fallback" }}</div>
+    {% endif %}
+  </div>
+
+  <div class="stat">
+    <div class="stat-title">Input Tokens/Minute</div>
+    <div class="stat-value text-secondary">{{ primary_limit_object.input_tokens_per_minute|default:"-" }}</div>
+    <div class="stat-desc">{{ primary_title|default:"Limit" }}</div>
+    {% if secondary_limit_object %}
+      <div class="stat-value text-xs text-gray-500 pt-1">{{ secondary_limit_object.input_tokens_per_minute|default:"-" }}</div>
+      <div class="stat-desc text-xs">{{ secondary_title|default:"Fallback" }}</div>
+    {% endif %}
+  </div>
+
+  <div class="stat">
+    <div class="stat-title">Output Tokens/Minute</div>
+    <div class="stat-value text-secondary">{{ primary_limit_object.output_tokens_per_minute|default:"-" }}</div>
+    <div class="stat-desc">{{ primary_title|default:"Limit" }}</div>
+     {% if secondary_limit_object %}
+      <div class="stat-value text-xs text-gray-500 pt-1">{{ secondary_limit_object.output_tokens_per_minute|default:"-" }}</div>
+      <div class="stat-desc text-xs">{{ secondary_title|default:"Fallback" }}</div>
+    {% endif %}
+  </div>
+
+</div> 

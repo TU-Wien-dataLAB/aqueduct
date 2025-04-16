@@ -27,7 +27,11 @@
                 </li>
             {% endfor %}
 
-            {# Margin between external links and internal links #}
+            {# Divider between external and internal links #}
+            {% if user.is_authenticated and settings.EXTRA_NAV_LINKS %}
+                <div class="divider divider-horizontal"></div>
+            {% endif %}
+
             {% if user.is_authenticated %}
                 <li class="ml-4">
                     <a href="{% url 'tokens' %}" class="btn btn-sm btn-ghost flex items-center gap-1">

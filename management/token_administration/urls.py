@@ -27,4 +27,6 @@ urlpatterns = [
     path('service-accounts/<int:service_account_id>/transfer/',
          views.ServiceAccountTransferView.as_view(),
          name='service_account_transfer'),
+
+    path('team/<int:id>/admins/', views.TeamAdminManagementView.as_view(), name='team_admins_manage'),
 ]

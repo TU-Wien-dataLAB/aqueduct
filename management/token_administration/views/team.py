@@ -5,6 +5,8 @@ from django.urls import reverse_lazy, reverse
 from django.contrib import messages
 from django.db import transaction
 from django.shortcuts import redirect, get_object_or_404
+from django.views import View
+from django.utils.decorators import method_decorator
 # Removed Http404 as it wasn't used directly
 
 # Import base views/mixins and models/forms
@@ -81,6 +83,41 @@ class TeamDeleteView(OrgAdminRequiredMixin, BaseAqueductView, DeleteView):
         return context
 
 
+class TeamAdminManagementView(OrgAdminRequiredMixin, BaseAqueductView, View):
+    """
+    Allows org-admins to add or remove team admin status for team members.
+    Only org-admins can use this view. POST to add or remove.
+    """
+    def post(self, request, *args, **kwargs):
+        team_id = kwargs.get('id')
+        team = get_object_or_404(Team, id=team_id, org=self.org)
+        profile_id = request.POST.get('profile_id')
+        action = request.POST.get('action')
+        profile = get_object_or_404(UserProfile, id=profile_id, org=self.org)
+        # Prevent org-admins from making themselves team admin (no effect)
+        if profile == self.profile:
+            messages.warning(request, "As an org-admin, you already have all team admin rights.")
+            return redirect(reverse('team', kwargs={'id': team.id}))
+        membership, created = team.teammembership_set.get_or_create(user_profile=profile, team=team)
+        if action == 'add':
+            if membership.is_admin:
+                messages.info(request, f"{profile.user.email} is already a team admin.")
+            else:
+                membership.is_admin = True
+                membership.save(update_fields=['is_admin'])
+                messages.success(request, f"{profile.user.email} is now a team admin for {team.name}.")
+        elif action == 'remove':
+            if membership.is_admin:
+                membership.is_admin = False
+                membership.save(update_fields=['is_admin'])
+                messages.success(request, f"{profile.user.email} is no longer a team admin for {team.name}.")
+            else:
+                messages.info(request, f"{profile.user.email} is not a team admin.")
+        else:
+            messages.error(request, "Invalid action.")
+        return redirect(reverse('team', kwargs={'id': team.id}))
+
+
 class TeamDetailView(BaseAqueductView, DetailView):
     """
     Displays team details, members, and service accounts.
@@ -104,33 +141,37 @@ class TeamDetailView(BaseAqueductView, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         team_instance = self.get_object() # Fetched via get_queryset
-        # self.profile is guaranteed by BaseAqueductView for authenticated users.
         profile = self.profile
 
-        # Determine if the current user is an admin of *this* specific team.
-        # UserProfile.is_team_admin handles org admin checks internally.
+        context['is_org_admin'] = profile.is_org_admin(team_instance.org)
         context['is_team_admin'] = profile.is_team_admin(team_instance)
 
-        # Get associated service accounts and related user profiles efficiently.
         context['service_accounts'] = team_instance.service_accounts.select_related(
             'token__user__profile'
         ).all()
 
-        # Get IDs of profiles owning Service Account tokens within this team.
         context['profile_ids_owning_service_accounts'] = set(
             team_instance.service_accounts
             .filter(token__user__profile__isnull=False)
             .values_list('token__user__profile__id', flat=True)
         )
 
-        # Get available profiles from the same org who are not already members.
-        # self.profile and self.profile.org are guaranteed non-None by BaseAqueductView
-        # and the UserProfile model structure.
         current_member_profile_ids = team_instance.member_profiles.values_list('id', flat=True)
         context['available_profiles'] = profile.org.user_profiles.exclude(
             id__in=current_member_profile_ids
         )
 
+        # --- Build member_badges: list of dicts for each member with badge info ---
+        member_badges = []
+        for member in team_instance.member_profiles.all():
+            badge = {
+                'profile': member,
+                'group': member.group,
+                'is_team_admin': member.is_team_admin(team_instance),
+                'is_org_admin': member.is_org_admin(team_instance.org),
+            }
+            member_badges.append(badge)
+        context['member_badges'] = member_badges
         return context
 
     @transaction.atomic # Ensure membership changes are atomic.
@@ -200,27 +241,8 @@ class TeamDetailView(BaseAqueductView, DetailView):
 
                 # Verify the user is actually a member before attempting removal.
                 if team.member_profiles.filter(id=profile_to_remove.id).exists():
-
-                    # --- Optional Check: Prevent removing the last administrator ---
-                    # This assumes UserProfile has `is_team_admin` and Team has `get_admin_count`
-                    # Make sure these methods exist and are reliable.
-                    is_last_admin = False
-                    try:
-                        # Check if the user being removed is an admin of this team *and*
-                        # if the team would have zero admins left after removal.
-                        if profile_to_remove.is_team_admin(team) and team.get_admin_count() <= 1:
-                           is_last_admin = True
-                    except AttributeError:
-                        # Handle cases where is_team_admin or get_admin_count might not exist
-                        # Log this issue during development/testing
-                        # logger.warning(f"Could not perform 'last admin' check for team {team.id} removal.", exc_info=True)
-                        pass # Default to allowing removal if check fails
-
-                    if is_last_admin:
-                        messages.error(request, "Cannot remove the last administrator from the team.")
-                    else:
-                        team.member_profiles.remove(profile_to_remove)
-                        messages.success(request, f"Removed {profile_to_remove.user.email} from team {team.name}.")
+                    team.member_profiles.remove(profile_to_remove)
+                    messages.success(request, f"Removed {profile_to_remove.user.email} from team {team.name}.")
                 else:
                     # User wasn't a member anyway.
                     messages.warning(request, f"{profile_to_remove.user.email} is not currently a member of this team.")

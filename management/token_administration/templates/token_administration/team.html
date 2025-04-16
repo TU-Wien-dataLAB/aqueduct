@@ -62,44 +62,77 @@
     {# --- Current Team Members --- #}
     <div class="mb-8">
         <h2 class="text-xl font-semibold mb-2">Current Members</h2>
-        {% if team.member_profiles.all %}
+        {% if member_badges %}
             <ul class="list bg-base-100 rounded-box shadow-md">
-                {% for profile in team.member_profiles.all %}
+                {% for member in member_badges %}
                     <li class="list-row flex justify-between items-center">
                         <div class="flex items-center flex-grow mr-4 overflow-hidden">
                             <img src="{% static 'icons/user-circle.svg' %}" alt="" class="w-5 mr-2 flex-shrink-0">
-                            <span class="font-medium truncate mr-2">{{ profile.user.email }}</span>
+                            <span class="font-medium truncate mr-2">{{ member.profile.user.email }}</span>
                             <span class="text-sm opacity-50 flex-shrink-0">
-                                {{ profile.user.custom_auth_tokens.count }} Token{{ profile.user.custom_auth_tokens.count|pluralize }}
+                                {{ member.profile.user.custom_auth_tokens.count }} Token{{ member.profile.user.custom_auth_tokens.count|pluralize }}
+                            </span>
+                            <span class="ml-2">
+                                {% if member.group == 'admin' %}
+                                    <span class="badge badge-error badge-sm mr-1">Admin</span>
+                                {% elif member.is_org_admin %}
+                                    <span class="badge badge-info badge-sm mr-1">Org-Admin</span>
+                                {% elif member.is_team_admin %}
+                                    <span class="badge badge-success badge-sm mr-1">Team-Admin</span>
+                                {% else %}
+                                    <span class="badge badge-ghost badge-sm mr-1">User</span>
+                                {% endif %}
                             </span>
                         </div>
 
+                        {# --- Admin Management Buttons (Only for Org-Admins) --- #}
+                        {% if is_org_admin and not member.is_org_admin and member.profile != request.user.profile %}
+                            <div class="flex items-center space-x-2 flex-shrink-0">
+                                {% if member.is_team_admin %}
+                                    <form action="{% url 'team_admins_manage' id=team.id %}" method="post" class="inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="profile_id" value="{{ member.profile.id }}">
+                                        <input type="hidden" name="action" value="remove">
+                                        <button type="submit" class="btn btn-xs btn-outline btn-warning"
+                                            onclick="return confirm('Remove team admin status from {{ member.profile.user.email|escapejs }}?');">
+                                            Remove Team Admin
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <form action="{% url 'team_admins_manage' id=team.id %}" method="post" class="inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="profile_id" value="{{ member.profile.id }}">
+                                        <input type="hidden" name="action" value="add">
+                                        <button type="submit" class="btn btn-xs btn-outline btn-success"
+                                            onclick="return confirm('Make {{ member.profile.user.email|escapejs }} a team admin?');">
+                                            Make Team Admin
+                                        </button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+
                         {# --- Removal Logic (Only for Admins) --- #}
                         {% if is_team_admin %}
-                            {% comment %} Check if the current profile's ID is in the set of IDs owning service accounts IN THIS TEAM {% endcomment %}
-                            {% if profile.id not in profile_ids_owning_service_accounts %}
-                                {# User CAN be removed - show active button with confirmation #}
+                            {% if member.profile.id not in profile_ids_owning_service_accounts %}
                                 <form action="" method="post" class="flex-shrink-0">
                                     {% csrf_token %}
-                                    <input type="hidden" name="user_profile_to_remove_id" value="{{ profile.id }}">
+                                    <input type="hidden" name="user_profile_to_remove_id" value="{{ member.profile.id }}">
                                     <button type="submit"
                                             class="btn btn-sm btn-error btn-outline"
-                                            {# Confirmation only on the active button #}
-                                            onclick="return confirm('Are you sure you want to remove {{ profile.user.email|escapejs }} from this team?');">
+                                            onclick="return confirm('Are you sure you want to remove {{ member.profile.user.email|escapejs }} from this team?');">
                                         Remove
                                     </button>
                                 </form>
                             {% else %}
-                                {# User CANNOT be removed - show disabled button with tooltip #}
                                 <div class="tooltip tooltip-left flex-shrink-0"
                                      data-tip="Cannot remove: User owns service accounts in this team. Transfer or delete them first.">
-                                    {# Add disabled attribute and remove onclick #}
                                     <button class="btn btn-sm btn-error btn-outline" disabled>
                                         Remove
                                     </button>
                                 </div>
                             {% endif %}
-                        {% endif %} {# End is_team_admin check #}
+                        {% endif %}
                     </li>
                 {% endfor %}
             </ul>

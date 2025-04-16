@@ -6,4 +6,4 @@ from .service_account import (
     ServiceAccountDeleteView,
     ServiceAccountTransferView
 )
-from .tokens import TokensView
+from .tokens import UserTokensView, TokenCreateView

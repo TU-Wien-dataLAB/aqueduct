@@ -1,0 +1,62 @@
+{% extends 'token_administration/base.html' %}
+{% load static %} {# Load static if needed in base or here #}
+
+{% block content %}
+    <div class="max-w-lg mx-auto mt-8"> {# Center content, limit width #}
+        <h1 class="text-3xl font-bold mb-6">{{ view_title|default:"Create Token" }}</h1> {# Use title from context #}
+
+        <form method="post" class="card bg-base-100 shadow-xl">
+            {% csrf_token %} {# Important for security #}
+
+            <div class="card-body">
+
+                {# Display non-field errors (e.g., errors added in form_valid) #}
+                {% if form.non_field_errors %}
+                    <div role="alert" class="alert alert-error mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none"
+                             viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M10 14l2-2m0 0l2-2m-2 2l-2 2m2-2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>Error: {{ form.non_field_errors|striptags }}</span>
+                    </div>
+                {% endif %}
+
+                {# Render the 'name' field #}
+                <div class="form-control w-full mb-4">
+                    <label class="label" for="{{ form.name.id_for_label }}">
+                        <span class="label-text">{{ form.name.label }}</span>
+                    </label>
+                    {# Use input-bordered for standard input style #}
+                    <input type="{{ form.name.field.widget.input_type }}"
+                           name="{{ form.name.name }}"
+                           id="{{ form.name.id_for_label }}"
+                           maxlength="{{ form.name.field.max_length|default:'' }}"
+                           required="{{ form.name.field.required|yesno:'required,' }}"
+                           class="input input-bordered w-full {% if form.name.errors %}input-error{% endif %}"
+                           value="{{ form.name.value|default:'' }}"
+                           placeholder="Enter token name"> {# Adapted placeholder #}
+                    {# Display field-specific errors #}
+                    {% if form.name.errors %}
+                        <label class="label">
+                            <span class="label-text-alt text-error">{{ form.name.errors|striptags }}</span>
+                        </label>
+                    {% endif %}
+                    {% if form.name.help_text %}
+                        <label class="label">
+                            <span class="label-text-alt">{{ form.name.help_text|safe }}</span>
+                        </label>
+                    {% endif %}
+                </div>
+
+                {# Card Actions for Buttons #}
+                <div class="card-actions justify-end mt-4">
+                    <a href="{% url 'tokens' %}" class="btn btn-ghost">Cancel</a> {# Link back to tokens view #}
+                    <button type="submit" class="btn btn-primary">Create Token</button>
+                </div>
+
+            </div>
+            {# End card-body #}
+        </form>
+    </div>
+{% endblock %} 

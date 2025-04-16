@@ -1,7 +1,7 @@
 from django import forms
 from django.core.exceptions import ValidationError
 
-from .models import Team, ServiceAccount
+from .models import Team, ServiceAccount, Token
 from django.conf import settings
 
 
@@ -81,4 +81,33 @@ class TeamCreateForm(forms.ModelForm):
                 # Note: Using add_error('name', ...) attaches the error specifically
                 #  to the 'name' field in the form.
 
+        return cleaned_data
+
+
+class TokenCreateForm(forms.ModelForm):
+    class Meta:
+        model = Token
+        fields = ['name']  # Only allow user to set the name
+        widgets = {
+            'name': forms.TextInput(attrs={'placeholder': 'Enter token name'}),
+        }
+        labels = {
+            'name': 'Token Name',
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+        if not self.user:
+            raise ValueError("User must be provided to TokenCreateForm.")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        from django.conf import settings
+        max_tokens = getattr(settings, 'MAX_USER_TOKENS', 3)
+        token_count = Token.objects.filter(user=self.user, service_account__isnull=True)
+        if self.instance.pk:
+            token_count = token_count.exclude(pk=self.instance.pk)
+        if token_count.count() >= max_tokens:
+            raise ValidationError(f"You can only have {max_tokens} tokens.")
         return cleaned_data

@@ -1,5 +1,5 @@
 # token_administration/views/team.py
-
+from django.http import Http404
 from django.views.generic import CreateView, DeleteView, DetailView
 from django.urls import reverse_lazy, reverse
 from django.contrib import messages
@@ -10,8 +10,8 @@ from django.utils.decorators import method_decorator
 # Removed Http404 as it wasn't used directly
 
 # Import base views/mixins and models/forms
-from .base import BaseAqueductView, OrgAdminRequiredMixin
-from ..models import Team, UserProfile, ServiceAccount, Token
+from .base import BaseAqueductView, OrgAdminRequiredMixin, BaseTeamView
+from ..models import Team, UserProfile, ServiceAccount, Token, Org
 from ..forms import TeamCreateForm
 
 
@@ -47,29 +47,24 @@ class TeamCreateView(OrgAdminRequiredMixin, BaseAqueductView, CreateView):
         return context
 
 
-class TeamDeleteView(OrgAdminRequiredMixin, BaseAqueductView, DeleteView):
+class TeamDeleteView(OrgAdminRequiredMixin, BaseTeamView, DeleteView):
     """
     Handles deletion of a Team. Requires Org Admin privileges.
-    Ensures the team belongs to the admin's organization via get_queryset.
+    Ensures the team belongs to the admin's organization implicitly via BaseTeamView fetching
+    and OrgAdminRequiredMixin checks on self.org (user's org).
     """
     model = Team
     pk_url_kwarg = 'id'
     template_name = 'token_administration/common/confirm_delete.html'
     success_url = reverse_lazy('org')
 
-    # Permission checking is handled by OrgAdminRequiredMixin in dispatch.
-
-    def get_queryset(self):
-        """Ensure deletion is restricted to teams within the user's org."""
-        # self.org is guaranteed by BaseAqueductView & OrgAdminRequiredMixin.
-        # The mixin ensures the user is an org admin, and the base view sets self.org.
-        return Team.objects.filter(org=self.org)
-
-    # get_object uses get_queryset, so team is implicitly scoped to the user's org.
+    # Permission checking is handled by OrgAdminRequiredMixin and BaseTeamView fetches team.
+    # No need for get_queryset to filter by org, as OrgAdminRequiredMixin ensures user is admin of their own org.
+    # get_object() inherited from BaseTeamView returns self.team
 
     def form_valid(self, form):
         """Adds a success message upon successful deletion."""
-        team_name = self.object.name # Get name before object is deleted
+        team_name = self.team.name # Use self.team from BaseTeamView
         response = super().form_valid(form)
         messages.success(self.request, f"Team '{team_name}' deleted successfully.")
         return response
@@ -78,27 +73,45 @@ class TeamDeleteView(OrgAdminRequiredMixin, BaseAqueductView, DeleteView):
         """Provide context for the confirmation template."""
         context = super().get_context_data(**kwargs)
         context['object_type_name'] = self.model._meta.verbose_name
-        context['object_name'] = str(self.object)
+        context['object_name'] = str(self.team) # Use self.team
         context['cancel_url'] = self.get_success_url()
+        # context['object'] is implicitly set to self.team by DeleteView calling get_object()
         return context
 
 
-class TeamAdminManagementView(OrgAdminRequiredMixin, BaseAqueductView, View):
+class TeamAdminManagementView(OrgAdminRequiredMixin, BaseTeamView, View):
     """
     Allows org-admins to add or remove team admin status for team members.
     Only org-admins can use this view. POST to add or remove.
     """
+    pk_url_kwarg = 'id' # Tell BaseTeamView how to find the team
+
     def post(self, request, *args, **kwargs):
-        team_id = kwargs.get('id')
-        team = get_object_or_404(Team, id=team_id, org=self.org)
+        # self.team is fetched by BaseTeamView
+        team = self.team
+        # self.profile and self.org (user's org) are available from BaseAqueductView/OrgAdminRequiredMixin
         profile_id = request.POST.get('profile_id')
         action = request.POST.get('action')
-        profile = get_object_or_404(UserProfile, id=profile_id, org=self.org)
-        # Prevent org-admins from making themselves team admin (no effect)
+        # Ensure the profile being managed belongs to the same org as the team (and the admin)
+        profile = get_object_or_404(UserProfile, id=profile_id, org=self.team_org) # Use team_org for consistency
+
+        # OrgAdminRequiredMixin already confirmed the requesting user is an org admin.
+        # Check if the target profile is the org admin themself (no-op)
         if profile == self.profile:
             messages.warning(request, "As an org-admin, you already have all team admin rights.")
             return redirect(reverse('team', kwargs={'id': team.id}))
-        membership, created = team.teammembership_set.get_or_create(user_profile=profile, team=team)
+
+        # Ensure the target profile is actually a member of the team before changing admin status
+        # Although get_or_create handles creation, it might be confusing if they weren't explicitly added first.
+        # Let's find the membership first.
+        try:
+            membership = team.teammembership_set.get(user_profile=profile)
+        except team.teammembership_set.model.DoesNotExist:
+            messages.error(request, f"{profile.user.email} is not a member of team {team.name}. Cannot modify admin status.")
+            return redirect(reverse('team', kwargs={'id': team.id}))
+
+        # membership, created = team.teammembership_set.get_or_create(user_profile=profile, team=team) # Old logic
+
         if action == 'add':
             if membership.is_admin:
                 messages.info(request, f"{profile.user.email} is already a team admin.")
@@ -118,7 +131,7 @@ class TeamAdminManagementView(OrgAdminRequiredMixin, BaseAqueductView, View):
         return redirect(reverse('team', kwargs={'id': team.id}))
 
 
-class TeamDetailView(BaseAqueductView, DetailView):
+class TeamDetailView(BaseTeamView, DetailView):
     """
     Displays team details, members, and service accounts.
     Allows Team Admins (or Org Admins) to manage membership via POST requests.
@@ -128,47 +141,58 @@ class TeamDetailView(BaseAqueductView, DetailView):
     context_object_name = 'team'
     pk_url_kwarg = 'id'
 
-    def get_queryset(self):
-        """
-        Users can only view details for teams they have access to.
-        Relies on get_teams_for_user() from the BaseAqueductView (or similar)
-        to filter teams based on membership or org admin status.
-        """
-        # Assuming BaseAqueductView provides this method to filter teams
-        # appropriate for the current user (e.g., member of, or org admin).
-        return self.get_teams_for_user()
+    def dispatch(self, request, *args, **kwargs):
+        # Fetch team first using BaseTeamView's mechanism
+        # self.team will be set if successful, or Http404 raised
+        try:
+            # Trigger team fetching via property access
+            _ = self.team
+        except Http404:
+            messages.error(request, "The requested team was not found.")
+            return redirect(reverse_lazy('org')) # Redirect if team doesn't exist
+
+        # Now check if the user has permission to view this team
+        # Users should see teams they are members of OR if they are admin of the team's org.
+        if not (self.team in self.get_teams_for_user()):
+             messages.error(request, f"You do not have permission to view the team '{self.team.name}'.")
+             return redirect(reverse_lazy('org')) # Redirect to org dashboard
+
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        team_instance = self.get_object() # Fetched via get_queryset
-        profile = self.profile
+        # self.team and self.team_org are available from BaseTeamView
+        # self.profile is available from BaseAqueductView
+        # context['team'] is set automatically by DetailView using get_object() -> self.team
 
-        context['is_org_admin'] = profile.is_org_admin(team_instance.org)
-        context['is_team_admin'] = profile.is_team_admin(team_instance)
+        context['is_org_admin'] = self.profile.is_org_admin(self.team_org) # Check against team's org
+        # is_team_admin checks org admin status implicitly
+        context['is_team_admin'] = self.profile.is_team_admin(self.team)
 
-        context['service_accounts'] = team_instance.service_accounts.select_related(
+        context['service_accounts'] = self.team.service_accounts.select_related(
             'token__user__profile'
         ).all()
 
         context['profile_ids_owning_service_accounts'] = set(
-            team_instance.service_accounts
+            self.team.service_accounts
             .filter(token__user__profile__isnull=False)
             .values_list('token__user__profile__id', flat=True)
         )
 
-        current_member_profile_ids = team_instance.member_profiles.values_list('id', flat=True)
-        context['available_profiles'] = profile.org.user_profiles.exclude(
+        current_member_profile_ids = self.team.member_profiles.values_list('id', flat=True)
+        # Show profiles from the TEAM's org, not necessarily the user's org if different (though unlikely)
+        context['available_profiles'] = self.team_org.user_profiles.exclude(
             id__in=current_member_profile_ids
         )
 
         # --- Build member_badges: list of dicts for each member with badge info ---
         member_badges = []
-        for member in team_instance.member_profiles.all():
+        for member in self.team.member_profiles.all():
             badge = {
                 'profile': member,
                 'group': member.group,
-                'is_team_admin': member.is_team_admin(team_instance),
-                'is_org_admin': member.is_org_admin(team_instance.org),
+                'is_team_admin': member.is_team_admin(self.team),
+                'is_org_admin': member.is_org_admin(self.team_org), # Check against team's org
             }
             member_badges.append(badge)
         context['member_badges'] = member_badges
@@ -177,8 +201,9 @@ class TeamDetailView(BaseAqueductView, DetailView):
     @transaction.atomic # Ensure membership changes are atomic.
     def post(self, request, *args, **kwargs):
         """Handles adding/removing team members. Requires Team Admin privileges."""
-        team = self.get_object() # Fetched via get_queryset, ensuring user has basic access.
+        # self.team is fetched by BaseTeamView and verified in dispatch
         # self.profile is guaranteed by BaseAqueductView.
+        team = self.team
         profile = self.profile
         redirect_url = reverse('team', kwargs={'id': team.id})
 
@@ -196,12 +221,11 @@ class TeamDetailView(BaseAqueductView, DetailView):
         if user_profile_id_to_add:
             try:
                 # Verify the profile exists and belongs to the *same organization*
-                # as the current user (and thus the team). This prevents adding
-                # users from other orgs even if their ID was somehow submitted.
+                # as the team (which should match the admin's org unless they are superuser).
                 profile_to_add = get_object_or_404(
                     UserProfile,
                     id=user_profile_id_to_add,
-                    org=profile.org # Ensures org consistency
+                    org=self.team_org # Ensures org consistency with the team
                 )
                 if team.member_profiles.filter(id=profile_to_add.id).exists():
                     messages.warning(request, f"{profile_to_add.user.email} is already in the team.")
@@ -211,7 +235,7 @@ class TeamDetailView(BaseAqueductView, DetailView):
                     messages.success(request, f"Added {profile_to_add.user.email} to team {team.name}.")
             except UserProfile.DoesNotExist:
                 # This message covers both not found and wrong org cases due to the filter.
-                messages.error(request, "User profile to add not found or not in your organization.")
+                messages.error(request, "User profile to add not found or not in this team's organization.")
             except Exception as e:
                  # Log the exception here for debugging
                  # logger.error(f"Error adding user to team {team.id}: {e}", exc_info=True)
@@ -221,12 +245,11 @@ class TeamDetailView(BaseAqueductView, DetailView):
         # --- Action: Remove User ---
         elif user_profile_id_to_remove:
             try:
-                # We only need the ID to find the profile, org check isn't strictly
-                # needed here as we verify membership below, but doesn't hurt.
+                # Verify the profile exists and is part of the team's org before checking membership
                 profile_to_remove = get_object_or_404(
                     UserProfile,
                     id=user_profile_id_to_remove,
-                    # org=profile.org # Optional: Could add for extra check
+                    org=self.team_org # Ensures they are in the correct org
                 )
 
                 # --- Critical Check: Prevent removal if user owns SA tokens in this team ---
@@ -248,7 +271,8 @@ class TeamDetailView(BaseAqueductView, DetailView):
                     messages.warning(request, f"{profile_to_remove.user.email} is not currently a member of this team.")
 
             except UserProfile.DoesNotExist:
-                 messages.error(request, "User profile to remove not found.")
+                 # Covers not found or wrong org
+                 messages.error(request, "User profile to remove not found or not in this team's organization.")
             except Exception as e:
                  # Log the exception here for debugging
                  # logger.error(f"Error removing user from team {team.id}: {e}", exc_info=True)

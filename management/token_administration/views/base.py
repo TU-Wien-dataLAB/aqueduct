@@ -86,7 +86,7 @@ class OrgAdminRequiredMixin:
             # Redirect to a sensible default page, like an org overview or dashboard.
             # Ensure 'org_dashboard' or similar exists in your URLs.
             # Using 'org' from the original code as a placeholder.
-            return redirect(reverse_lazy('org'))  # TODO: Update 'org' to your actual dashboard URL name
+            return redirect(reverse_lazy('org'))
         return super().dispatch(request, *args, **kwargs)
 
 
@@ -148,6 +148,67 @@ class TeamAdminRequiredMixin:
 
         # Permission granted, proceed with the original view's dispatch.
         return super().dispatch(request, *args, **kwargs)
+
+
+class BaseTeamView(BaseAqueductView):
+    """
+    Base view providing context for a specific Team instance fetched via URL kwarg.
+
+    Inheriting views must:
+    - Set `pk_url_kwarg` to the name of the URL keyword argument containing the Team's primary key (defaults to 'id').
+    - Ensure the corresponding URL pattern captures this keyword argument.
+    """
+    pk_url_kwarg: str = 'id'  # Default URL kwarg name for the team's primary key
+    _team: Team | None = None # Cache the team object for the request
+
+    def get_team_object(self) -> Team:
+        """
+        Fetches and caches the Team instance based on pk_url_kwarg.
+        Raises Http404 if not found or if the URL kwarg is missing.
+        Permissions should be checked by mixins or subclass implementations.
+        """
+        if self._team is None:
+            team_pk = self.kwargs.get(self.pk_url_kwarg)
+            if team_pk is None:
+                raise Http404(
+                    f"URL keyword argument '{self.pk_url_kwarg}' not found in URLconf for {self.__class__.__name__}."
+                )
+            # Fetch the team. Permission mixins (like TeamAdminRequiredMixin)
+            # or view logic should handle authorization.
+            # We don't filter by self.org here by default, allowing org admins
+            # to potentially access teams outside their direct membership if permitted.
+            # Subclasses or mixins can override or add checks if needed.
+            # Consider adding select_related('org') if org is frequently accessed.
+            self._team = get_object_or_404(Team.objects.select_related('org'), pk=team_pk)
+        return self._team
+
+    @property
+    def team(self) -> Team:
+        """Returns the cached Team instance, fetching it if necessary."""
+        return self.get_team_object()
+
+    @property
+    def team_org(self) -> Org:
+        """Returns the Organization associated with the fetched team."""
+        # Assumes get_team_object() was successful and team is loaded.
+        # The select_related in get_team_object helps avoid an extra query here.
+        return self.team.org
+
+    # --- Convenience for TeamAdminRequiredMixin ---
+    # If a view inherits from BaseTeamView AND TeamAdminRequiredMixin,
+    # the mixin's requirement for get_team_object() is automatically satisfied.
+
+    # --- Convenience for Generic Views ---
+    # Override get_object common in DetailView/UpdateView/DeleteView
+    # to return the team object by default if not overridden.
+    def get_object(self, queryset=None):
+        """
+        Default implementation for generic views to return the fetched Team object.
+        """
+        # Note: This might conflict if a generic view *also* sets model = Team
+        # and expects default get_object behavior based on pk/slug in URL.
+        # However, since we fetch based on pk_url_kwarg, this aligns.
+        return self.team
 
 
 class BaseServiceAccountView(TeamAdminRequiredMixin, BaseAqueductView):

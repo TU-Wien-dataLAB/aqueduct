@@ -12,15 +12,15 @@ from django.core.exceptions import ImproperlyConfigured  # Import for base view
 
 # Import base views/mixins and models/forms
 # Assuming base.py is in the same directory level
-from .base import BaseAqueductView, TeamAdminRequiredMixin, BaseServiceAccountView
+from .base import BaseAqueductView, TeamAdminRequiredMixin, BaseServiceAccountView, BaseTeamView
 from ..models import Team, ServiceAccount, Token
 from ..forms import ServiceAccountForm
 
 
 # --- Create View ---
-# Does not operate on an *existing* SA, so it doesn't use BaseServiceAccountView.
-# It needs the Team context directly for creation.
-class ServiceAccountCreateView(TeamAdminRequiredMixin, BaseAqueductView, CreateView):
+# Uses BaseTeamView to get the team context for creation.
+# Uses TeamAdminRequiredMixin to ensure the user has admin rights on that team.
+class ServiceAccountCreateView(TeamAdminRequiredMixin, BaseTeamView, CreateView):
     """
     Handles creation of Service Accounts within a specific Team.
     Requires Team Admin privileges for that team.
@@ -29,61 +29,55 @@ class ServiceAccountCreateView(TeamAdminRequiredMixin, BaseAqueductView, CreateV
     model = ServiceAccount
     form_class = ServiceAccountForm
     template_name = 'token_administration/create/service_account.html'
+    pk_url_kwarg = 'id'  # Tells BaseTeamView which URL kwarg holds the team ID
 
-    # TeamAdminRequiredMixin handles permission checks in dispatch
-
-    # --- Implementation for TeamAdminRequiredMixin ---
-    def get_team_object(self) -> Team:
-        """Fetches the team based on the 'id' URL kwarg for the mixin."""
-        team_id = self.kwargs.get('id')  # URL points to the team ID for creation context
-        if team_id is None:
-            raise Http404("Team ID not found in URL for Service Account creation.")
-        # get_object_or_404 handles not found; mixin handles permissions on the returned team.
-        # Optional: Scope to self.org if necessary, but mixin should handle cross-org access denial.
-        # return get_object_or_404(Team, pk=team_id, org=self.org)
-        return get_object_or_404(Team, pk=team_id)
+    # TeamAdminRequiredMixin handles permission checks in dispatch, calling get_team_object from BaseTeamView.
+    # get_team_object from BaseTeamView fetches the team based on pk_url_kwarg ('id').
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        # self.team_object is set by TeamAdminRequiredMixin's dispatch
-        kwargs['team'] = self.team_object
+        # self.team is now provided by BaseTeamView
+        kwargs['team'] = self.team
         return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # self.team_object available after dispatch
-        context['team'] = self.team_object
-        context['view_title'] = f"Add Service Account to {self.team_object.name}"
-        context['cancel_url'] = reverse('team', kwargs={'id': self.team_object.id})
+        # self.team available from BaseTeamView
+        context['team'] = self.team
+        context['view_title'] = f"Add Service Account to {self.team.name}"
+        context['cancel_url'] = reverse('team', kwargs={'id': self.team.id})
         return context
 
     @transaction.atomic
     def form_valid(self, form):
-        form.instance.team = self.team_object
-        self.object = form.save()
+        # self.team is available from BaseTeamView
+        form.instance.team = self.team
+        self.object = form.save()  # self.object is the new ServiceAccount
 
         try:
             user = self.request.user
-            token_name = f"Token for {self.object.name}"
+            token_name = f"Initial token for {self.object.name}"  # Changed name slightly
             new_token = Token.objects.create(
                 name=token_name,
                 user=user,
                 service_account=self.object
             )
             messages.success(self.request,
-                             f"Service Account '{self.object.name}' created for team '{self.team_object.name}'.")
+                             f"Service Account '{self.object.name}' created for team '{self.team.name}'.")
             messages.info(self.request, f"Associated Token '{new_token.name}' created. Key: {new_token.key}",
                           extra_tags='token-key-info')
 
         except Exception as e:
             # Log error e
             messages.error(self.request, f"Service Account saved, but failed to create associated token: {e}")
+            # Consider if the SA should be rolled back if token creation fails
+            # Since it's atomic, the SA save won't commit if token creation fails here.
 
         return redirect(self.get_success_url())
 
     def get_success_url(self):
-        # self.team_object is guaranteed to exist if we reach here
-        return reverse('team', kwargs={'id': self.team_object.id})
+        # self.team is guaranteed to exist if we reach here
+        return reverse('team', kwargs={'id': self.team.id})
 
 
 # --- Delete View ---

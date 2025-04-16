@@ -27,10 +27,27 @@
                 </li>
             {% endfor %}
 
-            {# Standard Links/Actions for Authenticated Users #}
+            {# Margin between external links and internal links #}
             {% if user.is_authenticated %}
-                <li><a href="{% url 'admin:index' %}" class="btn btn-sm btn-ghost">Admin Panel</a></li>
+                <li class="ml-4">
+                    <a href="{% url 'tokens' %}" class="btn btn-sm btn-ghost flex items-center gap-1">
+                        <img src="{% static 'icons/key.svg' %}" alt="Tokens" class="w-4 h-4">
+                        Tokens
+                    </a>
+                </li>
                 <li>
+                    <a href="{% url 'org' %}" class="btn btn-sm btn-ghost flex items-center gap-1">
+                        <img src="{% static 'icons/team.svg' %}" alt="Teams" class="w-4 h-4">
+                        Teams
+                    </a>
+                </li>
+                <li>
+                    <a href="{% url 'admin:index' %}" class="btn btn-sm btn-ghost flex items-center gap-1">
+                        <img src="{% static 'icons/wrench.svg' %}" alt="Admin Panel" class="w-4 h-4">
+                        Admin Panel
+                    </a>
+                </li>
+                <li class="ml-4">
                     <form action="{% url 'oidc_logout' %}" method="post" class="p-0 inline">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-sm btn-error">Logout</button>

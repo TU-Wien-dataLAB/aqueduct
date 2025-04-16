@@ -1,5 +1,5 @@
 from .base import BaseAqueductView
-from django.views.generic import TemplateView, CreateView
+from django.views.generic import TemplateView, CreateView, DeleteView
 from ..models import Token, ServiceAccount
 from django.urls import reverse_lazy
 from django.contrib import messages
@@ -55,4 +55,27 @@ class TokenCreateView(BaseAqueductView, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['view_title'] = 'Create New Token'
+        return context
+
+class TokenDeleteView(BaseAqueductView, DeleteView):
+    model = Token
+    pk_url_kwarg = 'id'
+    template_name = 'token_administration/common/confirm_delete.html'
+    success_url = reverse_lazy('tokens')
+
+    def get_queryset(self):
+        # Only allow deleting tokens owned by the user and not associated with a service account
+        return Token.objects.filter(user=self.request.user, service_account__isnull=True)
+
+    def form_valid(self, form):
+        token_name = self.object.name
+        response = super().form_valid(form)
+        messages.success(self.request, f"Token '{token_name}' deleted successfully.")
+        return response
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['object_type_name'] = 'Token'
+        context['object_name'] = str(self.object)
+        context['cancel_url'] = self.get_success_url()
         return context

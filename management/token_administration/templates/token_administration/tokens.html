@@ -25,7 +25,9 @@
                                 Token: {{ token.key }}
                             </span>
                         </div>
-                        <!-- Optionally, add a delete button here -->
+                        <a href="{% url 'token_delete' token.id %}" class="btn btn-error btn-sm btn-square mr-2" title="Delete {{ token.name }}">
+                            <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4">
+                        </a>
                     </li>
                 {% endfor %}
             </ul>

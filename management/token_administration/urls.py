@@ -11,6 +11,7 @@ urlpatterns = [
     path('', RedirectView.as_view(url='/tokens/', permanent=True)),
     path("tokens/", views.UserTokensView.as_view(), name="tokens"),
     path('tokens/create/', views.TokenCreateView.as_view(), name='token_create'),
+    path('tokens/<int:id>/delete/', views.TokenDeleteView.as_view(), name='token_delete'),
 
     path(r'org/', views.OrgView.as_view(), name="org"),
     path('team/create/', views.TeamCreateView.as_view(), name='team_create'),

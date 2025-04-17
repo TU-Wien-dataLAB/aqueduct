@@ -3,30 +3,30 @@
   <div class="stat">
     <div class="stat-title">Requests/Minute</div>
     <div class="stat-value text-secondary">{{ primary_limit_object.requests_per_minute|default:"-" }}</div>
-    <div class="stat-desc">{{ primary_title|default:"Limit" }}</div>
+    <div class="stat-desc">{{ primary_title|default:"Limit" }}{% if request.user.profile.is_admin and primary_admin_url %}<a href="{{ primary_admin_url }}" class="link link-secondary link-hover text-xs ml-1" title="Edit in Admin">(edit)</a>{% endif %}</div>
     {% if secondary_limit_object %}
       <div class="stat-value text-xs text-gray-500 pt-1">{{ secondary_limit_object.requests_per_minute|default:"-" }}</div>
-      <div class="stat-desc text-xs">{{ secondary_title|default:"Fallback" }}</div>
+      <div class="stat-desc text-xs">{{ secondary_title|default:"Fallback" }}{% if request.user.profile.is_admin and secondary_admin_url %}<a href="{{ secondary_admin_url }}" class="link link-secondary link-hover text-xs ml-1" title="Edit in Admin">(edit)</a>{% endif %}</div>
     {% endif %}
   </div>
 
   <div class="stat">
     <div class="stat-title">Input Tokens/Minute</div>
     <div class="stat-value text-secondary">{{ primary_limit_object.input_tokens_per_minute|default:"-" }}</div>
-    <div class="stat-desc">{{ primary_title|default:"Limit" }}</div>
+    <div class="stat-desc">{{ primary_title|default:"Limit" }}{% if request.user.profile.is_admin and primary_admin_url %}<a href="{{ primary_admin_url }}" class="link link-secondary link-hover text-xs ml-1" title="Edit in Admin">(edit)</a>{% endif %}</div>
     {% if secondary_limit_object %}
       <div class="stat-value text-xs text-gray-500 pt-1">{{ secondary_limit_object.input_tokens_per_minute|default:"-" }}</div>
-      <div class="stat-desc text-xs">{{ secondary_title|default:"Fallback" }}</div>
+      <div class="stat-desc text-xs">{{ secondary_title|default:"Fallback" }}{% if request.user.profile.is_admin and secondary_admin_url %}<a href="{{ secondary_admin_url }}" class="link link-secondary link-hover text-xs ml-1" title="Edit in Admin">(edit)</a>{% endif %}</div>
     {% endif %}
   </div>
 
   <div class="stat">
     <div class="stat-title">Output Tokens/Minute</div>
     <div class="stat-value text-secondary">{{ primary_limit_object.output_tokens_per_minute|default:"-" }}</div>
-    <div class="stat-desc">{{ primary_title|default:"Limit" }}</div>
+    <div class="stat-desc">{{ primary_title|default:"Limit" }}{% if request.user.profile.is_admin and primary_admin_url %}<a href="{{ primary_admin_url }}" class="link link-secondary link-hover text-xs ml-1" title="Edit in Admin">(edit)</a>{% endif %}</div>
      {% if secondary_limit_object %}
       <div class="stat-value text-xs text-gray-500 pt-1">{{ secondary_limit_object.output_tokens_per_minute|default:"-" }}</div>
-      <div class="stat-desc text-xs">{{ secondary_title|default:"Fallback" }}</div>
+      <div class="stat-desc text-xs">{{ secondary_title|default:"Fallback" }}{% if request.user.profile.is_admin and secondary_admin_url %}<a href="{{ secondary_admin_url }}" class="link link-secondary link-hover text-xs ml-1" title="Edit in Admin">(edit)</a>{% endif %}</div>
     {% endif %}
   </div>
 

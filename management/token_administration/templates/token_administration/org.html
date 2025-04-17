@@ -13,7 +13,11 @@
     <div class="mb-8">
         <h2 class="text-xl font-semibold mb-2">Rate Limits</h2>
         <p class="mb-4 text-sm text-gray-600">These limits apply to users or teams unless overridden at a more specific level.</p>
-        {% include 'token_administration/_limits_display.html' with primary_limit_object=org_object primary_title="Organization" %}
+        {# Prepare admin URL if user is admin #}
+        {% if request.user.profile.is_admin %}
+            {% url 'admin:token_administration_org_change' org_object.id as admin_org_url %}
+        {% endif %}
+        {% include 'token_administration/_limits_display.html' with primary_limit_object=org_object primary_title="Organization" primary_admin_url=admin_org_url %}
     </div>
 
     <div class="mb-4">

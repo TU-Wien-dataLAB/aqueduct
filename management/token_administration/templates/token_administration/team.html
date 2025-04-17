@@ -18,7 +18,12 @@
             Showing Team-specific limits compared to the Organization defaults (fallback).
             A dash (-) indicates no limit set at that level.
         </p>
-        {% include 'token_administration/_limits_display.html' with primary_limit_object=team primary_title="Team" secondary_limit_object=org_object secondary_title="Org Default" %}
+        {# Prepare admin URLs if user is admin #}
+        {% if request.user.profile.is_admin %}
+            {% url 'admin:token_administration_team_change' team.id as admin_team_url %}
+            {% url 'admin:token_administration_org_change' org_object.id as admin_org_url %}
+        {% endif %}
+        {% include 'token_administration/_limits_display.html' with primary_limit_object=team primary_title="Team" secondary_limit_object=org_object secondary_title="Org Default" primary_admin_url=admin_team_url secondary_admin_url=admin_org_url %}
     </div>
 
     {# --- Service Accounts Section --- #}

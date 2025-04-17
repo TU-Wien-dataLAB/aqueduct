@@ -344,6 +344,22 @@ class Token(models.Model):
             self.key = self.generate_key()
         super().save(*args, **kwargs)
 
+    @property
+    def key_preview(self) -> str:
+        """Returns the first 8 characters of the key for display."""
+        if self.key:
+            return f"{self.key[:8]}..."
+        return "(No key generated yet)"
+
+    def regenerate_key(self) -> str:
+        """
+        Generates a new key for the token, saves the instance, and returns the new key.
+        """
+        new_key = self.generate_key()
+        self.key = new_key
+        self.save(update_fields=['key'])
+        return new_key
+
     def clean(self):
         """
         Validates that a user can only generate a configurable number of tokens

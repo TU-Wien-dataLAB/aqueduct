@@ -50,7 +50,7 @@
                                 Owner: {{ sa.token.user.email|default:"(No Owner)" }}
                             </span>
                             <span class="text-sm opacity-50 flex-shrink-0 ml-2">
-                                Token: {{ sa.token.key }}
+                                Token: <span class="font-mono text-xs">{{ sa.token.key_preview }}</span> {# Show preview #}
                             </span>
                         </div>
 
@@ -59,14 +59,27 @@
                             <div class="flex items-center space-x-2 flex-shrink-0">
                                 {# Transfer button: Link to the new transfer view #}
                                 <a href="{% url 'service_account_transfer' service_account_id=sa.id %}"
-                                   class="btn btn-sm btn-outline btn-warning"
+                                   class="btn btn-sm btn-outline btn-info" {# Changed color #}
                                    title="Transfer ownership of {{ sa.name }}">
                                     Transfer
                                 </a>
 
+                                {# Regenerate Button (Form for POST) #}
+                                {% if sa.token %}
+                                    <form action="{% url 'token_regenerate' sa.token.id %}" method="post" class="inline">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                                class="btn btn-sm btn-square btn-warning"
+                                                title="Regenerate Token for {{ sa.name }}"
+                                                onclick="return confirm('Are you sure you want to regenerate the token for service account {{ sa.name|escapejs }}? This will invalidate the current token immediately.');">
+                                            <img src="{% static 'icons/update.svg' %}" alt="Regenerate" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                        </button>
+                                    </form>
+                                {% endif %}
+
                                 {# Edit button: Link to the UpdateView, using an icon #}
                                 <a href="{% url 'service_account_edit' service_account_id=sa.id %}"
-                                   class="btn btn-info btn-sm btn-square"
+                                   class="btn btn-info btn-sm btn-square" {# Changed color to info #}
                                    title="Edit {{ sa.name }}">
                                     <img src="{% static 'icons/edit.svg' %}" alt="Edit" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                 </a>

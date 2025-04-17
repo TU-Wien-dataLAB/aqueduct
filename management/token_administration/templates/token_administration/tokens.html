@@ -22,12 +22,23 @@
                                 Created: {{ token.created_at|date:"Y-m-d" }}
                             </span>
                             <span class="text-sm opacity-50 flex-shrink-0 ml-2">
-                                Token: {{ token.key }}
+                                Token: <span class="font-mono text-xs">{{ token.key_preview }}</span>
                             </span>
                         </div>
-                        <a href="{% url 'token_delete' token.id %}" class="btn btn-error btn-sm btn-square mr-2" title="Delete {{ token.name }}">
-                            <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                        </a>
+                        <div class="flex items-center space-x-2 flex-shrink-0">
+                            <form action="{% url 'token_regenerate' token.id %}" method="post" class="inline">
+                                {% csrf_token %}
+                                <button type="submit"
+                                        class="btn btn-sm btn-square btn-warning"
+                                        title="Regenerate Token {{ token.name }}"
+                                        onclick="return confirm('Are you sure you want to regenerate the token {{ token.name|escapejs }}? This will invalidate the current token immediately.');">
+                                    <img src="{% static 'icons/update.svg' %}" alt="Regenerate" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                </button>
+                            </form>
+                            <a href="{% url 'token_delete' token.id %}" class="btn btn-error btn-sm btn-square" title="Delete {{ token.name }}">
+                                <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                            </a>
+                        </div>
                     </li>
                 {% endfor %}
             </ul>

@@ -16,7 +16,7 @@
                 {% for token in tokens %}
                     <li class="list-row flex justify-between items-center">
                         <div class="flex items-center flex-grow mr-4 overflow-hidden">
-                            <img src="{% static 'icons/key.svg' %}" alt="Token" class="w-5 mr-2 flex-shrink-0">
+                            <img src="{% static 'icons/key.svg' %}" alt="Token" class="w-5 mr-2 flex-shrink-0 [[data-theme=dark]_&]:invert">
                             <span class="font-medium truncate mr-2">{{ token.name }}</span>
                             <span class="text-sm opacity-50 flex-shrink-0">
                                 Created: {{ token.created_at|date:"Y-m-d" }}
@@ -26,7 +26,7 @@
                             </span>
                         </div>
                         <a href="{% url 'token_delete' token.id %}" class="btn btn-error btn-sm btn-square mr-2" title="Delete {{ token.name }}">
-                            <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4">
+                            <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                         </a>
                     </li>
                 {% endfor %}
@@ -43,7 +43,7 @@
                 {% for sa in service_accounts %}
                     <li class="list-row flex justify-between items-center">
                         <div class="flex items-center flex-grow mr-4 overflow-hidden">
-                            <img src="{% static 'icons/key.svg' %}" alt="Service Account" class="w-5 mr-2 flex-shrink-0">
+                            <img src="{% static 'icons/key.svg' %}" alt="Service Account" class="w-5 mr-2 flex-shrink-0 [[data-theme=dark]_&]:invert">
                             <span class="font-medium truncate mr-2">{{ sa.name }}</span>
                             <span class="text-sm opacity-50 flex-shrink-0">
                                 Team: {{ sa.team.name }}

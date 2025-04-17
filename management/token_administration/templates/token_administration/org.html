@@ -25,9 +25,9 @@
         {% if teams.all %}
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for team in teams.all %}
-                    <li class="flex justify-between items-center hover:bg-gray-100">
+                    <li class="flex justify-between items-center hover:bg-base-200">
                         <a href="/team/{{ team.id }}" class="list-row flex-grow">
-                            <img src="{% static 'icons/team.svg' %}" alt="(team)" class="w-5">
+                            <img src="{% static 'icons/team.svg' %}" alt="(team)" class="w-5 [[data-theme=dark]_&]:invert">
                             <span class="font-medium">{{ team.name }}</span>
                             <span class="text-sm opacity-50">
                             {{ team.member_profiles.count }} Members
@@ -35,7 +35,7 @@
                             {% if is_org_admin %}
                                 <a href="{% url 'team_delete' team.id %}" class="btn btn-error btn-sm btn-square mr-2"
                                    title="Delete {{ team.name }}">
-                                    <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4">
+                                    <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                 </a>
                             {% endif %}
                         </a>
@@ -48,29 +48,42 @@
     </div>
 
     <!-- Dialog for confirming deletion -->
-    <div id="deleteDialog" class="modal hidden">
+    <dialog id="deleteDialog" class="modal">
         <div class="modal-box">
             <h3 class="font-bold text-lg">Confirm Deletion</h3>
             <p class="py-4">Are you sure you want to delete this team?</p>
             <div class="modal-action">
-                <button class="btn" onclick="closeDeleteDialog()">Cancel</button>
-                <button class="btn btn-error" onclick="confirmDelete()">Delete</button>
+                <form method="dialog">
+                    <button class="btn">Cancel</button>
+                    <button class="btn btn-error" onclick="confirmDelete()">Delete</button>
+                </form>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <script>
       let teamIdToDelete = null;
+      const deleteDialog = document.getElementById('deleteDialog');
 
+      // Function to open dialog (now expects only ID)
       function openDeleteDialog(teamId) {
         teamIdToDelete = teamId;
-        document.getElementById('deleteDialog').classList.remove('hidden');
+        deleteDialog.showModal();
       }
 
-      function closeDeleteDialog() {
-        teamIdToDelete = null;
-        document.getElementById('deleteDialog').classList.add('hidden');
-      }
+      // Attach listeners after DOM content is loaded
+      document.addEventListener('DOMContentLoaded', () => {
+          const deleteButtons = document.querySelectorAll('.delete-team-btn');
+          deleteButtons.forEach(button => {
+              button.addEventListener('click', (event) => {
+                  event.preventDefault(); // Keep preventDefault here
+                  const teamId = button.dataset.teamId;
+                  if (teamId) {
+                      openDeleteDialog(teamId);
+                  }
+              });
+          });
+      });
 
       function confirmDelete() {
         if (teamIdToDelete) {
@@ -78,16 +91,27 @@
             method: 'POST',
             headers: {
               'X-CSRFToken': '{{ csrf_token }}',
+              'Content-Type': 'application/json' // Added content type header
             },
-          }).then(response => {
+          })
+          .then(response => {
             if (response.ok) {
-              location.reload();
+                // Optionally provide user feedback before reloading
+                location.reload();
             } else {
-              alert('Failed to delete the team.');
+                // Attempt to get error message from response if possible
+                response.text().then(text => {
+                    alert(`Failed to delete the team: ${text || 'Unknown error'}`);
+                }).catch(() => {
+                    alert('Failed to delete the team. Could not read error details.');
+                });
             }
+          })
+          .catch(error => {
+              console.error('Error deleting team:', error);
+              alert('An error occurred while trying to delete the team.');
           });
         }
-        closeDeleteDialog();
       }
     </script>
 {% endblock %}

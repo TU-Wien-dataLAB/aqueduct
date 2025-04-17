@@ -4,7 +4,13 @@
 {% block content %}
 
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-semibold mb-4">Team {{ team.name }}</h1>
+        <div>
+            <h1 class="mb-1">
+                <span class="text-xl font-normal text-base-content opacity-75">Team</span>
+                <span class="text-3xl font-semibold ml-1">{{ team.name }}</span>
+            </h1>
+            <p class="text-sm text-base-content opacity-80">{{ team.description | default:"(No description provided)" }}</p>
+        </div>
         {% if is_team_admin %}
             <div class="space-x-2">
                 <a href="{% url 'team_edit' id=team.id %}" class="btn btn-sm btn-outline">Edit Team</a>
@@ -16,7 +22,7 @@
     {# --- Combined Team/Org Limits --- #}
     <div class="mb-8">
         <h2 class="text-xl font-semibold mb-2">Rate Limits</h2>
-        <p class="mb-4 text-sm text-gray-600">
+        <p class="mb-4 text-sm text-base-content opacity-80">
             Showing Team-specific limits compared to the Organization defaults (fallback).
             A dash (-) indicates no limit set at that level.
         </p>
@@ -77,7 +83,7 @@
                 {% endfor %}
             </ul>
         {% else %}
-            <p class="text-gray-500 italic">No service accounts are assigned to this team.</p>
+            <p class="text-base-content opacity-80 italic">No service accounts are assigned to this team.</p>
         {% endif %}
     </div>
 
@@ -160,7 +166,7 @@
                 {% endfor %}
             </ul>
         {% else %}
-            <p class="text-gray-500 italic">No users are currently assigned to this team.</p>
+            <p class="text-base-content opacity-80 italic">No users are currently assigned to this team.</p>
         {% endif %}
     </div>
 
@@ -187,7 +193,7 @@
                     {% endfor %}
                 </ul>
             {% else %}
-                <p class="text-gray-500 italic">All users in your organization are already members of this team.</p>
+                <p class="text-base-content opacity-80 italic">All users in your organization are already members of this team.</p>
             {% endif %}
         </div>
     {% endif %} {# End is_team_admin check #}

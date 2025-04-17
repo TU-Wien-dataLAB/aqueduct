@@ -26,19 +26,27 @@
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for team in teams.all %}
                     <li class="flex justify-between items-center hover:bg-base-200">
-                        <a href="/team/{{ team.id }}" class="list-row flex-grow">
-                            <img src="{% static 'icons/team.svg' %}" alt="(team)" class="w-5 [[data-theme=dark]_&]:invert">
-                            <span class="font-medium">{{ team.name }}</span>
-                            <span class="text-sm opacity-50">
-                            {{ team.member_profiles.count }} Members
-                        </span>
-                            {% if is_org_admin %}
-                                <a href="{% url 'team_delete' team.id %}" class="btn btn-error btn-sm btn-square mr-2"
-                                   title="Delete {{ team.name }}">
-                                    <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                                </a>
-                            {% endif %}
+                        <a href="/team/{{ team.id }}" class="list-row flex-grow p-4">
+                            <div class="flex items-center mb-1">
+                                <img src="{% static 'icons/team.svg' %}" alt="(team)" class="w-5 mr-2 [[data-theme=dark]_&]:invert">
+                                <span class="font-medium">{{ team.name }}</span>
+                            </div>
+                            <div class="pl-7 text-sm opacity-75 mb-1">
+                                {{ team.description|default:"(No description)"|truncatechars:80 }}
+                            </div>
+                            <div class="pl-7 text-sm opacity-60">
+                                {{ team.member_profiles.count }} Member{{ team.member_profiles.count|pluralize }}
+                            </div>
                         </a>
+                        <div class="p-4 flex-shrink-0">
+                            {% if is_org_admin %}
+                                <button data-team-id="{{ team.id }}"
+                                    class="delete-team-btn btn btn-error btn-sm btn-square"
+                                    title="Delete {{ team.name }}">
+                                    <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                </button>
+                            {% endif %}
+                        </div>
                     </li>
                 {% endfor %}
             </ul>

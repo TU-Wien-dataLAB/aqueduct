@@ -446,6 +446,11 @@ class Endpoint(models.Model):
     name = models.CharField(max_length=255, unique=True)
     url = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
+    access_token = models.CharField(
+        max_length=128,
+        unique=False,
+        help_text="API access token required to access this endpoint"
+    )
 
     def __str__(self):
         model_count = self.models.count()

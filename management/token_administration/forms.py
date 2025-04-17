@@ -29,9 +29,20 @@ class ServiceAccountForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        name = cleaned_data.get('name')
 
         # Perform the team limit check here
         if self.team:
+            # Check for duplicate name within the team
+            if name:
+                query = ServiceAccount.objects.filter(team=self.team, name__iexact=name)
+                instance_pk = self.instance.pk
+                if instance_pk:
+                    query = query.exclude(pk=instance_pk)
+                if query.exists():
+                    self.add_error('name', f"A service account with the name '{name}' already exists in team '{self.team.name}'.")
+
+            # Check team limit
             limit = getattr(settings, 'MAX_SERVICE_ACCOUNTS_PER_TEAM', 10)
             query = ServiceAccount.objects.filter(team=self.team)
 
@@ -45,9 +56,10 @@ class ServiceAccountForm(forms.ModelForm):
             # Check only needs to prevent *adding* a new one if limit is reached
             # For updates, this check isn't strictly needed unless team can change
             if instance_pk is None and current_count >= limit:
+                # Attach the error to the form, not a specific field, as it's a general limit issue
                 raise ValidationError(
                     f"Team '{self.team.name}' has reached the maximum limit of {limit} service accounts.",
-                    code='limit_reached'  # Optional error code
+                    code='limit_reached'
                 )
 
         return cleaned_data

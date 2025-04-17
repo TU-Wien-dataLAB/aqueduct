@@ -51,6 +51,12 @@
                         {# --- Actions (Only for Admins) --- #}
                         {% if is_team_admin %}
                             <div class="flex items-center space-x-2 flex-shrink-0">
+                                {# Edit button: Link to the UpdateView #}
+                                <a href="{% url 'service_account_edit' sa.id %}"
+                                   class="btn btn-sm btn-outline btn-info"> {# Use btn-info or similar for edit #}
+                                    Edit
+                                </a>
+
                                 {# Transfer button: Form POSTs directly to the transfer view #}
                                 <form action="{% url 'service_account_transfer' sa.id %}" method="post" class="inline">
                                     {% csrf_token %}

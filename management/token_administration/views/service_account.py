@@ -1,6 +1,6 @@
 # token_administration/views/service_account.py
 
-from django.views.generic import CreateView, DeleteView
+from django.views.generic import CreateView, DeleteView, UpdateView
 from django.views import View
 from django.utils.decorators import method_decorator
 from django.urls import reverse
@@ -123,6 +123,49 @@ class ServiceAccountDeleteView(BaseServiceAccountView, DeleteView):
         messages.success(self.request,
                          f"Service Account '{object_name}' (from team '{team_name}') and its token deleted.")
         return response
+
+
+# --- Update View ---
+# Uses BaseServiceAccountView to fetch SA and handle permissions via TeamAdminRequiredMixin
+class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
+    """
+    Handles editing an existing Service Account (name, description).
+    Requires Team Admin privileges for the SA's team.
+    Uses ServiceAccountForm for validation.
+    """
+    # model = ServiceAccount # Inherited from BaseServiceAccountView
+    form_class = ServiceAccountForm
+    template_name = 'token_administration/edit/service_account.html'
+    pk_url_kwarg = 'service_account_id' # Tell base view how to find the SA ID
+    context_object_name = 'service_account' # Match template usage
+
+    # Permission checking is handled by TeamAdminRequiredMixin (via BaseServiceAccountView)
+
+    def get_form_kwargs(self):
+        """Pass the team instance to the form for validation (e.g., SA count limit)."""
+        kwargs = super().get_form_kwargs()
+        # self.team_object is guaranteed by the BaseServiceAccountView mixin
+        kwargs['team'] = self.team_object
+        return kwargs
+
+    def form_valid(self, form):
+        """Adds a success message upon successful update."""
+        response = super().form_valid(form)
+        messages.success(self.request, f"Service Account '{self.object.name}' updated successfully.")
+        return response
+
+    def get_success_url(self):
+        """Redirect back to the team detail page after successful edit."""
+        # self.team_object is set by the mixin via BaseServiceAccountView's get_team_object
+        return reverse('team', kwargs={'id': self.team_object.id})
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['view_title'] = f'Edit Service Account: {self.object.name}'
+        context['cancel_url'] = self.get_success_url() # Add cancel URL
+        # context['service_account'] is set automatically by UpdateView
+        context['team'] = self.team_object # Pass team for context if needed in template
+        return context
 
 
 # --- Transfer View ---

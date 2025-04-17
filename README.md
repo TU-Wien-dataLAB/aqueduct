@@ -9,19 +9,25 @@
 [![Project Status: Concept – Minimal or no implementation has been done yet, or the repository is only intended to be a limited example, demo, or proof-of-concept.](https://www.repostatus.org/badges/latest/concept.svg)](https://www.repostatus.org/#concept)
 
 
-**Aqueduct AI Gateway** is an open-source project designed to provide a centralized access point for 
-Large Language Models (LLMs), with features for authentication, usage tracking, and rate limiting.
+**Aqueduct AI Gateway** aims to provide a **simple yet fully-featured** AI gateway you can self-host with:
 
-The goal of this project is to provide a simple yet fully-featured open-source implementation of an AI gateway, 
-without the need to pay the [SSO tax](https://konghq.com/pricing), or the [org management tax](https://www.litellm.ai/enterprise), or the [observability tax](https://www.litellm.ai/enterprise), or [self-hosting tax](https://portkey.ai/pricing), or ...
+- no [SSO tax](https://konghq.com/pricing)  
+- no [observability tax](https://www.litellm.ai/enterprise)  
+- no [self-hosting tax](https://portkey.ai/pricing) 
+- no [org management tax](https://www.litellm.ai/enterprise)
+- etc.
 
-We aim to achieve this by
-- using a pass-through approach that does not require re-implementation of the whole APIs and new features, and
-- the use of Django for an efficient implementation with great maintainability!
+We aim to achieve this by:
+- Using a **pass-through approach** that avoids re-implementing the entire OpenAI-compatible APIs or every new feature, and  
+- Building on **Django** for a clean, efficient, and maintainable implementation.
 
-If you do not require user self-service, check out [Envoy AI Gateway](https://aigateway.envoyproxy.io)!
+If you don’t need user self-service, take a look at [Envoy AI Gateway](https://aigateway.envoyproxy.io) instead!
 
-*This project is still in active development!*
+> [!NOTE]
+> This project is still in active development! Contributions welcome!
+
+
+![AI Gateway Architecture](./docs/assets/screenshot.png "AI Gateway Architecture")
 
 ## 🛠️ Technical Overview
 

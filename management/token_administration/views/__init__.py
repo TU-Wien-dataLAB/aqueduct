@@ -4,7 +4,7 @@ from .team import TeamCreateView, TeamDeleteView, TeamDetailView, TeamAdminManag
 from .service_account import (
     ServiceAccountCreateView,
     ServiceAccountDeleteView,
-    ServiceAccountTransferView,
+    ServiceAccountTransferOwnershipView,
     ServiceAccountUpdateView
 )
 from .tokens import UserTokensView, TokenCreateView, TokenDeleteView

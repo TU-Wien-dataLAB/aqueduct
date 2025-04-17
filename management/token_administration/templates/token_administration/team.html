@@ -57,25 +57,22 @@
                         {# --- Actions (Only for Admins) --- #}
                         {% if is_team_admin %}
                             <div class="flex items-center space-x-2 flex-shrink-0">
-                                {# Transfer button: Form POSTs directly to the transfer view #}
-                                <form action="{% url 'service_account_transfer' sa.id %}" method="post" class="inline">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-outline btn-warning"
-                                            onclick="return confirm('Transfer ownership of {{ sa.name|escapejs }} to yourself?');"
-                                            title="Transfer {{ sa.name }} to yourself">
-                                        Transfer to Me
-                                    </button>
-                                </form>
+                                {# Transfer button: Link to the new transfer view #}
+                                <a href="{% url 'service_account_transfer' service_account_id=sa.id %}"
+                                   class="btn btn-sm btn-outline btn-warning"
+                                   title="Transfer ownership of {{ sa.name }}">
+                                    Transfer
+                                </a>
 
                                 {# Edit button: Link to the UpdateView, using an icon #}
-                                <a href="{% url 'service_account_edit' sa.id %}"
+                                <a href="{% url 'service_account_edit' service_account_id=sa.id %}"
                                    class="btn btn-info btn-sm btn-square"
                                    title="Edit {{ sa.name }}">
                                     <img src="{% static 'icons/edit.svg' %}" alt="Edit" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                 </a>
 
                                 {# Delete button: Link to the DeleteView confirmation page, using an icon #}
-                                <a href="{% url 'service_account_delete' sa.id %}"
+                                <a href="{% url 'service_account_delete' service_account_id=sa.id %}"
                                    class="btn btn-error btn-sm btn-square"
                                    title="Delete {{ sa.name }}">
                                     <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">

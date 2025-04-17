@@ -6,8 +6,10 @@
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-semibold mb-4">Team {{ team.name }}</h1>
         {% if is_team_admin %}
-            <a href="{% url 'service_account_create' id=team.id %}" class="btn btn-sm btn-primary">Add Service
-                Account</a>
+            <div class="space-x-2">
+                <a href="{% url 'team_edit' id=team.id %}" class="btn btn-sm btn-outline">Edit Team</a>
+                <a href="{% url 'service_account_create' id=team.id %}" class="btn btn-sm btn-primary">Add Service Account</a>
+            </div>
         {% endif %}
     </div>
 

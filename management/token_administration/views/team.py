@@ -1,6 +1,6 @@
 # token_administration/views/team.py
 from django.http import Http404
-from django.views.generic import CreateView, DeleteView, DetailView
+from django.views.generic import CreateView, DeleteView, DetailView, UpdateView
 from django.urls import reverse_lazy, reverse
 from django.contrib import messages
 from django.db import transaction
@@ -44,6 +44,60 @@ class TeamCreateView(OrgAdminRequiredMixin, BaseAqueductView, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['view_title'] = 'Create New Team'
+        return context
+
+
+class TeamUpdateView(BaseTeamView, UpdateView):
+    """
+    Handles editing an existing Team (name, description).
+    Requires Team Admin privileges (checked in dispatch).
+    Uses TeamCreateForm for validation.
+    """
+    model = Team
+    form_class = TeamCreateForm
+    template_name = 'token_administration/edit/team.html'
+    pk_url_kwarg = 'id'
+    context_object_name = 'team' # Match DetailView/template usage
+
+    def dispatch(self, request, *args, **kwargs):
+        # Fetch team first using BaseTeamView's mechanism
+        # self.team will be set if successful, or Http404 raised
+        try:
+            _ = self.team # Trigger fetch
+        except Http404:
+            messages.error(request, "The requested team was not found.")
+            return redirect(reverse_lazy('org')) # Redirect if team doesn't exist
+
+        # Permission Check: User must be admin of this specific team
+        if not self.profile.is_team_admin(self.team):
+            messages.error(request, f"You do not have permission to edit the team '{self.team.name}'.")
+            return redirect(reverse('team', kwargs={'id': self.team.id})) # Redirect to team detail
+
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        """Pass the team's organization to the form for validation."""
+        kwargs = super().get_form_kwargs()
+        # self.team is guaranteed by dispatch
+        kwargs['org'] = self.team.org
+        return kwargs
+
+    def form_valid(self, form):
+        """Adds a success message upon successful update."""
+        response = super().form_valid(form)
+        messages.success(self.request, f"Team '{self.object.name}' updated successfully.")
+        return response
+
+    def get_success_url(self):
+        """Redirect back to the team detail page after successful edit."""
+        # self.object is the updated team instance
+        return reverse('team', kwargs={'id': self.object.id})
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['view_title'] = f'Edit Team: {self.object.name}'
+        context['cancel_url'] = self.get_success_url() # Add cancel URL
+        # context['team'] is set automatically by UpdateView
         return context
 
 

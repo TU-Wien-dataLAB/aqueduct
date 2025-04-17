@@ -8,12 +8,14 @@ from django.conf import settings
 class ServiceAccountForm(forms.ModelForm):
     class Meta:
         model = ServiceAccount
-        fields = ['name']
+        fields = ['name', 'description']
         widgets = {
             'name': forms.TextInput(attrs={'placeholder': 'Enter service account name'}),
+            'description': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Optional description...'}),
         }
         labels = {
             'name': 'Service Account Name',
+            'description': 'Description',
         }
 
     def __init__(self, *args, **kwargs):
@@ -54,7 +56,15 @@ class ServiceAccountForm(forms.ModelForm):
 class TeamCreateForm(forms.ModelForm):
     class Meta:
         model = Team
-        fields = ['name']  # We only need the user to input the name
+        fields = ['name', 'description']
+        widgets = {
+            'name': forms.TextInput(attrs={'placeholder': 'Enter team name'}),
+            'description': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Optional description...'}),
+        }
+        labels = {
+            'name': 'Team Name',
+            'description': 'Description',
+        }
 
     def __init__(self, *args, **kwargs):
         # Pop the organization kwarg before initializing the parent ModelForm

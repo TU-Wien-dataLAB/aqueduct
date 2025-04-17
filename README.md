@@ -9,7 +9,17 @@
 [![Project Status: Concept – Minimal or no implementation has been done yet, or the repository is only intended to be a limited example, demo, or proof-of-concept.](https://www.repostatus.org/badges/latest/concept.svg)](https://www.repostatus.org/#concept)
 
 
-**Aqueduct AI Gateway** is an open-source project designed to provide a centralized access point for Large Language Models (LLMs), with features for authentication, usage tracking, and rate limiting.
+**Aqueduct AI Gateway** is an open-source project designed to provide a centralized access point for 
+Large Language Models (LLMs), with features for authentication, usage tracking, and rate limiting.
+
+The goal of this project is to provide a simple yet fully-featured open-source implementation of an AI gateway, 
+without the need to pay the [SSO tax](https://konghq.com/pricing), or the [org management tax](https://www.litellm.ai/enterprise), or the [observability tax](https://www.litellm.ai/enterprise), or [self-hosting tax](https://portkey.ai/pricing), or ...
+
+We aim to achieve this by
+- using a pass-through approach that does not require re-implementation of the whole APIs and new features, and
+- the use of Django for an efficient implementation with great maintainability!
+
+If you do not require user self-service, check out [Envoy AI Gateway](https://aigateway.envoyproxy.io)!
 
 *This project is still in active development!*
 
@@ -19,24 +29,24 @@ This project aims to use Django for user management/API with minimal additional 
 
 1. **Data Model and Administrative Interface:**
     * Implementation of "Teams" and "Organizations" within the data model.
-    * Development of an administrative UI using Django for user and team management.
+    * Development of an administrative UI using Django for user, team and token management.
     * Focus on authentication and basic management functionalities.
 
 2. **Gateway Relay and Usage Tracking:**
     * Development of a gateway server to relay requests to LLM providers.
-    * Implementation of request parsing for usage tracking.
-    * Database schema optimization for write-heavy usage logging.
-    * Implementation of request buffering for usage logging.
-
-3. **Multi-Provider Support and Advanced Features:**
-    * Extension of the data model to include "Models" representing LLM endpoints.
-    * Implementation of a `/models` endpoint to list available models.
+    * A `/models` endpoint to list available models.
     * Request routing to specific provider endpoints based on model selection.
-    * Implementation of granular access control based on models and usage limits.
-    * Implementation of a `/metrics` endpoint for monitoring.
-    * Implementation of model cooldown and retry logic.
-    * Implementation of MCP tool calling server endpoints e.g. from the [MCP Server list](https://github.com/modelcontextprotocol/servers?tab=readme-ov-file).
-    * Implementation of daily usage quotas/limits for models.
+    * Request parsing for usage tracking.
+    * Database schema optimization for write-heavy usage logging.
+    * Request buffering for usage logging.
+
+3. **Advanced Features:**
+    * Granular access control based on models and usage limits.
+    * A `/metrics` endpoint for monitoring.
+    * Dashboard to track usage of orgs, teams and users.
+    * Model cooldown and retry logic.
+    * Management of MCP tool calling server endpoints e.g. from the [MCP Server list](https://github.com/modelcontextprotocol/servers?tab=readme-ov-file).
+    * Daily usage quotas/limits for models.
     * Simple chat interface to try models.
 
 4. **(Optional) API Abstraction:**
@@ -51,20 +61,18 @@ The gateway server processes requests, interacts with the Django API for token v
 
 **Role-Based Access Control (RBAC):**
 
-| Role           | Functionality                                                               | Page Access                                                   |
-| -------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| User           | API key generation, team key viewing.                                       | Token Page                                                    |
-| Team-Admin     | Team API key management, team usage viewing.                                  | Token + Usage Page                                            |
-| Org-Admin      | Team creation, user management within the organization.                               | Token + Usage + Team Management Page                        |
-| (Super)Admin   | Organization management, global usage limit modification. | Token + Usage + Team Management + Admin Page |
+| Role           | Functionality                                                     |
+| -------------- |-------------------------------------------------------------------|
+| User           | API key generation, team key viewing.                             |
+| Team-Admin     | Team API key management, team usage viewing.                      |
+| Org-Admin      | Team creation, user management within the organization.           |
+| (Super)Admin   | Organization management, global usage limit modification.         |
 
 **Organization and User Management:**
 
 * User assignment to organizations based on SSO group memberships.
 * Specific admin group used to assign Admins.
-* Org-Admin management by Admin in UI (boolean flag).
-* Default team with configurable usage limits.
-* Automatic role assignment upon user login.
+* Org-Admin management by Admin in UI (group).
 
 **Usage Reporting and Metrics:**
 

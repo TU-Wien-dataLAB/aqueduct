@@ -1,5 +1,6 @@
 # models.py
 import dataclasses
+import os
 import secrets
 import hashlib
 from typing import Literal, Optional
@@ -164,7 +165,7 @@ class UserProfile(LimitMixin, models.Model):
         # Check teams only if the profile instance exists in the DB (has a PK).
         # This prevents issues when accessing M2M relations before the instance is saved.
         if self.pk:
-            for team in self.teams.all(): # Query M2M relationship
+            for team in self.teams.all():  # Query M2M relationship
                 if team.org != self.org:
                     raise ValidationError(
                         f"Team '{team.name}' (Org: {team.org.name}) does not belong to the profile's organization '{self.org.name}'."
@@ -175,7 +176,7 @@ class UserProfile(LimitMixin, models.Model):
         """Checks if the user has the global 'admin' group."""
         try:
             return self.group == 'admin'
-        except ValidationError: # Raised if user has no valid group assigned
+        except ValidationError:  # Raised if user has no valid group assigned
             return False
 
     def is_org_admin(self, org_to_check: Org) -> bool:
@@ -323,13 +324,13 @@ class Token(models.Model):
     )
     # Store hash and preview, not the original key
     key_hash = models.CharField(
-        max_length=64, # SHA-256 hash length
+        max_length=64,  # SHA-256 hash length
         unique=True,
         editable=False,
         help_text="SHA-256 hash of the token key."
     )
     key_preview = models.CharField(
-        max_length=12, # e.g., "T0K3..."
+        max_length=12,  # e.g., "T0K3..."
         editable=False,
         help_text="First few characters of the original token key for display."
     )
@@ -346,7 +347,7 @@ class Token(models.Model):
             return f"'{self.name}'"
 
     @staticmethod
-    def _generate_secret_key(prefix="sk-") -> str: # Renamed for clarity
+    def _generate_secret_key(prefix="sk-") -> str:  # Renamed for clarity
         """Generates a unique secret token key."""
         # Consider prefixing keys, e.g., "aqt_" for Aqueduct Token
         return prefix + secrets.token_urlsafe(nbytes=32)
@@ -380,8 +381,9 @@ class Token(models.Model):
         Ensures key_hash and key_preview are set before the first save.
         """
         if not self.pk and (not self.key_hash or not self.key_preview):
-             # This check ensures _set_new_key() was called before the first save.
-             raise ValueError("Token cannot be saved without key_hash and key_preview. Call _set_new_key() before saving.")
+            # This check ensures _set_new_key() was called before the first save.
+            raise ValueError(
+                "Token cannot be saved without key_hash and key_preview. Call _set_new_key() before saving.")
         super().save(*args, **kwargs)
 
     # Removed the key_preview @property as it's now a direct field
@@ -391,9 +393,9 @@ class Token(models.Model):
         Generates a new secret key, updates the hash and preview, saves the instance,
         and returns the *new secret key*.
         """
-        new_secret_key = self._set_new_key() # Use the helper method
-        self.save(update_fields=['key_hash', 'key_preview']) # Save the changes
-        return new_secret_key # Return the original new key
+        new_secret_key = self._set_new_key()  # Use the helper method
+        self.save(update_fields=['key_hash', 'key_preview'])  # Save the changes
+        return new_secret_key  # Return the original new key
 
     def clean(self):
         """
@@ -506,12 +508,21 @@ class Endpoint(models.Model):
     access_token = models.CharField(
         max_length=128,
         unique=False,
-        help_text="API access token required to access this endpoint"
+        help_text="API access token required to access this endpoint. Can be the literal token, prefixed with 'os.environ/' to read from environment variables, or prefixed with 'settings/' to read from Django settings (e.g., 'settings/MY_ENDPOINT_TOKEN')."
     )
 
     def __str__(self):
         model_count = self.models.count()
         return f"{self.name} ({model_count} model{'s' if model_count != 1 else ''})"
+
+    def get_access_token(self) -> Optional[str]:
+        if self.access_token.startswith("os.environ/"):
+            return os.environ.get(self.access_token.lstrip("os.environ/"))
+        elif self.access_token.startswith("settings/"):
+            setting_key = self.access_token.lstrip("settings/")
+            return getattr(settings, setting_key, None)  # Return None if setting not found
+        else:
+            return self.access_token
 
 
 class Model(models.Model):

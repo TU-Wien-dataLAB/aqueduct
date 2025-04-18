@@ -54,7 +54,7 @@ class TokenCreateView(BaseAqueductView, CreateView):
     def form_valid(self, form):
         response = super().form_valid(form)
         messages.success(self.request, f"Token '{self.object.name}' created successfully.")
-        messages.info(self.request, f"Key: {self.object.key}", extra_tags='token-key-info')
+        messages.info(self.request, f"{self.object.key}", extra_tags='token-regenerated-key')
         return response
 
     def get_context_data(self, **kwargs):

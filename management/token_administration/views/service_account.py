@@ -67,8 +67,8 @@ class ServiceAccountCreateView(BaseTeamView, TeamAdminRequiredMixin, CreateView)
             )
             messages.success(self.request,
                              f"Service Account '{self.object.name}' created for team '{self.team.name}'.")
-            messages.info(self.request, f"Associated Token '{new_token.name}' created. Key: {new_token.key}",
-                          extra_tags='token-key-info')
+            messages.info(self.request, f"{new_token.key}",
+                          extra_tags='token-regenerated-key')
 
         except Exception as e:
             # Log error e

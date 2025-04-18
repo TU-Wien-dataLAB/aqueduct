@@ -133,8 +133,8 @@ class TokenRegenerateView(BaseAqueductView, View):
                 )
                 messages.info(
                     request,
-                    f"New key: {new_key}",
-                    extra_tags='token-key-info' # Use same tag as creation for potential styling
+                    f"{new_key}", # Only include the key itself in the message
+                    extra_tags='token-regenerated-key' # Use a specific tag
                 )
             # Else: error message already added during permission check
 

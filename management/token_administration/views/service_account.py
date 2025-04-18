@@ -59,15 +59,24 @@ class ServiceAccountCreateView(BaseTeamView, TeamAdminRequiredMixin, CreateView)
 
         try:
             user = self.request.user
-            token_name = f"Initial token for {self.object.name}"  # Changed name slightly
-            new_token = Token.objects.create(
+            token_name = f"Initial token for {self.object.name}"
+
+            # Create a new Token instance
+            new_token = Token(
                 name=token_name,
                 user=user,
                 service_account=self.object
             )
+            # Generate and set key data on the new token instance
+            secret_key = new_token._set_new_key()
+
+            # Save the token (hash and preview are now set)
+            new_token.save()
+
             messages.success(self.request,
                              f"Service Account '{self.object.name}' created for team '{self.team.name}'.")
-            messages.info(self.request, f"{new_token.key}",
+            # Display the original secret key
+            messages.info(self.request, f"{secret_key}",
                           extra_tags='token-regenerated-key')
 
         except Exception as e:

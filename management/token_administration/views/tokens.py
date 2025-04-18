@@ -47,15 +47,30 @@ class TokenCreateView(BaseAqueductView, CreateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
-        form.instance.user = self.request.user  # Set user before validation
+        # Don't set user here, it's done in form_valid
+        # form.instance.user = self.request.user
         return form
 
     @transaction.atomic
     def form_valid(self, form):
-        response = super().form_valid(form)
+        # Get the instance without saving to DB yet
+        self.object = form.save(commit=False)
+
+        # Assign the user directly to the instance
+        self.object.user = self.request.user
+
+        # Call the instance method to generate and set key data
+        secret_key = self.object._set_new_key() # Call method on the instance
+
+        # Now save the fully prepared object to the database
+        # This will trigger clean() with the user assigned
+        self.object.save()
+
+        # Use the returned secret_key in the success message
         messages.success(self.request, f"Token '{self.object.name}' created successfully.")
-        messages.info(self.request, f"{self.object.key}", extra_tags='token-regenerated-key')
-        return response
+        messages.info(self.request, f"{secret_key}", extra_tags='token-regenerated-key')
+
+        return redirect(self.get_success_url())
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

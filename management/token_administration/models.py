@@ -1,6 +1,7 @@
 # models.py
 import dataclasses
 import secrets
+import hashlib
 from typing import Literal, Optional
 
 from django.db import models
@@ -320,7 +321,18 @@ class Token(models.Model):
         null=True,
         blank=True
     )
-    key = models.CharField(max_length=128, unique=True, editable=False)  # Example field
+    # Store hash and preview, not the original key
+    key_hash = models.CharField(
+        max_length=64, # SHA-256 hash length
+        unique=True,
+        editable=False,
+        help_text="SHA-256 hash of the token key."
+    )
+    key_preview = models.CharField(
+        max_length=12, # e.g., "T0K3..."
+        editable=False,
+        help_text="First few characters of the original token key for display."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)  # Optional expiry
 
@@ -334,51 +346,62 @@ class Token(models.Model):
             return f"'{self.name}'"
 
     @staticmethod
-    def generate_key() -> str:
-        """Generates a unique token key."""
-        return secrets.token_urlsafe(nbytes=32)
+    def _generate_secret_key(prefix="sk-") -> str: # Renamed for clarity
+        """Generates a unique secret token key."""
+        # Consider prefixing keys, e.g., "aqt_" for Aqueduct Token
+        return prefix + secrets.token_urlsafe(nbytes=32)
+
+    @staticmethod
+    def _hash_key(key: str) -> str:
+        """Hashes the key using SHA-256."""
+        return hashlib.sha256(key.encode()).hexdigest()
+
+    @staticmethod
+    def _generate_preview(key: str, start: int = 3, end: int = 4) -> str:
+        """Generates a preview string for the token key."""
+        if not key:
+            return ""
+        return f"{key[:start]}...{key[-end:]}"
+
+    # Removed static generate_key - logic moved to _generate_secret_key
+
+    def _set_new_key(self) -> str:
+        """
+        Generates a new secret key, sets the instance's hash and preview fields.
+        Returns the generated secret key. Does NOT save the instance.
+        """
+        secret_key = self._generate_secret_key()
+        self.key_hash = self._hash_key(secret_key)
+        self.key_preview = self._generate_preview(secret_key)
+        return secret_key
 
     def save(self, *args, **kwargs):
-        """Generates the 'key' on save if it doesn't exist."""
-        if not self.key:
-            self.key = self.generate_key()
+        """
+        Ensures key_hash and key_preview are set before the first save.
+        """
+        if not self.pk and (not self.key_hash or not self.key_preview):
+             # This check ensures _set_new_key() was called before the first save.
+             raise ValueError("Token cannot be saved without key_hash and key_preview. Call _set_new_key() before saving.")
         super().save(*args, **kwargs)
 
-    @property
-    def key_preview(self) -> str:
-        """Returns the first 8 characters of the key for display."""
-        if self.key:
-            return f"{self.key[:8]}..."
-        return "(No key generated yet)"
+    # Removed the key_preview @property as it's now a direct field
 
     def regenerate_key(self) -> str:
         """
-        Generates a new key for the token, saves the instance, and returns the new key.
+        Generates a new secret key, updates the hash and preview, saves the instance,
+        and returns the *new secret key*.
         """
-        new_key = self.generate_key()
-        self.key = new_key
-        self.save(update_fields=['key'])
-        return new_key
+        new_secret_key = self._set_new_key() # Use the helper method
+        self.save(update_fields=['key_hash', 'key_preview']) # Save the changes
+        return new_secret_key # Return the original new key
 
     def clean(self):
         """
-        Validates that a user can only generate a configurable number of tokens
-        per user (tokens not associated with a service account).
+        Model-level validation. The user-specific token limit is checked in the form.
         """
-        if not self.service_account:
-            max_tokens = getattr(settings, 'MAX_USER_TOKENS', 3)
-            token_count = Token.objects.filter(user=self.user, service_account__isnull=True).count()
-            if self.pk is None:  # Check if the token is being created
-                if token_count >= max_tokens:
-                    raise ValidationError(
-                        f"Users can only have a maximum of {max_tokens} tokens not associated with a service account."
-                    )
-            else:  # If the token is being updated, exclude the current token from the count
-                existing_tokens = Token.objects.filter(user=self.user, service_account__isnull=True).exclude(pk=self.pk)
-                if existing_tokens.count() >= max_tokens:
-                    raise ValidationError(
-                        f"Users can only have a maximum of {max_tokens} tokens not associated with a service account."
-                    )
+        # Removed the user token limit check here, as it's handled in TokenCreateForm.clean()
+        # Ensure hash and preview are present before final validation/save if needed
+        # (Handled by save() method)
         super().clean()
 
     def get_limit(self) -> 'LimitSet':
@@ -408,6 +431,24 @@ class Token(models.Model):
             profile = token_instance.user.profile  # UserProfile holds specific user limits
             org = profile.org  # Profile's Org holds fallback limits
             return LimitSet.from_objects(profile, org)
+
+    @classmethod
+    def find_by_key(cls, key_value: str) -> Optional['Token']:
+        """
+        Finds a token by its original (unhashed) key value.
+        Returns the Token instance or None if not found.
+        """
+        if not key_value:
+            return None
+        try:
+            hashed_key = cls._hash_key(key_value)
+            # Use select_related for efficiency if you often need related objects after lookup
+            return cls.objects.select_related(
+                'user__profile__org',
+                'service_account__team__org'
+            ).get(key_hash=hashed_key)
+        except cls.DoesNotExist:
+            return None
 
 
 class Request(models.Model):

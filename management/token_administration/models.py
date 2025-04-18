@@ -9,6 +9,7 @@ from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.contrib.auth.models import Group
+from django.utils import timezone
 
 
 @dataclasses.dataclass(frozen=True)  # frozen=True makes instances immutable
@@ -467,7 +468,7 @@ class Request(models.Model):
         on_delete=models.CASCADE,
         related_name='requests'
     )
-    timestamp = models.DateTimeField(auto_now_add=True)
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
 
     # Additional fields (endpoint_url removed)
     method = models.CharField(
@@ -495,6 +496,14 @@ class Request(models.Model):
         blank=True,
         help_text="IP address from which the request originated"
     )
+
+    class Meta:
+        # Crucial for the rate limit query!
+        indexes = [
+            models.Index(fields=['token', 'timestamp']),
+            models.Index(fields=['model', 'timestamp']),
+        ]
+        ordering = ['-timestamp']  # Optional: default ordering
 
     def __str__(self):
         return f"{self.id}"

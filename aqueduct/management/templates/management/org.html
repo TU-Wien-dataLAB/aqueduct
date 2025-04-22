@@ -1,0 +1,128 @@
+{% extends 'management/base.html' %}
+{% load static %}
+
+{% block content %}
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="mb-1">
+            <span class="text-xl font-normal text-base-content opacity-75">Org</span>
+            <span class="text-3xl font-semibold ml-1">{{ user.profile.org.name }}</span>
+        </h1>
+        {# check if user can create teams #}
+        {% if is_org_admin %}
+            <a href="{% url 'team_create' %}" class="btn btn-primary btn-sm">Create New Team</a>
+        {% endif %}
+    </div>
+
+    <div class="mb-8">
+        <h2 class="text-xl font-semibold mb-2">Rate Limits</h2>
+        <p class="mb-4 text-sm text-gray-600">These limits apply to users or teams unless overridden at a more specific level.</p>
+        {# Prepare admin URL if user is admin #}
+        {% if request.user.profile.is_admin %}
+            {% url 'admin:management_org_change' org_object.id as admin_org_url %}
+        {% endif %}
+        {% include 'management/_limits_display.html' with primary_limit_object=org_object primary_title="Organization" primary_admin_url=admin_org_url %}
+    </div>
+
+    <div class="mb-4">
+        <h2 class="text-xl font-semibold mb-2">Teams</h2>
+        {% if teams.all %}
+            <ul class="list bg-base-100 rounded-box shadow-md">
+                {% for team in teams.all %}
+                    <li class="flex justify-between items-center hover:bg-base-200">
+                        <a href="/team/{{ team.id }}" class="list-row flex-grow p-4">
+                            <div class="flex items-center mb-1">
+                                <img src="{% static 'icons/team.svg' %}" alt="(team)" class="w-5 mr-2 [[data-theme=dark]_&]:invert">
+                                <span class="font-medium">{{ team.name }}</span>
+                            </div>
+                            <div class="pl-7 text-sm opacity-75 mb-1">
+                                {{ team.description|default:"(No description)"|truncatechars:80 }}
+                            </div>
+                            <div class="pl-7 text-sm opacity-60">
+                                {{ team.member_profiles.count }} Member{{ team.member_profiles.count|pluralize }}
+                            </div>
+                        </a>
+                        <div class="p-4 flex-shrink-0">
+                            {% if is_org_admin %}
+                                <button data-team-id="{{ team.id }}"
+                                    class="delete-team-btn btn btn-error btn-sm btn-square"
+                                    title="Delete {{ team.name }}">
+                                    <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                </button>
+                            {% endif %}
+                        </div>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-gray-500">No teams available.</p>
+        {% endif %}
+    </div>
+
+    <!-- Dialog for confirming deletion -->
+    <dialog id="deleteDialog" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg">Confirm Deletion</h3>
+            <p class="py-4">Are you sure you want to delete this team?</p>
+            <div class="modal-action">
+                <form method="dialog">
+                    <button class="btn">Cancel</button>
+                    <button class="btn btn-error" onclick="confirmDelete()">Delete</button>
+                </form>
+            </div>
+        </div>
+    </dialog>
+
+    <script>
+      let teamIdToDelete = null;
+      const deleteDialog = document.getElementById('deleteDialog');
+
+      // Function to open dialog (now expects only ID)
+      function openDeleteDialog(teamId) {
+        teamIdToDelete = teamId;
+        deleteDialog.showModal();
+      }
+
+      // Attach listeners after DOM content is loaded
+      document.addEventListener('DOMContentLoaded', () => {
+          const deleteButtons = document.querySelectorAll('.delete-team-btn');
+          deleteButtons.forEach(button => {
+              button.addEventListener('click', (event) => {
+                  event.preventDefault(); // Keep preventDefault here
+                  const teamId = button.dataset.teamId;
+                  if (teamId) {
+                      openDeleteDialog(teamId);
+                  }
+              });
+          });
+      });
+
+      function confirmDelete() {
+        if (teamIdToDelete) {
+          fetch(`/team/${teamIdToDelete}/delete/`, {
+            method: 'POST',
+            headers: {
+              'X-CSRFToken': '{{ csrf_token }}',
+              'Content-Type': 'application/json' // Added content type header
+            },
+          })
+          .then(response => {
+            if (response.ok) {
+                // Optionally provide user feedback before reloading
+                location.reload();
+            } else {
+                // Attempt to get error message from response if possible
+                response.text().then(text => {
+                    alert(`Failed to delete the team: ${text || 'Unknown error'}`);
+                }).catch(() => {
+                    alert('Failed to delete the team. Could not read error details.');
+                });
+            }
+          })
+          .catch(error => {
+              console.error('Error deleting team:', error);
+              alert('An error occurred while trying to delete the team.');
+          });
+        }
+      }
+    </script>
+{% endblock %}

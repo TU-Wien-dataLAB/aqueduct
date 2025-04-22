@@ -1,0 +1,104 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aqueduct AI Gateway</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css"/>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="h-screen bg-base-200">
+{% include 'management/header.html' %}
+
+<main class="container mx-auto p-4">
+    {% block content %}{% endblock %}
+
+    <div class="fixed bottom-4 right-4 w-auto max-w-xl z-50">
+        {% if messages %}
+            <div class="space-y-2">
+                {% for message in messages %}
+                    <div role="alert"
+                         class="alert
+            {% if message.tags == 'success' %}alert-success
+            {% elif message.tags == 'error' %}alert-error
+            {% else %}alert-info
+            {% endif %}
+            shadow-lg">
+
+                        {# Icon Section: Use appropriate SVG or img tag. Added shrink-0 and explicit size #}
+                        {% if message.tags == 'success' %}
+                            <img src="{% static 'icons/check.svg' %}" alt="Success Icon" class="h-6 w-6 shrink-0">
+
+                        {% elif message.tags == 'error' %}
+                            <img src="{% static 'icons/error.svg' %}" alt="Error Icon" class="h-6 w-6 shrink-0">
+
+                        {% else %} {# Info or default icon #}
+                            <img src="{% static 'icons/info.svg' %}" alt="Info Icon" class="h-6 w-6 shrink-0">
+                        {% endif %}
+
+                        {# Text and Button Section - Aligning with DaisyUI structure #}
+                        {% if message.extra_tags == 'token-regenerated-key' %}
+                            <span class="font-mono text-sm">New Key: <span class="font-bold">{{ message }}</span></span> {# Removed flex-grow and mr-2 #}
+                            <div> {# Added button container div #}
+                                <button class="btn btn-sm btn-soft flex items-center gap-1" data-copy-key="{{ message }}">
+                                    <img src="{% static 'icons/copy.svg' %}" alt="Copy Icon" class="h-4 w-4 inline-block copy-icon [[data-theme=dark]_&]:invert"> {# Changed to group-hover:invert #}
+                                    <span class="copy-text">Copy</span>
+                                </button>
+                            </div>
+                        {% else %}
+                            <span>{{ message }}</span>
+                        {% endif %}
+
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+
+</main>
+
+<script>
+document.addEventListener('DOMContentLoaded', (event) => {
+    const copyButtons = document.querySelectorAll('button[data-copy-key]');
+
+    copyButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const keyToCopy = button.getAttribute('data-copy-key');
+            const copyTextElement = button.querySelector('.copy-text');
+            const copyIconElement = button.querySelector('.copy-icon');
+            const originalButtonText = copyTextElement.textContent;
+            const originalIconSrc = copyIconElement ? copyIconElement.src : null; // Store original icon src
+            const successIconSrc = "{% static 'icons/check.svg' %}"; // Path to your check icon
+
+            navigator.clipboard.writeText(keyToCopy).then(() => {
+                // Success feedback
+                copyTextElement.textContent = 'Copied!';
+                if (copyIconElement) {
+                    copyIconElement.src = successIconSrc; // Change icon to checkmark
+                }
+                button.disabled = true; // Briefly disable button
+
+                // Revert after 2 seconds
+                setTimeout(() => {
+                    copyTextElement.textContent = originalButtonText;
+                    if (copyIconElement && originalIconSrc) {
+                        copyIconElement.src = originalIconSrc; // Revert icon
+                    }
+                    button.disabled = false;
+                }, 2000);
+            }).catch(err => {
+                // Error feedback (optional)
+                console.error('Failed to copy text: ', err);
+                copyTextElement.textContent = 'Failed';
+                 setTimeout(() => {
+                    copyTextElement.textContent = originalButtonText;
+                }, 2000);
+            });
+        });
+    });
+});
+</script>
+
+</body>
+</html>

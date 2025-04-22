@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'mozilla_django_oidc',
     'management.apps.AqueductManagementConfig',
+    "gateway.apps.GatewayConfig"
 ]
 
 MIDDLEWARE = [

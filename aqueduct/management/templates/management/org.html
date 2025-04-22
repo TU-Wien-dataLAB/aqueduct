@@ -29,7 +29,7 @@
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for team in teams.all %}
                     <li class="flex justify-between items-center hover:bg-base-200">
-                        <a href="/team/{{ team.id }}" class="list-row flex-grow p-4">
+                        <a href="/aqueduct/management/team/{{ team.id }}" class="list-row flex-grow p-4">
                             <div class="flex items-center mb-1">
                                 <img src="{% static 'icons/team.svg' %}" alt="(team)" class="w-5 mr-2 [[data-theme=dark]_&]:invert">
                                 <span class="font-medium">{{ team.name }}</span>
@@ -98,7 +98,7 @@
 
       function confirmDelete() {
         if (teamIdToDelete) {
-          fetch(`/team/${teamIdToDelete}/delete/`, {
+          fetch(`/aqueduct/management/team/${teamIdToDelete}/delete/`, {
             method: 'POST',
             headers: {
               'X-CSRFToken': '{{ csrf_token }}',

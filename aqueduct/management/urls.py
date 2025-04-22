@@ -4,12 +4,7 @@ from django.views.generic import RedirectView
 from . import views
 
 urlpatterns = [
-    # SSO view
-    path(r'login/', views.SSOTemplateView.as_view(), name='sso'),
-    path(r'admin/login/', views.SSOTemplateView.as_view(), name='admin_sso'),
-
-    path('', RedirectView.as_view(url='/tokens/', permanent=True)),
-    path("tokens/", views.UserTokensView.as_view(), name="tokens"),
+    path('tokens/', views.UserTokensView.as_view(), name="tokens"),
     path('tokens/create/', views.TokenCreateView.as_view(), name='token_create'),
     path('tokens/<int:id>/delete/', views.TokenDeleteView.as_view(), name='token_delete'),
     path('tokens/<int:id>/regenerate/', views.TokenRegenerateView.as_view(), name='token_regenerate'),

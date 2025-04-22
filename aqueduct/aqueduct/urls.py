@@ -17,8 +17,16 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+import management.views as views
+
 urlpatterns = [
+    # SSO view from management app
+    path(r'login/', views.SSOTemplateView.as_view(), name='sso'),
+    path(r'aqueduct/admin/login/', views.SSOTemplateView.as_view(), name='admin_sso'),
+
     path('oidc/', include('mozilla_django_oidc.urls')),
-    path("", include("management.urls")),
-    path("admin/", admin.site.urls),
+    path("aqueduct/management/", include("management.urls")),
+    path("aqueduct/admin/", admin.site.urls),
+    # contains catch all path so has to come last
+    path('', include('gateway.urls')),
 ]

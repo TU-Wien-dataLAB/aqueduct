@@ -52,8 +52,14 @@ MIDDLEWARE = [
 ]
 
 AUTHENTICATION_BACKENDS = (
-    # Add the custom OIDC backend
+    # Add the Token backend - tries this first for API requests
+    'gateway.authentication.TokenAuthenticationBackend',
+    
+    # Keep the custom OIDC backend for web login
     'management.auth.OIDCBackend',
+
+    # Keep the default ModelBackend for Django admin login, etc.
+    'django.contrib.auth.backends.ModelBackend',
 )
 
 # OIDC Settings

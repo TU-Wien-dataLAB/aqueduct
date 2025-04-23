@@ -9,6 +9,9 @@
 [![Project Status: Concept – Minimal or no implementation has been done yet, or the repository is only intended to be a limited example, demo, or proof-of-concept.](https://www.repostatus.org/badges/latest/concept.svg)](https://www.repostatus.org/#concept)
 
 
+> [!NOTE]
+> This project is still in active development! Contributions welcome!
+
 **Aqueduct AI Gateway** aims to provide a **simple yet fully-featured** AI gateway you can self-host with:
 
 - no [SSO tax](https://konghq.com/pricing)  
@@ -23,8 +26,6 @@ We aim to achieve this by:
 
 If you don’t need user self-service, take a look at [Envoy AI Gateway](https://aigateway.envoyproxy.io) instead!
 
-> [!NOTE]
-> This project is still in active development! Contributions welcome!
 
 
 ![AI Gateway Architecture](./docs/assets/screenshot.png "AI Gateway Architecture")
@@ -58,6 +59,27 @@ This project aims to use Django for user management/API with minimal additional 
 4. **(Optional) API Abstraction:**
     * Implementation of a stable API interface (e.g., OpenAI-compatible).
     * Development of backend adapters for different LLM providers.
+
+## 💻 Development Install
+
+To set up the project for development using `uv`, follow these steps:
+
+1.  Ensure you have `uv` installed. If not, you can install it via pip: `pip install uv`.
+2.  Clone the repository:
+    ```bash
+    git clone [https://github.com/tu-wien-datalab/aqueduct.git](https://github.com/tu-wien-datalab/aqueduct.git)
+    cd aqueduct
+    ```
+3.  Create a virtual environment and install dependencies:
+    ```bash
+    uv venv
+    source .venv/bin/activate
+    uv sync
+    ```
+4.  You can now run the Django development server:
+    ```bash
+    uv run aqueduct/manage.py runserver
+    ```
 
 ## ⚙️ Architecture
 

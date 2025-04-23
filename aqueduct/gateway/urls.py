@@ -9,9 +9,10 @@ urlpatterns = [
     # Redirect to the management views if no direct path is given
     path('', RedirectView.as_view(url='/aqueduct/management/tokens/', permanent=True)),
 
+    # Use endpoint slug to determine the target endpoint
     path(
-        'v1/<path:remaining_path>',
-        views.V1OpenAIGateway.as_view(),  # This now points to the subclass
-        name='openai_v1_gateway'
+        '<slug:endpoint_slug>/<path:remaining_path>', # Capture endpoint slug and remaining path
+        views.AIGatewayView.as_view(), # Point to the base view
+        name='api_gateway' # More generic name
     ),
 ]

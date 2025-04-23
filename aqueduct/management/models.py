@@ -538,10 +538,21 @@ class Request(models.Model):
         return f"{self.id}"
 
 
+class EndpointBackend(models.TextChoices):
+    OPENAI = 'openai', 'OpenAI'
+
+
 class Endpoint(models.Model):
     """Represents an API endpoint, likely serving multiple Models."""
     name = models.CharField(max_length=255, unique=True)
     slug = models.SlugField(max_length=255, unique=True)
+
+    backend = models.CharField(
+        max_length=32,
+        choices=EndpointBackend.choices,
+        default=EndpointBackend.OPENAI,
+        help_text="Backend provider for this endpoint (currently only 'openai' is supported)."
+    )
     url = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
     access_token = models.CharField(

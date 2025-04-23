@@ -28,19 +28,20 @@ class AIGatewayBackend(abc.ABC):
     based on the specifics of the target API (e.g., OpenAI, Anthropic).
     """
     @abc.abstractmethod
-    def get_model(self, request: HttpRequest, endpoint: Endpoint) -> Model:
+    def get_model(self, request: HttpRequest, endpoint: Endpoint) -> Optional[Model]:
         """
         Retrieves the Model database object based on the request data and the target endpoint.
+        Returns None if the model cannot be determined or found based on the request.
 
         Args:
             request (HttpRequest): The incoming request.
             endpoint (Endpoint): The target Endpoint instance.
 
         Returns:
-            Model: The corresponding Model instance.
+            Optional[Model]: The corresponding Model instance, or None.
 
         Raises:
-            Http404: If the model cannot be determined or found.
+            Http404: For unexpected errors during processing.
         """
         pass
 
@@ -62,22 +63,24 @@ class OpenAIBackend(AIGatewayBackend):
     """
     Backend implementation for OpenAI-compatible API endpoints.
     """
-    def get_model(self, request: HttpRequest, endpoint: Endpoint) -> Model:
+    def get_model(self, request: HttpRequest, endpoint: Endpoint) -> Optional[Model]:
         """
         Extracts the model name from the request body (JSON 'model' key)
         and retrieves the Model object belonging to the specified endpoint.
+        Returns None if 'model' key is missing, JSON is invalid, or model not found.
         """
-        if not request.body:
-            logger.warning("OpenAIBackend.get_model called with empty request body.")
-            raise Http404("Request body is empty.")
-
+        model_name = None # Initialize model_name
         try:
+            if not request.body:
+                logger.warning(f"OpenAIBackend.get_model called with empty request body for endpoint '{endpoint.slug}'.")
+                return None # Return None if body is empty
+
             data = json.loads(request.body)
             model_name = data.get('model')
 
             if not model_name:
-                logger.warning("Request body missing 'model' key.")
-                raise Http404("Request body must contain a 'model' key.")
+                logger.warning(f"Request body missing 'model' key for endpoint '{endpoint.slug}'.")
+                return None # Return None if 'model' key is missing
 
             # Ensure the model belongs to the correct endpoint
             model = Model.objects.get(name=model_name, endpoint=endpoint)
@@ -85,14 +88,16 @@ class OpenAIBackend(AIGatewayBackend):
             return model
 
         except json.JSONDecodeError:
-            logger.warning("Failed to decode JSON from request body.", exc_info=True)
-            raise Http404("Invalid JSON in request body.")
+            logger.warning(f"Failed to decode JSON from request body for endpoint '{endpoint.slug}'.", exc_info=True)
+            return None # Return None if JSON is invalid
         except Model.DoesNotExist:
-            logger.warning(f"Model with name '{model_name}' not found for endpoint '{endpoint.slug}'.")
-            raise Http404(f"Model '{model_name}' not found for this endpoint.")
-        except Exception as e:  # Catch unexpected errors
-            logger.error(f"Unexpected error getting model: {e}", exc_info=True)
-            raise Http404("Error processing request.")  # Generic error for security
+            # Use model_name captured earlier in the log message
+            log_model_name = model_name if model_name else "<not provided>"
+            logger.warning(f"Model with name '{log_model_name}' not found for endpoint '{endpoint.slug}'.")
+            return None # Return None if model not found
+        except Exception as e:  # Catch only truly unexpected errors
+            logger.error(f"Unexpected error getting model for endpoint '{endpoint.slug}': {e}", exc_info=True)
+            raise Http404("Error processing request.") # Re-raise for unexpected issues
 
     def extract_usage(self, response_body: bytes) -> Usage:
         """
@@ -174,11 +179,7 @@ class AIGatewayView(LoginRequiredMixin, View):
         6. Returns the response from the target or an error response.
         """
         # 1. Authentication Check
-
-        authenticated = False
-        if request.user.is_authenticated:
-            authenticated = True
-        else:
+        if not request.user.is_authenticated:
             user = auth.authenticate(request=request)
             if user is not None:
                 request.user = user  # Manually assign user
@@ -208,8 +209,9 @@ class AIGatewayView(LoginRequiredMixin, View):
 
                 backend_instance = backend_class() # Instantiate the backend
                 model = backend_instance.get_model(request, endpoint)
+                # model can be None here if not found/specified in request
 
-            except Http404 as e: # Catches endpoint not found or model not found
+            except Http404 as e: # Catches endpoint not found or unexpected errors in get_model
                 logger.warning(f"Failed to get endpoint or model for request: {e}")
                 return JsonResponse({'error': str(e)}, status=404)
             except Exception as e:
@@ -225,7 +227,7 @@ class AIGatewayView(LoginRequiredMixin, View):
             # 3. Create Initial Request Log Entry
             request_log = Request(
                 token=token,
-                model=model,
+                model=model, # Assign the model instance (can be None)
                 timestamp=timezone.now(),
                 method=request.method,
                 user_agent=request.headers.get('User-Agent', ''),
@@ -245,12 +247,12 @@ class AIGatewayView(LoginRequiredMixin, View):
             request_log.path = f"/{remaining_path_cleaned}" # Store with leading slash for consistency
 
             method = request.method
-            headers = dict(request.headers)
+            headers = {
+                "Content-Type": "application/json"  # Best practice to include content type
+            }
+            # TODO: update model name in body to model name in endpoint
             body = request.body
 
-            # Clean up headers for relaying
-            headers.pop('Host', None)
-            headers.pop('Cookie', None)  # Avoid leaking session info
             # Add/replace auth header for the target endpoint
             self.add_auth_header(headers, endpoint) # Pass endpoint
 
@@ -260,14 +262,19 @@ class AIGatewayView(LoginRequiredMixin, View):
             )
 
             start_time = time.monotonic()
-            relayed_response = requests.request(
-                method=method,
-                url=target_url,
-                headers=headers,
-                data=body,
-                stream=True,  # Important for handling large responses / streaming
-                timeout=60  # Consider making this configurable
-            )
+
+            # Prepare request arguments, conditionally adding 'data'
+            request_args = {
+                'method': method,
+                'url': target_url,
+                'headers': headers,
+                'stream': True,
+                'timeout': 60 # Consider making this configurable
+            }
+            if body:
+                request_args['data'] = body
+
+            relayed_response = requests.request(**request_args)
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
 
@@ -279,20 +286,20 @@ class AIGatewayView(LoginRequiredMixin, View):
             response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
 
             # 5. Extract Usage (using subclass implementation)
-            # Ensure backend instance was created
-            if not backend_instance:
-                # This should not happen if endpoint/model lookup succeeded, but defensive check
-                logger.error("Backend instance not available for usage extraction.")
-                raise Exception("Internal gateway error: Backend not initialized.")
-
-            try:
-                usage = backend_instance.extract_usage(response_content)
-                request_log.token_usage = usage  # Uses setter: input_tokens=..., output_tokens=...
-                logger.debug(
-                    f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Extracted usage: Input={usage.input_tokens}, Output={usage.output_tokens}")
-            except Exception as e:
-                logger.error(f"Error extracting usage from response: {e}", exc_info=True)
-                # Decide if failure to extract usage is critical. Here, we log and continue.
+            if model and backend_instance: # Only extract usage if model was identified and backend exists
+                try:
+                    usage = backend_instance.extract_usage(response_content)
+                    request_log.token_usage = usage # Uses setter: input_tokens=..., output_tokens=...
+                    logger.debug(
+                        f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Extracted usage for model '{model.name}': Input={usage.input_tokens}, Output={usage.output_tokens}")
+                except Exception as e:
+                    logger.error(f"Error extracting usage from response for model '{model.name}': {e}", exc_info=True)
+                    # Log and continue even if usage extraction fails
+            else:
+                # If model is None, usage is considered zero and not extracted
+                request_log.input_tokens = 0
+                request_log.output_tokens = 0
+                logger.debug(f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Model not specified or found in request, skipping usage extraction.")
 
             request_log.save()  # Save successful request log details
             logger.debug(f"Saved Request log entry ID: {request_log.id} for {method} {target_url}")

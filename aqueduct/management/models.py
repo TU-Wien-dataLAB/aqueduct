@@ -489,7 +489,9 @@ class Request(models.Model):
     )
     model = models.ForeignKey(
         'Model',
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL, # Set to NULL if the Model is deleted
+        null=True, # Allow the database field to be NULL
+        blank=True, # Allow the field to be blank in forms/admin
         related_name='requests'
     )
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)

@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# This script sources a ../.env file and calls an OpenAI-compatible completions endpoint.
+# This script sources a ../.env file and lists existing batch jobs
+# using an OpenAI-compatible API's /v1/batches endpoint.
 
 # Source the environment file
 if [ -f "../.env" ]; then
@@ -17,29 +18,17 @@ if [ -z "$AQUEDUCT_GATEWAY_ACCESS_TOKEN" ]; then
 fi
 
 # --- Configuration ---
-# Set the URL of your OpenAI-compatible server's completions endpoint
-# Replace with your server's address and the correct path if different
-ENDPOINT_URL="http://localhost:8000/v1/completions"
+# Set the base URL of your OpenAI-compatible server
+# Assumes it supports /v1/batches endpoint
+BASE_URL="http://localhost:8000/vllm"
 
-# Set the model to use
-MODEL="qwen-32b" # Replace with the model name your server supports
+# --- List Batch Jobs ---
+echo "Listing models..."
+curl -s -X GET "$BASE_URL/models" \
+  -H "Authorization: Bearer $AQUEDUCT_GATEWAY_ACCESS_TOKEN"
 
-# Set the prompt for the completion
-PROMPT="Write me a short poem!"
-
-# Set the maximum number of tokens to generate
-MAX_TOKENS=250
-
-# --- API Call ---
-# Use curl to make the POST request to the completions endpoint
-curl -X POST "$ENDPOINT_URL" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $AQUEDUCT_GATEWAY_ACCESS_TOKEN" \
-  -d '{
-    "model": "'"$MODEL"'",
-    "prompt": "'"$PROMPT"'",
-    "max_tokens": '"$MAX_TOKENS"'
-  }'
-
-# Add a newline at the end of the output
+# Add a newline at the end of the output for better formatting
 echo
+
+# Note: The output will be JSON. You might want to pipe it to jq for better readability:
+# ./curl_call.sh | jq

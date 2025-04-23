@@ -1,0 +1,32 @@
+[
+  {
+    "model": "management.endpoint",
+    "pk": 1,
+    "fields": {
+      "name": "vLLM",
+      "url": "http://vllm.cluster.local/v1",
+      "description": "vLLM Deployment",
+      "access_token": "os.environ/ENDPOINT_ACCESS_TOKEN"
+    }
+  },
+  {
+    "model": "management.model",
+    "pk": 1,
+    "fields": {
+      "name": "qwen-32b",
+      "display_name": "Qwen-32B",
+      "description": "",
+      "endpoint": 1
+    }
+  },
+  {
+    "model": "management.model",
+    "pk": 2,
+    "fields": {
+      "name": "qwen-coder-32b",
+      "display_name": "Qwen-Coder-32B",
+      "description": "",
+      "endpoint": 1
+    }
+  }
+]

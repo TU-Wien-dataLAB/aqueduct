@@ -1,10 +1,13 @@
 # gateway/views.py
-from django.http import HttpResponse, JsonResponse, HttpResponseNotAllowed
+from django.http import HttpResponse, JsonResponse, HttpResponseNotAllowed, HttpRequest, Http404
 from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 import logging
 import requests  # Added for relaying requests
+import json  # Added for parsing request body
+
+from management.models import Usage, Model
 
 logger = logging.getLogger(__name__)
 
@@ -42,14 +45,84 @@ class AIGatewayView(View):
         logger.debug(f"User {request.user.email} authenticated. Proceeding with dispatch.")
         return super().dispatch(request, *args, **kwargs)
 
+    def get_model(self, request: HttpRequest) -> Model:
+        """
+        Retrieves the Model database object based on the request data.
+        This method must be implemented by subclasses.
 
-# --- V1 OpenAI Specific Gateway View ---
+        Args:
+            request (HttpRequest): The incoming request.
+
+        Returns:
+            Model: The corresponding Model instance.
+
+        Raises:
+            NotImplementedError: If the subclass does not implement this method.
+        """
+        raise NotImplementedError("get_model() must be implemented in a subclass.")
+
+    def extract_usage(self, response_body: bytes) -> Usage:
+        """
+        Dummy method to extract usage from a relayed API response.
+
+        Args:
+            response_body (bytes): The body of the response from the relayed request.
+
+        Returns:
+            Usage: Usage extracted from the response.
+
+        Raises:
+            NotImplementedError: This method should be implemented in a subclass.
+        """
+        raise NotImplementedError("extract_usage() must be implemented in a subclass.")
+
 
 class V1OpenAIGateway(AIGatewayView):
     """
     Handles API requests prefixed with 'v1/'. Inherits authentication from AIGatewayView.
     Relays authenticated requests to a configured backend service using the dispatch method.
     """
+
+    def get_model(self, request: HttpRequest) -> Model:
+        """
+        Extracts the model name from the request body and retrieves the Model object.
+
+        Args:
+            request (HttpRequest): The incoming request, expected to have a JSON body
+                                 with a 'model' key.
+
+        Returns:
+            Model: The matching Model instance.
+
+        Raises:
+            Http404: If the request body is invalid JSON, missing the 'model' key,
+                     or the specified model name does not exist in the database.
+        """
+        if not request.body:
+            logger.warning("get_model called with empty request body.")
+            raise Http404("Request body is empty.")
+
+        try:
+            data = json.loads(request.body)
+            model_name = data.get('model')
+
+            if not model_name:
+                logger.warning("Request body missing 'model' key.")
+                raise Http404("Request body must contain a 'model' key.")
+
+            model = Model.objects.get(name=model_name)
+            logger.debug(f"Found model '{model_name}' for request.")
+            return model
+
+        except json.JSONDecodeError:
+            logger.warning("Failed to decode JSON from request body.", exc_info=True)
+            raise Http404("Invalid JSON in request body.")
+        except Model.DoesNotExist:
+            logger.warning(f"Model with name '{model_name}' not found.")
+            raise Http404(f"Model '{model_name}' not found.")
+        except Exception as e:  # Catch unexpected errors
+            logger.error(f"Unexpected error getting model: {e}", exc_info=True)
+            raise Http404("Error processing request.")  # Generic error for security
 
     def dispatch(self, request, *args, **kwargs):
         """
@@ -65,14 +138,13 @@ class V1OpenAIGateway(AIGatewayView):
         if isinstance(auth_response, HttpResponse):
             return auth_response
 
+        model = self.get_model(request)
+
         # 2. Authentication successful. Proceed with relaying.
         # request.user is guaranteed to be an authenticated User instance here.
         remaining_path = kwargs.get('remaining_path', '')
-        # --- TODO: Configure your target API endpoint ---
-        # This should likely come from Django settings or environment variables
-        target_api_base = "https://api.openai.com" # Example: Replace with your actual target
+        target_api_base = model.endpoint.url
         target_url = f"{target_api_base}/v1/{remaining_path}"
-        # --- End TODO ---
 
         method = request.method
         headers = dict(request.headers)
@@ -103,12 +175,12 @@ class V1OpenAIGateway(AIGatewayView):
                 headers=headers,
                 data=body,
                 stream=True,
-                timeout=60 # Set an appropriate timeout
+                timeout=60  # Set an appropriate timeout
             )
 
             # 4. Construct the Django response from the relayed response
             response = HttpResponse(
-                content=relayed_response.raw, # Use .raw for streaming content
+                content=relayed_response.raw,  # Use .raw for streaming content
                 status=relayed_response.status_code,
                 content_type=relayed_response.headers.get('Content-Type')
             )
@@ -131,7 +203,7 @@ class V1OpenAIGateway(AIGatewayView):
             return JsonResponse({"error": "Gateway timeout"}, status=504)
         except requests.exceptions.RequestException as e:
             logger.error(f"Error relaying request to {target_url}: {e}", exc_info=True)
-            return JsonResponse({"error": "Gateway error during relay"}, status=502) # Bad Gateway
+            return JsonResponse({"error": "Gateway error during relay"}, status=502)  # Bad Gateway
         except Exception as e:
             # Catch any other unexpected errors during relay
             logger.error(f"Unexpected error during relay to {target_url}: {e}", exc_info=True)
@@ -139,5 +211,3 @@ class V1OpenAIGateway(AIGatewayView):
 
     # No longer need specific methods like post(), get(), etc.
     # All requests are handled by dispatch after authentication.
-
-# --- End V1 OpenAI Specific Gateway View ---

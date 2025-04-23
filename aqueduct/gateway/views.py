@@ -28,24 +28,183 @@ class AIGatewayView(View):
 
     def dispatch(self, request, *args, **kwargs):
         """
-        Checks if the user was successfully authenticated by the middleware.
-        If not authenticated, returns a 401 Unauthorized response.
-        If authenticated, calls the standard Django View dispatch mechanism,
-        which will route the request to the appropriate HTTP method handler
-        (e.g., get(), post()) on the subclass.
+        Handles incoming requests:
+        1. Checks authentication.
+        2. Retrieves model and token using subclass methods.
+        3. Creates a request log entry.
+        4. Relays the request to the target endpoint.
+        5. Updates the request log with response info (status, time, usage).
+        6. Returns the response from the target or an error response.
         """
-        # Authentication middleware runs before dispatch and should set request.user
+        # 1. Authentication Check
         if not request.user.is_authenticated:
-            # User was not authenticated by any configured backend
             logger.warning("Authentication check failed in dispatch: request.user is not authenticated.")
             return JsonResponse(
                 {'error': 'Authentication Required', 'detail': 'A valid Bearer token must be provided and valid.'},
                 status=401
             )
+        logger.debug(f"User {request.user.email} authenticated.")
 
-        # Authentication successful - proceed with standard view dispatching
-        logger.debug(f"User {request.user.email} authenticated. Proceeding with dispatch.")
-        return super().dispatch(request, *args, **kwargs)
+        # --- Initialize variables --- 
+        request_log = None
+        start_time = None
+
+        try:
+            # 2. Get Model and Token (using subclass implementations)
+            try:
+                model = self.get_model(request)
+            except Http404 as e:
+                logger.warning(f"Failed to get model for request: {e}")
+                return JsonResponse({'error': str(e)}, status=404)
+
+            try:
+                token = self.get_token(request)
+            except Http404 as e:
+                logger.error(f"Failed to get token for authenticated user {request.user.email}: {e}")
+                return JsonResponse({'error': str(e)}, status=404)  # Consider 401/403 based on policy
+
+            # 3. Create Initial Request Log Entry
+            request_log = Request(
+                token=token,
+                model=model,
+                timestamp=timezone.now(),
+                method=request.method,
+                user_agent=request.headers.get('User-Agent', ''),
+                ip_address=request.META.get('REMOTE_ADDR')
+                # Status, time, usage set later
+            )
+            # request_log.save() # Optionally save early, but saving after response is better
+
+            # 4. Prepare and Relay Request
+            remaining_path = kwargs.get('remaining_path', '')
+            # Ensure leading/trailing slashes are handled correctly for joining
+            target_api_base = model.endpoint.url.rstrip('/')
+            remaining_path_cleaned = remaining_path.lstrip('/')
+            target_url = f"{target_api_base}/{remaining_path_cleaned}"
+
+            method = request.method
+            headers = dict(request.headers)
+            body = request.body
+
+            # Clean up headers for relaying
+            headers.pop('Host', None)
+            headers.pop('Cookie', None)  # Avoid leaking session info
+            # Add/replace auth header for the target endpoint
+            self.add_auth_header(headers, model)
+
+            logger.info(
+                f"Relaying {method} request for {request.user.email} (Token: {token.name}) "
+                f"to {target_url} via Endpoint '{model.endpoint.name}'"
+            )
+
+            start_time = time.monotonic()
+            relayed_response = requests.request(
+                method=method,
+                url=target_url,
+                headers=headers,
+                data=body,
+                stream=True,  # Important for handling large responses / streaming
+                timeout=60  # Consider making this configurable
+            )
+            end_time = time.monotonic()
+            response_time_ms = int((end_time - start_time) * 1000)
+
+            # --- Process Relayed Response --- 
+            request_log.status_code = relayed_response.status_code
+            request_log.response_time_ms = response_time_ms
+
+            # Read content for usage extraction *before* creating Django response
+            response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
+
+            # 5. Extract Usage (using subclass implementation)
+            try:
+                usage = self.extract_usage(response_content)
+                request_log.token_usage = usage  # Uses setter: input_tokens=..., output_tokens=...
+                logger.debug(
+                    f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Extracted usage: Input={usage.input_tokens}, Output={usage.output_tokens}")
+            except Exception as e:
+                logger.error(f"Error extracting usage from response: {e}", exc_info=True)
+                # Decide if failure to extract usage is critical. Here, we log and continue.
+
+            request_log.save()  # Save successful request log details
+            logger.debug(f"Saved Request log entry ID: {request_log.id} for {method} {target_url}")
+
+            # 6. Construct and Return Django Response
+            response = HttpResponse(
+                content=response_content,
+                status=relayed_response.status_code,
+                content_type=relayed_response.headers.get('Content-Type')
+            )
+
+            # Copy relevant headers from relayed response to Django response
+            hop_by_hop_headers = [
+                'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+                'te', 'trailers', 'transfer-encoding', 'upgrade'
+            ]
+            for key, value in relayed_response.headers.items():
+                if key.lower() not in hop_by_hop_headers:
+                    response[key] = value
+
+            logger.debug(f"Relay successful: Status {relayed_response.status_code}")
+            return response
+
+        # --- Error Handling for Relaying --- 
+        except requests.exceptions.Timeout:
+            end_time = time.monotonic()
+            logger.warning(f"Gateway timeout relaying request to {target_url}")
+            if request_log:  # Log if request_log object exists
+                request_log.status_code = 504  # Gateway Timeout
+                if start_time:  # Check if timer started
+                    request_log.response_time_ms = int((end_time - start_time) * 1000)
+                request_log.save()
+                logger.debug(f"Saved Request log entry ID (timeout): {request_log.id}")
+            return JsonResponse({"error": "Gateway timeout"}, status=504)
+
+        except requests.exceptions.RequestException as e:
+            end_time = time.monotonic()
+            logger.error(f"Error relaying request to {target_url}: {e}", exc_info=True)
+            if request_log:  # Log if request_log object exists
+                # Try to get status from target response if available
+                status_code = 502  # Bad Gateway default
+                if hasattr(e, 'response') and e.response is not None:
+                    status_code = e.response.status_code
+                request_log.status_code = status_code
+                if start_time:
+                    request_log.response_time_ms = int((end_time - start_time) * 1000)
+                request_log.save()
+                logger.debug(f"Saved Request log entry ID (relay error): {request_log.id}")
+            return JsonResponse({"error": "Gateway error during relay"}, status=502)
+
+        except Exception as e:
+            # Catch any other unexpected errors during the process
+            end_time = time.monotonic()
+            logger.error(f"Unexpected error during gateway dispatch: {e}", exc_info=True)
+            if request_log:  # Log if request_log object exists
+                request_log.status_code = 500  # Internal Server Error
+                if start_time:
+                    request_log.response_time_ms = int((end_time - start_time) * 1000)
+                # Ensure usage isn't accidentally non-zero if error occurred before extraction
+                if request_log.input_tokens is None: request_log.input_tokens = 0
+                if request_log.output_tokens is None: request_log.output_tokens = 0
+                request_log.save()
+                logger.debug(f"Saved Request log entry ID (unexpected error): {request_log.id}")
+            # Return generic error to client
+            return JsonResponse({"error": "Internal gateway error"}, status=500)
+        finally:
+            # Final check to ensure logging if an error happened *after* request_log creation
+            # but *before* any explicit save or *between* save and return.
+            if request_log and not request_log.pk:
+                try:
+                    if request_log.status_code is None: request_log.status_code = 500
+                    if request_log.input_tokens is None: request_log.input_tokens = 0
+                    if request_log.output_tokens is None: request_log.output_tokens = 0
+                    # Add response time if possible, otherwise leave as null/default
+                    if start_time and 'end_time' in locals():  # Check if end_time was set
+                        request_log.response_time_ms = int((end_time - start_time) * 1000)
+                    request_log.save()
+                    logger.warning(f"Saved Request log entry ID in finally block: {request_log.id}")
+                except Exception as final_save_e:
+                    logger.error(f"Failed to save Request log in finally block: {final_save_e}", exc_info=True)
 
     def get_model(self, request: HttpRequest) -> Model:
         """
@@ -155,7 +314,8 @@ class AIGatewayView(View):
 class V1OpenAIGateway(AIGatewayView):
     """
     Handles API requests prefixed with 'v1/'. Inherits authentication from AIGatewayView.
-    Relays authenticated requests to a configured backend service using the dispatch method.
+    Implements OpenAI-specific logic for model lookup and usage extraction.
+    The actual request relaying and logging is handled by the base AIGatewayView.dispatch.
     """
 
     def get_model(self, request: HttpRequest) -> Model:
@@ -231,172 +391,3 @@ class V1OpenAIGateway(AIGatewayView):
         except Exception as e:
             logger.error(f"Unexpected error extracting usage from OpenAI response: {e}", exc_info=True)
             return Usage(input_tokens=0, output_tokens=0)
-
-    def dispatch(self, request, *args, **kwargs):
-        """
-        Handles all HTTP methods for paths starting with '/v1/'.
-        1. Calls the base class dispatch to handle authentication.
-        2. If authenticated, relays the request to the target backend service.
-        3. Returns the response from the backend service or an error response.
-        """
-        # 1. Let the base class handle authentication.
-        auth_response = super().dispatch(request, *args, **kwargs)
-        if isinstance(auth_response, HttpResponse):
-            return auth_response  # Authentication failed or handled by base class
-
-        # Get the associated Model
-        try:
-            model = self.get_model(request)
-        except Http404 as e:
-            # Log the error and return appropriate response
-            # No Request object created yet as model lookup failed
-            return JsonResponse({'error': str(e)}, status=404)
-
-        # --- Get Associated Token ---
-        try:
-            token = self.get_token(request)
-        except Http404 as e:
-            # Log the error and return appropriate response
-            logger.error(f"Failed to get token for authenticated user {request.user.email}")
-            return JsonResponse({'error': str(e)}, status=404)  # Or 401/403 depending on policy
-        # --- End Token Retrieval ---
-
-        # --- Create Request Log Entry ---
-        request_log = Request(
-            token=token,  # Use the token found by get_token
-            model=model,
-            timestamp=timezone.now(),
-            method=request.method,
-            user_agent=request.headers.get('User-Agent', ''),
-            ip_address=request.META.get('REMOTE_ADDR')
-            # status_code, response_time_ms, input/output tokens will be set later
-        )
-        # --- End Request Log Entry Creation ---
-
-        # 2. Authentication successful. Proceed with relaying.
-        remaining_path = kwargs.get('remaining_path', '')
-        target_api_base = model.endpoint.url
-        target_url = f"{target_api_base}/v1/{remaining_path}"
-
-        method = request.method
-        headers = dict(request.headers)
-        body = request.body
-
-        # --- TODO: Refine headers for relaying ---
-        headers.pop('Host', None)
-        headers.pop('Cookie', None)
-        # Add authentication header for the target endpoint
-        self.add_auth_header(headers, model)
-        # --- End TODO ---
-
-        logger.info(
-            f"Relaying {method} request for {request.user.email} "
-            f"to {target_url} (Path: v1/{remaining_path})"
-        )
-
-        start_time = time.monotonic()
-        try:
-            # 3. Make the relayed request
-            relayed_response = requests.request(
-                method=method,
-                url=target_url,
-                headers=headers,
-                data=body,
-                stream=True,
-                timeout=60
-            )
-            end_time = time.monotonic()
-
-            # --- Update Request Log with Response Info ---
-            request_log.status_code = relayed_response.status_code
-            request_log.response_time_ms = int((end_time - start_time) * 1000)
-            # --- End Update ---
-
-            # Read content for usage extraction *before* creating HttpResponse
-            # Using iter_content ensures we handle streamed responses correctly
-            # We need the full content to attempt parsing usage later
-            response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
-
-            # --- Extract Usage ---
-            try:
-                usage = self.extract_usage(response_content)
-                request_log.token_usage = usage  # Use the setter on the Request model
-                logger.debug(
-                    f"Updated request log with usage: Input={usage.input_tokens}, Output={usage.output_tokens}")
-            except Exception as e:
-                # Log error during usage extraction, but don't fail the request
-                logger.error(f"Error extracting usage from response or updating log: {e}", exc_info=True)
-            # --- End Usage Extraction ---
-
-            request_log.save()  # Save successful request log
-            logger.debug(f"Saved Request log entry ID: {request_log.id}")
-
-            # 4. Construct the Django response from the relayed response
-            response = HttpResponse(
-                content=response_content,  # Use the content we already read
-                status=relayed_response.status_code,
-                content_type=relayed_response.headers.get('Content-Type')
-            )
-
-            # --- Copy relevant headers from relayed response ---
-            hop_by_hop_headers = ['connection', 'keep-alive', 'proxy-authenticate',
-                                  'proxy-authorization', 'te', 'trailers',
-                                  'transfer-encoding', 'upgrade']
-            for key, value in relayed_response.headers.items():
-                if key.lower() not in hop_by_hop_headers:
-                    response[key] = value
-            # --- End Header Copy ---
-
-            logger.debug(f"Relay successful: Status {relayed_response.status_code}")
-            return response
-
-        except requests.exceptions.Timeout:
-            end_time = time.monotonic()
-            logger.warning(f"Gateway timeout relaying request to {target_url}")
-            # --- Update Request Log on Timeout ---
-            request_log.status_code = 504  # Gateway Timeout
-            request_log.response_time_ms = int((end_time - start_time) * 1000)
-            request_log.save()
-            logger.debug(f"Saved Request log entry ID (timeout): {request_log.id}")
-            # --- End Update ---
-            return JsonResponse({"error": "Gateway timeout"}, status=504)
-        except requests.exceptions.RequestException as e:
-            end_time = time.monotonic()
-            logger.error(f"Error relaying request to {target_url}: {e}", exc_info=True)
-            # --- Update Request Log on Relay Error ---
-            request_log.status_code = 502  # Bad Gateway (standard for relay errors)
-            if hasattr(e, 'response') and e.response is not None:
-                request_log.status_code = e.response.status_code  # Or use target's status if available
-            request_log.response_time_ms = int((end_time - start_time) * 1000)
-            request_log.save()
-            logger.debug(f"Saved Request log entry ID (relay error): {request_log.id}")
-            # --- End Update ---
-            return JsonResponse({"error": "Gateway error during relay"}, status=502)
-        except Exception as e:
-            end_time = time.monotonic()
-            # Catch any other unexpected errors during relay
-            logger.error(f"Unexpected error during relay to {target_url}: {e}", exc_info=True)
-            # --- Update Request Log on Unexpected Error ---
-            request_log.status_code = 500  # Internal Server Error
-            # Response time might be inaccurate if error occurred early
-            if start_time:  # Check if start_time was set
-                request_log.response_time_ms = int((end_time - start_time) * 1000)
-            request_log.save()
-            logger.debug(f"Saved Request log entry ID (unexpected error): {request_log.id}")
-            # --- End Update ---
-            return JsonResponse({"error": "Internal gateway error"}, status=500)
-        finally:
-            # Ensure the request log is saved even if an unhandled exception occurs after its creation
-            # but before the explicit save calls in try/except blocks.
-            # This might result in duplicate saves if an error occurs *after* a save
-            # but before the function returns, but ensures logging in most cases.
-            # A more robust solution might involve transaction management.
-            if request_log and not request_log.pk:  # Only save if not already saved
-                try:
-                    # Populate with generic error code if not set
-                    if request_log.status_code is None:
-                        request_log.status_code = 500  # Default to internal error
-                    request_log.save()
-                    logger.warning(f"Saved Request log entry ID in finally block: {request_log.id}")
-                except Exception as final_save_e:
-                    logger.error(f"Failed to save Request log in finally block: {final_save_e}", exc_info=True)

@@ -6,7 +6,7 @@
 
 [![GitHub License](https://img.shields.io/github/license/tu-wien-datalab/aqueduct)](LICENSE)
 [![GitHub last commit](https://img.shields.io/github/last-commit/tu-wien-datalab/aqueduct)](https://github.com/tu-wien-datalab/aqueduct/commits/main)
-[![Project Status: Concept – Minimal or no implementation has been done yet, or the repository is only intended to be a limited example, demo, or proof-of-concept.](https://www.repostatus.org/badges/latest/concept.svg)](https://www.repostatus.org/#concept)
+[![Project Status: WIP – Initial development is in progress, but there has not yet been a stable, usable release suitable for the public.](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)
 
 
 > [!NOTE]
@@ -67,7 +67,7 @@ To set up the project for development using `uv`, follow these steps:
 1.  Ensure you have `uv` installed. If not, you can install it via pip: `pip install uv`.
 2.  Clone the repository:
     ```bash
-    git clone [https://github.com/tu-wien-datalab/aqueduct.git](https://github.com/tu-wien-datalab/aqueduct.git)
+    git clone https://github.com/tu-wien-datalab/aqueduct.git
     cd aqueduct
     ```
 3.  Create a virtual environment and install dependencies:

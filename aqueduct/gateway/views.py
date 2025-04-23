@@ -94,6 +94,9 @@ class AIGatewayView(LoginRequiredMixin, View):
             remaining_path_cleaned = remaining_path.lstrip('/')
             target_url = f"{target_api_base}/{remaining_path_cleaned}"
 
+            # Set the path on the request log
+            request_log.path = f"/{remaining_path_cleaned}" # Store with leading slash for consistency
+
             method = request.method
             headers = dict(request.headers)
             body = request.body

@@ -520,6 +520,11 @@ class Request(models.Model):
         blank=True,
         help_text="IP address from which the request originated"
     )
+    path = models.CharField(
+        max_length=512,
+        blank=True,
+        help_text="The specific API path requested after the base endpoint URL (e.g., '/chat/completions')"
+    )
 
     class Meta:
         # Crucial for the rate limit query!

@@ -26,15 +26,19 @@ class TokenAuthenticationBackend(BaseBackend):
             The User object associated with the token if authentication is successful.
             None otherwise.
         """
+        logger.debug("TokenAuthenticationBackend: authenticate method called.")
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
             # No valid header, authentication cannot proceed with this backend.
+            logger.debug("TokenAuthenticationBackend: No 'Bearer ' auth header found.")
             return None
 
         try:
             token_key = auth_header.split(' ')[1]
             if not token_key:
                 raise IndexError
+            logger.debug(
+                f"TokenAuthenticationBackend: Attempting to authenticate with token starting with {Token._generate_preview(token_key)}")
         except IndexError:
             logger.warning("Authentication failed: Empty or badly formatted Bearer token in header.")
             return None
@@ -44,7 +48,7 @@ class TokenAuthenticationBackend(BaseBackend):
 
         if not token_instance:
             logger.warning(
-                f"Authentication failed: Invalid token provided (starts with {Token._generate_preview(token_key)}).")
+                f"Authentication failed: Invalid token provided (starts with {Token._generate_preview(token_key)}). Token.find_by_key returned None.")
             return None
 
         # Optional: Check for token expiry

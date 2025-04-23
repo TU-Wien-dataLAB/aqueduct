@@ -1,4 +1,7 @@
 # gateway/views.py
+from django.contrib import auth
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse, JsonResponse, HttpResponseNotAllowed, HttpRequest, Http404
 from django.views import View
 from django.utils.decorators import method_decorator
@@ -16,8 +19,7 @@ logger = logging.getLogger(__name__)
 
 # --- Base Gateway View with Authentication ---
 
-@method_decorator(csrf_exempt, name='dispatch')
-class AIGatewayView(View):
+class AIGatewayView(LoginRequiredMixin, View):
     """
     Base class for AI Gateway views providing authentication.
     Relies on Django's authentication middleware (configured with a custom backend)
@@ -26,6 +28,7 @@ class AIGatewayView(View):
     """
     http_method_names = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']
 
+    @csrf_exempt
     def dispatch(self, request, *args, **kwargs):
         """
         Handles incoming requests:
@@ -37,6 +40,15 @@ class AIGatewayView(View):
         6. Returns the response from the target or an error response.
         """
         # 1. Authentication Check
+
+        authenticated = False
+        if request.user.is_authenticated:
+            authenticated = True
+        else:
+            user = auth.authenticate(request=request)
+            if user is not None:
+                request.user = user  # Manually assign user
+
         if not request.user.is_authenticated:
             logger.warning("Authentication check failed in dispatch: request.user is not authenticated.")
             return JsonResponse(

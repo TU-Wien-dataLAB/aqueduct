@@ -541,6 +541,7 @@ class Request(models.Model):
 class Endpoint(models.Model):
     """Represents an API endpoint, likely serving multiple Models."""
     name = models.CharField(max_length=255, unique=True)
+    slug = models.SlugField(max_length=255, unique=True)
     url = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
     access_token = models.CharField(

@@ -4,6 +4,7 @@
     "pk": 1,
     "fields": {
       "name": "vLLM",
+      "slug": "vllm",
       "url": "http://vllm.cluster.local/v1",
       "description": "vLLM Deployment",
       "access_token": "os.environ/ENDPOINT_ACCESS_TOKEN"

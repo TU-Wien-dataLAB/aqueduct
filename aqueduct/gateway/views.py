@@ -61,11 +61,17 @@ class AIGatewayBackend(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def post_processing_endpoints(self) -> dict[str, list[Callable[[HttpResponse], HttpResponse]]]:
+    def post_processing_endpoints(self) -> dict[str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', HttpResponse], HttpResponse]]]:
         """
         Returns a dictionary mapping endpoint path patterns (relative strings, no regex)
         to a *list* of callable functions that perform the required post-processing transformations
         on the HttpResponse.
+
+        Each callable in the list receives:
+        - The backend instance (self)
+        - The original HttpRequest
+        - The Request model instance (log entry)
+        - The current HttpResponse (output of the previous step or initial response)
         """
         pass
 
@@ -179,14 +185,17 @@ class OpenAIBackend(AIGatewayBackend):
             logger.error(f"Unexpected error extracting usage from OpenAI response: {e}", exc_info=True)
             return Usage(input_tokens=0, output_tokens=0)
 
-    def post_processing_endpoints(self) -> dict[str, list[Callable[[HttpResponse], HttpResponse]]]:
+    def post_processing_endpoints(self) -> dict[str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', HttpResponse], HttpResponse]]]:
         """
         Returns a dictionary of path patterns to post-processing callables for OpenAI.
         Currently, none are defined, so it returns an empty dict.
         """
         # Example: return {
-        #    "chat/completions": [lambda r: step1(r), lambda r: step2(r)],
-        #    "v1/other/endpoint": [lambda r: validation_step(r)]
+        #    "chat/completions": [
+        #        lambda backend, req, log, resp: step1(backend, req, log, resp),
+        #        lambda backend, req, log, resp: step2(backend, req, log, resp)
+        #    ],
+        #    "v1/other/endpoint": [lambda backend, req, log, resp: validation_step(backend, req, log, resp)]
         # }
         return {}
 
@@ -378,7 +387,7 @@ class AIGatewayView(LoginRequiredMixin, View):
                         # original_response_status = response.status_code # Keep original status for logging if needed
                         for i, step_func in enumerate(processing_pipeline):
                             try:
-                                response = step_func(response)
+                                response = step_func(backend_instance, request, request_log, response)
                                 logger.debug(f"Post-processing step {i+1} completed. Current status: {response.status_code}")
                                 # Check for error status code (4xx or 5xx) introduced by the step
                                 if response.status_code >= 400:

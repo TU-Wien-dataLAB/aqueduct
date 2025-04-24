@@ -61,10 +61,10 @@ class AIGatewayBackend(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def post_processing_endpoints(self) -> dict[str, Callable[[HttpResponse], HttpResponse]]:
+    def post_processing_endpoints(self) -> dict[str, list[Callable[[HttpResponse], HttpResponse]]]:
         """
         Returns a dictionary mapping endpoint path patterns (relative strings, no regex)
-        to callable functions that perform the required post-processing transformation
+        to a *list* of callable functions that perform the required post-processing transformations
         on the HttpResponse.
         """
         pass
@@ -179,14 +179,14 @@ class OpenAIBackend(AIGatewayBackend):
             logger.error(f"Unexpected error extracting usage from OpenAI response: {e}", exc_info=True)
             return Usage(input_tokens=0, output_tokens=0)
 
-    def post_processing_endpoints(self) -> dict[str, Callable[[HttpResponse], HttpResponse]]:
+    def post_processing_endpoints(self) -> dict[str, list[Callable[[HttpResponse], HttpResponse]]]:
         """
         Returns a dictionary of path patterns to post-processing callables for OpenAI.
         Currently, none are defined, so it returns an empty dict.
         """
         # Example: return {
-        #    "chat/completions": lambda resp: modify_chat_response(resp),
-        #    "v1/chat/completions": lambda resp: modify_chat_response(resp)
+        #    "chat/completions": [lambda r: step1(r), lambda r: step2(r)],
+        #    "v1/other/endpoint": [lambda r: validation_step(r)]
         # }
         return {}
 
@@ -370,14 +370,29 @@ class AIGatewayView(LoginRequiredMixin, View):
             # Perform post-processing if required by the backend for this path
             if backend_instance and backend_instance.requires_post_processing(request):
                 relative_path = remaining_path.lstrip('/')
-                post_processing_func = backend_instance.post_processing_endpoints().get(relative_path)
-                if post_processing_func:
-                    logger.info(f"Running post-processing function for path '{relative_path}' using {type(backend_instance).__name__}")
-                    try:
-                        response = post_processing_func(response)
-                        logger.debug("Post-processing completed.")
-                    except Exception as pp_err:
-                        logger.error(f"Error during response post-processing: {pp_err}", exc_info=True)
+                # Only run pipeline if the initial response was successful
+                if response.status_code < 400:
+                    processing_pipeline = backend_instance.post_processing_endpoints().get(relative_path)
+                    if processing_pipeline:
+                        logger.info(f"Running post-processing pipeline ({len(processing_pipeline)} steps) for path '{relative_path}' using {type(backend_instance).__name__}")
+                        # original_response_status = response.status_code # Keep original status for logging if needed
+                        for i, step_func in enumerate(processing_pipeline):
+                            try:
+                                response = step_func(response)
+                                logger.debug(f"Post-processing step {i+1} completed. Current status: {response.status_code}")
+                                # Check for error status code (4xx or 5xx) introduced by the step
+                                if response.status_code >= 400:
+                                    logger.warning(f"Post-processing pipeline stopped early at step {i+1} due to status code {response.status_code}.")
+                                    # Error occurred, return the error response immediately
+                                    return response
+                            except Exception as pp_err:
+                                logger.error(f"Error during post-processing step {i+1} for path '{relative_path}': {pp_err}", exc_info=True)
+                                # Return a generic 500 error if a step fails unexpectedly
+                                return JsonResponse({"error": f"Gateway error during response post-processing step {i+1}"}, status=500)
+
+                        logger.debug(f"Post-processing pipeline completed successfully for path '{relative_path}'. Final status: {response.status_code}")
+                else:
+                    logger.debug(f"Skipping post-processing for path '{relative_path}' due to initial response status code {response.status_code}.")
 
             logger.debug(f"Relay successful: Status {relayed_response.status_code}")
             return response

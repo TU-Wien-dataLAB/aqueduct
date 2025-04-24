@@ -2,8 +2,9 @@ import json
 import logging
 from typing import Optional, Callable, Union
 
-from django.http import HttpRequest, Http404, HttpResponse
+from django.http import HttpRequest, Http404, HttpResponse, JsonResponse
 import openai as openai_sdk
+import requests
 
 from gateway.backends.base import AIGatewayBackend
 from management.models import Endpoint, Model, Usage, Request
@@ -21,33 +22,31 @@ class OpenAIBackend(AIGatewayBackend):
         Extracts the model name from the request body (JSON 'model' key)
         and retrieves the Model object belonging to the specified endpoint.
         Returns None if 'model' key is missing, JSON is invalid, or model not found.
+
+        NOTE: This uses the *internal* model name (e.g., 'gpt-4'). The pre-processing
+        step `_validate_and_transform_model_in_request` handles mapping from display names.
         """
         model_name = None  # Initialize model_name
         try:
             if not request.body:
-                logger.warning(
-                    f"OpenAIBackend.get_model called with empty request body for endpoint '{endpoint.slug}'.")
                 return None  # Return None if body is empty
 
             data = json.loads(request.body)
             model_name = data.get('model')
 
             if not model_name:
-                logger.warning(f"Request body missing 'model' key for endpoint '{endpoint.slug}'.")
                 return None  # Return None if 'model' key is missing
 
             # Ensure the model belongs to the correct endpoint
-            model = Model.objects.get(name=model_name, endpoint=endpoint)
-            logger.debug(f"Found model '{model_name}' for endpoint '{endpoint.slug}'.")
+            model = Model.objects.get(display_name=model_name, endpoint=endpoint)
             return model
 
         except json.JSONDecodeError:
-            logger.warning(f"Failed to decode JSON from request body for endpoint '{endpoint.slug}'.", exc_info=True)
             return None  # Return None if JSON is invalid
         except Model.DoesNotExist:
             # Use model_name captured earlier in the log message
             log_model_name = model_name if model_name else "<not provided>"
-            logger.warning(f"Model with name '{log_model_name}' not found for endpoint '{endpoint.slug}'.")
+            logger.warning(f"Model with internal name '{log_model_name}' not found for endpoint '{endpoint.slug}'.")
             return None  # Return None if model not found
         except Exception as e:  # Catch only truly unexpected errors
             logger.error(f"Unexpected error getting model for endpoint '{endpoint.slug}': {e}", exc_info=True)
@@ -106,12 +105,116 @@ class OpenAIBackend(AIGatewayBackend):
             return Usage(input_tokens=0, output_tokens=0)
 
     def pre_processing_endpoints(self) -> dict[str, list[Callable[
-        ['AIGatewayBackend', HttpRequest, 'Request', Optional[HttpResponse]], Union[HttpRequest, HttpResponse]]]]:
+        ['AIGatewayBackend', HttpRequest, 'Request', requests.Request, Optional[HttpResponse]], Union[requests.Request, HttpResponse]]]]:
         """
         Returns a dictionary of path patterns to pre-processing callables for OpenAI.
-        Currently, none are defined, so it returns an empty dict.
         """
-        return {}
+        return {
+            # Match paths commonly requiring a 'model' parameter in the body
+            r"^(v1/)?(chat/completions|completions|embeddings)$": [
+                OpenAIBackend._validate_and_transform_model_in_request
+            ],
+        }
+
+    @staticmethod
+    def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', original_request: HttpRequest, request_log: Request, request_object: requests.Request, response: Optional[HttpResponse]) -> Union[requests.Request, HttpResponse]:
+        """
+        Pre-processing step to validate the requested model against the endpoint's
+        allowed models (using display_name) and transform it to the internal name
+        within the `requests.Request` object.
+
+        - Parses the request body (`request_object.data`) to find the 'model' field.
+        - Checks if the provided model name exists as a `display_name` for any `Model`
+          associated with the `endpoint`.
+        - If found, replaces the `display_name` in `request_object.data` with the
+          corresponding `model.name` (internal name) and updates the Content-Length header
+          in `request_object.headers`.
+        - If not found, returns a 404 JsonResponse.
+        - If the body is missing, not JSON, or missing the 'model' key, returns the
+          unmodified `request_object`.
+
+        Args:
+            backend: The OpenAIBackend instance.
+            original_request: The original incoming Django HttpRequest (unused).
+            request_log: The Request log model instance.
+            request_object: The `requests.Request` object being prepared. This object
+                            may be modified in place (specifically `.data` and `.headers`).
+            endpoint: The target Endpoint instance.
+
+        Returns:
+            Union[requests.Request, HttpResponse]: The (potentially modified) `request_object` on success,
+                                                   or a JsonResponse on validation failure.
+        """
+        request_body = request_object.data
+        if not request_body:
+            logger.debug("Pre-processing: Request body is empty, skipping model validation/transformation.")
+            return request_object # Return unmodified object
+
+        # Ensure body is decoded if it's bytes
+        body_str = ""
+        if isinstance(request_body, bytes):
+            try:
+                body_str = request_body.decode('utf-8')
+            except UnicodeDecodeError:
+                logger.warning("Pre-processing: Failed to decode request body as UTF-8, skipping model validation.")
+                return request_object # Cannot parse non-utf8 body, return unmodified
+        elif isinstance(request_body, str):
+            body_str = request_body
+        else:
+            logger.warning(f"Pre-processing: Unexpected request body type ({type(request_body)}), skipping model validation.")
+            return request_object # Return unmodified object
+
+        try:
+            data = json.loads(body_str)
+        except json.JSONDecodeError:
+            logger.warning("Pre-processing: Failed to decode JSON from request body, skipping model validation.")
+            return request_object # Let the target API handle malformed JSON, return unmodified
+
+        requested_model_display_name = data.get('model')
+        if not requested_model_display_name:
+            logger.debug("Pre-processing: Request JSON missing 'model' key, skipping validation/transformation.")
+            return request_object # No model specified, return unmodified
+
+        try:
+            # Note: Using request_log.endpoint assumes it's correctly set before pre-processing
+            endpoint = request_log.endpoint
+            if not endpoint:
+                 logger.error(f"Pre-processing: Endpoint not found on request log {request_log.id} during model validation.")
+                 # Return an error response, as this indicates an internal issue
+                 return JsonResponse({"error": "Internal gateway configuration error: Endpoint missing"}, status=500)
+
+            model_instance = Model.objects.get(
+                display_name=requested_model_display_name,
+                endpoint=endpoint
+            )
+            internal_model_name = model_instance.name
+
+            if requested_model_display_name != internal_model_name:
+                data['model'] = internal_model_name
+                new_body_bytes = json.dumps(data).encode('utf-8')
+
+                # Update the request object's data and headers
+                request_object.data = new_body_bytes
+                request_object.headers['Content-Length'] = str(len(new_body_bytes))
+
+                logger.info(f"Pre-processing: Transformed model '{requested_model_display_name}' to '{internal_model_name}' for endpoint '{endpoint.slug}'.")
+                return request_object # Return modified object
+            else:
+                # Model provided was already the internal name (and it's allowed)
+                logger.debug(f"Pre-processing: Model '{internal_model_name}' provided directly and is valid for endpoint '{endpoint.slug}'.")
+                return request_object # Return unmodified object
+
+        except Model.DoesNotExist:
+            logger.warning(f"Pre-processing: Model with display_name '{requested_model_display_name}' not found or not allowed for endpoint '{endpoint.slug}'.")
+            return JsonResponse(
+                {'error': f"Model '{requested_model_display_name}' is not available for this endpoint."},
+                status=404
+            )
+        except Exception as e:
+            # Capture the correct endpoint slug for logging if possible
+            endpoint_slug_for_log = endpoint.slug if endpoint else "<unknown>"
+            logger.error(f"Pre-processing: Unexpected error validating/transforming model for endpoint '{endpoint_slug_for_log}': {e}", exc_info=True)
+            return JsonResponse({"error": "Internal gateway error during model validation"}, status=500)
 
     def post_processing_endpoints(self) -> dict[
         str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', HttpResponse], HttpResponse]]]:

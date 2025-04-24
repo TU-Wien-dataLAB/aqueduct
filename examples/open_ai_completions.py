@@ -9,7 +9,8 @@ endpoint_access_token = os.getenv("AQUEDUCT_GATEWAY_ACCESS_TOKEN")
 
 # BASE_URL = "https://lite-llm.ai.datalab.tuwien.ac.at"
 BASE_URL = "http://localhost:8000/vllm"
-MODEL = "qwen-32b"
+# MODEL = "qwen-32b"
+MODEL = "Qwen-32B"
 PROMPT = "Write me a short poem!"
 MAX_TOKENS = 150
 

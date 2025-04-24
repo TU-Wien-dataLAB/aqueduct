@@ -6,6 +6,8 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 import logging
 import requests  # Added for relaying requests
+from requests import Request as RequestsRequest # Alias to avoid confusion with models.Request
+from requests import Session as RequestsSession # Alias for Session
 import time
 from typing import Optional
 import re # Added import
@@ -106,118 +108,111 @@ class AIGatewayView(View):
                 method=request.method,
                 user_agent=request.headers.get('User-Agent', ''),
                 ip_address=request.META.get('REMOTE_ADDR')
-                # Status, time, usage set later
+                # path, Status, time, usage set later
             )
-            # request_log.save() # Optionally save early, but saving after response is better
 
-            # --- Pre-processing Pipeline --- 
-            original_request = request  # Keep a reference if needed
+            # --- Prepare arguments for requests.Request --- 
             remaining_path = kwargs.get('remaining_path', '')
+            # Ensure leading/trailing slashes are handled correctly for joining
+            target_api_base = endpoint.url.rstrip('/')
+            remaining_path_cleaned = remaining_path.lstrip('/')
+            target_url = f"{target_api_base}/{remaining_path_cleaned}"
+            request_log.path = f"/{remaining_path_cleaned}" # Store path with leading slash
+
+            # Prepare initial headers and body for the outbound request
+            outbound_headers = {
+                "Content-Type": request.content_type or "application/json", # Use original content-type or default
+                # Copy other relevant headers? Be careful not to leak internal info.
+                # Example: "Accept": request.headers.get("Accept", "*/*"),
+            }
+            # Add/replace auth header for the target endpoint
+            self.add_auth_header(outbound_headers, endpoint)
+
+            # Get body from original request
+            outbound_body = request.body
+
+            # Create the requests.Request object
+            request_object = RequestsRequest(
+                method=request.method,
+                url=target_url,
+                headers=outbound_headers,
+                data=outbound_body
+            )
+
+            # --- Pre-processing Pipeline (operates on request_object) --- 
             if backend_instance and backend_instance.requires_pre_processing(request):
                 relative_path = remaining_path.lstrip('/')
-                pre_processing_pipeline = [] # Initialize as empty list
-                matched_patterns = [] # Keep track of patterns that matched
-                # Find all matching pipelines and extend
+                pre_processing_pipeline = []
+                matched_patterns = []
                 for pattern, pipeline in backend_instance.pre_processing_endpoints().items():
                     if re.fullmatch(pattern, relative_path):
                         pre_processing_pipeline.extend(pipeline)
                         matched_patterns.append(pattern)
-                        # Removed break; continue checking other patterns
 
                 if pre_processing_pipeline:
                     logger.info(
                         f"Running combined pre-processing pipeline ({len(pre_processing_pipeline)} steps) for path '{relative_path}' (matched patterns: {matched_patterns}) using {type(backend_instance).__name__}")
                     for i, step_func in enumerate(pre_processing_pipeline):
                         try:
-                            result = step_func(backend_instance, request, request_log, None)  # Pass None for response
+                            # Pass the current request_object, expect Request or HttpResponse back
+                            result = step_func(backend_instance, request, request_log, request_object, None)
 
                             if isinstance(result, HttpResponse):
                                 logger.warning(
                                     f"Pre-processing pipeline returned an HttpResponse at step {i + 1} (Status: {result.status_code}). Short-circuiting relay.")
                                 request_log.status_code = result.status_code
-                                # Attempt to save the log entry before returning
                                 try:
                                     request_log.save()
-                                    logger.debug(
-                                        f"Saved Request log entry ID (pre-processing short-circuit): {request_log.id}")
+                                    logger.debug(f"Saved Request log entry ID (pre-processing short-circuit): {request_log.id}")
                                 except Exception as save_err:
-                                    logger.error(
-                                        f"Failed to save Request log during pre-processing short-circuit: {save_err}",
-                                        exc_info=True)
-                                return result  # Return the response generated by the step
+                                    logger.error(f"Failed to save Request log during pre-processing short-circuit: {save_err}", exc_info=True)
+                                return result # Return the short-circuit response
 
-                            elif isinstance(result, HttpRequest):
-                                request = result  # Update request for the next step / relay
-                                logger.debug(f"Pre-processing step {i + 1} completed, request object updated.")
+                            elif isinstance(result, RequestsRequest):
+                                # Success, update request_object for the next step
+                                request_object = result
+                                logger.debug(f"Pre-processing step {i + 1} completed successfully, request object updated.")
                             else:
+                                # Should not happen based on type hints, but handle defensively
                                 logger.error(
-                                    f"Pre-processing step {i + 1} for path '{relative_path}' (patterns {matched_patterns}) returned an unexpected type: {type(result)}. Aborting.")
+                                    f"Pre-processing step {i + 1} for path '{relative_path}' returned an unexpected type: {type(result)}. Aborting.")
                                 request_log.status_code = 500
-                                try:
-                                    request_log.save()  # Attempt to save log
-                                except Exception:
-                                    pass
-                                return JsonResponse(
-                                    {"error": f"Internal gateway error during request pre-processing step {i + 1}"},
-                                    status=500)
+                                try: request_log.save() # Attempt to save log
+                                except Exception: pass
+                                return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i + 1}"}, status=500)
 
                         except Exception as pre_err:
-                            logger.error(
-                                f"Error during pre-processing step {i + 1} for path '{relative_path}' (patterns {matched_patterns}): {pre_err}",
-                                exc_info=True)
+                            logger.error(f"Error during pre-processing step {i + 1} for path '{relative_path}': {pre_err}", exc_info=True)
                             request_log.status_code = 500
-                            # Attempt to save the log entry before returning 500
-                            try:
-                                request_log.save()
+                            try: request_log.save()
                             except Exception as save_err:
-                                logger.error(
-                                    f"Failed to save Request log during pre-processing error handling: {save_err}",
-                                    exc_info=True)
-                            return JsonResponse(
-                                {"error": f"Internal gateway error during request pre-processing step {i + 1}"},
-                                status=500)
+                                logger.error(f"Failed to save Request log during pre-processing error handling: {save_err}", exc_info=True)
+                            return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i + 1}"}, status=500)
 
                     logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")
 
-            # 4. Prepare and Relay Request
-            remaining_path = kwargs.get('remaining_path', '')
-            # Ensure leading/trailing slashes are handled correctly for joining
-            target_api_base = endpoint.url.rstrip('/')  # Use the determined endpoint
-            remaining_path_cleaned = remaining_path.lstrip('/')
-            target_url = f"{target_api_base}/{remaining_path_cleaned}"
-
-            # Set the path on the request log
-            request_log.path = f"/{remaining_path_cleaned}"  # Store with leading slash for consistency
-
-            method = request.method
-            headers = {
-                "Content-Type": "application/json"  # Best practice to include content type
-            }
-            # TODO: update model name in body to model name in endpoint
-            body = request.body
-
-            # Add/replace auth header for the target endpoint
-            self.add_auth_header(headers, endpoint)  # Pass endpoint
-
+            # 4. Prepare and Relay Request using requests.Session
             logger.info(
-                f"Relaying {method} request for {request.user.email} (Token: {token.name}) "
-                f"to {target_url} via Endpoint '{endpoint.name}'"
+                f"Relaying {request_object.method} request for {request.user.email} (Token: {token.name}) "
+                f"to {request_object.url} via Endpoint '{endpoint.name}'"
             )
 
             start_time = time.monotonic()
 
-            # Prepare request arguments, conditionally adding 'data'
-            request_args = {
-                'method': method,
-                'url': target_url,
-                'headers': headers,
-                'stream': True,
-                'timeout': 60  # Consider making this configurable
-            }
-            if body:
-                request_args['data'] = body
+            # Use a session to prepare and send the request
+            with RequestsSession() as session:
+                # Prepare the request (handles headers, body encoding etc.)
+                prepared_request = session.prepare_request(request_object)
 
-            relayed_response = requests.request(**request_args)
+                # Log final headers being sent (optional, be careful with sensitive info)
+                # logger.debug(f"Prepared request headers: {prepared_request.headers}")
+
+                relayed_response = session.send(
+                    prepared_request,
+                    stream=True,
+                    timeout=60 # Consider making this configurable
+                )
+
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
 
@@ -246,7 +241,7 @@ class AIGatewayView(View):
                     f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Model not specified or found in request, skipping usage extraction.")
 
             request_log.save()  # Save successful request log details
-            logger.debug(f"Saved Request log entry ID: {request_log.id} for {method} {target_url}")
+            logger.debug(f"Saved Request log entry ID: {request_log.id} for {request_object.method} {request_object.url}")
 
             # 6. Construct and Return Django Response
             response = HttpResponse(

@@ -3,6 +3,7 @@ import re
 from typing import Optional, Callable, Union
 
 from django.http import HttpRequest, HttpResponse
+import requests
 
 from management.models import Endpoint, Model, Usage, Request
 
@@ -47,20 +48,22 @@ class AIGatewayBackend(abc.ABC):
 
     @abc.abstractmethod
     def pre_processing_endpoints(self) -> dict[str, list[Callable[
-        ['AIGatewayBackend', HttpRequest, 'Request', Optional[HttpResponse]], Union[HttpRequest, HttpResponse]]]]:
+        ['AIGatewayBackend', HttpRequest, 'Request', requests.Request, Endpoint], Optional[HttpResponse]]]]:
         """
-        Returns a dictionary mapping endpoint path patterns (relative strings, no regex)
-        to a *list* of callable functions that perform pre-processing transformations.
+        Returns a dictionary mapping endpoint path patterns (relative strings, regex)
+        to a *list* of callable functions that perform pre-processing transformations
+        on the `requests.Request` object before it's sent.
 
         Each callable in the list receives:
         - The backend instance (self)
-        - The current HttpRequest
+        - The original Django HttpRequest
         - The Request model instance (log entry)
-        - An Optional[HttpResponse], always passed as None for pre-processing steps.
+        - The `requests.Request` object prepared for the outbound call. The callable can modify this object's attributes (e.g., `.url`, `.headers`, `.data`) in place.
+        - The target Endpoint instance.
 
         Each callable must return either:
-        - An HttpRequest: The (potentially modified) request to pass to the next step or to the relay.
-        - An HttpResponse: To short-circuit the process and return this response immediately.
+        - None: Indicates success, processing continues.
+        - An HttpResponse: To short-circuit the process and return this response immediately (e.g., for validation errors).
         """
         pass
 
@@ -86,7 +89,7 @@ class AIGatewayBackend(abc.ABC):
     def post_processing_endpoints(self) -> dict[
         str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', HttpResponse], HttpResponse]]]:
         """
-        Returns a dictionary mapping endpoint path patterns (relative strings, no regex)
+        Returns a dictionary mapping endpoint path patterns (relative strings, regex)
         to a *list* of callable functions that perform the required post-processing transformations
         on the HttpResponse.
 

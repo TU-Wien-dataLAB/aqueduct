@@ -1,4 +1,5 @@
 import abc
+import re
 from typing import Optional, Callable, Union
 
 from django.http import HttpRequest, HttpResponse
@@ -65,7 +66,7 @@ class AIGatewayBackend(abc.ABC):
 
     def requires_pre_processing(self, request: HttpRequest) -> bool:
         """
-        Checks if the given request's remaining path matches any path defined
+        Checks if the given request's remaining path matches any regex pattern defined
         as a key in the dictionary returned by pre_processing_endpoints.
 
         Args:
@@ -75,8 +76,11 @@ class AIGatewayBackend(abc.ABC):
             bool: True if the path matches a pattern requiring pre-processing, False otherwise.
         """
         remaining_path = request.resolver_match.kwargs.get('remaining_path', '')
-        # Check if the cleaned path exists as a key in the pre-processing dict
-        return remaining_path.lstrip('/') in self.pre_processing_endpoints()
+        relative_path = remaining_path.lstrip('/')
+        for pattern in self.pre_processing_endpoints():
+            if re.fullmatch(pattern, relative_path):
+                return True
+        return False
 
     @abc.abstractmethod
     def post_processing_endpoints(self) -> dict[
@@ -96,7 +100,7 @@ class AIGatewayBackend(abc.ABC):
 
     def requires_post_processing(self, request: HttpRequest) -> bool:
         """
-        Checks if the given request's remaining path matches any path defined
+        Checks if the given request's remaining path matches any regex pattern defined
         as a key in the dictionary returned by post_processing_endpoints.
 
         Args:
@@ -106,5 +110,8 @@ class AIGatewayBackend(abc.ABC):
             bool: True if the path matches a pattern requiring post-processing, False otherwise.
         """
         remaining_path = request.resolver_match.kwargs.get('remaining_path', '')
-        # Check if the cleaned path exists as a key in the post-processing dict
-        return remaining_path.lstrip('/') in self.post_processing_endpoints()
+        relative_path = remaining_path.lstrip('/')
+        for pattern in self.post_processing_endpoints():
+            if re.fullmatch(pattern, relative_path):
+                return True
+        return False

@@ -8,6 +8,7 @@ import logging
 import requests  # Added for relaying requests
 import time
 from typing import Optional
+import re # Added import
 
 from django.utils import timezone
 
@@ -114,10 +115,18 @@ class AIGatewayView(View):
             remaining_path = kwargs.get('remaining_path', '')
             if backend_instance and backend_instance.requires_pre_processing(request):
                 relative_path = remaining_path.lstrip('/')
-                pre_processing_pipeline = backend_instance.pre_processing_endpoints().get(relative_path)
+                pre_processing_pipeline = [] # Initialize as empty list
+                matched_patterns = [] # Keep track of patterns that matched
+                # Find all matching pipelines and extend
+                for pattern, pipeline in backend_instance.pre_processing_endpoints().items():
+                    if re.fullmatch(pattern, relative_path):
+                        pre_processing_pipeline.extend(pipeline)
+                        matched_patterns.append(pattern)
+                        # Removed break; continue checking other patterns
+
                 if pre_processing_pipeline:
                     logger.info(
-                        f"Running pre-processing pipeline ({len(pre_processing_pipeline)} steps) for path '{relative_path}' using {type(backend_instance).__name__}")
+                        f"Running combined pre-processing pipeline ({len(pre_processing_pipeline)} steps) for path '{relative_path}' (matched patterns: {matched_patterns}) using {type(backend_instance).__name__}")
                     for i, step_func in enumerate(pre_processing_pipeline):
                         try:
                             result = step_func(backend_instance, request, request_log, None)  # Pass None for response
@@ -142,7 +151,7 @@ class AIGatewayView(View):
                                 logger.debug(f"Pre-processing step {i + 1} completed, request object updated.")
                             else:
                                 logger.error(
-                                    f"Pre-processing step {i + 1} for path '{relative_path}' returned an unexpected type: {type(result)}. Aborting.")
+                                    f"Pre-processing step {i + 1} for path '{relative_path}' (patterns {matched_patterns}) returned an unexpected type: {type(result)}. Aborting.")
                                 request_log.status_code = 500
                                 try:
                                     request_log.save()  # Attempt to save log
@@ -154,7 +163,7 @@ class AIGatewayView(View):
 
                         except Exception as pre_err:
                             logger.error(
-                                f"Error during pre-processing step {i + 1} for path '{relative_path}': {pre_err}",
+                                f"Error during pre-processing step {i + 1} for path '{relative_path}' (patterns {matched_patterns}): {pre_err}",
                                 exc_info=True)
                             request_log.status_code = 500
                             # Attempt to save the log entry before returning 500
@@ -260,10 +269,18 @@ class AIGatewayView(View):
                 relative_path = remaining_path.lstrip('/')
                 # Only run pipeline if the initial response was successful
                 if response.status_code < 400:
-                    processing_pipeline = backend_instance.post_processing_endpoints().get(relative_path)
+                    processing_pipeline = [] # Initialize as empty list
+                    matched_patterns = [] # Keep track of patterns that matched
+                    # Find all matching pipelines and extend
+                    for pattern, pipeline in backend_instance.post_processing_endpoints().items():
+                        if re.fullmatch(pattern, relative_path):
+                            processing_pipeline.extend(pipeline)
+                            matched_patterns.append(pattern)
+                            # Removed break; continue checking other patterns
+
                     if processing_pipeline:
                         logger.info(
-                            f"Running post-processing pipeline ({len(processing_pipeline)} steps) for path '{relative_path}' using {type(backend_instance).__name__}")
+                            f"Running combined post-processing pipeline ({len(processing_pipeline)} steps) for path '{relative_path}' (matched patterns: {matched_patterns}) using {type(backend_instance).__name__}")
                         # original_response_status = response.status_code # Keep original status for logging if needed
                         for i, step_func in enumerate(processing_pipeline):
                             try:
@@ -273,12 +290,12 @@ class AIGatewayView(View):
                                 # Check for error status code (4xx or 5xx) introduced by the step
                                 if response.status_code >= 400:
                                     logger.warning(
-                                        f"Post-processing pipeline stopped early at step {i + 1} due to status code {response.status_code}.")
+                                        f"Post-processing pipeline stopped early at step {i + 1} (patterns {matched_patterns}) due to status code {response.status_code}.")
                                     # Error occurred, return the error response immediately
                                     return response
                             except Exception as pp_err:
                                 logger.error(
-                                    f"Error during post-processing step {i + 1} for path '{relative_path}': {pp_err}",
+                                    f"Error during post-processing step {i + 1} for path '{relative_path}' (patterns {matched_patterns}): {pp_err}",
                                     exc_info=True)
                                 # Return a generic 500 error if a step fails unexpectedly
                                 return JsonResponse(
@@ -286,10 +303,10 @@ class AIGatewayView(View):
                                     status=500)
 
                         logger.debug(
-                            f"Post-processing pipeline completed successfully for path '{relative_path}'. Final status: {response.status_code}")
+                            f"Combined post-processing pipeline completed successfully for path '{relative_path}' (patterns {matched_patterns}). Final status: {response.status_code}")
                 else:
                     logger.debug(
-                        f"Skipping post-processing for path '{relative_path}' due to initial response status code {response.status_code}.")
+                        f"Skipping post-processing for path '{relative_path}' (status code {response.status_code}), no matching pattern found or required.")
 
             logger.debug(f"Relay successful: Status {relayed_response.status_code}")
             return response

@@ -120,8 +120,8 @@ class OpenAIBackend(AIGatewayBackend):
         Currently, none are defined, so it returns an empty dict.
         """
         return {
-            "models": [OpenAIBackend._transform_models],
-            "v1/models": [OpenAIBackend._transform_models],
+            # Match 'models' or 'v1/models' exactly
+            r"^(v1/)?models$": [OpenAIBackend._transform_models],
         }
 
     @staticmethod

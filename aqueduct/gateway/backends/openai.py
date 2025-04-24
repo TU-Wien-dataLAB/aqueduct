@@ -117,7 +117,7 @@ class OpenAIBackend(AIGatewayBackend):
         }
 
     @staticmethod
-    def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', original_request: HttpRequest, request_log: Request, request_object: requests.Request, response: Optional[HttpResponse]) -> Union[requests.Request, HttpResponse]:
+    def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', django_request: HttpRequest, request_log: Request, relay_request: requests.Request, response: Optional[HttpResponse]) -> Union[requests.Request, HttpResponse]:
         """
         Pre-processing step to validate the requested model against the endpoint's
         allowed models (using display_name) and transform it to the internal name
@@ -135,20 +135,20 @@ class OpenAIBackend(AIGatewayBackend):
 
         Args:
             backend: The OpenAIBackend instance.
-            original_request: The original incoming Django HttpRequest (unused).
+            django_request: The original incoming Django HttpRequest (unused).
             request_log: The Request log model instance.
-            request_object: The `requests.Request` object being prepared. This object
+            relay_request: The `requests.Request` object being prepared. This object
                             may be modified in place (specifically `.data` and `.headers`).
-            endpoint: The target Endpoint instance.
+            response: The final Django response object (None for pre-processing).
 
         Returns:
             Union[requests.Request, HttpResponse]: The (potentially modified) `request_object` on success,
                                                    or a JsonResponse on validation failure.
         """
-        request_body = request_object.data
+        request_body = relay_request.data
         if not request_body:
             logger.debug("Pre-processing: Request body is empty, skipping model validation/transformation.")
-            return request_object # Return unmodified object
+            return relay_request # Return unmodified object
 
         # Ensure body is decoded if it's bytes
         body_str = ""
@@ -157,23 +157,23 @@ class OpenAIBackend(AIGatewayBackend):
                 body_str = request_body.decode('utf-8')
             except UnicodeDecodeError:
                 logger.warning("Pre-processing: Failed to decode request body as UTF-8, skipping model validation.")
-                return request_object # Cannot parse non-utf8 body, return unmodified
+                return relay_request # Cannot parse non-utf8 body, return unmodified
         elif isinstance(request_body, str):
             body_str = request_body
         else:
             logger.warning(f"Pre-processing: Unexpected request body type ({type(request_body)}), skipping model validation.")
-            return request_object # Return unmodified object
+            return JsonResponse({"error": "Unexpected request body type ({type(request_body)}), skipping model validation."}, status=400)
 
         try:
             data = json.loads(body_str)
         except json.JSONDecodeError:
             logger.warning("Pre-processing: Failed to decode JSON from request body, skipping model validation.")
-            return request_object # Let the target API handle malformed JSON, return unmodified
+            return relay_request # Let the target API handle malformed JSON, return unmodified
 
         requested_model_display_name = data.get('model')
         if not requested_model_display_name:
             logger.debug("Pre-processing: Request JSON missing 'model' key, skipping validation/transformation.")
-            return request_object # No model specified, return unmodified
+            return relay_request # No model specified, return unmodified
 
         try:
             # Note: Using request_log.endpoint assumes it's correctly set before pre-processing
@@ -194,15 +194,15 @@ class OpenAIBackend(AIGatewayBackend):
                 new_body_bytes = json.dumps(data).encode('utf-8')
 
                 # Update the request object's data and headers
-                request_object.data = new_body_bytes
-                request_object.headers['Content-Length'] = str(len(new_body_bytes))
+                relay_request.data = new_body_bytes
+                relay_request.headers['Content-Length'] = str(len(new_body_bytes))
 
                 logger.info(f"Pre-processing: Transformed model '{requested_model_display_name}' to '{internal_model_name}' for endpoint '{endpoint.slug}'.")
-                return request_object # Return modified object
+                return relay_request # Return modified object
             else:
                 # Model provided was already the internal name (and it's allowed)
                 logger.debug(f"Pre-processing: Model '{internal_model_name}' provided directly and is valid for endpoint '{endpoint.slug}'.")
-                return request_object # Return unmodified object
+                return relay_request # Return unmodified object
 
         except Model.DoesNotExist:
             logger.warning(f"Pre-processing: Model with display_name '{requested_model_display_name}' not found or not allowed for endpoint '{endpoint.slug}'.")

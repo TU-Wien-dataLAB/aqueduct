@@ -11,8 +11,7 @@ import requests  # Added for relaying requests
 import json  # Added for parsing request body
 import time
 import abc
-import re  # Add re import
-from typing import Optional, Callable
+from typing import Optional, Callable, Union
 
 from django.utils import timezone
 from management.models import Usage, Model, Request, Token, Endpoint, EndpointBackend
@@ -59,6 +58,39 @@ class AIGatewayBackend(abc.ABC):
             Usage: Usage extracted from the response.
         """
         pass
+
+    @abc.abstractmethod
+    def pre_processing_endpoints(self) -> dict[str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', Optional[HttpResponse]], Union[HttpRequest, HttpResponse]]]]:
+        """
+        Returns a dictionary mapping endpoint path patterns (relative strings, no regex)
+        to a *list* of callable functions that perform pre-processing transformations.
+
+        Each callable in the list receives:
+        - The backend instance (self)
+        - The current HttpRequest
+        - The Request model instance (log entry)
+        - An Optional[HttpResponse], always passed as None for pre-processing steps.
+
+        Each callable must return either:
+        - An HttpRequest: The (potentially modified) request to pass to the next step or to the relay.
+        - An HttpResponse: To short-circuit the process and return this response immediately.
+        """
+        pass
+
+    def requires_pre_processing(self, request: HttpRequest) -> bool:
+        """
+        Checks if the given request's remaining path matches any path defined
+        as a key in the dictionary returned by pre_processing_endpoints.
+
+        Args:
+            request (HttpRequest): The incoming request.
+
+        Returns:
+            bool: True if the path matches a pattern requiring pre-processing, False otherwise.
+        """
+        remaining_path = request.resolver_match.kwargs.get('remaining_path', '')
+        # Check if the cleaned path exists as a key in the pre-processing dict
+        return remaining_path.lstrip('/') in self.pre_processing_endpoints()
 
     @abc.abstractmethod
     def post_processing_endpoints(self) -> dict[str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', HttpResponse], HttpResponse]]]:
@@ -185,6 +217,19 @@ class OpenAIBackend(AIGatewayBackend):
             logger.error(f"Unexpected error extracting usage from OpenAI response: {e}", exc_info=True)
             return Usage(input_tokens=0, output_tokens=0)
 
+    def pre_processing_endpoints(self) -> dict[str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', Optional[HttpResponse]], Union[HttpRequest, HttpResponse]]]]:
+        """
+        Returns a dictionary of path patterns to pre-processing callables for OpenAI.
+        Currently, none are defined, so it returns an empty dict.
+        """
+        # Example: return {
+        #    "chat/completions": [
+        #        lambda backend, req, log, resp_none: modify_request_step1(backend, req, log, resp_none),
+        #        lambda backend, req, log, resp_none: validation_step_returning_error_response(backend, req, log, resp_none)
+        #    ]
+        # }
+        return {}
+
     def post_processing_endpoints(self) -> dict[str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', HttpResponse], HttpResponse]]]:
         """
         Returns a dictionary of path patterns to post-processing callables for OpenAI.
@@ -290,6 +335,50 @@ class AIGatewayView(LoginRequiredMixin, View):
                 # Status, time, usage set later
             )
             # request_log.save() # Optionally save early, but saving after response is better
+
+            # --- Pre-processing Pipeline --- 
+            original_request = request # Keep a reference if needed
+            remaining_path = kwargs.get('remaining_path', '')
+            if backend_instance and backend_instance.requires_pre_processing(request):
+                relative_path = remaining_path.lstrip('/')
+                pre_processing_pipeline = backend_instance.pre_processing_endpoints().get(relative_path)
+                if pre_processing_pipeline:
+                    logger.info(f"Running pre-processing pipeline ({len(pre_processing_pipeline)} steps) for path '{relative_path}' using {type(backend_instance).__name__}")
+                    for i, step_func in enumerate(pre_processing_pipeline):
+                        try:
+                            result = step_func(backend_instance, request, request_log, None) # Pass None for response
+
+                            if isinstance(result, HttpResponse):
+                                logger.warning(f"Pre-processing pipeline returned an HttpResponse at step {i+1} (Status: {result.status_code}). Short-circuiting relay.")
+                                request_log.status_code = result.status_code
+                                # Attempt to save the log entry before returning
+                                try:
+                                    request_log.save()
+                                    logger.debug(f"Saved Request log entry ID (pre-processing short-circuit): {request_log.id}")
+                                except Exception as save_err:
+                                    logger.error(f"Failed to save Request log during pre-processing short-circuit: {save_err}", exc_info=True)
+                                return result # Return the response generated by the step
+
+                            elif isinstance(result, HttpRequest):
+                                request = result # Update request for the next step / relay
+                                logger.debug(f"Pre-processing step {i+1} completed, request object updated.")
+                            else:
+                                logger.error(f"Pre-processing step {i+1} for path '{relative_path}' returned an unexpected type: {type(result)}. Aborting.")
+                                request_log.status_code = 500
+                                try: request_log.save() # Attempt to save log
+                                except Exception: pass
+                                return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i+1}"}, status=500)
+
+                        except Exception as pre_err:
+                            logger.error(f"Error during pre-processing step {i+1} for path '{relative_path}': {pre_err}", exc_info=True)
+                            request_log.status_code = 500
+                            # Attempt to save the log entry before returning 500
+                            try: request_log.save()
+                            except Exception as save_err:
+                                logger.error(f"Failed to save Request log during pre-processing error handling: {save_err}", exc_info=True)
+                            return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i+1}"}, status=500)
+
+                    logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")
 
             # 4. Prepare and Relay Request
             remaining_path = kwargs.get('remaining_path', '')
@@ -551,10 +640,6 @@ class AIGatewayView(LoginRequiredMixin, View):
             headers (dict): The dictionary of headers to modify.
             endpoint (Endpoint): The target Endpoint object.
         """
-        if not endpoint:
-            logger.warning("add_auth_header called without a valid endpoint.")
-            return
-
         access_token = endpoint.get_access_token()
 
         if access_token:

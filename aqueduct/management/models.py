@@ -494,6 +494,14 @@ class Request(models.Model):
         blank=True, # Allow the field to be blank in forms/admin
         related_name='requests'
     )
+    endpoint = models.ForeignKey(
+        'Endpoint',
+        on_delete=models.CASCADE,
+        related_name='requests',
+        null=False,
+        blank=False,
+        help_text="The endpoint to which this request was made"
+    )
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
 
     # Additional fields (endpoint_url removed)

@@ -1,249 +1,21 @@
 # gateway/views.py
 from django.contrib import auth
-from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import HttpResponse, JsonResponse, HttpResponseNotAllowed, HttpRequest, Http404
+from django.http import HttpResponse, JsonResponse, HttpRequest, Http404
 from django.views import View
-from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 import logging
 import requests  # Added for relaying requests
-import json  # Added for parsing request body
 import time
-import abc
-from typing import Optional, Callable, Union
+from typing import Optional
 
 from django.utils import timezone
-from management.models import Usage, Model, Request, Token, Endpoint, EndpointBackend
+
+from gateway.backends.base import AIGatewayBackend
+from gateway.backends.openai import OpenAIBackend
+from management.models import Request, Token, Endpoint, EndpointBackend
 
 logger = logging.getLogger(__name__)
-
-
-# --- Backend Abstraction ---
-
-class AIGatewayBackend(abc.ABC):
-    """
-    Abstract base class for backend-specific logic within the AI Gateway.
-    Subclasses handle tasks like finding the correct model and extracting usage
-    based on the specifics of the target API (e.g., OpenAI, Anthropic).
-    """
-
-    @abc.abstractmethod
-    def get_model(self, request: HttpRequest, endpoint: Endpoint) -> Optional[Model]:
-        """
-        Retrieves the Model database object based on the request data and the target endpoint.
-        Returns None if the model cannot be determined or found based on the request.
-
-        Args:
-            request (HttpRequest): The incoming request.
-            endpoint (Endpoint): The target Endpoint instance.
-
-        Returns:
-            Optional[Model]: The corresponding Model instance, or None.
-
-        Raises:
-            Http404: For unexpected errors during processing.
-        """
-        pass
-
-    @abc.abstractmethod
-    def extract_usage(self, response_body: bytes) -> Usage:
-        """
-        Extracts usage information (e.g., token counts) from a relayed API response body.
-
-        Args:
-            response_body (bytes): The body of the response from the relayed request.
-
-        Returns:
-            Usage: Usage extracted from the response.
-        """
-        pass
-
-    @abc.abstractmethod
-    def pre_processing_endpoints(self) -> dict[str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', Optional[HttpResponse]], Union[HttpRequest, HttpResponse]]]]:
-        """
-        Returns a dictionary mapping endpoint path patterns (relative strings, no regex)
-        to a *list* of callable functions that perform pre-processing transformations.
-
-        Each callable in the list receives:
-        - The backend instance (self)
-        - The current HttpRequest
-        - The Request model instance (log entry)
-        - An Optional[HttpResponse], always passed as None for pre-processing steps.
-
-        Each callable must return either:
-        - An HttpRequest: The (potentially modified) request to pass to the next step or to the relay.
-        - An HttpResponse: To short-circuit the process and return this response immediately.
-        """
-        pass
-
-    def requires_pre_processing(self, request: HttpRequest) -> bool:
-        """
-        Checks if the given request's remaining path matches any path defined
-        as a key in the dictionary returned by pre_processing_endpoints.
-
-        Args:
-            request (HttpRequest): The incoming request.
-
-        Returns:
-            bool: True if the path matches a pattern requiring pre-processing, False otherwise.
-        """
-        remaining_path = request.resolver_match.kwargs.get('remaining_path', '')
-        # Check if the cleaned path exists as a key in the pre-processing dict
-        return remaining_path.lstrip('/') in self.pre_processing_endpoints()
-
-    @abc.abstractmethod
-    def post_processing_endpoints(self) -> dict[str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', HttpResponse], HttpResponse]]]:
-        """
-        Returns a dictionary mapping endpoint path patterns (relative strings, no regex)
-        to a *list* of callable functions that perform the required post-processing transformations
-        on the HttpResponse.
-
-        Each callable in the list receives:
-        - The backend instance (self)
-        - The original HttpRequest
-        - The Request model instance (log entry)
-        - The current HttpResponse (output of the previous step or initial response)
-        """
-        pass
-
-    def requires_post_processing(self, request: HttpRequest) -> bool:
-        """
-        Checks if the given request's remaining path matches any path defined
-        as a key in the dictionary returned by post_processing_endpoints.
-
-        Args:
-            request (HttpRequest): The incoming request.
-
-        Returns:
-            bool: True if the path matches a pattern requiring post-processing, False otherwise.
-        """
-        remaining_path = request.resolver_match.kwargs.get('remaining_path', '')
-        # Check if the cleaned path exists as a key in the post-processing dict
-        return remaining_path.lstrip('/') in self.post_processing_endpoints()
-
-
-class OpenAIBackend(AIGatewayBackend):
-    """
-    Backend implementation for OpenAI-compatible API endpoints.
-    """
-
-    def get_model(self, request: HttpRequest, endpoint: Endpoint) -> Optional[Model]:
-        """
-        Extracts the model name from the request body (JSON 'model' key)
-        and retrieves the Model object belonging to the specified endpoint.
-        Returns None if 'model' key is missing, JSON is invalid, or model not found.
-        """
-        model_name = None  # Initialize model_name
-        try:
-            if not request.body:
-                logger.warning(
-                    f"OpenAIBackend.get_model called with empty request body for endpoint '{endpoint.slug}'.")
-                return None  # Return None if body is empty
-
-            data = json.loads(request.body)
-            model_name = data.get('model')
-
-            if not model_name:
-                logger.warning(f"Request body missing 'model' key for endpoint '{endpoint.slug}'.")
-                return None  # Return None if 'model' key is missing
-
-            # Ensure the model belongs to the correct endpoint
-            model = Model.objects.get(name=model_name, endpoint=endpoint)
-            logger.debug(f"Found model '{model_name}' for endpoint '{endpoint.slug}'.")
-            return model
-
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to decode JSON from request body for endpoint '{endpoint.slug}'.", exc_info=True)
-            return None  # Return None if JSON is invalid
-        except Model.DoesNotExist:
-            # Use model_name captured earlier in the log message
-            log_model_name = model_name if model_name else "<not provided>"
-            logger.warning(f"Model with name '{log_model_name}' not found for endpoint '{endpoint.slug}'.")
-            return None  # Return None if model not found
-        except Exception as e:  # Catch only truly unexpected errors
-            logger.error(f"Unexpected error getting model for endpoint '{endpoint.slug}': {e}", exc_info=True)
-            raise Http404("Error processing request.")  # Re-raise for unexpected issues
-
-    def extract_usage(self, response_body: bytes) -> Usage:
-        """
-        Extracts token usage from an OpenAI API JSON response body.
-        Looks for {"usage": {"prompt_tokens": X, "completion_tokens": Y}}
-        """
-        try:
-            data = json.loads(response_body)
-            usage_dict = data.get('usage')
-
-            if isinstance(usage_dict, dict):
-                input_tokens = usage_dict.get('prompt_tokens', 0)
-                output_tokens = usage_dict.get('completion_tokens', 0)
-                logger.debug(
-                    f"OpenAIBackend: Successfully extracted usage: Input={input_tokens}, Output={output_tokens}")
-                return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
-            else:
-                # Check for streaming chunks which might contain usage
-                # This is a simplified check; a more robust solution might parse line-by-line
-                if b'"usage":' in response_body:
-                    # Try to find the last usage object in potentially streamed data
-                    try:
-                        # Find the last occurrence of a potential usage JSON object
-                        last_usage_idx = response_body.rfind(b'{"usage":')
-                        if last_usage_idx != -1:
-                            # Attempt to parse from that point
-                            # Find the closing brace `}` for the usage object
-                            end_brace_idx = response_body.find(b'}}', last_usage_idx)
-                            if end_brace_idx != -1:
-                                usage_json_str = response_body[last_usage_idx:end_brace_idx + 2].decode('utf-8',
-                                                                                                        errors='ignore')
-                                usage_data = json.loads(usage_json_str)
-                                usage_dict = usage_data.get('usage')
-                                if isinstance(usage_dict, dict):
-                                    input_tokens = usage_dict.get('prompt_tokens', 0)
-                                    output_tokens = usage_dict.get('completion_tokens', 0)
-                                    logger.debug(
-                                        f"OpenAIBackend: Extracted usage from streamed data: Input={input_tokens}, Output={output_tokens}")
-                                    return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
-                    except Exception as stream_parse_e:
-                        logger.warning(
-                            f"Could not parse potential usage from streamed OpenAI response: {stream_parse_e}")
-
-                logger.warning("No usable 'usage' dictionary found in OpenAI response body.")
-                return Usage(input_tokens=0, output_tokens=0)
-
-        except json.JSONDecodeError:
-            logger.warning("Failed to decode JSON from OpenAI response body when extracting usage.")
-            return Usage(input_tokens=0, output_tokens=0)
-        except Exception as e:
-            logger.error(f"Unexpected error extracting usage from OpenAI response: {e}", exc_info=True)
-            return Usage(input_tokens=0, output_tokens=0)
-
-    def pre_processing_endpoints(self) -> dict[str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', Optional[HttpResponse]], Union[HttpRequest, HttpResponse]]]]:
-        """
-        Returns a dictionary of path patterns to pre-processing callables for OpenAI.
-        Currently, none are defined, so it returns an empty dict.
-        """
-        # Example: return {
-        #    "chat/completions": [
-        #        lambda backend, req, log, resp_none: modify_request_step1(backend, req, log, resp_none),
-        #        lambda backend, req, log, resp_none: validation_step_returning_error_response(backend, req, log, resp_none)
-        #    ]
-        # }
-        return {}
-
-    def post_processing_endpoints(self) -> dict[str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', HttpResponse], HttpResponse]]]:
-        """
-        Returns a dictionary of path patterns to post-processing callables for OpenAI.
-        Currently, none are defined, so it returns an empty dict.
-        """
-        # Example: return {
-        #    "chat/completions": [
-        #        lambda backend, req, log, resp: step1(backend, req, log, resp),
-        #        lambda backend, req, log, resp: step2(backend, req, log, resp)
-        #    ],
-        #    "v1/other/endpoint": [lambda backend, req, log, resp: validation_step(backend, req, log, resp)]
-        # }
-        return {}
-
 
 # --- Backend Dispatcher ---
 
@@ -257,7 +29,7 @@ BACKEND_MAP = {
 
 # --- Base Gateway View with Authentication ---
 
-class AIGatewayView(LoginRequiredMixin, View):
+class AIGatewayView(View):
     """
     Base class for AI Gateway views providing authentication.
     Relies on Django's authentication middleware (configured with a custom backend)
@@ -328,6 +100,7 @@ class AIGatewayView(LoginRequiredMixin, View):
             request_log = Request(
                 token=token,
                 model=model,  # Assign the model instance (can be None)
+                endpoint=endpoint,
                 timestamp=timezone.now(),
                 method=request.method,
                 user_agent=request.headers.get('User-Agent', ''),
@@ -337,46 +110,63 @@ class AIGatewayView(LoginRequiredMixin, View):
             # request_log.save() # Optionally save early, but saving after response is better
 
             # --- Pre-processing Pipeline --- 
-            original_request = request # Keep a reference if needed
+            original_request = request  # Keep a reference if needed
             remaining_path = kwargs.get('remaining_path', '')
             if backend_instance and backend_instance.requires_pre_processing(request):
                 relative_path = remaining_path.lstrip('/')
                 pre_processing_pipeline = backend_instance.pre_processing_endpoints().get(relative_path)
                 if pre_processing_pipeline:
-                    logger.info(f"Running pre-processing pipeline ({len(pre_processing_pipeline)} steps) for path '{relative_path}' using {type(backend_instance).__name__}")
+                    logger.info(
+                        f"Running pre-processing pipeline ({len(pre_processing_pipeline)} steps) for path '{relative_path}' using {type(backend_instance).__name__}")
                     for i, step_func in enumerate(pre_processing_pipeline):
                         try:
-                            result = step_func(backend_instance, request, request_log, None) # Pass None for response
+                            result = step_func(backend_instance, request, request_log, None)  # Pass None for response
 
                             if isinstance(result, HttpResponse):
-                                logger.warning(f"Pre-processing pipeline returned an HttpResponse at step {i+1} (Status: {result.status_code}). Short-circuiting relay.")
+                                logger.warning(
+                                    f"Pre-processing pipeline returned an HttpResponse at step {i + 1} (Status: {result.status_code}). Short-circuiting relay.")
                                 request_log.status_code = result.status_code
                                 # Attempt to save the log entry before returning
                                 try:
                                     request_log.save()
-                                    logger.debug(f"Saved Request log entry ID (pre-processing short-circuit): {request_log.id}")
+                                    logger.debug(
+                                        f"Saved Request log entry ID (pre-processing short-circuit): {request_log.id}")
                                 except Exception as save_err:
-                                    logger.error(f"Failed to save Request log during pre-processing short-circuit: {save_err}", exc_info=True)
-                                return result # Return the response generated by the step
+                                    logger.error(
+                                        f"Failed to save Request log during pre-processing short-circuit: {save_err}",
+                                        exc_info=True)
+                                return result  # Return the response generated by the step
 
                             elif isinstance(result, HttpRequest):
-                                request = result # Update request for the next step / relay
-                                logger.debug(f"Pre-processing step {i+1} completed, request object updated.")
+                                request = result  # Update request for the next step / relay
+                                logger.debug(f"Pre-processing step {i + 1} completed, request object updated.")
                             else:
-                                logger.error(f"Pre-processing step {i+1} for path '{relative_path}' returned an unexpected type: {type(result)}. Aborting.")
+                                logger.error(
+                                    f"Pre-processing step {i + 1} for path '{relative_path}' returned an unexpected type: {type(result)}. Aborting.")
                                 request_log.status_code = 500
-                                try: request_log.save() # Attempt to save log
-                                except Exception: pass
-                                return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i+1}"}, status=500)
+                                try:
+                                    request_log.save()  # Attempt to save log
+                                except Exception:
+                                    pass
+                                return JsonResponse(
+                                    {"error": f"Internal gateway error during request pre-processing step {i + 1}"},
+                                    status=500)
 
                         except Exception as pre_err:
-                            logger.error(f"Error during pre-processing step {i+1} for path '{relative_path}': {pre_err}", exc_info=True)
+                            logger.error(
+                                f"Error during pre-processing step {i + 1} for path '{relative_path}': {pre_err}",
+                                exc_info=True)
                             request_log.status_code = 500
                             # Attempt to save the log entry before returning 500
-                            try: request_log.save()
+                            try:
+                                request_log.save()
                             except Exception as save_err:
-                                logger.error(f"Failed to save Request log during pre-processing error handling: {save_err}", exc_info=True)
-                            return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i+1}"}, status=500)
+                                logger.error(
+                                    f"Failed to save Request log during pre-processing error handling: {save_err}",
+                                    exc_info=True)
+                            return JsonResponse(
+                                {"error": f"Internal gateway error during request pre-processing step {i + 1}"},
+                                status=500)
 
                     logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")
 
@@ -472,25 +262,34 @@ class AIGatewayView(LoginRequiredMixin, View):
                 if response.status_code < 400:
                     processing_pipeline = backend_instance.post_processing_endpoints().get(relative_path)
                     if processing_pipeline:
-                        logger.info(f"Running post-processing pipeline ({len(processing_pipeline)} steps) for path '{relative_path}' using {type(backend_instance).__name__}")
+                        logger.info(
+                            f"Running post-processing pipeline ({len(processing_pipeline)} steps) for path '{relative_path}' using {type(backend_instance).__name__}")
                         # original_response_status = response.status_code # Keep original status for logging if needed
                         for i, step_func in enumerate(processing_pipeline):
                             try:
                                 response = step_func(backend_instance, request, request_log, response)
-                                logger.debug(f"Post-processing step {i+1} completed. Current status: {response.status_code}")
+                                logger.debug(
+                                    f"Post-processing step {i + 1} completed. Current status: {response.status_code}")
                                 # Check for error status code (4xx or 5xx) introduced by the step
                                 if response.status_code >= 400:
-                                    logger.warning(f"Post-processing pipeline stopped early at step {i+1} due to status code {response.status_code}.")
+                                    logger.warning(
+                                        f"Post-processing pipeline stopped early at step {i + 1} due to status code {response.status_code}.")
                                     # Error occurred, return the error response immediately
                                     return response
                             except Exception as pp_err:
-                                logger.error(f"Error during post-processing step {i+1} for path '{relative_path}': {pp_err}", exc_info=True)
+                                logger.error(
+                                    f"Error during post-processing step {i + 1} for path '{relative_path}': {pp_err}",
+                                    exc_info=True)
                                 # Return a generic 500 error if a step fails unexpectedly
-                                return JsonResponse({"error": f"Gateway error during response post-processing step {i+1}"}, status=500)
+                                return JsonResponse(
+                                    {"error": f"Gateway error during response post-processing step {i + 1}"},
+                                    status=500)
 
-                        logger.debug(f"Post-processing pipeline completed successfully for path '{relative_path}'. Final status: {response.status_code}")
+                        logger.debug(
+                            f"Post-processing pipeline completed successfully for path '{relative_path}'. Final status: {response.status_code}")
                 else:
-                    logger.debug(f"Skipping post-processing for path '{relative_path}' due to initial response status code {response.status_code}.")
+                    logger.debug(
+                        f"Skipping post-processing for path '{relative_path}' due to initial response status code {response.status_code}.")
 
             logger.debug(f"Relay successful: Status {relayed_response.status_code}")
             return response

@@ -44,15 +44,17 @@ AI gateway. The implementation follows a phased approach:
     * ~~Request parsing for usage tracking.~~
     * ~~Pre-/Post-processing of requests (e.g. to correctly parse the `/models` endpoint to list available models).~~
     * Add usage checks as pre- and post-processing steps to limit requests.
+    * Support for streaming requests.
     * A functional `docker-compose.yml`
     * Database schema optimization for write-heavy request/usage logging.
+    * Thorough unit/integration testing of `management` and `gateway`.
 
 3. 🔄 **Advanced Features:**
     * A `/metrics` endpoint for monitoring.
     * Dashboard to track usage of orgs, teams and users.
     * Implement [Guardrails](https://github.com/guardrails-ai/guardrails) using post-processing on completions. 
     * Model cooldown and retry logic.
-    * Granular access control based on models and usage limits.
+    * Granular access control for models within teams.
     * Management of MCP tool calling server endpoints e.g. from
       the [MCP Server list](https://github.com/modelcontextprotocol/servers?tab=readme-ov-file).
       * host a code-sandbox MCP server for executing tool calls.

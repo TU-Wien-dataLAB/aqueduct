@@ -11,7 +11,8 @@ import requests  # Added for relaying requests
 import json  # Added for parsing request body
 import time
 import abc
-from typing import Optional
+import re  # Add re import
+from typing import Optional, Callable
 
 from django.utils import timezone
 from management.models import Usage, Model, Request, Token, Endpoint, EndpointBackend
@@ -27,6 +28,7 @@ class AIGatewayBackend(abc.ABC):
     Subclasses handle tasks like finding the correct model and extracting usage
     based on the specifics of the target API (e.g., OpenAI, Anthropic).
     """
+
     @abc.abstractmethod
     def get_model(self, request: HttpRequest, endpoint: Endpoint) -> Optional[Model]:
         """
@@ -58,29 +60,55 @@ class AIGatewayBackend(abc.ABC):
         """
         pass
 
+    @abc.abstractmethod
+    def post_processing_endpoints(self) -> dict[str, Callable[[HttpResponse], HttpResponse]]:
+        """
+        Returns a dictionary mapping endpoint path patterns (relative strings, no regex)
+        to callable functions that perform the required post-processing transformation
+        on the HttpResponse.
+        """
+        pass
+
+    def requires_post_processing(self, request: HttpRequest) -> bool:
+        """
+        Checks if the given request's remaining path matches any path defined
+        as a key in the dictionary returned by post_processing_endpoints.
+
+        Args:
+            request (HttpRequest): The incoming request.
+
+        Returns:
+            bool: True if the path matches a pattern requiring post-processing, False otherwise.
+        """
+        remaining_path = request.resolver_match.kwargs.get('remaining_path', '')
+        # Check if the cleaned path exists as a key in the post-processing dict
+        return remaining_path.lstrip('/') in self.post_processing_endpoints()
+
 
 class OpenAIBackend(AIGatewayBackend):
     """
     Backend implementation for OpenAI-compatible API endpoints.
     """
+
     def get_model(self, request: HttpRequest, endpoint: Endpoint) -> Optional[Model]:
         """
         Extracts the model name from the request body (JSON 'model' key)
         and retrieves the Model object belonging to the specified endpoint.
         Returns None if 'model' key is missing, JSON is invalid, or model not found.
         """
-        model_name = None # Initialize model_name
+        model_name = None  # Initialize model_name
         try:
             if not request.body:
-                logger.warning(f"OpenAIBackend.get_model called with empty request body for endpoint '{endpoint.slug}'.")
-                return None # Return None if body is empty
+                logger.warning(
+                    f"OpenAIBackend.get_model called with empty request body for endpoint '{endpoint.slug}'.")
+                return None  # Return None if body is empty
 
             data = json.loads(request.body)
             model_name = data.get('model')
 
             if not model_name:
                 logger.warning(f"Request body missing 'model' key for endpoint '{endpoint.slug}'.")
-                return None # Return None if 'model' key is missing
+                return None  # Return None if 'model' key is missing
 
             # Ensure the model belongs to the correct endpoint
             model = Model.objects.get(name=model_name, endpoint=endpoint)
@@ -89,15 +117,15 @@ class OpenAIBackend(AIGatewayBackend):
 
         except json.JSONDecodeError:
             logger.warning(f"Failed to decode JSON from request body for endpoint '{endpoint.slug}'.", exc_info=True)
-            return None # Return None if JSON is invalid
+            return None  # Return None if JSON is invalid
         except Model.DoesNotExist:
             # Use model_name captured earlier in the log message
             log_model_name = model_name if model_name else "<not provided>"
             logger.warning(f"Model with name '{log_model_name}' not found for endpoint '{endpoint.slug}'.")
-            return None # Return None if model not found
+            return None  # Return None if model not found
         except Exception as e:  # Catch only truly unexpected errors
             logger.error(f"Unexpected error getting model for endpoint '{endpoint.slug}': {e}", exc_info=True)
-            raise Http404("Error processing request.") # Re-raise for unexpected issues
+            raise Http404("Error processing request.")  # Re-raise for unexpected issues
 
     def extract_usage(self, response_body: bytes) -> Usage:
         """
@@ -111,7 +139,8 @@ class OpenAIBackend(AIGatewayBackend):
             if isinstance(usage_dict, dict):
                 input_tokens = usage_dict.get('prompt_tokens', 0)
                 output_tokens = usage_dict.get('completion_tokens', 0)
-                logger.debug(f"OpenAIBackend: Successfully extracted usage: Input={input_tokens}, Output={output_tokens}")
+                logger.debug(
+                    f"OpenAIBackend: Successfully extracted usage: Input={input_tokens}, Output={output_tokens}")
                 return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
             else:
                 # Check for streaming chunks which might contain usage
@@ -126,16 +155,19 @@ class OpenAIBackend(AIGatewayBackend):
                             # Find the closing brace `}` for the usage object
                             end_brace_idx = response_body.find(b'}}', last_usage_idx)
                             if end_brace_idx != -1:
-                                usage_json_str = response_body[last_usage_idx:end_brace_idx+2].decode('utf-8', errors='ignore')
+                                usage_json_str = response_body[last_usage_idx:end_brace_idx + 2].decode('utf-8',
+                                                                                                        errors='ignore')
                                 usage_data = json.loads(usage_json_str)
                                 usage_dict = usage_data.get('usage')
                                 if isinstance(usage_dict, dict):
                                     input_tokens = usage_dict.get('prompt_tokens', 0)
                                     output_tokens = usage_dict.get('completion_tokens', 0)
-                                    logger.debug(f"OpenAIBackend: Extracted usage from streamed data: Input={input_tokens}, Output={output_tokens}")
+                                    logger.debug(
+                                        f"OpenAIBackend: Extracted usage from streamed data: Input={input_tokens}, Output={output_tokens}")
                                     return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
                     except Exception as stream_parse_e:
-                        logger.warning(f"Could not parse potential usage from streamed OpenAI response: {stream_parse_e}")
+                        logger.warning(
+                            f"Could not parse potential usage from streamed OpenAI response: {stream_parse_e}")
 
                 logger.warning("No usable 'usage' dictionary found in OpenAI response body.")
                 return Usage(input_tokens=0, output_tokens=0)
@@ -147,7 +179,19 @@ class OpenAIBackend(AIGatewayBackend):
             logger.error(f"Unexpected error extracting usage from OpenAI response: {e}", exc_info=True)
             return Usage(input_tokens=0, output_tokens=0)
 
-# --- Backend Dispatcher --- 
+    def post_processing_endpoints(self) -> dict[str, Callable[[HttpResponse], HttpResponse]]:
+        """
+        Returns a dictionary of path patterns to post-processing callables for OpenAI.
+        Currently, none are defined, so it returns an empty dict.
+        """
+        # Example: return {
+        #    "chat/completions": lambda resp: modify_chat_response(resp),
+        #    "v1/chat/completions": lambda resp: modify_chat_response(resp)
+        # }
+        return {}
+
+
+# --- Backend Dispatcher ---
 
 # Map backend enum values (from models.EndpointBackend) to backend classes
 BACKEND_MAP = {
@@ -155,6 +199,7 @@ BACKEND_MAP = {
     # Add other backends here, e.g.:
     # EndpointBackend.ANTHROPIC: AnthropicBackend,
 }
+
 
 # --- Base Gateway View with Authentication ---
 
@@ -204,14 +249,15 @@ class AIGatewayView(LoginRequiredMixin, View):
                 backend_class = BACKEND_MAP.get(endpoint.backend)
 
                 if not backend_class:
-                    logger.error(f"No backend implementation found for endpoint '{endpoint.slug}' with backend type '{endpoint.backend}'")
+                    logger.error(
+                        f"No backend implementation found for endpoint '{endpoint.slug}' with backend type '{endpoint.backend}'")
                     return JsonResponse({'error': 'Gateway configuration error: Unsupported backend'}, status=501)
 
-                backend_instance = backend_class() # Instantiate the backend
+                backend_instance = backend_class()  # Instantiate the backend
                 model = backend_instance.get_model(request, endpoint)
                 # model can be None here if not found/specified in request
 
-            except Http404 as e: # Catches endpoint not found or unexpected errors in get_model
+            except Http404 as e:  # Catches endpoint not found or unexpected errors in get_model
                 logger.warning(f"Failed to get endpoint or model for request: {e}")
                 return JsonResponse({'error': str(e)}, status=404)
             except Exception as e:
@@ -227,7 +273,7 @@ class AIGatewayView(LoginRequiredMixin, View):
             # 3. Create Initial Request Log Entry
             request_log = Request(
                 token=token,
-                model=model, # Assign the model instance (can be None)
+                model=model,  # Assign the model instance (can be None)
                 timestamp=timezone.now(),
                 method=request.method,
                 user_agent=request.headers.get('User-Agent', ''),
@@ -239,12 +285,12 @@ class AIGatewayView(LoginRequiredMixin, View):
             # 4. Prepare and Relay Request
             remaining_path = kwargs.get('remaining_path', '')
             # Ensure leading/trailing slashes are handled correctly for joining
-            target_api_base = endpoint.url.rstrip('/') # Use the determined endpoint
+            target_api_base = endpoint.url.rstrip('/')  # Use the determined endpoint
             remaining_path_cleaned = remaining_path.lstrip('/')
             target_url = f"{target_api_base}/{remaining_path_cleaned}"
 
             # Set the path on the request log
-            request_log.path = f"/{remaining_path_cleaned}" # Store with leading slash for consistency
+            request_log.path = f"/{remaining_path_cleaned}"  # Store with leading slash for consistency
 
             method = request.method
             headers = {
@@ -254,7 +300,7 @@ class AIGatewayView(LoginRequiredMixin, View):
             body = request.body
 
             # Add/replace auth header for the target endpoint
-            self.add_auth_header(headers, endpoint) # Pass endpoint
+            self.add_auth_header(headers, endpoint)  # Pass endpoint
 
             logger.info(
                 f"Relaying {method} request for {request.user.email} (Token: {token.name}) "
@@ -269,7 +315,7 @@ class AIGatewayView(LoginRequiredMixin, View):
                 'url': target_url,
                 'headers': headers,
                 'stream': True,
-                'timeout': 60 # Consider making this configurable
+                'timeout': 60  # Consider making this configurable
             }
             if body:
                 request_args['data'] = body
@@ -286,10 +332,10 @@ class AIGatewayView(LoginRequiredMixin, View):
             response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
 
             # 5. Extract Usage (using subclass implementation)
-            if model and backend_instance: # Only extract usage if model was identified and backend exists
+            if model and backend_instance:  # Only extract usage if model was identified and backend exists
                 try:
                     usage = backend_instance.extract_usage(response_content)
-                    request_log.token_usage = usage # Uses setter: input_tokens=..., output_tokens=...
+                    request_log.token_usage = usage  # Uses setter: input_tokens=..., output_tokens=...
                     logger.debug(
                         f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Extracted usage for model '{model.name}': Input={usage.input_tokens}, Output={usage.output_tokens}")
                 except Exception as e:
@@ -299,7 +345,8 @@ class AIGatewayView(LoginRequiredMixin, View):
                 # If model is None, usage is considered zero and not extracted
                 request_log.input_tokens = 0
                 request_log.output_tokens = 0
-                logger.debug(f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Model not specified or found in request, skipping usage extraction.")
+                logger.debug(
+                    f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Model not specified or found in request, skipping usage extraction.")
 
             request_log.save()  # Save successful request log details
             logger.debug(f"Saved Request log entry ID: {request_log.id} for {method} {target_url}")
@@ -319,6 +366,18 @@ class AIGatewayView(LoginRequiredMixin, View):
             for key, value in relayed_response.headers.items():
                 if key.lower() not in hop_by_hop_headers:
                     response[key] = value
+
+            # Perform post-processing if required by the backend for this path
+            if backend_instance and backend_instance.requires_post_processing(request):
+                relative_path = remaining_path.lstrip('/')
+                post_processing_func = backend_instance.post_processing_endpoints().get(relative_path)
+                if post_processing_func:
+                    logger.info(f"Running post-processing function for path '{relative_path}' using {type(backend_instance).__name__}")
+                    try:
+                        response = post_processing_func(response)
+                        logger.debug("Post-processing completed.")
+                    except Exception as pp_err:
+                        logger.error(f"Error during response post-processing: {pp_err}", exc_info=True)
 
             logger.debug(f"Relay successful: Status {relayed_response.status_code}")
             return response

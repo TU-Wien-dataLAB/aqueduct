@@ -347,8 +347,14 @@ class AIGatewayBackend(abc.ABC):
             final_response = self._run_post_processing_pipeline(initial_django_response)
             logger.debug(f"Post-processing attempt complete. Final Status: {final_response.status_code}")
 
+            # Step 3: Extract Usage after post-processing (if applicable)
+            # Only attempt extraction if the model exists and the final response indicates success
+            # and has content. Post-processing might have altered the response.
+            if self.model and final_response.content and final_response.status_code <= 300:
+                usage = self.extract_usage(final_response.content)
+                self.request_log.token_usage = usage
         except Exception as e:
-            # Catch unexpected errors *outside* the relay send itself (e.g., in post-processing)
+            # Catch unexpected errors *outside* the relay send itself (e.g., in post-processing or usage extraction)
             logger.error(f"Unexpected error during sync request processing (post-relay) for {target_url}: {e}", exc_info=True)
             # Ensure response_time_ms is logged if available from relay attempt
             final_response = JsonResponse({"error": "Internal gateway error during processing"}, status=500)

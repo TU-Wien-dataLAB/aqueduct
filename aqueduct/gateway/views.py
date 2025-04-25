@@ -90,31 +90,6 @@ class AIGatewayView(View):
         # 4. Relay Request using Backend Method
         response = backend.request_sync()
 
-        # 5. Extract Usage (using backend instance method - signature unchanged)
-        # Check for model existence on the backend instance
-        # Only attempt extraction if the relay was somewhat successful (not 502/504/500 initially)
-        # and we actually got some content back.
-        # Status codes like 4xx from the target API might still have usage info.
-        if backend.model:
-            if response.content and response.status_code not in [500, 502, 504]:
-                try:
-                    usage = backend.extract_usage(response.content)
-                    backend.request_log.token_usage = usage  # Uses setter: input_tokens=..., output_tokens=...
-                    logger.debug(
-                        f"Request Log {backend.request_log.id if backend.request_log.pk else '(unsaved)'} - Extracted usage for model '{backend.model.display_name}': Input={usage.input_tokens}, Output={usage.output_tokens}")  # Log display_name
-                except Exception as e:  # Keep this specific try-except for usage extraction
-                    logger.error(f"Error extracting usage from response for model '{backend.model.display_name}': {e}",
-                                 exc_info=True)  # Log display_name
-                    # Log and continue even if usage extraction fails
-            else:
-                # If relay failed badly or no content, usage is zero
-                logger.debug(
-                    f"Request Log {backend.request_log.id if backend.request_log.pk else '(unsaved)'} - Relay status {response.status_code} or empty content, skipping usage extraction.")
-                # Ensure zero usage is set if extraction skipped or failed (done in request_sync finally block now)
-        else:
-            logger.debug(
-                f"Request Log {backend.request_log.id if backend.request_log.pk else '(unsaved)'} - Model not specified or found in request, skipping usage extraction.")
-
         return response
 
     def get_endpoint(self, request: HttpRequest, **kwargs) -> Endpoint:

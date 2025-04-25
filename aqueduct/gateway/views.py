@@ -87,25 +87,26 @@ class AIGatewayView(View):
                 logger.warning(f"Failed to initialize backend or resolve model/token: {e}")
                 return JsonResponse({'error': str(e)}, status=404)
             except PreProcessingPipelineError as e:
+                # This exception now carries the HttpResponse to return
                 logger.info(f"Pre-processing pipeline short-circuited at step {e.step_index} with status {e.response.status_code}")
-                # The exception carries the HttpResponse to be returned directly.
-                # The log should have been saved by the step itself before raising.
                 return e.response
             except Exception as e:
-                logger.error(f"Unexpected error during backend initialization or processing: {e}", exc_info=True)
+                # Catch any *other* unexpected errors during the dispatch process BEFORE relay attempt
+                # (e.g., backend init, authentication)
+                # Errors during/after relay are handled within request_sync.
+                logger.error(f"Unexpected error during gateway dispatch (before relay attempt): {e}", exc_info=True)
                 # Attempt to save log if backend and log exist but failed later in init
                 if 'backend' in locals() and backend and backend.request_log and not backend.request_log.pk:
                     try:
                         backend.request_log.status_code = 500
+                        backend.request_log.input_tokens = 0 # Ensure zero usage on init error
+                        backend.request_log.output_tokens = 0
                         backend.request_log.save()
-                        logger.debug(f"Saved Request log ID {backend.request_log.id} after init error")
+                        logger.debug(f"Saved Request log ID {backend.request_log.id} after pre-relay dispatch error")
                     except Exception as save_err:
-                        logger.error(f"Failed to save Request log during backend init error handling: {save_err}", exc_info=True)
-                return JsonResponse({'error': "Internal gateway error during setup"}, status=500)
-
-
-            # --- Pre-processing Pipeline --- REMOVED (Now done in backend.__init__)
-            # The logic is moved to backend._run_pre_processing_pipeline()
+                        logger.error(f"Failed to save Request log during pre-relay dispatch error handling: {save_err}", exc_info=True)
+                # Return generic error to client
+                return JsonResponse({"error": "Internal gateway error"}, status=500)
 
             # 4. Relay Request using Backend Method
             response = backend.request_sync()
@@ -143,88 +144,27 @@ class AIGatewayView(View):
 
             # 6. Post-Process and Return Response
             # The 'response' object is now the HttpResponse/JsonResponse from request_sync
-
-            # Perform post-processing if required by the backend for this path (no request arg needed)
-            if backend and backend.requires_post_processing():
-                relative_path = kwargs.get('remaining_path', '') # Keep for logging/pattern matching
-                # Only run pipeline if the initial response was successful
-                if response.status_code < 400:
-                    processing_pipeline = [] # Initialize as empty list
-                    matched_patterns = [] # Keep track of patterns that matched
-                    # Find all matching pipelines and extend
-                    for pattern, pipeline in backend.post_processing_endpoints().items():
-                        if re.fullmatch(pattern, relative_path):
-                            processing_pipeline.extend(pipeline)
-                            matched_patterns.append(pattern)
-                            # Removed break; continue checking other patterns
-
-                    if processing_pipeline:
-                        logger.info(
-                            f"Running combined post-processing pipeline ({len(processing_pipeline)} steps) for path '{relative_path}' (matched patterns: {matched_patterns}) using {type(backend).__name__}")
-                        # original_response_status = response.status_code # Keep original status for logging if needed
-                        for i, step_func in enumerate(processing_pipeline):
-                            try:
-                                response = step_func(backend, backend.request_log, response)
-                                logger.debug(
-                                    f"Post-processing step {i + 1} completed. Current status: {response.status_code}")
-                                # Check for error status code (4xx or 5xx) introduced by the step
-                                if response.status_code >= 400:
-                                    logger.warning(
-                                        f"Post-processing pipeline stopped early at step {i + 1} (patterns {matched_patterns}) due to status code {response.status_code}.")
-                                    # Error occurred, return the error response immediately
-                                    return response
-                            except Exception as pp_err:
-                                logger.error(
-                                    f"Error during post-processing step {i + 1} for path '{relative_path}' (patterns {matched_patterns}): {pp_err}",
-                                    exc_info=True)
-                                # Return a generic 500 error if a step fails unexpectedly
-                                return JsonResponse(
-                                    {"error": f"Gateway error during response post-processing step {i + 1}"},
-                                    status=500)
-
-                        logger.debug(
-                            f"Combined post-processing pipeline completed successfully for path '{relative_path}' (patterns {matched_patterns}). Final status: {response.status_code}")
-                else:
-                    logger.debug(
-                        f"Skipping post-processing for path '{relative_path}' (status code {response.status_code}), because initial response was not successful.")
-            else:
-                # Log if post-processing was not required or backend was None
-                logger.debug(f"Post-processing not required for path '{kwargs.get('remaining_path', '').lstrip('/')}'")
+            # Post-processing is now handled within backend.request_sync()
 
             return response
 
-        # --- Error Handling for Dispatch (excluding relay errors handled by request_sync) ---
         except Exception as e:
-            # Catch any other unexpected errors during the dispatch process (e.g., post-processing)
-            # Note: Timeout/RequestException from relaying are handled *inside* request_sync
-            # and reflected in the returned status_code.
-            # Errors during backend init or pre-processing are caught earlier.
-            # This mainly catches errors during usage extraction, post-processing, or response creation.
-            current_time = timezone.now() # Use timezone.now() if start_time might not be set
-            logger.error(f"Unexpected error during gateway dispatch (after relay attempt): {e}", exc_info=True)
-            if backend.request_log:  # Log if request_log object exists
-                if backend.request_log.status_code is None or backend.request_log.status_code < 400: # Avoid overwriting relay error status
-                    backend.request_log.status_code = 500  # Internal Server Error if not already set to an error
-                # Ensure usage isn't accidentally non-zero if error occurred before extraction
-                if backend.request_log.input_tokens is None: backend.request_log.input_tokens = 0
-                if backend.request_log.output_tokens is None: backend.request_log.output_tokens = 0
-                backend.request_log.save()
-                logger.warning(f"Saved Request log entry ID in finally block: {backend.request_log.id}")
+            # Catch any *other* unexpected errors during the dispatch process BEFORE relay attempt
+            # (e.g., backend init, authentication)
+            # Errors during/after relay are handled within request_sync.
+            logger.error(f"Unexpected error during gateway dispatch (before relay attempt): {e}", exc_info=True)
+            # Attempt to save log if backend and log exist but failed later in init
+            if 'backend' in locals() and backend and backend.request_log and not backend.request_log.pk:
+                try:
+                    backend.request_log.status_code = 500
+                    backend.request_log.input_tokens = 0 # Ensure zero usage on init error
+                    backend.request_log.output_tokens = 0
+                    backend.request_log.save()
+                    logger.debug(f"Saved Request log ID {backend.request_log.id} after pre-relay dispatch error")
+                except Exception as save_err:
+                    logger.error(f"Failed to save Request log during pre-relay dispatch error handling: {save_err}", exc_info=True)
             # Return generic error to client
             return JsonResponse({"error": "Internal gateway error"}, status=500)
-        finally:
-            # Final check to ensure logging if an error happened *after* request_log creation
-            # but *before* any explicit save or *between* save and return.
-            if backend.request_log and not backend.request_log.pk:
-                try:
-                    if backend.request_log.status_code is None: backend.request_log.status_code = 500
-                    if backend.request_log.input_tokens is None: backend.request_log.input_tokens = 0
-                    if backend.request_log.output_tokens is None: backend.request_log.output_tokens = 0
-                    # Add response time if possible, otherwise leave as null/default
-                    backend.request_log.save()
-                    logger.warning(f"Saved Request log entry ID in finally block: {backend.request_log.id}")
-                except Exception as final_save_e:
-                    logger.error(f"Failed to save Request log in finally block: {final_save_e}", exc_info=True)
 
     def get_endpoint(self, request: HttpRequest, **kwargs) -> Endpoint:
         """

@@ -265,6 +265,8 @@ class AIGatewayBackend(abc.ABC):
                     response[key] = value
 
             logger.debug(f"Relay to {target_url} completed: Status {response.status_code}, Time {response_time_ms}ms")
+            # Run post-processing BEFORE saving final status and returning
+            response = self._run_post_processing_pipeline(response)
             return response
 
         except requests.exceptions.Timeout:
@@ -286,11 +288,28 @@ class AIGatewayBackend(abc.ABC):
             response = JsonResponse({"error": "Gateway error during relay"}, status=status_code)
             return response
         finally:
+            # This block now executes *after* both relay AND post-processing (if any)
+            # Update log with the final status code and response time from the entire process
             if response:
-                self.request_log.status_code = response.status_code
-                if response_time_ms:
+                self.request_log.status_code = response.status_code # Final status after post-processing
+                if response_time_ms: # Only set if relay happened
                     self.request_log.response_time_ms = response_time_ms
-            self.request_log.save()
+            else:
+                # Handle case where an error occurred before 'response' was assigned (e.g., very early exception)
+                # This case might be less likely now but good for robustness.
+                self.request_log.status_code = 500 # Assume internal error if no response object
+            # Ensure usage is zero if not extracted (moved from view)
+            if self.request_log.input_tokens is None: self.request_log.input_tokens = 0
+            if self.request_log.output_tokens is None: self.request_log.output_tokens = 0
+            # Save the log entry if it hasn't been saved yet (e.g., by pre-processing short-circuit)
+            if not self.request_log.pk:
+                try:
+                    self.request_log.save()
+                    logger.debug(f"Saved Request log entry ID {self.request_log.id} in request_sync finally block")
+                except Exception as final_save_e:
+                    logger.error(f"Failed to save Request log in request_sync finally block: {final_save_e}", exc_info=True)
+            else:
+                 logger.debug(f"Request log ID {self.request_log.id} was already saved (likely by pre-processing).")
 
     @abc.abstractmethod
     def extract_usage(self, response_body: bytes) -> Usage:
@@ -489,3 +508,78 @@ class AIGatewayBackend(abc.ABC):
                     raise PreProcessingPipelineError(response=error_response, step_index=step_index)
 
         logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")
+
+    # --- Post-Processing ---
+
+    def _run_post_processing_pipeline(self, response: HttpResponse) -> HttpResponse:
+        """
+        Executes the post-processing pipeline based on matching endpoint patterns.
+        Modifies and returns the HttpResponse.
+
+        Args:
+            response (HttpResponse): The initial response from the relayed request.
+
+        Returns:
+            HttpResponse: The final response after post-processing.
+        """
+        if not self.requires_post_processing():
+            logger.debug("Post-processing not required for this request path.")
+            return response
+
+        # Get path from the original Django request associated with this backend instance
+        relative_path = self.request.resolver_match.kwargs.get('remaining_path', '').lstrip('/')
+
+        # Only run pipeline if the initial response was potentially successful
+        if response.status_code < 400:
+            processing_pipeline = []
+            matched_patterns = []
+            # Find all matching pipelines and extend
+            for pattern, pipeline in self.post_processing_endpoints().items():
+                if re.fullmatch(pattern, relative_path):
+                    processing_pipeline.extend(pipeline)
+                    matched_patterns.append(pattern)
+
+            if processing_pipeline:
+                logger.info(
+                    f"Running combined post-processing pipeline ({len(processing_pipeline)} steps) "
+                    f"for path '{relative_path}' (matched patterns: {matched_patterns}) using {type(self).__name__}")
+                # original_response_status = response.status_code # Keep original status for logging if needed
+                for i, step_func in enumerate(processing_pipeline):
+                    step_index = i + 1
+                    try:
+                        # Pass backend instance, request log, and current response
+                        response = step_func(self, self.request_log, response)
+                        logger.debug(
+                            f"Post-processing step {step_index} completed. Current status: {response.status_code}")
+                        # Check for error status code (4xx or 5xx) introduced by the step
+                        if response.status_code >= 400:
+                            logger.warning(
+                                f"Post-processing pipeline stopped early at step {step_index} "
+                                f"(patterns {matched_patterns}) due to status code {response.status_code}.")
+                            # Update log status before returning
+                            self.request_log.status_code = response.status_code
+                            # Error occurred, return the error response immediately
+                            return response
+                    except Exception as pp_err:
+                        logger.error(
+                            f"Error during post-processing step {step_index} for path '{relative_path}' "
+                            f"(patterns {matched_patterns}): {pp_err}", exc_info=True)
+                        # Update log status
+                        self.request_log.status_code = 500
+                        # Return a generic 500 error if a step fails unexpectedly
+                        return JsonResponse(
+                            {"error": f"Gateway error during response post-processing step {step_index}"},
+                            status=500)
+
+                logger.debug(
+                    f"Combined post-processing pipeline completed successfully for path '{relative_path}' "
+                    f"(patterns {matched_patterns}). Final status: {response.status_code}")
+                # Update log status with final code from pipeline
+                self.request_log.status_code = response.status_code
+        else:
+            logger.debug(
+                f"Skipping post-processing for path '{relative_path}' (initial status code {response.status_code}), "
+                f"because initial response was not successful.")
+            # Log status remains the original unsuccessful one
+
+        return response

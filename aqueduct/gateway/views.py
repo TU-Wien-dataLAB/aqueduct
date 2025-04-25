@@ -69,7 +69,7 @@ class AIGatewayView(View):
         # --- Initialize variables --- 
         request_log = None
         start_time = None
-        backend_instance: Optional[AIGatewayBackend] = None
+        backend: Optional[AIGatewayBackend] = None
 
         try:
             # 2. Get Endpoint, Backend, Model, and Token
@@ -82,18 +82,15 @@ class AIGatewayView(View):
                         f"No backend implementation found for endpoint '{endpoint.slug}' with backend type '{endpoint.backend}'")
                     return JsonResponse({'error': 'Gateway configuration error: Unsupported backend'}, status=501)
 
-                # Instantiate the backend, passing request and endpoint
-                backend_instance = backend_class(request, endpoint)
+                # Instantiate the backend, passing request and endpoint.
+                # The backend's __init__ now resolves the model and stores it in backend.model
+                backend = backend_class(request, endpoint)
 
-                # Get model using the backend instance (no args needed now)
-                model = backend_instance.get_model()
-                # model can be None here if not found/specified in request
-
-            except Http404 as e:  # Catches endpoint not found or unexpected errors in get_model
-                logger.warning(f"Failed to get endpoint or model for request: {e}")
+            except Http404 as e:  # Catches endpoint not found or errors in backend _resolve_model
+                logger.warning(f"Failed to get endpoint or resolve model for request: {e}")
                 return JsonResponse({'error': str(e)}, status=404)
             except Exception as e:
-                logger.error(f"Unexpected error getting endpoint/model/backend: {e}", exc_info=True)
+                logger.error(f"Unexpected error getting endpoint/backend/model: {e}", exc_info=True)
                 return JsonResponse({'error': "Internal gateway error"}, status=500)
 
             try:
@@ -105,7 +102,7 @@ class AIGatewayView(View):
             # 3. Create Initial Request Log Entry
             request_log = Request(
                 token=token,
-                model=model,  # Assign the model instance (can be None)
+                model=backend.model,  # Use the resolved model from the backend instance
                 endpoint=endpoint,
                 timestamp=timezone.now(),
                 method=request.method,
@@ -144,22 +141,22 @@ class AIGatewayView(View):
 
             # --- Pre-processing Pipeline (operates on request_object) --- 
             # Check if pre-processing is required (no request arg needed)
-            if backend_instance and backend_instance.requires_pre_processing():
+            if backend and backend.requires_pre_processing():
                 relative_path = remaining_path.lstrip('/')
                 pre_processing_pipeline = []
                 matched_patterns = []
-                for pattern, pipeline in backend_instance.pre_processing_endpoints().items():
+                for pattern, pipeline in backend.pre_processing_endpoints().items():
                     if re.fullmatch(pattern, relative_path):
                         pre_processing_pipeline.extend(pipeline)
                         matched_patterns.append(pattern)
 
                 if pre_processing_pipeline:
                     logger.info(
-                        f"Running combined pre-processing pipeline ({len(pre_processing_pipeline)} steps) for path '{relative_path}' (matched patterns: {matched_patterns}) using {type(backend_instance).__name__}")
+                        f"Running combined pre-processing pipeline ({len(pre_processing_pipeline)} steps) for path '{relative_path}' (matched patterns: {matched_patterns}) using {type(backend).__name__}")
                     for i, step_func in enumerate(pre_processing_pipeline):
                         try:
                             # Pass the current request_object, expect Request or HttpResponse back
-                            result = step_func(backend_instance, request, request_log, request_object, None)
+                            result = step_func(backend, request, request_log, request_object, None)
 
                             if isinstance(result, HttpResponse):
                                 logger.warning(
@@ -195,8 +192,8 @@ class AIGatewayView(View):
 
                     logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")
             else:
-                # Log if pre-processing was not required or backend_instance was None (though unlikely)
-                if backend_instance:
+                # Log if pre-processing was not required or backend was None (though unlikely)
+                if backend:
                      logger.debug(f"Pre-processing not required for path '{remaining_path.lstrip('/')}'")
                 else:
                     logger.warning("Backend instance not available, cannot perform pre-processing check.")
@@ -235,14 +232,15 @@ class AIGatewayView(View):
             response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
 
             # 5. Extract Usage (using backend instance method - signature unchanged)
-            if model and backend_instance:  # Only extract usage if model was identified and backend exists
+            # Check for model existence on the backend instance
+            if backend.model and backend:
                 try:
-                    usage = backend_instance.extract_usage(response_content)
+                    usage = backend.extract_usage(response_content)
                     request_log.token_usage = usage  # Uses setter: input_tokens=..., output_tokens=...
                     logger.debug(
-                        f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Extracted usage for model '{model.name}': Input={usage.input_tokens}, Output={usage.output_tokens}")
+                        f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Extracted usage for model '{backend.model.display_name}': Input={usage.input_tokens}, Output={usage.output_tokens}") # Log display_name
                 except Exception as e:
-                    logger.error(f"Error extracting usage from response for model '{model.name}': {e}", exc_info=True)
+                    logger.error(f"Error extracting usage from response for model '{backend.model.display_name}': {e}", exc_info=True) # Log display_name
                     # Log and continue even if usage extraction fails
             else:
                 # If model is None, usage is considered zero and not extracted
@@ -271,14 +269,14 @@ class AIGatewayView(View):
                     response[key] = value
 
             # Perform post-processing if required by the backend for this path (no request arg needed)
-            if backend_instance and backend_instance.requires_post_processing():
+            if backend and backend.requires_post_processing():
                 relative_path = remaining_path.lstrip('/')
                 # Only run pipeline if the initial response was successful
                 if response.status_code < 400:
                     processing_pipeline = [] # Initialize as empty list
                     matched_patterns = [] # Keep track of patterns that matched
                     # Find all matching pipelines and extend
-                    for pattern, pipeline in backend_instance.post_processing_endpoints().items():
+                    for pattern, pipeline in backend.post_processing_endpoints().items():
                         if re.fullmatch(pattern, relative_path):
                             processing_pipeline.extend(pipeline)
                             matched_patterns.append(pattern)
@@ -286,11 +284,11 @@ class AIGatewayView(View):
 
                     if processing_pipeline:
                         logger.info(
-                            f"Running combined post-processing pipeline ({len(processing_pipeline)} steps) for path '{relative_path}' (matched patterns: {matched_patterns}) using {type(backend_instance).__name__}")
+                            f"Running combined post-processing pipeline ({len(processing_pipeline)} steps) for path '{relative_path}' (matched patterns: {matched_patterns}) using {type(backend).__name__}")
                         # original_response_status = response.status_code # Keep original status for logging if needed
                         for i, step_func in enumerate(processing_pipeline):
                             try:
-                                response = step_func(backend_instance, request, request_log, response)
+                                response = step_func(backend, request, request_log, response)
                                 logger.debug(
                                     f"Post-processing step {i + 1} completed. Current status: {response.status_code}")
                                 # Check for error status code (4xx or 5xx) introduced by the step
@@ -314,8 +312,8 @@ class AIGatewayView(View):
                     logger.debug(
                         f"Skipping post-processing for path '{relative_path}' (status code {response.status_code}), because initial response was not successful.")
             else:
-                # Log if post-processing was not required or backend_instance was None
-                if backend_instance:
+                # Log if post-processing was not required or backend was None
+                if backend:
                     logger.debug(f"Post-processing not required for path '{remaining_path.lstrip('/')}'")
                 else:
                     logger.warning("Backend instance not available, cannot perform post-processing check.")

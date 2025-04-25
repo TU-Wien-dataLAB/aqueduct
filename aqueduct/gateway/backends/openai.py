@@ -122,6 +122,10 @@ def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', django
         Union[requests.Request, HttpResponse]: The (potentially modified) `relay_request` on success,
                                                or a JsonResponse on validation failure.
     """
+    if not backend.model:
+        logger.debug("Request has no model associated with it, skipping model validation/transformation.")
+        return relay_request
+
     request_body = relay_request.data
     if not request_body:
         logger.debug("Pre-processing: Request body is empty, skipping model validation/transformation.")
@@ -138,15 +142,9 @@ def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', django
         logger.debug("Pre-processing: Request JSON missing 'model' key, skipping validation/transformation.")
         return relay_request  # No model specified, return unmodified
 
+    endpoint = backend.endpoint
     try:
-        # Use self.endpoint directly
-        endpoint = backend.endpoint
-
-        model_instance = Model.objects.get(
-            display_name=requested_model_display_name,
-            endpoint=endpoint  # Use self.endpoint
-        )
-        internal_model_name = model_instance.name
+        internal_model_name = backend.model.name
 
         if requested_model_display_name != internal_model_name:
             data['model'] = internal_model_name
@@ -165,13 +163,6 @@ def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', django
                 f"Pre-processing: Model '{internal_model_name}' provided directly and is valid for endpoint '{endpoint.slug}'.")
             return relay_request  # Return unmodified object
 
-    except Model.DoesNotExist:
-        logger.warning(
-            f"Pre-processing: Model with display_name '{requested_model_display_name}' not found or not allowed for endpoint '{endpoint.slug}'.")
-        return JsonResponse(
-            {'error': f"Model '{requested_model_display_name}' is not available for this endpoint."},
-            status=404
-        )
     except Exception as e:
         # Capture the correct endpoint slug for logging
         endpoint_slug_for_log = endpoint.slug if endpoint else "<unknown>"
@@ -187,44 +178,78 @@ class OpenAIBackend(AIGatewayBackend):
     """
 
     def __init__(self, request: HttpRequest, endpoint: Endpoint):
+        # Call super().__init__ AFTER logging initialization message, as __init__ now resolves the model.
+        logger.debug(f"Initializing OpenAIBackend for endpoint '{endpoint.slug}'")
         super().__init__(request, endpoint)
-        logger.debug(f"OpenAIBackend initialized for endpoint '{self.endpoint.slug}'")
+        # self.model is now set by the superclass __init__ via _resolve_model
+        if self.model:
+            logger.debug(
+                f"OpenAIBackend resolved model '{self.model.display_name}' (ID: {self.model.id}) for endpoint '{self.endpoint.slug}' during initialization.")
+        else:
+            logger.debug(
+                f"OpenAIBackend did not resolve a specific model for endpoint '{self.endpoint.slug}' during initialization.")
 
-    def get_model(self) -> Optional[Model]:
+    def _resolve_model(self) -> Optional[Model]:
         """
-        Extracts the model name from the request body (JSON 'model' key)
-        and retrieves the Model object belonging to the specified endpoint (self.endpoint).
-        Returns None if 'model' key is missing, JSON is invalid, or model not found.
+        Extracts the model display name from the request body (JSON 'model' key)
+        and retrieves the corresponding Model object allowed for this endpoint (self.endpoint).
 
-        NOTE: This uses the *internal* model name (e.g., 'gpt-4'). The pre-processing
-        step `_validate_and_transform_model_in_request` handles mapping from display names.
+        - Returns None if the request body is empty, not valid JSON, or lacks a 'model' key,
+          as this indicates the request doesn't specify a model or isn't an inference request.
+        - Returns the Model instance if the specified display name corresponds to a Model
+          configured and allowed for self.endpoint.
+        - Raises Http404 if the 'model' key specifies a display name that is not found
+          or not allowed for this endpoint.
+        - Raises Http404 for other unexpected processing errors.
+
+        NOTE: This uses the *display_name*. The pre-processing step
+        (`_validate_and_transform_model_in_request`) handles transforming this to the
+        internal name before the request is relayed.
+
+        Returns:
+            Optional[Model]: The corresponding Model instance if found, otherwise None.
+
+        Raises:
+            Http404: If the requested model display name is invalid, not found/allowed for the endpoint,
+                     or if other request processing errors occur.
         """
-        model_name = None  # Initialize model_name
+        model_display_name = None  # Initialize
         try:
             if not self.request.body:
-                return None  # Return None if body is empty
+                logger.debug(f"_resolve_model (OpenAI): No request body found for endpoint '{self.endpoint.slug}'.")
+                return None
 
             data = json.loads(self.request.body)
-            model_name = data.get('model')
+            model_display_name = data.get('model')
 
-            if not model_name:
-                return None  # Return None if 'model' key is missing
+            if not model_display_name:
+                logger.debug(
+                    f"_resolve_model (OpenAI): No 'model' key in request body for endpoint '{self.endpoint.slug}'.")
+                return None
 
-            # Ensure the model belongs to the correct endpoint (self.endpoint)
-            model = Model.objects.get(display_name=model_name, endpoint=self.endpoint)
+            # Look up the model using the display name provided in the request
+            # against the models allowed for this specific endpoint.
+            model = Model.objects.get(display_name=model_display_name, endpoint=self.endpoint)
+            logger.debug(
+                f"_resolve_model (OpenAI): Found model '{model.display_name}' for endpoint '{self.endpoint.slug}'.")
             return model
 
         except json.JSONDecodeError:
-            return None  # Return None if JSON is invalid
-        except Model.DoesNotExist:
-            # Use model_name captured earlier in the log message
-            log_model_name = model_name if model_name else "<not provided>"
             logger.warning(
-                f"Model with internal name '{log_model_name}' not found for endpoint '{self.endpoint.slug}'.")
-            return None  # Return None if model not found
+                f"_resolve_model (OpenAI): Invalid JSON in request body for endpoint '{self.endpoint.slug}'.")
+            return None
+        except Model.DoesNotExist:
+            # Use model_display_name captured earlier in the log message
+            log_model_name = model_display_name if model_display_name else "<not provided>"
+            logger.warning(
+                f"_resolve_model (OpenAI): Model with display_name '{log_model_name}' not found or not allowed for endpoint '{self.endpoint.slug}'.")
+            raise Http404(f"Model {log_model_name} is not available for endpoint '{self.endpoint.slug}'.")
         except Exception as e:  # Catch only truly unexpected errors
-            logger.error(f"Unexpected error getting model for endpoint '{self.endpoint.slug}': {e}", exc_info=True)
-            raise Http404("Error processing request.")  # Re-raise for unexpected issues
+            logger.error(
+                f"_resolve_model (OpenAI): Unexpected error getting model for endpoint '{self.endpoint.slug}': {e}",
+                exc_info=True)
+            # Re-raise as Http404 to be consistent with view's expectations for model/endpoint errors
+            raise Http404(f"Error resolving model for endpoint '{self.endpoint.slug}'.")
 
     def extract_usage(self, response_body: bytes) -> Usage:
         """
@@ -279,7 +304,8 @@ class OpenAIBackend(AIGatewayBackend):
             return Usage(input_tokens=0, output_tokens=0)
 
     def pre_processing_endpoints(self) -> dict[str, list[Callable[
-        ['AIGatewayBackend', HttpRequest, 'Request', requests.Request, Optional[HttpResponse]], Union[requests.Request, HttpResponse]]]]:
+        ['AIGatewayBackend', HttpRequest, 'Request', requests.Request, Optional[HttpResponse]], Union[
+            requests.Request, HttpResponse]]]]:
         """
         Returns a dictionary of path patterns to pre-processing callables for OpenAI.
         """

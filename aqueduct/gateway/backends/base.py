@@ -15,10 +15,12 @@ class AIGatewayBackend(abc.ABC):
     based on the specifics of the target API (e.g., OpenAI, Anthropic).
 
     Instances are initialized with the Django HttpRequest and the resolved Endpoint.
+    The associated Model instance (or None) is resolved during initialization
+    and stored in self.model.
     """
     def __init__(self, request: HttpRequest, endpoint: Endpoint):
         """
-        Initializes the backend instance.
+        Initializes the backend instance and resolves the associated Model.
 
         Args:
             request (HttpRequest): The incoming Django request.
@@ -29,19 +31,30 @@ class AIGatewayBackend(abc.ABC):
             raise ValueError("AIGatewayBackend requires a valid HttpRequest and Endpoint for initialization.")
         self.request = request
         self.endpoint = endpoint
+        self.model: Optional[Model] = self._resolve_model() # Resolve and store model
 
     @abc.abstractmethod
-    def get_model(self) -> Optional[Model]:
+    def _resolve_model(self) -> Optional[Model]:
         """
-        Retrieves the Model database object based on the request data (self.request)
+        Resolves the Model database object based on the request data (self.request)
         and the target endpoint (self.endpoint).
-        Returns None if the model cannot be determined or found based on the request.
+
+        This method is called during initialization.
+
+        - If the request does not specify a model or model information is not applicable
+          (e.g., for a non-inference endpoint), this method should return None.
+        - If the request specifies a model that is valid and configured for the endpoint,
+          it should return the corresponding Model instance.
+        - If the request specifies a model that is invalid, not found, or not allowed
+          for the endpoint, it should raise an appropriate exception (e.g., Http404).
+        - It may also raise exceptions for other unexpected errors during processing.
 
         Returns:
-            Optional[Model]: The corresponding Model instance, or None.
+            Optional[Model]: The corresponding Model instance if found and applicable, otherwise None.
 
         Raises:
-            Http404: For unexpected errors during processing.
+            Http404: If the requested model is not found or allowed, or for other request processing errors.
+            Exception: For unexpected errors during processing.
         """
         pass
 
@@ -50,7 +63,7 @@ class AIGatewayBackend(abc.ABC):
         """
         Extracts usage information (e.g., token counts) from a relayed API response body.
         This method typically does not need self.request or self.endpoint, but they
-        are available if needed by a subclass.
+        are available if needed by a subclass. Access the resolved model via `self.model`.
 
         Args:
             response_body (bytes): The body of the response from the relayed request.

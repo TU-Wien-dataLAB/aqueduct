@@ -255,6 +255,33 @@ class OpenAIBackend(AIGatewayBackend):
                     f"OpenAIBackend: Successfully extracted usage: Input={input_tokens}, Output={output_tokens}")
                 return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
             else:
+                # Check for streaming chunks which might contain usage
+                # This is a simplified check; a more robust solution might parse line-by-line
+                if b'"usage":' in response_body:
+                    # Try to find the last usage object in potentially streamed data
+                    try:
+                        # Find the last occurrence of a potential usage JSON object
+                        last_usage_idx = response_body.rfind(b'{"usage":')
+                        if last_usage_idx != -1:
+                            # Attempt to parse from that point
+                            # Find the closing brace `}}` for the usage object
+                            end_brace_idx = response_body.find(b'}}', last_usage_idx)
+                            if end_brace_idx != -1:
+                                usage_json_str = response_body[last_usage_idx:end_brace_idx + 2].decode('utf-8',
+                                                                                                        errors='ignore')
+                                usage_data = json.loads(usage_json_str)
+                                usage_dict = usage_data.get('usage')
+                                if isinstance(usage_dict, dict):
+                                    input_tokens = usage_dict.get('prompt_tokens', 0)
+                                    output_tokens = usage_dict.get('completion_tokens', 0)
+                                    logger.debug(
+                                        f"OpenAIBackend: Extracted usage from streamed data: Input={input_tokens}, Output={output_tokens}")
+                                    return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
+                    except Exception as stream_parse_e:
+                        logger.warning(
+                            f"Could not parse potential usage from streamed OpenAI response: {stream_parse_e}")
+
+                logger.warning("No usable 'usage' dictionary found in OpenAI response body.")
                 return Usage(input_tokens=0, output_tokens=0)
 
         except json.JSONDecodeError:

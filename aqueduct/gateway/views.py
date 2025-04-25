@@ -82,8 +82,11 @@ class AIGatewayView(View):
                         f"No backend implementation found for endpoint '{endpoint.slug}' with backend type '{endpoint.backend}'")
                     return JsonResponse({'error': 'Gateway configuration error: Unsupported backend'}, status=501)
 
-                backend_instance = backend_class()  # Instantiate the backend
-                model = backend_instance.get_model(request, endpoint)
+                # Instantiate the backend, passing request and endpoint
+                backend_instance = backend_class(request, endpoint)
+
+                # Get model using the backend instance (no args needed now)
+                model = backend_instance.get_model()
                 # model can be None here if not found/specified in request
 
             except Http404 as e:  # Catches endpoint not found or unexpected errors in get_model
@@ -140,7 +143,8 @@ class AIGatewayView(View):
             )
 
             # --- Pre-processing Pipeline (operates on request_object) --- 
-            if backend_instance and backend_instance.requires_pre_processing(request):
+            # Check if pre-processing is required (no request arg needed)
+            if backend_instance and backend_instance.requires_pre_processing():
                 relative_path = remaining_path.lstrip('/')
                 pre_processing_pipeline = []
                 matched_patterns = []
@@ -190,6 +194,13 @@ class AIGatewayView(View):
                             return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i + 1}"}, status=500)
 
                     logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")
+            else:
+                # Log if pre-processing was not required or backend_instance was None (though unlikely)
+                if backend_instance:
+                     logger.debug(f"Pre-processing not required for path '{remaining_path.lstrip('/')}'")
+                else:
+                    logger.warning("Backend instance not available, cannot perform pre-processing check.")
+
 
             # 4. Prepare and Relay Request using requests.Session
             logger.info(
@@ -223,7 +234,7 @@ class AIGatewayView(View):
             # Read content for usage extraction *before* creating Django response
             response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
 
-            # 5. Extract Usage (using subclass implementation)
+            # 5. Extract Usage (using backend instance method - signature unchanged)
             if model and backend_instance:  # Only extract usage if model was identified and backend exists
                 try:
                     usage = backend_instance.extract_usage(response_content)
@@ -259,8 +270,8 @@ class AIGatewayView(View):
                 if key.lower() not in hop_by_hop_headers:
                     response[key] = value
 
-            # Perform post-processing if required by the backend for this path
-            if backend_instance and backend_instance.requires_post_processing(request):
+            # Perform post-processing if required by the backend for this path (no request arg needed)
+            if backend_instance and backend_instance.requires_post_processing():
                 relative_path = remaining_path.lstrip('/')
                 # Only run pipeline if the initial response was successful
                 if response.status_code < 400:
@@ -301,7 +312,14 @@ class AIGatewayView(View):
                             f"Combined post-processing pipeline completed successfully for path '{relative_path}' (patterns {matched_patterns}). Final status: {response.status_code}")
                 else:
                     logger.debug(
-                        f"Skipping post-processing for path '{relative_path}' (status code {response.status_code}), no matching pattern found or required.")
+                        f"Skipping post-processing for path '{relative_path}' (status code {response.status_code}), because initial response was not successful.")
+            else:
+                # Log if post-processing was not required or backend_instance was None
+                if backend_instance:
+                    logger.debug(f"Post-processing not required for path '{remaining_path.lstrip('/')}'")
+                else:
+                    logger.warning("Backend instance not available, cannot perform post-processing check.")
+
 
             logger.debug(f"Relay successful: Status {relayed_response.status_code}")
             return response
@@ -309,7 +327,8 @@ class AIGatewayView(View):
         # --- Error Handling for Relaying --- 
         except requests.exceptions.Timeout:
             end_time = time.monotonic()
-            logger.warning(f"Gateway timeout relaying request to {target_url}")
+            target_url_for_log = target_url if 'target_url' in locals() else "<unknown>"
+            logger.warning(f"Gateway timeout relaying request to {target_url_for_log}")
             if request_log:  # Log if request_log object exists
                 request_log.status_code = 504  # Gateway Timeout
                 if start_time:  # Check if timer started
@@ -320,7 +339,8 @@ class AIGatewayView(View):
 
         except requests.exceptions.RequestException as e:
             end_time = time.monotonic()
-            logger.error(f"Error relaying request to {target_url}: {e}", exc_info=True)
+            target_url_for_log = target_url if 'target_url' in locals() else "<unknown>"
+            logger.error(f"Error relaying request to {target_url_for_log}: {e}", exc_info=True)
             if request_log:  # Log if request_log object exists
                 # Try to get status from target response if available
                 status_code = 502  # Bad Gateway default

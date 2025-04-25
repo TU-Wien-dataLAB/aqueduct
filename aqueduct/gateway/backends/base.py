@@ -2,7 +2,7 @@ import abc
 import re
 from typing import Optional, Callable, Union
 
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, Http404
 import requests
 
 from management.models import Endpoint, Model, Usage, Request
@@ -13,17 +13,29 @@ class AIGatewayBackend(abc.ABC):
     Abstract base class for backend-specific logic within the AI Gateway.
     Subclasses handle tasks like finding the correct model and extracting usage
     based on the specifics of the target API (e.g., OpenAI, Anthropic).
-    """
 
-    @abc.abstractmethod
-    def get_model(self, request: HttpRequest, endpoint: Endpoint) -> Optional[Model]:
+    Instances are initialized with the Django HttpRequest and the resolved Endpoint.
+    """
+    def __init__(self, request: HttpRequest, endpoint: Endpoint):
         """
-        Retrieves the Model database object based on the request data and the target endpoint.
-        Returns None if the model cannot be determined or found based on the request.
+        Initializes the backend instance.
 
         Args:
-            request (HttpRequest): The incoming request.
-            endpoint (Endpoint): The target Endpoint instance.
+            request (HttpRequest): The incoming Django request.
+            endpoint (Endpoint): The resolved target Endpoint instance.
+        """
+        if not request or not endpoint:
+            # Should not happen if instantiated correctly in the view
+            raise ValueError("AIGatewayBackend requires a valid HttpRequest and Endpoint for initialization.")
+        self.request = request
+        self.endpoint = endpoint
+
+    @abc.abstractmethod
+    def get_model(self) -> Optional[Model]:
+        """
+        Retrieves the Model database object based on the request data (self.request)
+        and the target endpoint (self.endpoint).
+        Returns None if the model cannot be determined or found based on the request.
 
         Returns:
             Optional[Model]: The corresponding Model instance, or None.
@@ -37,6 +49,8 @@ class AIGatewayBackend(abc.ABC):
     def extract_usage(self, response_body: bytes) -> Usage:
         """
         Extracts usage information (e.g., token counts) from a relayed API response body.
+        This method typically does not need self.request or self.endpoint, but they
+        are available if needed by a subclass.
 
         Args:
             response_body (bytes): The body of the response from the relayed request.
@@ -67,18 +81,15 @@ class AIGatewayBackend(abc.ABC):
         """
         pass
 
-    def requires_pre_processing(self, request: HttpRequest) -> bool:
+    def requires_pre_processing(self) -> bool:
         """
-        Checks if the given request's remaining path matches any regex pattern defined
-        as a key in the dictionary returned by pre_processing_endpoints.
-
-        Args:
-            request (HttpRequest): The incoming request.
+        Checks if the current request's (self.request) remaining path matches any
+        regex pattern defined as a key in the dictionary returned by pre_processing_endpoints.
 
         Returns:
             bool: True if the path matches a pattern requiring pre-processing, False otherwise.
         """
-        remaining_path = request.resolver_match.kwargs.get('remaining_path', '')
+        remaining_path = self.request.resolver_match.kwargs.get('remaining_path', '')
         relative_path = remaining_path.lstrip('/')
         for pattern in self.pre_processing_endpoints():
             if re.fullmatch(pattern, relative_path):
@@ -98,21 +109,20 @@ class AIGatewayBackend(abc.ABC):
         - The original HttpRequest
         - The Request model instance (log entry)
         - The current HttpResponse (output of the previous step or initial response)
+
+        Each callable must return the (potentially modified) HttpResponse.
         """
         pass
 
-    def requires_post_processing(self, request: HttpRequest) -> bool:
+    def requires_post_processing(self) -> bool:
         """
-        Checks if the given request's remaining path matches any regex pattern defined
-        as a key in the dictionary returned by post_processing_endpoints.
-
-        Args:
-            request (HttpRequest): The incoming request.
+        Checks if the current request's (self.request) remaining path matches any
+        regex pattern defined as a key in the dictionary returned by post_processing_endpoints.
 
         Returns:
             bool: True if the path matches a pattern requiring post-processing, False otherwise.
         """
-        remaining_path = request.resolver_match.kwargs.get('remaining_path', '')
+        remaining_path = self.request.resolver_match.kwargs.get('remaining_path', '')
         relative_path = remaining_path.lstrip('/')
         for pattern in self.post_processing_endpoints():
             if re.fullmatch(pattern, relative_path):

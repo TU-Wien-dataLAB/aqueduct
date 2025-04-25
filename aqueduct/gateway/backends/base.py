@@ -210,97 +210,164 @@ class AIGatewayBackend(abc.ABC):
         logger.debug(f"Prepared initial relay request: {request_object.method} {request_object.url}")
         return request_object
 
-    def request_sync(self, timeout: int = 60) -> HttpResponse:
+    def _send_relay_request(self, timeout: int) -> Tuple[HttpResponse, Optional[int]]:
         """
-        Synchronously sends the prepared relay request (self.relay_request)
-        and handles basic connection errors and timeouts.
+        Sends the prepared relay request, handles exceptions, and creates the initial Django HttpResponse.
 
         Args:
-            timeout (int): Timeout in seconds for the request. Default 60.
+            timeout (int): Timeout in seconds for the request.
 
         Returns:
-            response (HttpResponse | JsonResponse): The Django response object (HttpResponse for success, JsonResponse for gateway errors like 502/504).
+            Tuple containing:
+            - HttpResponse: The initial Django HttpResponse (could be success, relayed error, or gateway error like 502/504).
+            - int | None: The response time in milliseconds, or None if timing failed.
         """
         start_time = time.monotonic()
         target_url = self.relay_request.url
-        logger.info(
-            f"Relaying {self.relay_request.method} request from {self.request.user.email} (Token: {self.token.name}) "
-            f"to {target_url} via Endpoint '{self.endpoint.name}'"
-        )
-        response = None
-        response_time_ms = None
+        session = None
+        response: HttpResponse # Will hold the final Django response
+        response_time_ms: Optional[int] = None
+
         try:
-            with RequestsSession() as session:
-                # Prepare the request using the session (handles connection pooling, etc.)
-                prepared_request = session.prepare_request(self.relay_request)
-
-                # logger.debug(f"Prepared request headers being sent: {prepared_request.headers}")
-
-                relayed_response = session.send(
-                    prepared_request,
-                    stream=True,  # Read content below, but stream helps with large responses
-                    timeout=timeout
-                )
-
+            session = RequestsSession()
+            prepared_request = session.prepare_request(self.relay_request)
+            relayed_response = session.send(
+                prepared_request,
+                stream=True,
+                timeout=timeout
+            )
+            # Relay successful (even if target returned 4xx/5xx)
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
-
-            # Read content fully
-            response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
-
-            # Construct Django HttpResponse
-            response = HttpResponse(
-                content=response_content,
-                status=relayed_response.status_code,
-                content_type=relayed_response.headers.get('Content-Type')
-            )
-
-            # Copy relevant headers from relayed response to Django response
-            hop_by_hop_headers = [
-                'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'content-encoding',
-                'te', 'trailers', 'transfer-encoding', 'upgrade'
-            ]
-            for key, value in relayed_response.headers.items():
-                if key.lower() not in hop_by_hop_headers:
-                    response[key] = value
-
-            logger.debug(f"Relay to {target_url} completed: Status {response.status_code}, Time {response_time_ms}ms")
-            # Run post-processing BEFORE saving final status and returning
-            response = self._run_post_processing_pipeline(response)
-            return response
+            logger.debug(f"Relay to {target_url} completed: Status {relayed_response.status_code}, Time {response_time_ms}ms")
+            # Create Django response from successful relay
+            response = self._create_django_response(relayed_response)
 
         except requests.exceptions.Timeout:
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
             logger.warning(f"Gateway timeout after {response_time_ms}ms relaying request to {target_url}")
             response = JsonResponse({"error": "Gateway timeout"}, status=504)
-            return response  # Gateway Timeout
 
         except requests.exceptions.RequestException as e:
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
-            status_code = 502  # Bad Gateway default
-            if hasattr(e, 'response') and e.response is not None:
-                status_code = e.response.status_code  # Use target's status if available
-            logger.error(
-                f"Error relaying request to {target_url} (Status: {status_code}, Time: {response_time_ms}ms): {e}",
-                exc_info=False)  # exc_info=False to avoid overly verbose logs for common connection errors
-            response = JsonResponse({"error": "Gateway error during relay"}, status=status_code)
-            return response
-        finally:
-            # This block now executes *after* both relay AND post-processing (if any)
-            # Update log with the final status code and response time from the entire process
-            if response:
-                self.request_log.status_code = response.status_code # Final status after post-processing
-                if response_time_ms: # Only set if relay happened
-                    self.request_log.response_time_ms = response_time_ms
+            if e.response is not None:
+                # Target server responded, but with an error (caught by requests lib, e.g. connection error with response)
+                # or potentially a non-error status that caused RequestException (less common)
+                logger.error(
+                    f"Error relaying request to {target_url} (Target Status: {e.response.status_code}), Time: {response_time_ms}ms: {e}",
+                    exc_info=False
+                )
+                # Create Django response from the error response we received
+                response = self._create_django_response(e.response)
             else:
-                # Handle case where an error occurred before 'response' was assigned (e.g., very early exception)
-                # This case might be less likely now but good for robustness.
-                self.request_log.status_code = 500 # Assume internal error if no response object
-            # Ensure usage is zero if not extracted (moved from view)
+                # Connection-level error before response (DNS, connection refused, etc.)
+                logger.error(
+                    f"Connection error relaying request to {target_url} (No response received), Time: {response_time_ms}ms: {e}",
+                    exc_info=False
+                )
+                response = JsonResponse({"error": "Gateway connection error"}, status=502)
+
+        except Exception as e: # Catch any other unexpected errors during send
+            end_time = time.monotonic()
+            response_time_ms = int((end_time - start_time) * 1000)
+            logger.error(f"Unexpected error during request relay attempt to {target_url}: {e}", exc_info=True)
+            # Unexpected error, create a 500 response
+            response = JsonResponse({"error": "Internal gateway error during relay attempt"}, status=500)
+        finally:
+            if session:
+                session.close()
+
+        # Ensure response_time_ms is set if an error occurred very early (less likely)
+        if response_time_ms is None and start_time:
+            response_time_ms = int((time.monotonic() - start_time) * 1000)
+
+        return response, response_time_ms
+
+    def _create_django_response(self, relayed_response: requests.Response) -> HttpResponse:
+        """
+        Creates a Django HttpResponse from a requests.Response object.
+
+        Args:
+            relayed_response (requests.Response): The successful response from the relay.
+
+        Returns:
+            HttpResponse: The corresponding Django HttpResponse.
+        """
+        # Read content fully
+        response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
+
+        # Construct Django HttpResponse
+        django_response = HttpResponse(
+            content=response_content,
+            status=relayed_response.status_code,
+            content_type=relayed_response.headers.get('Content-Type')
+        )
+
+        # Copy relevant headers from relayed response to Django response
+        hop_by_hop_headers = [
+            'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'content-encoding',
+            'te', 'trailers', 'transfer-encoding', 'upgrade'
+        ]
+        for key, value in relayed_response.headers.items():
+            if key.lower() not in hop_by_hop_headers:
+                django_response[key] = value
+
+        return django_response
+
+    def request_sync(self, timeout: int = 60) -> HttpResponse:
+        """
+        Synchronously sends the prepared relay request, processes the response,
+        runs post-processing, and logs the outcome.
+
+        Args:
+            timeout (int): Timeout in seconds for the request. Default 60.
+
+        Returns:
+            HttpResponse | JsonResponse: The final Django response object.
+        """
+        final_response: Optional[HttpResponse] = None
+        response_time_ms: Optional[int] = None
+        target_url = self.relay_request.url # Get URL before potential errors
+
+        logger.info(
+            f"Relaying {self.relay_request.method} request from {self.request.user.email} (Token: {self.token.name}) "
+            f"to {target_url} via Endpoint '{self.endpoint.name}'"
+        )
+
+        try:
+            # Step 1: Send relay request & get initial Django response (handles relay errors internally)
+            initial_django_response, duration_ms = self._send_relay_request(timeout)
+            response_time_ms = duration_ms # Store duration
+            logger.debug(f"_send_relay_request completed. Initial Status: {initial_django_response.status_code}, Time: {response_time_ms}ms")
+
+            # Step 2: Run post-processing pipeline
+            # The pipeline internally checks status code before running steps
+            final_response = self._run_post_processing_pipeline(initial_django_response)
+            logger.debug(f"Post-processing attempt complete. Final Status: {final_response.status_code}")
+
+        except Exception as e:
+            # Catch unexpected errors *outside* the relay send itself (e.g., in post-processing)
+            logger.error(f"Unexpected error during sync request processing (post-relay) for {target_url}: {e}", exc_info=True)
+            # Ensure response_time_ms is logged if available from relay attempt
+            final_response = JsonResponse({"error": "Internal gateway error during processing"}, status=500)
+        finally:
+            # Final logging and saving, using the final_response determined above
+            if final_response:
+                self.request_log.status_code = final_response.status_code
+            else:
+                # Should not happen ideally, but set a default status if response is somehow None
+                logger.error("Final response object was unexpectedly None in finally block.")
+                self.request_log.status_code = 500 # Internal Server Error
+
+            if response_time_ms is not None:
+                self.request_log.response_time_ms = response_time_ms
+
+            # Ensure usage is zero if not extracted (this might happen if post-processing fails)
             if self.request_log.input_tokens is None: self.request_log.input_tokens = 0
             if self.request_log.output_tokens is None: self.request_log.output_tokens = 0
+
             # Save the log entry if it hasn't been saved yet (e.g., by pre-processing short-circuit)
             if not self.request_log.pk:
                 try:
@@ -310,6 +377,9 @@ class AIGatewayBackend(abc.ABC):
                     logger.error(f"Failed to save Request log in request_sync finally block: {final_save_e}", exc_info=True)
             else:
                  logger.debug(f"Request log ID {self.request_log.id} was already saved (likely by pre-processing).")
+
+        # Ensure we always return a response
+        return final_response if final_response is not None else HttpResponseServerError("Gateway internal error")
 
     @abc.abstractmethod
     def extract_usage(self, response_body: bytes) -> Usage:

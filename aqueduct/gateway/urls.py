@@ -12,7 +12,7 @@ urlpatterns = [
     # Use endpoint slug to determine the target endpoint
     path(
         '<slug:endpoint_slug>/<path:remaining_path>', # Capture endpoint slug and remaining path
-        views.AIGatewayView.as_view(), # Point to the base view
+        views.ai_gateway_view, # Point to the base view
         name='api_gateway' # More generic name
     ),
 ]

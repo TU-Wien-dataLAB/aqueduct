@@ -30,6 +30,7 @@ name = "aqueduct"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "asgiref" },
     { name = "django" },
     { name = "httpx" },
     { name = "mozilla-django-oidc" },
@@ -43,6 +44,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "asgiref", specifier = ">=3.8.1" },
     { name = "django", specifier = ">=5.2" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },

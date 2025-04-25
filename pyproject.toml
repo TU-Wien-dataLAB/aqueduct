@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "asgiref>=3.8.1",
     "django>=5.2",
     "httpx>=0.28.1",
     "mozilla-django-oidc>=4.0.1",

@@ -38,7 +38,7 @@ response = client.completions.create(
     model=MODEL,
     prompt=PROMPT,
     max_tokens=MAX_TOKENS,
-    stream=True # This is already set correctly for streaming
+    #stream=True # This is already set correctly for streaming
 )
 
 # Iterate over the streaming response and print chunks as they arrive

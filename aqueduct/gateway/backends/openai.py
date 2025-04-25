@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Optional, Callable, Union
+from typing import Optional, Callable, Union, Coroutine, Any
 
 import httpx
 from django.http import HttpRequest, Http404, HttpResponse, JsonResponse
@@ -12,7 +12,7 @@ from management.models import Endpoint, Model, Usage, Request
 logger = logging.getLogger(__name__)
 
 
-def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse) -> HttpResponse:
+async def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse) -> HttpResponse:
     """
     Transforms the /models list response from an OpenAI-compatible API.
     - Filters the models to include only those defined for the request's endpoint (self.endpoint).
@@ -29,7 +29,7 @@ def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse) -> Ht
         db_models = Model.objects.filter(endpoint=endpoint)
 
         # 3. Create a mapping from the internal model name (OpenAI ID) to the desired display name
-        name_to_display_name = {model.name: model.display_name for model in db_models}
+        name_to_display_name = {model.name: model.display_name async for model in db_models}
         logger.debug(f"Transforming models for endpoint '{endpoint.slug}'. DB models map: {name_to_display_name}")
 
         # 4. Filter and transform the models from the OpenAI response
@@ -83,7 +83,7 @@ def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse) -> Ht
         return response
 
 
-def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend') -> Union[httpx.Request, HttpResponse]:
+async def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend') -> Union[httpx.Request, HttpResponse]:
     """
     Pre-processing step to validate the requested model against the endpoint's
     allowed models (using display_name) and transform it to the internal name
@@ -174,15 +174,8 @@ class OpenAIBackend(AIGatewayBackend):
         # Call super().__init__ AFTER logging initialization message, as __init__ now resolves the model.
         logger.debug(f"Initializing OpenAIBackend for endpoint '{endpoint.slug}'")
         super().__init__(request, endpoint)
-        # self.model is now set by the superclass __init__ via _resolve_model
-        if self.model:
-            logger.debug(
-                f"OpenAIBackend resolved model '{self.model.display_name}' (ID: {self.model.id}) for endpoint '{self.endpoint.slug}' during initialization.")
-        else:
-            logger.debug(
-                f"OpenAIBackend did not resolve a specific model for endpoint '{self.endpoint.slug}' during initialization.")
 
-    def _resolve_model(self) -> Optional[Model]:
+    async def _resolve_model(self) -> Optional[Model]:
         """
         Extracts the model display name from the request body (JSON 'model' key)
         and retrieves the corresponding Model object allowed for this endpoint (self.endpoint).
@@ -222,7 +215,7 @@ class OpenAIBackend(AIGatewayBackend):
 
             # Look up the model using the display name provided in the request
             # against the models allowed for this specific endpoint.
-            model = Model.objects.get(display_name=model_display_name, endpoint=self.endpoint)
+            model = await Model.objects.aget(display_name=model_display_name, endpoint=self.endpoint)
             logger.debug(
                 f"_resolve_model (OpenAI): Found model '{model.display_name}' for endpoint '{self.endpoint.slug}'.")
             return model
@@ -344,7 +337,7 @@ class OpenAIBackend(AIGatewayBackend):
             return False
 
     def pre_processing_endpoints(self) -> dict[str, list[Callable[
-        ['AIGatewayBackend'], Union[httpx.Request, HttpResponse]]]]:
+        ['AIGatewayBackend'], Coroutine[Any, Any, Union[httpx.Request, HttpResponse]]]]]:
         """
         Returns a dictionary of path patterns to pre-processing callables for OpenAI.
         """
@@ -356,7 +349,7 @@ class OpenAIBackend(AIGatewayBackend):
         }
 
     def post_processing_endpoints(self) -> dict[
-        str, list[Callable[['AIGatewayBackend', HttpResponse], HttpResponse]]]:
+        str, list[Callable[['AIGatewayBackend', HttpResponse], Coroutine[Any, Any, HttpResponse]]]]:
         """
         Returns a dictionary of path patterns to post-processing callables for OpenAI.
         """

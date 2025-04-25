@@ -1,10 +1,11 @@
 import abc
 import re
-from typing import Optional, Callable, Union, Tuple
+from typing import Optional, Callable, Union, Tuple, Coroutine, Any
 import logging
 import time
 
 import httpx  # Replace requests with httpx
+from asgiref.sync import async_to_sync, sync_to_async
 from django.http import HttpRequest, HttpResponse, Http404, HttpResponseServerError, JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 import requests
@@ -36,6 +37,11 @@ class AIGatewayBackend(abc.ABC):
     The associated Token and Request log are also resolved/created and stored.
     """
 
+    model: Optional[Model]
+    token: Token
+    request_log: Request
+    relay_request: httpx.Request
+
     def __init__(self, request: HttpRequest, endpoint: Endpoint):
         """
         Initializes the backend instance, resolves the Model and Token,
@@ -56,16 +62,18 @@ class AIGatewayBackend(abc.ABC):
             raise ValueError("AIGatewayBackend requires a valid HttpRequest and Endpoint for initialization.")
         self.request: HttpRequest = request
         self.endpoint: Endpoint = endpoint
-        self.model: Optional[Model] = self._resolve_model()  # Resolve and store model
-        self.token: Token = self._resolve_token()  # Resolve and store token (raises Http404 if not found)
+
+    async def initialize(self):
+        self.model: Optional[Model] = await self._resolve_model()  # Resolve and store model
+        self.token: Token = await self._resolve_token()  # Resolve and store token (raises Http404 if not found)
         self.request_log: Request = self._create_request_log()  # Create initial log entry
         self.relay_request: httpx.Request = self._prepare_relay_request()  # Prepare the outbound request
 
         # Run pre-processing immediately after preparing the request
-        self._run_pre_processing_pipeline()
+        await self._run_pre_processing_pipeline()
 
     @abc.abstractmethod
-    def _resolve_model(self) -> Optional[Model]:
+    async def _resolve_model(self) -> Optional[Model]:
         """
         Resolves the Model database object based on the request data (self.request)
         and the target endpoint (self.endpoint).
@@ -89,7 +97,7 @@ class AIGatewayBackend(abc.ABC):
         """
         pass
 
-    def _resolve_token(self) -> Token:
+    async def _resolve_token(self) -> Token:
         """
         Retrieves the Token object associated with the current request (self.request).
 
@@ -112,7 +120,7 @@ class AIGatewayBackend(abc.ABC):
                 token_key = auth_header.split(' ')[1]
                 if token_key:
                     # Use the class method directly for finding the token
-                    token = Token.find_by_key(token_key)
+                    token = await sync_to_async(Token.find_by_key)(token_key)
             except IndexError:
                 logger.warning("Could not parse Bearer token from Authorization header.")
             except Exception as e:
@@ -123,7 +131,7 @@ class AIGatewayBackend(abc.ABC):
         if token is None and user and user.is_authenticated:
             logger.debug(f"No valid Bearer token in header, attempting to find token for user {user.email}")
             # Fetch the first available token for this user.
-            token = user.custom_auth_tokens.order_by('pk').first()
+            token = await user.custom_auth_tokens.order_by('pk').afirst()
 
         if token is None:
             logger.error("Could not associate request with a token (checked header and user tokens).")
@@ -206,7 +214,7 @@ class AIGatewayBackend(abc.ABC):
             method=self.request.method,
             url=target_url,
             headers=outbound_headers,
-            content=outbound_body # httpx uses 'content' for body bytes
+            content=outbound_body  # httpx uses 'content' for body bytes
         )
         logger.debug(f"Prepared initial relay request: {request_object.method} {request_object.url}")
         return request_object
@@ -225,10 +233,10 @@ class AIGatewayBackend(abc.ABC):
             - int | None: The response time in milliseconds, or None if timing failed.
         """
         start_time = time.monotonic()
-        target_url = str(self.relay_request.url) # httpx.URL needs conversion to str
+        target_url = str(self.relay_request.url)  # httpx.URL needs conversion to str
         response: HttpResponse  # Will hold the final Django response
         response_time_ms: Optional[int] = None
-        relayed_response: Optional[httpx.Response] = None # Keep track of httpx response
+        relayed_response: Optional[httpx.Response] = None  # Keep track of httpx response
 
         try:
             # Use httpx.Client for synchronous requests
@@ -237,7 +245,7 @@ class AIGatewayBackend(abc.ABC):
                 relayed_response = client.send(self.relay_request)
                 # No need to manually check status here, httpx raises for transport errors
                 # Read the response content immediately for sync processing
-                relayed_response.read() # Ensure content is loaded
+                relayed_response.read()  # Ensure content is loaded
 
             # Relay successful (even if target returned 4xx/5xx)
             end_time = time.monotonic()
@@ -253,7 +261,7 @@ class AIGatewayBackend(abc.ABC):
             logger.warning(f"Gateway timeout after {response_time_ms}ms relaying request to {target_url}")
             response = JsonResponse({"error": "Gateway timeout"}, status=504)
 
-        except httpx.ConnectError as e: # More specific error for connection issues
+        except httpx.ConnectError as e:  # More specific error for connection issues
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
             logger.error(
@@ -262,7 +270,7 @@ class AIGatewayBackend(abc.ABC):
             )
             response = JsonResponse({"error": "Gateway connection error"}, status=502)
 
-        except httpx.RequestError as e: # Catch other httpx request-related errors
+        except httpx.RequestError as e:  # Catch other httpx request-related errors
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
             # Check if the error has a response attached (e.g., from follow_redirects errors)
@@ -276,7 +284,7 @@ class AIGatewayBackend(abc.ABC):
             else:
                 logger.error(
                     f"Generic HTTP error relaying request to {target_url}, Time: {response_time_ms}ms: {e}",
-                    exc_info=False # Usually don't need full stack trace for request errors
+                    exc_info=False  # Usually don't need full stack trace for request errors
                 )
                 # Default to 502 Bad Gateway if no response is available
                 response = JsonResponse({"error": "Gateway request error"}, status=502)
@@ -318,10 +326,10 @@ class AIGatewayBackend(abc.ABC):
         # Copy relevant headers from relayed response to Django response
         # httpx handles hop-by-hop headers filtering implicitly in many cases,
         # but we still apply the standard list for robustness.
-        hop_by_hop_headers = { # Use a set for faster lookups
+        hop_by_hop_headers = {  # Use a set for faster lookups
             'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
             'te', 'trailers', 'transfer-encoding', 'upgrade',
-            'content-encoding' # Often handled by transport but exclude explicitly
+            'content-encoding'  # Often handled by transport but exclude explicitly
         }
         for key, value in relayed_response.headers.items():
             if key.lower() not in hop_by_hop_headers:
@@ -329,7 +337,7 @@ class AIGatewayBackend(abc.ABC):
 
         return django_response
 
-    def request_sync(self, timeout: int = 60) -> HttpResponse:
+    async def request_sync(self, timeout: int = 60) -> HttpResponse:
         """
         Synchronously sends the prepared relay request, processes the response,
         runs post-processing, and logs the outcome.
@@ -358,7 +366,7 @@ class AIGatewayBackend(abc.ABC):
 
             # Step 2: Run post-processing pipeline
             # The pipeline internally checks status code before running steps
-            final_response = self._run_post_processing_pipeline(initial_django_response)
+            final_response = await self._run_post_processing_pipeline(initial_django_response)
             logger.debug(f"Post-processing attempt complete. Final Status: {final_response.status_code}")
 
             # Step 3: Extract Usage after post-processing (if applicable)
@@ -392,7 +400,7 @@ class AIGatewayBackend(abc.ABC):
             # Save the log entry if it hasn't been saved yet (e.g., by pre-processing short-circuit)
             if not self.request_log.pk:
                 try:
-                    self.request_log.save()
+                    await self.request_log.asave()
                     logger.debug(f"Saved Request log entry ID {self.request_log.id} in request_sync finally block")
                 except Exception as final_save_e:
                     logger.error(f"Failed to save Request log in request_sync finally block: {final_save_e}",
@@ -403,7 +411,7 @@ class AIGatewayBackend(abc.ABC):
         # Ensure we always return a response
         return final_response if final_response is not None else HttpResponseServerError("Gateway internal error")
 
-    def request_streaming(self, timeout: int = 60) -> StreamingHttpResponse:
+    async def request_streaming(self, timeout: int = 60) -> StreamingHttpResponse:
         raise NotImplementedError("Method 'request_streaming' is not implemented.")
 
     @abc.abstractmethod
@@ -433,16 +441,16 @@ class AIGatewayBackend(abc.ABC):
 
     @abc.abstractmethod
     def pre_processing_endpoints(self) -> dict[str, list[Callable[
-        ['AIGatewayBackend'], Union[httpx.Request, HttpResponse]]]]: # Changed requests.Request to httpx.Request
+        ['AIGatewayBackend'], Coroutine[Any, Any, Union[httpx.Request, HttpResponse]]]]]:
         """
         Returns a dictionary mapping endpoint path patterns (relative strings, regex)
-        to a *list* of callable functions that perform pre-processing transformations
+        to a *list* of async callable functions (coroutines) that perform pre-processing transformations
         on the `httpx.Request` object before it's sent.
 
-        Each callable in the list receives:
+        Each async callable in the list receives:
         - The backend instance (self)
 
-        Each callable must return either:
+        Each async callable must return either:
         - An `httpx.Request` object (potentially modified): Indicates success, processing continues with the returned object.
         - An HttpResponse: To short-circuit the process and return this response immediately (e.g., for validation errors).
 
@@ -470,19 +478,19 @@ class AIGatewayBackend(abc.ABC):
 
     @abc.abstractmethod
     def post_processing_endpoints(self) -> dict[
-        str, list[Callable[['AIGatewayBackend', 'Request', HttpResponse], HttpResponse]]]:
+        str, list[Callable[['AIGatewayBackend', HttpResponse], Coroutine[Any, Any, HttpResponse]]]]:
         """
         Returns a dictionary mapping endpoint path patterns (relative strings, regex)
-        to a *list* of callable functions that perform the required post-processing transformations
+        to a *list* of async callable functions (coroutines) that perform the required post-processing transformations
         on the HttpResponse.
 
-        Each callable in the list receives:
+        Each async callable in the list receives:
         - The backend instance (self)
         - The original HttpRequest
         - The Request model instance (log entry)
         - The current HttpResponse (output of the previous step or initial response)
 
-        Each callable must return the (potentially modified) HttpResponse.
+        Each async callable must return the (potentially modified) HttpResponse.
         """
         pass
 
@@ -501,7 +509,7 @@ class AIGatewayBackend(abc.ABC):
                 return True
         return False
 
-    def _run_pre_processing_pipeline(self):
+    async def _run_pre_processing_pipeline(self):
         """
         Executes the pre-processing pipeline based on matching endpoint patterns.
         Modifies `self.relay_request` in place.
@@ -537,7 +545,7 @@ class AIGatewayBackend(abc.ABC):
             step_index = i + 1
             try:
                 # Pass the backend instance and request log
-                result = step_func(self)
+                result = await step_func(self)
 
                 if isinstance(result, HttpResponse):
                     # A step wants to short-circuit with a specific response.
@@ -547,7 +555,7 @@ class AIGatewayBackend(abc.ABC):
                     # Update log status before raising
                     self.request_log.status_code = result.status_code
                     try:
-                        self.request_log.save()
+                        await self.request_log.asave()
                         logger.debug(f"Saved Request log entry ID {self.request_log.id} (pre-processing short-circuit)")
                     except Exception as save_err:
                         logger.error(f"Failed to save Request log during pre-processing short-circuit: {save_err}",
@@ -565,7 +573,7 @@ class AIGatewayBackend(abc.ABC):
                         f"Pre-processing step {step_index} for path '{relative_path}' returned an unexpected type: {type(result)}. Aborting.")
                     self.request_log.status_code = 500
                     try:
-                        self.request_log.save()
+                        await self.request_log.asave()
                     except Exception:
                         pass
                     # Raise custom exception
@@ -586,7 +594,7 @@ class AIGatewayBackend(abc.ABC):
                     # Attempt to save log, similar to the explicit check
                     self.request_log.status_code = pre_err.status_code
                     try:
-                        self.request_log.save()
+                        await self.request_log.asave()
                         logger.debug(
                             f"Saved Request log entry ID {self.request_log.id} (unwrapped HttpResponse short-circuit)")
                     except Exception as save_err:
@@ -600,7 +608,7 @@ class AIGatewayBackend(abc.ABC):
                                  exc_info=True)
                     self.request_log.status_code = 500
                     try:
-                        self.request_log.save()
+                        await self.request_log.asave()
                     except Exception as save_err:
                         logger.error(f"Failed to save Request log during pre-processing error handling: {save_err}",
                                      exc_info=True)
@@ -613,7 +621,7 @@ class AIGatewayBackend(abc.ABC):
 
     # --- Post-Processing ---
 
-    def _run_post_processing_pipeline(self, response: HttpResponse) -> HttpResponse:
+    async def _run_post_processing_pipeline(self, response: HttpResponse) -> HttpResponse:
         """
         Executes the post-processing pipeline based on matching endpoint patterns.
         Modifies and returns the HttpResponse.
@@ -650,7 +658,7 @@ class AIGatewayBackend(abc.ABC):
                     step_index = i + 1
                     try:
                         # Pass backend instance, request log, and current response
-                        response = step_func(self, response)
+                        response = await step_func(self, response)
                         logger.debug(
                             f"Post-processing step {step_index} completed. Current status: {response.status_code}")
                         # Check for error status code (4xx or 5xx) introduced by the step

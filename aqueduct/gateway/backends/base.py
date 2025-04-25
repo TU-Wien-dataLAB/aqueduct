@@ -1,12 +1,13 @@
 import abc
 import re
-from typing import Optional, Callable, Union
+from typing import Optional, Callable, Union, Tuple
 import logging
+import time
 
 from django.http import HttpRequest, HttpResponse, Http404, HttpResponseServerError, JsonResponse
 from django.utils import timezone
 import requests
-from requests import Request as RequestsRequest
+from requests import Request as RequestsRequest, Session as RequestsSession
 
 from management.models import Endpoint, Model, Usage, Request, Token
 
@@ -209,6 +210,88 @@ class AIGatewayBackend(abc.ABC):
         logger.debug(f"Prepared initial relay request: {request_object.method} {request_object.url}")
         return request_object
 
+    def request_sync(self, timeout: int = 60) -> HttpResponse:
+        """
+        Synchronously sends the prepared relay request (self.relay_request)
+        and handles basic connection errors and timeouts.
+
+        Args:
+            timeout (int): Timeout in seconds for the request. Default 60.
+
+        Returns:
+            response (HttpResponse | JsonResponse): The Django response object (HttpResponse for success, JsonResponse for gateway errors like 502/504).
+        """
+        start_time = time.monotonic()
+        target_url = self.relay_request.url
+        logger.info(
+            f"Relaying {self.relay_request.method} request from {self.request.user.email} (Token: {self.token.name}) "
+            f"to {target_url} via Endpoint '{self.endpoint.name}'"
+        )
+        response = None
+        response_time_ms = None
+        try:
+            with RequestsSession() as session:
+                # Prepare the request using the session (handles connection pooling, etc.)
+                prepared_request = session.prepare_request(self.relay_request)
+
+                # logger.debug(f"Prepared request headers being sent: {prepared_request.headers}")
+
+                relayed_response = session.send(
+                    prepared_request,
+                    stream=True,  # Read content below, but stream helps with large responses
+                    timeout=timeout
+                )
+
+            end_time = time.monotonic()
+            response_time_ms = int((end_time - start_time) * 1000)
+
+            # Read content fully
+            response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
+
+            # Construct Django HttpResponse
+            response = HttpResponse(
+                content=response_content,
+                status=relayed_response.status_code,
+                content_type=relayed_response.headers.get('Content-Type')
+            )
+
+            # Copy relevant headers from relayed response to Django response
+            hop_by_hop_headers = [
+                'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'content-encoding',
+                'te', 'trailers', 'transfer-encoding', 'upgrade'
+            ]
+            for key, value in relayed_response.headers.items():
+                if key.lower() not in hop_by_hop_headers:
+                    response[key] = value
+
+            logger.debug(f"Relay to {target_url} completed: Status {response.status_code}, Time {response_time_ms}ms")
+            return response
+
+        except requests.exceptions.Timeout:
+            end_time = time.monotonic()
+            response_time_ms = int((end_time - start_time) * 1000)
+            logger.warning(f"Gateway timeout after {response_time_ms}ms relaying request to {target_url}")
+            response = JsonResponse({"error": "Gateway timeout"}, status=504)
+            return response  # Gateway Timeout
+
+        except requests.exceptions.RequestException as e:
+            end_time = time.monotonic()
+            response_time_ms = int((end_time - start_time) * 1000)
+            status_code = 502  # Bad Gateway default
+            if hasattr(e, 'response') and e.response is not None:
+                status_code = e.response.status_code  # Use target's status if available
+            logger.error(
+                f"Error relaying request to {target_url} (Status: {status_code}, Time: {response_time_ms}ms): {e}",
+                exc_info=False)  # exc_info=False to avoid overly verbose logs for common connection errors
+            response = JsonResponse({"error": "Gateway error during relay"}, status=status_code)
+            return response
+        finally:
+            if response:
+                self.request_log.status_code = response.status_code
+                if response_time_ms:
+                    self.request_log.response_time_ms = response_time_ms
+            self.request_log.save()
+
     @abc.abstractmethod
     def extract_usage(self, response_body: bytes) -> Usage:
         """
@@ -365,7 +448,8 @@ class AIGatewayBackend(abc.ABC):
                     except Exception:
                         pass
                     # Raise custom exception
-                    error_response = JsonResponse({'error': 'Internal gateway error during request pre-processing'}, status=500)
+                    error_response = JsonResponse({'error': 'Internal gateway error during request pre-processing'},
+                                                  status=500)
                     raise PreProcessingPipelineError(response=error_response, step_index=step_index)
 
             except Exception as pre_err:
@@ -376,14 +460,18 @@ class AIGatewayBackend(abc.ABC):
                 elif isinstance(pre_err, HttpResponse):
                     # This case should ideally not be hit if steps correctly return responses
                     # that get wrapped in PreProcessingPipelineError above. Log a warning.
-                    logger.warning(f"Pre-processing step {step_index} raised an unwrapped HttpResponse directly. Wrapping it now.")
+                    logger.warning(
+                        f"Pre-processing step {step_index} raised an unwrapped HttpResponse directly. Wrapping it now.")
                     # Attempt to save log, similar to the explicit check
                     self.request_log.status_code = pre_err.status_code
                     try:
                         self.request_log.save()
-                        logger.debug(f"Saved Request log entry ID {self.request_log.id} (unwrapped HttpResponse short-circuit)")
+                        logger.debug(
+                            f"Saved Request log entry ID {self.request_log.id} (unwrapped HttpResponse short-circuit)")
                     except Exception as save_err:
-                        logger.error(f"Failed to save Request log during unwrapped HttpResponse short-circuit: {save_err}", exc_info=True)
+                        logger.error(
+                            f"Failed to save Request log during unwrapped HttpResponse short-circuit: {save_err}",
+                            exc_info=True)
                     raise PreProcessingPipelineError(response=pre_err, step_index=step_index)
                 else:
                     # Handle other exceptions (BackendProcessingError or unexpected)
@@ -396,7 +484,8 @@ class AIGatewayBackend(abc.ABC):
                         logger.error(f"Failed to save Request log during pre-processing error handling: {save_err}",
                                      exc_info=True)
                     # Raise custom exception, chaining the original error
-                    error_response = JsonResponse({'error': 'Internal gateway error during request pre-processing'}, status=500)
+                    error_response = JsonResponse({'error': 'Internal gateway error during request pre-processing'},
+                                                  status=500)
                     raise PreProcessingPipelineError(response=error_response, step_index=step_index)
 
         logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")

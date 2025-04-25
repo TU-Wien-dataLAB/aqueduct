@@ -5,10 +5,6 @@ from django.http import HttpResponse, JsonResponse, HttpRequest, Http404
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 import logging
-import requests  # Added for relaying requests
-from requests import Request as RequestsRequest # Alias to avoid confusion with models.Request
-from requests import Session as RequestsSession # Alias for Session
-import time
 from typing import Optional
 import re # Added import
 
@@ -66,9 +62,7 @@ class AIGatewayView(View):
             )
         logger.debug(f"User {request.user.email} authenticated.")
 
-        # --- Initialize variables --- 
-        request_log = None
-        start_time = None
+        # --- Initialize variables ---
         backend: Optional[AIGatewayBackend] = None
 
         try:
@@ -109,82 +103,46 @@ class AIGatewayView(View):
                         logger.error(f"Failed to save Request log during backend init error handling: {save_err}", exc_info=True)
                 return JsonResponse({'error': "Internal gateway error during setup"}, status=500)
 
-            # Use the request_log from the now successfully initialized backend
-            request_log = backend.request_log
 
             # --- Pre-processing Pipeline --- REMOVED (Now done in backend.__init__)
             # The logic is moved to backend._run_pre_processing_pipeline()
 
-            # 4. Prepare and Relay Request using requests.Session
-            logger.info(
-                f"Relaying {backend.relay_request.method} request for {request.user.email} (Token: {backend.token.name}) "
-                f"to {backend.relay_request.url} via Endpoint '{endpoint.name}'"
-            )
-
-            start_time = time.monotonic()
-
-            # Use a session to prepare and send the request
-            with RequestsSession() as session:
-                # Prepare the request (handles headers, body encoding etc.)
-                # prepared_request = session.prepare_request(request_object) # OLD
-                prepared_request = session.prepare_request(backend.relay_request) # NEW
-
-                # Log final headers being sent (optional, be careful with sensitive info)
-                # logger.debug(f"Prepared request headers: {prepared_request.headers}")
-
-                relayed_response = session.send(
-                    prepared_request,
-                    stream=True,
-                    timeout=60 # Consider making this configurable
-                )
-
-            end_time = time.monotonic()
-            response_time_ms = int((end_time - start_time) * 1000)
-
-            # --- Process Relayed Response --- 
-            request_log.status_code = relayed_response.status_code
-            request_log.response_time_ms = response_time_ms
-
-            # Read content for usage extraction *before* creating Django response
-            response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
+            # 4. Relay Request using Backend Method
+            response = backend.request_sync()
 
             # 5. Extract Usage (using backend instance method - signature unchanged)
             # Check for model existence on the backend instance
+            # Only attempt extraction if the relay was somewhat successful (not 502/504/500 initially)
+            # and we actually got some content back.
+            # Status codes like 4xx from the target API might still have usage info.
             if backend.model and backend:
-                try:
-                    usage = backend.extract_usage(response_content)
-                    request_log.token_usage = usage  # Uses setter: input_tokens=..., output_tokens=...
+                if response.content and response.status_code not in [500, 502, 504]:
+                    try:
+                        usage = backend.extract_usage(response.content)
+                        backend.request_log.token_usage = usage  # Uses setter: input_tokens=..., output_tokens=...
+                        logger.debug(
+                            f"Request Log {backend.request_log.id if backend.request_log.pk else '(unsaved)'} - Extracted usage for model '{backend.model.display_name}': Input={usage.input_tokens}, Output={usage.output_tokens}") # Log display_name
+                    except Exception as e:
+                        logger.error(f"Error extracting usage from response for model '{backend.model.display_name}': {e}", exc_info=True) # Log display_name
+                        # Log and continue even if usage extraction fails
+                else:
+                    # If relay failed badly or no content, usage is zero
                     logger.debug(
-                        f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Extracted usage for model '{backend.model.display_name}': Input={usage.input_tokens}, Output={usage.output_tokens}") # Log display_name
-                except Exception as e:
-                    logger.error(f"Error extracting usage from response for model '{backend.model.display_name}': {e}", exc_info=True) # Log display_name
-                    # Log and continue even if usage extraction fails
+                        f"Request Log {backend.request_log.id if backend.request_log.pk else '(unsaved)'} - Relay status {response.status_code} or empty content, skipping usage extraction.")
+                    backend.request_log.input_tokens = 0
+                    backend.request_log.output_tokens = 0
             else:
                 # If model is None, usage is considered zero and not extracted
-                request_log.input_tokens = 0
-                request_log.output_tokens = 0
+                backend.request_log.input_tokens = 0
+                backend.request_log.output_tokens = 0
                 logger.debug(
-                    f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Model not specified or found in request, skipping usage extraction.")
+                    f"Request Log {backend.request_log.id if backend.request_log.pk else '(unsaved)'} - Model not specified or found in request, skipping usage extraction.")
 
-            request_log.save()  # Save successful request log details
-            # logger.debug(f"Saved Request log entry ID: {request_log.id} for {request_object.method} {request_object.url}") # OLD
-            logger.debug(f"Saved Request log entry ID: {request_log.id} for {backend.relay_request.method} {backend.relay_request.url}") # NEW
+            backend.request_log.save()  # Save successful request log details
+            logger.debug(f"Saved Request log entry ID: {backend.request_log.id} after relay status {response.status_code}")
 
-            # 6. Construct and Return Django Response
-            response = HttpResponse(
-                content=response_content,
-                status=relayed_response.status_code,
-                content_type=relayed_response.headers.get('Content-Type')
-            )
-
-            # Copy relevant headers from relayed response to Django response
-            hop_by_hop_headers = [
-                'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
-                'te', 'trailers', 'transfer-encoding', 'upgrade'
-            ]
-            for key, value in relayed_response.headers.items():
-                if key.lower() not in hop_by_hop_headers:
-                    response[key] = value
+            # 6. Post-Process and Return Response
+            # The 'response' object is now the HttpResponse/JsonResponse from request_sync
 
             # Perform post-processing if required by the backend for this path (no request arg needed)
             if backend and backend.requires_post_processing():
@@ -206,7 +164,7 @@ class AIGatewayView(View):
                         # original_response_status = response.status_code # Keep original status for logging if needed
                         for i, step_func in enumerate(processing_pipeline):
                             try:
-                                response = step_func(backend, request_log, response)
+                                response = step_func(backend, backend.request_log, response)
                                 logger.debug(
                                     f"Post-processing step {i + 1} completed. Current status: {response.status_code}")
                                 # Check for error status code (4xx or 5xx) introduced by the step
@@ -233,68 +191,38 @@ class AIGatewayView(View):
                 # Log if post-processing was not required or backend was None
                 logger.debug(f"Post-processing not required for path '{kwargs.get('remaining_path', '').lstrip('/')}'")
 
-            logger.debug(f"Relay successful: Status {relayed_response.status_code}")
             return response
 
-        # --- Error Handling for Relaying --- 
-        except requests.exceptions.Timeout:
-            end_time = time.monotonic()
-            # target_url_for_log = target_url if 'target_url' in locals() else "<unknown>" # OLD
-            target_url_for_log = backend.relay_request.url if backend and backend.relay_request else "<unknown>" # NEW
-            logger.warning(f"Gateway timeout relaying request to {target_url_for_log}")
-            if request_log:  # Log if request_log object exists
-                request_log.status_code = 504  # Gateway Timeout
-                if start_time:  # Check if timer started
-                    request_log.response_time_ms = int((end_time - start_time) * 1000)
-                request_log.save()
-                logger.debug(f"Saved Request log entry ID (timeout): {request_log.id}")
-            return JsonResponse({"error": "Gateway timeout"}, status=504)
-
-        except requests.exceptions.RequestException as e:
-            end_time = time.monotonic()
-            # target_url_for_log = target_url if 'target_url' in locals() else "<unknown>" # OLD
-            target_url_for_log = backend.relay_request.url if backend and backend.relay_request else "<unknown>" # NEW
-            logger.error(f"Error relaying request to {target_url_for_log}: {e}", exc_info=True)
-            if request_log:  # Log if request_log object exists
-                # Try to get status from target response if available
-                status_code = 502  # Bad Gateway default
-                if hasattr(e, 'response') and e.response is not None:
-                    status_code = e.response.status_code
-                request_log.status_code = status_code
-                if start_time:
-                    request_log.response_time_ms = int((end_time - start_time) * 1000)
-                request_log.save()
-                logger.debug(f"Saved Request log entry ID (relay error): {request_log.id}")
-            return JsonResponse({"error": "Gateway error during relay"}, status=502)
-
+        # --- Error Handling for Dispatch (excluding relay errors handled by request_sync) ---
         except Exception as e:
-            # Catch any other unexpected errors during the process
-            end_time = time.monotonic()
-            logger.error(f"Unexpected error during gateway dispatch: {e}", exc_info=True)
-            if request_log:  # Log if request_log object exists
-                request_log.status_code = 500  # Internal Server Error
-                if start_time:
-                    request_log.response_time_ms = int((end_time - start_time) * 1000)
+            # Catch any other unexpected errors during the dispatch process (e.g., post-processing)
+            # Note: Timeout/RequestException from relaying are handled *inside* request_sync
+            # and reflected in the returned status_code.
+            # Errors during backend init or pre-processing are caught earlier.
+            # This mainly catches errors during usage extraction, post-processing, or response creation.
+            current_time = timezone.now() # Use timezone.now() if start_time might not be set
+            logger.error(f"Unexpected error during gateway dispatch (after relay attempt): {e}", exc_info=True)
+            if backend.request_log:  # Log if request_log object exists
+                if backend.request_log.status_code is None or backend.request_log.status_code < 400: # Avoid overwriting relay error status
+                    backend.request_log.status_code = 500  # Internal Server Error if not already set to an error
                 # Ensure usage isn't accidentally non-zero if error occurred before extraction
-                if request_log.input_tokens is None: request_log.input_tokens = 0
-                if request_log.output_tokens is None: request_log.output_tokens = 0
-                request_log.save()
-                logger.debug(f"Saved Request log entry ID (unexpected error): {request_log.id}")
+                if backend.request_log.input_tokens is None: backend.request_log.input_tokens = 0
+                if backend.request_log.output_tokens is None: backend.request_log.output_tokens = 0
+                backend.request_log.save()
+                logger.warning(f"Saved Request log entry ID in finally block: {backend.request_log.id}")
             # Return generic error to client
             return JsonResponse({"error": "Internal gateway error"}, status=500)
         finally:
             # Final check to ensure logging if an error happened *after* request_log creation
             # but *before* any explicit save or *between* save and return.
-            if request_log and not request_log.pk:
+            if backend.request_log and not backend.request_log.pk:
                 try:
-                    if request_log.status_code is None: request_log.status_code = 500
-                    if request_log.input_tokens is None: request_log.input_tokens = 0
-                    if request_log.output_tokens is None: request_log.output_tokens = 0
+                    if backend.request_log.status_code is None: backend.request_log.status_code = 500
+                    if backend.request_log.input_tokens is None: backend.request_log.input_tokens = 0
+                    if backend.request_log.output_tokens is None: backend.request_log.output_tokens = 0
                     # Add response time if possible, otherwise leave as null/default
-                    if start_time and 'end_time' in locals():  # Check if end_time was set
-                        request_log.response_time_ms = int((end_time - start_time) * 1000)
-                    request_log.save()
-                    logger.warning(f"Saved Request log entry ID in finally block: {request_log.id}")
+                    backend.request_log.save()
+                    logger.warning(f"Saved Request log entry ID in finally block: {backend.request_log.id}")
                 except Exception as final_save_e:
                     logger.error(f"Failed to save Request log in finally block: {final_save_e}", exc_info=True)
 

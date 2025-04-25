@@ -3,7 +3,7 @@ import re
 from typing import Optional, Callable, Union
 import logging
 
-from django.http import HttpRequest, HttpResponse, Http404, HttpResponseServerError
+from django.http import HttpRequest, HttpResponse, Http404, HttpResponseServerError, JsonResponse
 from django.utils import timezone
 import requests
 from requests import Request as RequestsRequest
@@ -14,18 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 # --- Custom Exceptions ---
-
-class BackendProcessingError(Exception):
-    """Custom exception for errors during backend request pre-processing or other internal steps."""
-
-    def __init__(self, message="Internal gateway error during backend processing", step_index: Optional[int] = None):
-        self.message = message
-        self.step_index = step_index
-        detail = message
-        if step_index is not None:
-            detail = f"{message} (step {step_index})"
-        super().__init__(detail)
-
 
 class PreProcessingPipelineError(Exception):
     def __init__(self, response: HttpResponse, step_index: Optional[int] = None):
@@ -377,8 +365,8 @@ class AIGatewayBackend(abc.ABC):
                     except Exception:
                         pass
                     # Raise custom exception
-                    raise BackendProcessingError(message="Internal gateway error during request pre-processing",
-                                                 step_index=step_index)
+                    error_response = JsonResponse({'error': 'Internal gateway error during request pre-processing'}, status=500)
+                    raise PreProcessingPipelineError(response=error_response, step_index=step_index)
 
             except Exception as pre_err:
                 # Catch exceptions raised *by* the step function, or the PreProcessingPipelineError raised above
@@ -408,7 +396,7 @@ class AIGatewayBackend(abc.ABC):
                         logger.error(f"Failed to save Request log during pre-processing error handling: {save_err}",
                                      exc_info=True)
                     # Raise custom exception, chaining the original error
-                    raise BackendProcessingError(message="Internal gateway error during request pre-processing",
-                                                 step_index=step_index) from pre_err
+                    error_response = JsonResponse({'error': 'Internal gateway error during request pre-processing'}, status=500)
+                    raise PreProcessingPipelineError(response=error_response, step_index=step_index)
 
         logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")

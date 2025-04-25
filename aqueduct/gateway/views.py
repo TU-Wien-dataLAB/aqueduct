@@ -14,7 +14,7 @@ import re # Added import
 
 from django.utils import timezone
 
-from gateway.backends.base import AIGatewayBackend, BackendProcessingError, PreProcessingPipelineError
+from gateway.backends.base import AIGatewayBackend, PreProcessingPipelineError
 from gateway.backends.openai import OpenAIBackend
 from management.models import Request, Token, Endpoint, EndpointBackend
 
@@ -92,10 +92,6 @@ class AIGatewayView(View):
             except Http404 as e:  # Catches endpoint not found or errors in backend _resolve_model/_resolve_token
                 logger.warning(f"Failed to initialize backend or resolve model/token: {e}")
                 return JsonResponse({'error': str(e)}, status=404)
-            except BackendProcessingError as e:
-                logger.error(f"Backend processing failed: {e}", exc_info=True)
-                # Log should have been saved before the exception was raised in the backend
-                return JsonResponse({'error': str(e)}, status=500)
             except PreProcessingPipelineError as e:
                 logger.info(f"Pre-processing pipeline short-circuited at step {e.step_index} with status {e.response.status_code}")
                 # The exception carries the HttpResponse to be returned directly.

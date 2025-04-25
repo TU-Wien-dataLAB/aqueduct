@@ -93,37 +93,8 @@ class AIGatewayView(View):
                 logger.error(f"Unexpected error getting endpoint/backend/model: {e}", exc_info=True)
                 return JsonResponse({'error': "Internal gateway error"}, status=500)
 
-            try:
-                token = self.get_token(request)
-            except Http404 as e:
-                logger.error(f"Failed to get token for authenticated user {request.user.email}: {e}")
-                return JsonResponse({'error': str(e)}, status=404)  # Consider 401/403 based on policy
-
-            # 3. Create Initial Request Log Entry
-            request_log = Request(
-                token=token,
-                model=backend.model,  # Use the resolved model from the backend instance
-                endpoint=endpoint,
-                timestamp=timezone.now(),
-                method=request.method,
-                user_agent=request.headers.get('User-Agent', ''),
-                ip_address=request.META.get('REMOTE_ADDR')
-                # path, Status, time, usage set later
-            )
-
-            # --- Prepare arguments for requests.Request --- 
-            # REMOVED: Redundant request preparation logic - now handled in backend.__init__
-            # remaining_path = kwargs.get('remaining_path', '')
-            # # Ensure leading/trailing slashes are handled correctly for joining
-            # target_api_base = endpoint.url.rstrip('/')
-            # remaining_path_cleaned = remaining_path.lstrip('/')
-            # target_url = f"{target_api_base}/{remaining_path_cleaned}"
-            request_log.path = f"/{kwargs.get('remaining_path', '').lstrip('/')}" # Store path with leading slash
-
-            # Prepare initial headers and body for the outbound request
-
-
-
+            # Use the request_log created during backend initialization
+            request_log = backend.request_log
 
             # --- Pre-processing Pipeline (operates on backend.relay_request) ---
             # Check if pre-processing is required (no request arg needed)
@@ -185,7 +156,7 @@ class AIGatewayView(View):
 
             # 4. Prepare and Relay Request using requests.Session
             logger.info(
-                f"Relaying {backend.relay_request.method} request for {request.user.email} (Token: {token.name}) "
+                f"Relaying {backend.relay_request.method} request for {request.user.email} (Token: {backend.token.name}) "
                 f"to {backend.relay_request.url} via Endpoint '{endpoint.name}'"
             )
 

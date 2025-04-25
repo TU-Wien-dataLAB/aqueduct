@@ -12,7 +12,7 @@ from management.models import Endpoint, Model, Usage, Request
 logger = logging.getLogger(__name__)
 
 
-def _transform_models(backend: 'AIGatewayBackend', request_log: Request, response: HttpResponse) -> HttpResponse:
+def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse) -> HttpResponse:
     """
     Transforms the /models list response from an OpenAI-compatible API.
     - Filters the models to include only those defined for the request's endpoint (self.endpoint).
@@ -83,7 +83,7 @@ def _transform_models(backend: 'AIGatewayBackend', request_log: Request, respons
         return response
 
 
-def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', request_log: Request) -> Union[requests.Request, HttpResponse]:
+def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend') -> Union[requests.Request, HttpResponse]:
     """
     Pre-processing step to validate the requested model against the endpoint's
     allowed models (using display_name) and transform it to the internal name
@@ -101,10 +101,7 @@ def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', reques
 
     Args:
         backend: The OpenAIBackend instance.
-        django_request: The original incoming Django HttpRequest (unused).
         request_log: The Request log model instance.
-        relay_request: The `requests.Request` object being prepared. This object
-                        may be modified in place (specifically `.data` and `.headers`).
 
     Returns:
         Union[requests.Request, HttpResponse]: The (potentially modified) `relay_request` on success,
@@ -242,9 +239,14 @@ class OpenAIBackend(AIGatewayBackend):
     def extract_usage(self, response_body: bytes) -> Usage:
         """
         Extracts token usage from an OpenAI API JSON response body.
+        Handles both standard JSON responses and streaming (SSE) responses.
         Looks for {"usage": {"prompt_tokens": X, "completion_tokens": Y}}
         """
+        input_tokens = 0
+        output_tokens = 0
+
         try:
+            # Attempt to parse as a single JSON object (non-streaming case)
             data = json.loads(response_body)
             usage_dict = data.get('usage')
 
@@ -252,59 +254,78 @@ class OpenAIBackend(AIGatewayBackend):
                 input_tokens = usage_dict.get('prompt_tokens', 0)
                 output_tokens = usage_dict.get('completion_tokens', 0)
                 logger.debug(
-                    f"OpenAIBackend: Successfully extracted usage: Input={input_tokens}, Output={output_tokens}")
+                    f"OpenAIBackend: Successfully extracted usage from non-streaming response: Input={input_tokens}, Output={output_tokens}")
                 return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
             else:
-                # Check for streaming chunks which might contain usage
-                # This is a simplified check; a more robust solution might parse line-by-line
-                if b'"usage":' in response_body:
-                    # Try to find the last usage object in potentially streamed data
-                    try:
-                        # Find the last occurrence of a potential usage JSON object
-                        last_usage_idx = response_body.rfind(b'{"usage":')
-                        if last_usage_idx != -1:
-                            # Attempt to parse from that point
-                            # Find the closing brace `}}` for the usage object
-                            end_brace_idx = response_body.find(b'}}', last_usage_idx)
-                            if end_brace_idx != -1:
-                                usage_json_str = response_body[last_usage_idx:end_brace_idx + 2].decode('utf-8',
-                                                                                                        errors='ignore')
-                                usage_data = json.loads(usage_json_str)
-                                usage_dict = usage_data.get('usage')
-                                if isinstance(usage_dict, dict):
-                                    input_tokens = usage_dict.get('prompt_tokens', 0)
-                                    output_tokens = usage_dict.get('completion_tokens', 0)
-                                    logger.debug(
-                                        f"OpenAIBackend: Extracted usage from streamed data: Input={input_tokens}, Output={output_tokens}")
-                                    return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
-                    except Exception as stream_parse_e:
-                        logger.warning(
-                            f"Could not parse potential usage from streamed OpenAI response: {stream_parse_e}")
-
-                logger.warning("No usable 'usage' dictionary found in OpenAI response body.")
+                # This case might occur if the JSON is valid but doesn't contain 'usage'
+                logger.warning("No 'usage' dictionary found in standard OpenAI JSON response body.")
                 return Usage(input_tokens=0, output_tokens=0)
 
         except json.JSONDecodeError:
-            logger.warning("Failed to decode JSON from OpenAI response body when extracting usage.")
-            return Usage(input_tokens=0, output_tokens=0)
+            # If direct JSON parsing fails, assume it might be a streaming response (SSE)
+            logger.debug("Failed to decode as single JSON, attempting to parse as SSE stream for usage.")
+            last_usage_dict = None
+            lines = response_body.splitlines()
+            for line in lines:
+                if line:
+                    try:
+                        decoded_line = line.decode("utf-8")
+                        if decoded_line.startswith("data: "):
+                            payload = decoded_line[len("data: "):].strip()
+                            if payload == "[DONE]":
+                                continue # Skip the termination message
+                            if not payload:
+                                continue # Skip empty data lines
+
+                            chunk = json.loads(payload)
+                            usage_dict = chunk.get('usage')
+
+                            # OpenAI streaming often includes usage in the *last* relevant chunk
+                            if isinstance(usage_dict, dict):
+                                last_usage_dict = usage_dict
+                                # Log finding a usage dict, but continue processing in case there's a later one
+                                logger.debug(f"Found potential usage dict in stream chunk: {usage_dict}")
+
+                    except json.JSONDecodeError:
+                        logger.warning(f"Could not parse JSON from stream line payload: '{payload}'")
+                        continue # Ignore lines that aren't valid JSON chunks after 'data: '
+                    except UnicodeDecodeError:
+                         logger.warning(f"Could not decode stream line as UTF-8: {line}")
+                         continue # Ignore lines that cannot be decoded
+                    except Exception as e:
+                         # Catch other potential errors during chunk processing
+                         logger.warning(f"Error processing stream chunk payload '{payload if 'payload' in locals() else '<payload error>'}': {e}")
+                         continue
+
+            # After processing all lines, use the last found usage dictionary
+            if last_usage_dict:
+                 input_tokens = last_usage_dict.get('prompt_tokens', 0)
+                 output_tokens = last_usage_dict.get('completion_tokens', 0)
+                 logger.info(
+                    f"OpenAIBackend: Successfully extracted usage from streamed response: Input={input_tokens}, Output={output_tokens}")
+                 return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
+            else:
+                 logger.warning("No 'usage' dictionary found in any chunk of the streamed OpenAI response.")
+                 return Usage(input_tokens=0, output_tokens=0)
+
         except Exception as e:
             logger.error(f"Unexpected error extracting usage from OpenAI response: {e}", exc_info=True)
             return Usage(input_tokens=0, output_tokens=0)
 
     def pre_processing_endpoints(self) -> dict[str, list[Callable[
-        ['AIGatewayBackend', 'Request'], Union[requests.Request, HttpResponse]]]]:
+        ['AIGatewayBackend'], Union[requests.Request, HttpResponse]]]]:
         """
         Returns a dictionary of path patterns to pre-processing callables for OpenAI.
         """
         return {
             # Match paths commonly requiring a 'model' parameter in the body
             r"^(v1/)?(chat/completions|completions|embeddings)$": [
-                _validate_and_transform_model_in_request
+                _validate_and_transform_model_in_request # TODO: add pre-processing step that always adds usage: true to streaming options
             ],
         }
 
     def post_processing_endpoints(self) -> dict[
-        str, list[Callable[['AIGatewayBackend', 'Request', HttpResponse], HttpResponse]]]:
+        str, list[Callable[['AIGatewayBackend', HttpResponse], HttpResponse]]]:
         """
         Returns a dictionary of path patterns to post-processing callables for OpenAI.
         """

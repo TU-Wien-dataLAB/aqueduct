@@ -511,7 +511,7 @@ class AIGatewayBackend(abc.ABC):
             step_index = i + 1
             try:
                 # Pass the backend instance and request log
-                result = step_func(self, self.request_log)
+                result = step_func(self)
 
                 if isinstance(result, HttpResponse):
                     # A step wants to short-circuit with a specific response.
@@ -624,7 +624,7 @@ class AIGatewayBackend(abc.ABC):
                     step_index = i + 1
                     try:
                         # Pass backend instance, request log, and current response
-                        response = step_func(self, self.request_log, response)
+                        response = step_func(self, response)
                         logger.debug(
                             f"Post-processing step {step_index} completed. Current status: {response.status_code}")
                         # Check for error status code (4xx or 5xx) introduced by the step

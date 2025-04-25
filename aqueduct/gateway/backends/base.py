@@ -4,7 +4,7 @@ from typing import Optional, Callable, Union, Tuple
 import logging
 import time
 
-from django.http import HttpRequest, HttpResponse, Http404, HttpResponseServerError, JsonResponse
+from django.http import HttpRequest, HttpResponse, Http404, HttpResponseServerError, JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 import requests
 from requests import Request as RequestsRequest, Session as RequestsSession
@@ -225,7 +225,7 @@ class AIGatewayBackend(abc.ABC):
         start_time = time.monotonic()
         target_url = self.relay_request.url
         session = None
-        response: HttpResponse # Will hold the final Django response
+        response: HttpResponse  # Will hold the final Django response
         response_time_ms: Optional[int] = None
 
         try:
@@ -239,7 +239,8 @@ class AIGatewayBackend(abc.ABC):
             # Relay successful (even if target returned 4xx/5xx)
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
-            logger.debug(f"Relay to {target_url} completed: Status {relayed_response.status_code}, Time {response_time_ms}ms")
+            logger.debug(
+                f"Relay to {target_url} completed: Status {relayed_response.status_code}, Time {response_time_ms}ms")
             # Create Django response from successful relay
             response = self._create_django_response(relayed_response)
 
@@ -269,7 +270,7 @@ class AIGatewayBackend(abc.ABC):
                 )
                 response = JsonResponse({"error": "Gateway connection error"}, status=502)
 
-        except Exception as e: # Catch any other unexpected errors during send
+        except Exception as e:  # Catch any other unexpected errors during send
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
             logger.error(f"Unexpected error during request relay attempt to {target_url}: {e}", exc_info=True)
@@ -329,7 +330,7 @@ class AIGatewayBackend(abc.ABC):
         """
         final_response: Optional[HttpResponse] = None
         response_time_ms: Optional[int] = None
-        target_url = self.relay_request.url # Get URL before potential errors
+        target_url = self.relay_request.url  # Get URL before potential errors
 
         logger.info(
             f"Relaying {self.relay_request.method} request from {self.request.user.email} (Token: {self.token.name}) "
@@ -339,8 +340,9 @@ class AIGatewayBackend(abc.ABC):
         try:
             # Step 1: Send relay request & get initial Django response (handles relay errors internally)
             initial_django_response, duration_ms = self._send_relay_request(timeout)
-            response_time_ms = duration_ms # Store duration
-            logger.debug(f"_send_relay_request completed. Initial Status: {initial_django_response.status_code}, Time: {response_time_ms}ms")
+            response_time_ms = duration_ms  # Store duration
+            logger.debug(
+                f"_send_relay_request completed. Initial Status: {initial_django_response.status_code}, Time: {response_time_ms}ms")
 
             # Step 2: Run post-processing pipeline
             # The pipeline internally checks status code before running steps
@@ -355,7 +357,8 @@ class AIGatewayBackend(abc.ABC):
                 self.request_log.token_usage = usage
         except Exception as e:
             # Catch unexpected errors *outside* the relay send itself (e.g., in post-processing or usage extraction)
-            logger.error(f"Unexpected error during sync request processing (post-relay) for {target_url}: {e}", exc_info=True)
+            logger.error(f"Unexpected error during sync request processing (post-relay) for {target_url}: {e}",
+                         exc_info=True)
             # Ensure response_time_ms is logged if available from relay attempt
             final_response = JsonResponse({"error": "Internal gateway error during processing"}, status=500)
         finally:
@@ -365,7 +368,7 @@ class AIGatewayBackend(abc.ABC):
             else:
                 # Should not happen ideally, but set a default status if response is somehow None
                 logger.error("Final response object was unexpectedly None in finally block.")
-                self.request_log.status_code = 500 # Internal Server Error
+                self.request_log.status_code = 500  # Internal Server Error
 
             if response_time_ms is not None:
                 self.request_log.response_time_ms = response_time_ms
@@ -380,12 +383,16 @@ class AIGatewayBackend(abc.ABC):
                     self.request_log.save()
                     logger.debug(f"Saved Request log entry ID {self.request_log.id} in request_sync finally block")
                 except Exception as final_save_e:
-                    logger.error(f"Failed to save Request log in request_sync finally block: {final_save_e}", exc_info=True)
+                    logger.error(f"Failed to save Request log in request_sync finally block: {final_save_e}",
+                                 exc_info=True)
             else:
-                 logger.debug(f"Request log ID {self.request_log.id} was already saved (likely by pre-processing).")
+                logger.debug(f"Request log ID {self.request_log.id} was already saved (likely by pre-processing).")
 
         # Ensure we always return a response
         return final_response if final_response is not None else HttpResponseServerError("Gateway internal error")
+
+    def request_streaming(self, timeout: int = 60) -> StreamingHttpResponse:
+        raise NotImplementedError("Method 'request_streaming' is not implemented.")
 
     @abc.abstractmethod
     def extract_usage(self, response_body: bytes) -> Usage:
@@ -399,6 +406,16 @@ class AIGatewayBackend(abc.ABC):
 
         Returns:
             Usage: Usage extracted from the response.
+        """
+        pass
+
+    @abc.abstractmethod
+    def is_streaming_request(self) -> bool:
+        """
+        Determines whether the current request is a streaming request.
+
+        Returns:
+            bool: True if the request is a streaming request, False otherwise.
         """
         pass
 

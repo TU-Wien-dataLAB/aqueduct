@@ -88,7 +88,10 @@ class AIGatewayView(View):
             return e.response
 
         # 4. Relay Request using Backend Method
-        response = backend.request_sync()
+        if backend.is_streaming_request():
+            response = backend.request_streaming()
+        else:
+            response = backend.request_sync()
 
         return response
 

@@ -312,6 +312,29 @@ class OpenAIBackend(AIGatewayBackend):
             logger.error(f"Unexpected error extracting usage from OpenAI response: {e}", exc_info=True)
             return Usage(input_tokens=0, output_tokens=0)
 
+    def is_streaming_request(self) -> bool:
+        """
+        Determines whether the current request is a streaming request.
+
+        Returns:
+            bool: True if the request is a streaming request, False otherwise.
+        """
+        try:
+            # Only check body for POST/PUT/PATCH methods
+            if self.request.method in ("POST", "PUT", "PATCH"):
+                body = self.request.body
+                if body:
+                    try:
+                        data = json.loads(body)
+                        # Only check top-level "stream" field
+                        return bool(data.get("stream", False))
+                    except Exception:
+                        # If body is not valid JSON, cannot determine streaming
+                        return False
+            return False
+        except Exception:
+            return False
+
     def pre_processing_endpoints(self) -> dict[str, list[Callable[
         ['AIGatewayBackend'], Union[requests.Request, HttpResponse]]]]:
         """

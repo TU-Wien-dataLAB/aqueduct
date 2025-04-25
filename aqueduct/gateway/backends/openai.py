@@ -2,9 +2,9 @@ import json
 import logging
 from typing import Optional, Callable, Union
 
+import httpx
 from django.http import HttpRequest, Http404, HttpResponse, JsonResponse
 import openai as openai_sdk
-import requests
 
 from gateway.backends.base import AIGatewayBackend
 from management.models import Endpoint, Model, Usage, Request
@@ -83,43 +83,43 @@ def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse) -> Ht
         return response
 
 
-def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend') -> Union[requests.Request, HttpResponse]:
+def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend') -> Union[httpx.Request, HttpResponse]:
     """
     Pre-processing step to validate the requested model against the endpoint's
     allowed models (using display_name) and transform it to the internal name
-    within the `requests.Request` object.
+    within the `httpx.Request` object.
 
-    - Parses the request body (`relay_request.data`) to find the 'model' field.
+    - Parses the request body (`relay_request.content`) to find the 'model' field.
     - Checks if the provided model name exists as a `display_name` for any `Model`
       associated with the `endpoint`.
-    - If found, replaces the `display_name` in `relay_request.data` with the
-      corresponding `model.name` (internal name) and updates the Content-Length header
-      in `relay_request.headers`.
+    - If found, creates a *new* `httpx.Request` with the `display_name` replaced
+      by the corresponding `model.name` (internal name) in the content, and updates
+      the Content-Length header.
     - If not found, returns a 404 JsonResponse.
     - If the body is missing, not JSON, or missing the 'model' key, returns the
       unmodified `relay_request`.
 
     Args:
         backend: The OpenAIBackend instance.
-        request_log: The Request log model instance.
 
     Returns:
-        Union[requests.Request, HttpResponse]: The (potentially modified) `relay_request` on success,
+        Union[httpx.Request, HttpResponse]: The (potentially modified) `relay_request` on success,
                                                or a JsonResponse on validation failure.
     """
     if not backend.model:
         logger.debug("Request has no model associated with it, skipping model validation/transformation.")
         return backend.relay_request
 
-    request_body = backend.relay_request.data
-    if not request_body:
+    request_content = backend.relay_request.content
+    if not request_content:
         logger.debug("Pre-processing: Request body is empty, skipping model validation/transformation.")
         return backend.relay_request  # Return unmodified object
 
     try:
-        data = json.loads(request_body)
-    except json.JSONDecodeError:
-        logger.warning("Pre-processing: Failed to decode JSON from request body, skipping model validation.")
+        # Decode content (assuming utf-8)
+        data = json.loads(request_content.decode('utf-8'))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        logger.warning(f"Pre-processing: Failed to decode JSON from request body ({e}), skipping model validation.")
         return backend.relay_request  # Let the target API handle malformed JSON, return unmodified
 
     requested_model_display_name = data.get('model')
@@ -135,13 +135,21 @@ def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend') -> Uni
             data['model'] = internal_model_name
             new_body_bytes = json.dumps(data).encode('utf-8')
 
-            # Update the request object's data and headers
-            backend.relay_request.data = new_body_bytes
-            backend.relay_request.headers['Content-Length'] = str(len(new_body_bytes))
+            # Create a new httpx.Request with updated content and headers
+            # Keep original method, url, and other headers (modify Content-Length)
+            new_headers = httpx.Headers(backend.relay_request.headers)
+            new_headers['Content-Length'] = str(len(new_body_bytes))
+
+            new_relay_request = httpx.Request(
+                method=backend.relay_request.method,
+                url=backend.relay_request.url,
+                content=new_body_bytes,
+                headers=new_headers
+            )
 
             logger.info(
                 f"Pre-processing: Transformed model '{requested_model_display_name}' to '{internal_model_name}' for endpoint '{endpoint.slug}'.")
-            return backend.relay_request  # Return modified object
+            return new_relay_request # Return the NEW modified request object
         else:
             # Model provided was already the internal name (and it's allowed)
             logger.debug(
@@ -336,7 +344,7 @@ class OpenAIBackend(AIGatewayBackend):
             return False
 
     def pre_processing_endpoints(self) -> dict[str, list[Callable[
-        ['AIGatewayBackend'], Union[requests.Request, HttpResponse]]]]:
+        ['AIGatewayBackend'], Union[httpx.Request, HttpResponse]]]]:
         """
         Returns a dictionary of path patterns to pre-processing callables for OpenAI.
         """

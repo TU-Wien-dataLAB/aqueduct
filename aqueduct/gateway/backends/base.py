@@ -4,6 +4,7 @@ from typing import Optional, Callable, Union, Tuple
 import logging
 import time
 
+import httpx  # Replace requests with httpx
 from django.http import HttpRequest, HttpResponse, Http404, HttpResponseServerError, JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 import requests
@@ -58,7 +59,7 @@ class AIGatewayBackend(abc.ABC):
         self.model: Optional[Model] = self._resolve_model()  # Resolve and store model
         self.token: Token = self._resolve_token()  # Resolve and store token (raises Http404 if not found)
         self.request_log: Request = self._create_request_log()  # Create initial log entry
-        self.relay_request: RequestsRequest = self._prepare_relay_request()  # Prepare the outbound request
+        self.relay_request: httpx.Request = self._prepare_relay_request()  # Prepare the outbound request
 
         # Run pre-processing immediately after preparing the request
         self._run_pre_processing_pipeline()
@@ -153,7 +154,7 @@ class AIGatewayBackend(abc.ABC):
         # Note: The log is NOT saved here; it's saved later in the view after relaying.
         return request_log
 
-    def add_auth_header(self, headers: dict):
+    def add_auth_header(self, headers: httpx.Headers):
         """
         Adds the Authorization header for the target endpoint to the headers dict.
 
@@ -163,7 +164,7 @@ class AIGatewayBackend(abc.ABC):
         Modifies the headers dict in place.
 
         Args:
-            headers (dict): The dictionary of headers to modify.
+            headers (httpx.Headers): The dictionary of headers to modify.
         """
         access_token = self.endpoint.get_access_token()
 
@@ -177,10 +178,10 @@ class AIGatewayBackend(abc.ABC):
             logger.warning(
                 f"No access token configured or found for endpoint {self.endpoint.name}. Authorization header not added.")
 
-    def _prepare_relay_request(self) -> RequestsRequest:
+    def _prepare_relay_request(self) -> httpx.Request:
         """
-        Prepares the initial requests.Request object for relaying.
-        This includes setting the URL, method, headers (including auth), and body.
+        Prepares the initial httpx.Request object for relaying.
+        This includes setting the URL, method, headers, and body.
         """
         remaining_path = self.request.resolver_match.kwargs.get('remaining_path', '')
         # Ensure leading/trailing slashes are handled correctly for joining
@@ -189,30 +190,31 @@ class AIGatewayBackend(abc.ABC):
         target_url = f"{target_api_base}/{remaining_path_cleaned}"
 
         # Prepare initial headers and body for the outbound request
-        outbound_headers = {
-            "Content-Type": self.request.content_type or "application/json",  # Use original content-type or default
-            # Copy other relevant headers? Be careful not to leak internal info.
+        # Copy relevant headers, being careful about case and sensitive info
+        outbound_headers = httpx.Headers({
+            "Content-Type": self.request.content_type or "application/json",
             # Example: "Accept": request.headers.get("Accept", "*/*"),
-        }
+        })
         # Add/replace auth header for the target endpoint
-        self.add_auth_header(outbound_headers)  # Call the method now part of the backend
+        self.add_auth_header(outbound_headers)  # Modifies headers in place
 
         # Get body from original request
         outbound_body = self.request.body
 
-        # Create the requests.Request object
-        request_object = RequestsRequest(
+        # Create the httpx.Request object
+        request_object = httpx.Request(
             method=self.request.method,
             url=target_url,
             headers=outbound_headers,
-            data=outbound_body
+            content=outbound_body # httpx uses 'content' for body bytes
         )
         logger.debug(f"Prepared initial relay request: {request_object.method} {request_object.url}")
         return request_object
 
     def _send_relay_request(self, timeout: int) -> Tuple[HttpResponse, Optional[int]]:
         """
-        Sends the prepared relay request, handles exceptions, and creates the initial Django HttpResponse.
+        Sends the prepared relay request using httpx, handles exceptions,
+        and creates the initial Django HttpResponse.
 
         Args:
             timeout (int): Timeout in seconds for the request.
@@ -223,19 +225,20 @@ class AIGatewayBackend(abc.ABC):
             - int | None: The response time in milliseconds, or None if timing failed.
         """
         start_time = time.monotonic()
-        target_url = self.relay_request.url
-        session = None
+        target_url = str(self.relay_request.url) # httpx.URL needs conversion to str
         response: HttpResponse  # Will hold the final Django response
         response_time_ms: Optional[int] = None
+        relayed_response: Optional[httpx.Response] = None # Keep track of httpx response
 
         try:
-            session = RequestsSession()
-            prepared_request = session.prepare_request(self.relay_request)
-            relayed_response = session.send(
-                prepared_request,
-                stream=True,
-                timeout=timeout
-            )
+            # Use httpx.Client for synchronous requests
+            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+                # Send the prepared httpx.Request object
+                relayed_response = client.send(self.relay_request)
+                # No need to manually check status here, httpx raises for transport errors
+                # Read the response content immediately for sync processing
+                relayed_response.read() # Ensure content is loaded
+
             # Relay successful (even if target returned 4xx/5xx)
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
@@ -244,60 +247,66 @@ class AIGatewayBackend(abc.ABC):
             # Create Django response from successful relay
             response = self._create_django_response(relayed_response)
 
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
             logger.warning(f"Gateway timeout after {response_time_ms}ms relaying request to {target_url}")
             response = JsonResponse({"error": "Gateway timeout"}, status=504)
 
-        except requests.exceptions.RequestException as e:
+        except httpx.ConnectError as e: # More specific error for connection issues
             end_time = time.monotonic()
             response_time_ms = int((end_time - start_time) * 1000)
-            if e.response is not None:
-                # Target server responded, but with an error (caught by requests lib, e.g. connection error with response)
-                # or potentially a non-error status that caused RequestException (less common)
+            logger.error(
+                f"Connection error relaying request to {target_url} (No response received), Time: {response_time_ms}ms: {e}",
+                exc_info=False
+            )
+            response = JsonResponse({"error": "Gateway connection error"}, status=502)
+
+        except httpx.RequestError as e: # Catch other httpx request-related errors
+            end_time = time.monotonic()
+            response_time_ms = int((end_time - start_time) * 1000)
+            # Check if the error has a response attached (e.g., from follow_redirects errors)
+            if hasattr(e, 'response') and e.response:
                 logger.error(
                     f"Error relaying request to {target_url} (Target Status: {e.response.status_code}), Time: {response_time_ms}ms: {e}",
                     exc_info=False
                 )
-                # Create Django response from the error response we received
+                # Use the response from the exception if available
                 response = self._create_django_response(e.response)
             else:
-                # Connection-level error before response (DNS, connection refused, etc.)
                 logger.error(
-                    f"Connection error relaying request to {target_url} (No response received), Time: {response_time_ms}ms: {e}",
-                    exc_info=False
+                    f"Generic HTTP error relaying request to {target_url}, Time: {response_time_ms}ms: {e}",
+                    exc_info=False # Usually don't need full stack trace for request errors
                 )
-                response = JsonResponse({"error": "Gateway connection error"}, status=502)
+                # Default to 502 Bad Gateway if no response is available
+                response = JsonResponse({"error": "Gateway request error"}, status=502)
 
         except Exception as e:  # Catch any other unexpected errors during send
             end_time = time.monotonic()
-            response_time_ms = int((end_time - start_time) * 1000)
+            response_time_ms = int((time.monotonic() - start_time) * 1000) if start_time else None
             logger.error(f"Unexpected error during request relay attempt to {target_url}: {e}", exc_info=True)
             # Unexpected error, create a 500 response
             response = JsonResponse({"error": "Internal gateway error during relay attempt"}, status=500)
-        finally:
-            if session:
-                session.close()
 
-        # Ensure response_time_ms is set if an error occurred very early (less likely)
+        # Ensure response_time_ms is set if an error occurred very early
         if response_time_ms is None and start_time:
             response_time_ms = int((time.monotonic() - start_time) * 1000)
 
         return response, response_time_ms
 
-    def _create_django_response(self, relayed_response: requests.Response) -> HttpResponse:
+    def _create_django_response(self, relayed_response: httpx.Response) -> HttpResponse:
         """
-        Creates a Django HttpResponse from a requests.Response object.
+        Creates a Django HttpResponse from an httpx.Response object.
 
         Args:
-            relayed_response (requests.Response): The successful response from the relay.
+            relayed_response (httpx.Response): The successful response from the relay.
+                                                Assumes .read() has been called.
 
         Returns:
             HttpResponse: The corresponding Django HttpResponse.
         """
-        # Read content fully
-        response_content = b"".join(relayed_response.iter_content(chunk_size=8192))
+        # Content should be already read into relayed_response.content
+        response_content = relayed_response.content
 
         # Construct Django HttpResponse
         django_response = HttpResponse(
@@ -307,10 +316,13 @@ class AIGatewayBackend(abc.ABC):
         )
 
         # Copy relevant headers from relayed response to Django response
-        hop_by_hop_headers = [
-            'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'content-encoding',
-            'te', 'trailers', 'transfer-encoding', 'upgrade'
-        ]
+        # httpx handles hop-by-hop headers filtering implicitly in many cases,
+        # but we still apply the standard list for robustness.
+        hop_by_hop_headers = { # Use a set for faster lookups
+            'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+            'te', 'trailers', 'transfer-encoding', 'upgrade',
+            'content-encoding' # Often handled by transport but exclude explicitly
+        }
         for key, value in relayed_response.headers.items():
             if key.lower() not in hop_by_hop_headers:
                 django_response[key] = value
@@ -421,25 +433,22 @@ class AIGatewayBackend(abc.ABC):
 
     @abc.abstractmethod
     def pre_processing_endpoints(self) -> dict[str, list[Callable[
-        ['AIGatewayBackend', 'Request'], Union[requests.Request, HttpResponse]]]]:
+        ['AIGatewayBackend'], Union[httpx.Request, HttpResponse]]]]: # Changed requests.Request to httpx.Request
         """
         Returns a dictionary mapping endpoint path patterns (relative strings, regex)
         to a *list* of callable functions that perform pre-processing transformations
-        on the `requests.Request` object before it's sent.
+        on the `httpx.Request` object before it's sent.
 
         Each callable in the list receives:
         - The backend instance (self)
-        - The original Django HttpRequest
-        - The Request model instance (log entry)
-        - The `requests.Request` object prepared for the outbound call (backend.relay_request).
 
         Each callable must return either:
-        - A `requests.Request` object (potentially modified): Indicates success, processing continues with the returned object.
+        - An `httpx.Request` object (potentially modified): Indicates success, processing continues with the returned object.
         - An HttpResponse: To short-circuit the process and return this response immediately (e.g., for validation errors).
 
-        Note: Callables should operate on the *copy* of the request passed to them
-              and return the modified version, rather than modifying in place,
-              unless intended behavior guarantees no side effects on shared state.
+        Note: Since httpx.Request objects are somewhat immutable regarding content/url/method after creation,
+              callables modifying these should typically create and return a *new* request object based on the old one.
+              Modifying headers in-place might be possible but returning a new object is safer.
               The view logic handles updating `backend.relay_request`.
         """
         pass
@@ -546,7 +555,7 @@ class AIGatewayBackend(abc.ABC):
                     # Raise the specific exception wrapping the response
                     raise PreProcessingPipelineError(response=result, step_index=step_index)
 
-                elif isinstance(result, RequestsRequest):
+                elif isinstance(result, httpx.Request):
                     # Success, update the backend's request instance for the next step or final relay
                     self.relay_request = result
                     logger.debug(f"Pre-processing step {step_index} completed successfully, relay_request updated.")

@@ -14,7 +14,7 @@ import re # Added import
 
 from django.utils import timezone
 
-from gateway.backends.base import AIGatewayBackend
+from gateway.backends.base import AIGatewayBackend, BackendProcessingError, PreProcessingPipelineError
 from gateway.backends.openai import OpenAIBackend
 from management.models import Request, Token, Endpoint, EndpointBackend
 
@@ -72,7 +72,7 @@ class AIGatewayView(View):
         backend: Optional[AIGatewayBackend] = None
 
         try:
-            # 2. Get Endpoint, Backend, Model, and Token
+            # 2. Get Endpoint, Backend, Model, and Token (and run pre-processing)
             try:
                 endpoint = self.get_endpoint(request, **kwargs)
                 backend_class = BACKEND_MAP.get(endpoint.backend)
@@ -82,77 +82,42 @@ class AIGatewayView(View):
                         f"No backend implementation found for endpoint '{endpoint.slug}' with backend type '{endpoint.backend}'")
                     return JsonResponse({'error': 'Gateway configuration error: Unsupported backend'}, status=501)
 
-                # Instantiate the backend, passing request and endpoint.
-                # The backend's __init__ now resolves the model and stores it in backend.model
+                # Instantiate the backend. This now handles:
+                # - Resolving token (raises Http404)
+                # - Resolving model (raises Http404)
+                # - Preparing relay request
+                # - Running pre-processing (raises BackendProcessingError or PreProcessingPipelineError)
                 backend = backend_class(request, endpoint)
 
-            except Http404 as e:  # Catches endpoint not found or errors in backend _resolve_model
-                logger.warning(f"Failed to initialize backend: {e}")
+            except Http404 as e:  # Catches endpoint not found or errors in backend _resolve_model/_resolve_token
+                logger.warning(f"Failed to initialize backend or resolve model/token: {e}")
                 return JsonResponse({'error': str(e)}, status=404)
+            except BackendProcessingError as e:
+                logger.error(f"Backend processing failed: {e}", exc_info=True)
+                # Log should have been saved before the exception was raised in the backend
+                return JsonResponse({'error': str(e)}, status=500)
+            except PreProcessingPipelineError as e:
+                logger.info(f"Pre-processing pipeline short-circuited at step {e.step_index} with status {e.response.status_code}")
+                # The exception carries the HttpResponse to be returned directly.
+                # The log should have been saved by the step itself before raising.
+                return e.response
             except Exception as e:
-                logger.error(f"Unexpected error getting endpoint/backend/model: {e}", exc_info=True)
-                return JsonResponse({'error': "Internal gateway error"}, status=500)
+                logger.error(f"Unexpected error during backend initialization or processing: {e}", exc_info=True)
+                # Attempt to save log if backend and log exist but failed later in init
+                if 'backend' in locals() and backend and backend.request_log and not backend.request_log.pk:
+                    try:
+                        backend.request_log.status_code = 500
+                        backend.request_log.save()
+                        logger.debug(f"Saved Request log ID {backend.request_log.id} after init error")
+                    except Exception as save_err:
+                        logger.error(f"Failed to save Request log during backend init error handling: {save_err}", exc_info=True)
+                return JsonResponse({'error': "Internal gateway error during setup"}, status=500)
 
-            # Use the request_log created during backend initialization
+            # Use the request_log from the now successfully initialized backend
             request_log = backend.request_log
 
-            # --- Pre-processing Pipeline (operates on backend.relay_request) ---
-            # Check if pre-processing is required (no request arg needed)
-            if backend and backend.requires_pre_processing():
-                remaining_path = kwargs.get('remaining_path', '') # Keep for logging/pattern matching
-                relative_path = remaining_path.lstrip('/')
-                pre_processing_pipeline = []
-                matched_patterns = []
-                for pattern, pipeline in backend.pre_processing_endpoints().items():
-                    if re.fullmatch(pattern, relative_path):
-                        pre_processing_pipeline.extend(pipeline)
-                        matched_patterns.append(pattern)
-
-                if pre_processing_pipeline:
-                    logger.info(
-                        f"Running combined pre-processing pipeline ({len(pre_processing_pipeline)} steps) for path '{relative_path}' (matched patterns: {matched_patterns}) using {type(backend).__name__}")
-                    for i, step_func in enumerate(pre_processing_pipeline):
-                        try:
-                            # Pass the current request_object, expect Request or HttpResponse back
-                            result = step_func(backend, request_log)
-
-                            if isinstance(result, HttpResponse):
-                                logger.warning(
-                                    f"Pre-processing pipeline returned an HttpResponse at step {i + 1} (Status: {result.status_code}). Short-circuiting relay.")
-                                request_log.status_code = result.status_code
-                                try:
-                                    request_log.save()
-                                    logger.debug(f"Saved Request log entry ID (pre-processing short-circuit): {request_log.id}")
-                                except Exception as save_err:
-                                    logger.error(f"Failed to save Request log during pre-processing short-circuit: {save_err}", exc_info=True)
-                                return result # Return the short-circuit response
-
-                            elif isinstance(result, RequestsRequest):
-                                # Success, update request_object for the next step
-                                # request_object = result # OLD
-                                backend.relay_request = result # NEW: Update the backend's request instance
-                                logger.debug(f"Pre-processing step {i + 1} completed successfully, request object updated.")
-                            else:
-                                # Should not happen based on type hints, but handle defensively
-                                logger.error(
-                                    f"Pre-processing step {i+1} for path '{relative_path}' returned an unexpected type: {type(result)}. Aborting.")
-                                request_log.status_code = 500
-                                try: request_log.save() # Attempt to save log
-                                except Exception: pass
-                                return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i+1}"}, status=500)
-
-                        except Exception as pre_err:
-                            logger.error(f"Error during pre-processing step {i+1} for path '{relative_path}': {pre_err}", exc_info=True)
-                            request_log.status_code = 500
-                            try: request_log.save()
-                            except Exception as save_err:
-                                logger.error(f"Failed to save Request log during pre-processing error handling: {save_err}", exc_info=True)
-                            return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i+1}"}, status=500)
-                        
-                    logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")
-            else:
-               logger.debug(f"Pre-processing not required for path '{kwargs.get('remaining_path', '').lstrip('/')}'")
-
+            # --- Pre-processing Pipeline --- REMOVED (Now done in backend.__init__)
+            # The logic is moved to backend._run_pre_processing_pipeline()
 
             # 4. Prepare and Relay Request using requests.Session
             logger.info(

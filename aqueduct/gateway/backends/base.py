@@ -3,7 +3,7 @@ import re
 from typing import Optional, Callable, Union
 import logging
 
-from django.http import HttpRequest, HttpResponse, Http404
+from django.http import HttpRequest, HttpResponse, Http404, HttpResponseServerError
 from django.utils import timezone
 import requests
 from requests import Request as RequestsRequest
@@ -11,6 +11,27 @@ from requests import Request as RequestsRequest
 from management.models import Endpoint, Model, Usage, Request, Token
 
 logger = logging.getLogger(__name__)
+
+
+# --- Custom Exceptions ---
+
+class BackendProcessingError(Exception):
+    """Custom exception for errors during backend request pre-processing or other internal steps."""
+
+    def __init__(self, message="Internal gateway error during backend processing", step_index: Optional[int] = None):
+        self.message = message
+        self.step_index = step_index
+        detail = message
+        if step_index is not None:
+            detail = f"{message} (step {step_index})"
+        super().__init__(detail)
+
+
+class PreProcessingPipelineError(Exception):
+    def __init__(self, response: HttpResponse, step_index: Optional[int] = None):
+        self.response = response
+        self.step_index = step_index
+        super().__init__(str(response.content))
 
 
 class AIGatewayBackend(abc.ABC):
@@ -24,17 +45,20 @@ class AIGatewayBackend(abc.ABC):
     and stored in self.model.
     The associated Token and Request log are also resolved/created and stored.
     """
+
     def __init__(self, request: HttpRequest, endpoint: Endpoint):
         """
         Initializes the backend instance, resolves the Model and Token,
-        and creates the initial Request log entry.
+        creates the initial Request log entry, prepares the relay request,
+        and runs the pre-processing pipeline.
 
         Args:
             request (HttpRequest): The incoming Django request.
             endpoint (Endpoint): The resolved target Endpoint instance.
 
         Raises:
-            Http404: If the Token cannot be resolved.
+            Http404: If the Token or requested Model cannot be resolved.
+            PreprocessingError: If an error occurs during the pre-processing pipeline.
             ValueError: If request or endpoint is invalid.
         """
         if not request or not endpoint:
@@ -42,10 +66,13 @@ class AIGatewayBackend(abc.ABC):
             raise ValueError("AIGatewayBackend requires a valid HttpRequest and Endpoint for initialization.")
         self.request: HttpRequest = request
         self.endpoint: Endpoint = endpoint
-        self.model: Optional[Model] = self._resolve_model() # Resolve and store model
-        self.token: Token = self._resolve_token() # Resolve and store token (raises Http404 if not found)
-        self.request_log: Request = self._create_request_log() # Create initial log entry
-        self.relay_request: RequestsRequest = self._prepare_relay_request() # Prepare the outbound request
+        self.model: Optional[Model] = self._resolve_model()  # Resolve and store model
+        self.token: Token = self._resolve_token()  # Resolve and store token (raises Http404 if not found)
+        self.request_log: Request = self._create_request_log()  # Create initial log entry
+        self.relay_request: RequestsRequest = self._prepare_relay_request()  # Prepare the outbound request
+
+        # Run pre-processing immediately after preparing the request
+        self._run_pre_processing_pipeline()
 
     @abc.abstractmethod
     def _resolve_model(self) -> Optional[Model]:
@@ -102,7 +129,7 @@ class AIGatewayBackend(abc.ABC):
                 logger.error(f"Error looking up token from header: {e}", exc_info=True)
 
         # Fallback: If no token from header and user is authenticated
-        user = getattr(self.request, 'user', None) # Safely get user
+        user = getattr(self.request, 'user', None)  # Safely get user
         if token is None and user and user.is_authenticated:
             logger.debug(f"No valid Bearer token in header, attempting to find token for user {user.email}")
             # Fetch the first available token for this user.
@@ -122,7 +149,7 @@ class AIGatewayBackend(abc.ABC):
         """
         request_log = Request(
             token=self.token,
-            model=self.model, # Use the resolved model from self
+            model=self.model,  # Use the resolved model from self
             endpoint=self.endpoint,
             timestamp=timezone.now(),
             method=self.request.method,
@@ -174,12 +201,12 @@ class AIGatewayBackend(abc.ABC):
 
         # Prepare initial headers and body for the outbound request
         outbound_headers = {
-            "Content-Type": self.request.content_type or "application/json", # Use original content-type or default
+            "Content-Type": self.request.content_type or "application/json",  # Use original content-type or default
             # Copy other relevant headers? Be careful not to leak internal info.
             # Example: "Accept": request.headers.get("Accept", "*/*"),
         }
         # Add/replace auth header for the target endpoint
-        self.add_auth_header(outbound_headers) # Call the method now part of the backend
+        self.add_auth_header(outbound_headers)  # Call the method now part of the backend
 
         # Get body from original request
         outbound_body = self.request.body
@@ -281,3 +308,107 @@ class AIGatewayBackend(abc.ABC):
             if re.fullmatch(pattern, relative_path):
                 return True
         return False
+
+    def _run_pre_processing_pipeline(self):
+        """
+        Executes the pre-processing pipeline based on matching endpoint patterns.
+        Modifies `self.relay_request` in place.
+
+        Raises:
+            PreprocessingError: If any step returns an invalid type or raises an exception.
+            HttpResponse: If a step explicitly returns an HttpResponse to short-circuit.
+                          (This should be caught and returned by the caller, e.g., the view)
+        """
+        if not self.requires_pre_processing():
+            logger.debug("Pre-processing not required for this request path.")
+            return
+
+        remaining_path = self.request.resolver_match.kwargs.get('remaining_path', '')
+        relative_path = remaining_path.lstrip('/')
+        pre_processing_pipeline = []
+        matched_patterns = []
+        for pattern, pipeline in self.pre_processing_endpoints().items():
+            if re.fullmatch(pattern, relative_path):
+                pre_processing_pipeline.extend(pipeline)
+                matched_patterns.append(pattern)
+
+        if not pre_processing_pipeline:
+            # Should not happen if requires_pre_processing was true, but check defensively
+            logger.warning(f"requires_pre_processing was true for path '{relative_path}' but no pipeline found.")
+            return
+
+        logger.info(
+            f"Running combined pre-processing pipeline ({len(pre_processing_pipeline)} steps) for path '{relative_path}' "
+            f"(matched patterns: {matched_patterns}) using {type(self).__name__}")
+
+        for i, step_func in enumerate(pre_processing_pipeline):
+            step_index = i + 1
+            try:
+                # Pass the backend instance and request log
+                result = step_func(self, self.request_log)
+
+                if isinstance(result, HttpResponse):
+                    # A step wants to short-circuit with a specific response.
+                    logger.warning(
+                        f"Pre-processing pipeline returned an HttpResponse at step {step_index} "
+                        f"(Status: {result.status_code}). Short-circuiting relay.")
+                    # Update log status before raising
+                    self.request_log.status_code = result.status_code
+                    try:
+                        self.request_log.save()
+                        logger.debug(f"Saved Request log entry ID {self.request_log.id} (pre-processing short-circuit)")
+                    except Exception as save_err:
+                        logger.error(f"Failed to save Request log during pre-processing short-circuit: {save_err}",
+                                     exc_info=True)
+                    # Raise the specific exception wrapping the response
+                    raise PreProcessingPipelineError(response=result, step_index=step_index)
+
+                elif isinstance(result, RequestsRequest):
+                    # Success, update the backend's request instance for the next step or final relay
+                    self.relay_request = result
+                    logger.debug(f"Pre-processing step {step_index} completed successfully, relay_request updated.")
+                else:
+                    # Should not happen based on type hints, but handle defensively
+                    logger.error(
+                        f"Pre-processing step {step_index} for path '{relative_path}' returned an unexpected type: {type(result)}. Aborting.")
+                    self.request_log.status_code = 500
+                    try:
+                        self.request_log.save()
+                    except Exception:
+                        pass
+                    # Raise custom exception
+                    raise BackendProcessingError(message="Internal gateway error during request pre-processing",
+                                                 step_index=step_index)
+
+            except Exception as pre_err:
+                # Catch exceptions raised *by* the step function, or the PreProcessingPipelineError raised above
+                if isinstance(pre_err, PreProcessingPipelineError):
+                    # Re-raise the PreProcessingPipelineError to be caught by the view
+                    raise pre_err
+                elif isinstance(pre_err, HttpResponse):
+                    # This case should ideally not be hit if steps correctly return responses
+                    # that get wrapped in PreProcessingPipelineError above. Log a warning.
+                    logger.warning(f"Pre-processing step {step_index} raised an unwrapped HttpResponse directly. Wrapping it now.")
+                    # Attempt to save log, similar to the explicit check
+                    self.request_log.status_code = pre_err.status_code
+                    try:
+                        self.request_log.save()
+                        logger.debug(f"Saved Request log entry ID {self.request_log.id} (unwrapped HttpResponse short-circuit)")
+                    except Exception as save_err:
+                        logger.error(f"Failed to save Request log during unwrapped HttpResponse short-circuit: {save_err}", exc_info=True)
+                    raise PreProcessingPipelineError(response=pre_err, step_index=step_index)
+                else:
+                    # Handle other exceptions (BackendProcessingError or unexpected)
+                    logger.error(f"Error during pre-processing step {step_index} for path '{relative_path}': {pre_err}",
+                                 exc_info=True)
+                    self.request_log.status_code = 500
+                    try:
+                        self.request_log.save()
+                    except Exception as save_err:
+                        logger.error(f"Failed to save Request log during pre-processing error handling: {save_err}",
+                                     exc_info=True)
+                    # Raise custom exception, chaining the original error
+                    raise BackendProcessingError(message="Internal gateway error during request pre-processing",
+                                                 step_index=step_index) from pre_err
+
+        logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")

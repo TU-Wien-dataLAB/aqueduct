@@ -87,7 +87,7 @@ class AIGatewayView(View):
                 backend = backend_class(request, endpoint)
 
             except Http404 as e:  # Catches endpoint not found or errors in backend _resolve_model
-                logger.warning(f"Failed to get endpoint or resolve model for request: {e}")
+                logger.warning(f"Failed to initialize backend: {e}")
                 return JsonResponse({'error': str(e)}, status=404)
             except Exception as e:
                 logger.error(f"Unexpected error getting endpoint/backend/model: {e}", exc_info=True)
@@ -112,36 +112,23 @@ class AIGatewayView(View):
             )
 
             # --- Prepare arguments for requests.Request --- 
-            remaining_path = kwargs.get('remaining_path', '')
-            # Ensure leading/trailing slashes are handled correctly for joining
-            target_api_base = endpoint.url.rstrip('/')
-            remaining_path_cleaned = remaining_path.lstrip('/')
-            target_url = f"{target_api_base}/{remaining_path_cleaned}"
-            request_log.path = f"/{remaining_path_cleaned}" # Store path with leading slash
+            # REMOVED: Redundant request preparation logic - now handled in backend.__init__
+            # remaining_path = kwargs.get('remaining_path', '')
+            # # Ensure leading/trailing slashes are handled correctly for joining
+            # target_api_base = endpoint.url.rstrip('/')
+            # remaining_path_cleaned = remaining_path.lstrip('/')
+            # target_url = f"{target_api_base}/{remaining_path_cleaned}"
+            request_log.path = f"/{kwargs.get('remaining_path', '').lstrip('/')}" # Store path with leading slash
 
             # Prepare initial headers and body for the outbound request
-            outbound_headers = {
-                "Content-Type": request.content_type or "application/json", # Use original content-type or default
-                # Copy other relevant headers? Be careful not to leak internal info.
-                # Example: "Accept": request.headers.get("Accept", "*/*"),
-            }
-            # Add/replace auth header for the target endpoint
-            self.add_auth_header(outbound_headers, endpoint)
 
-            # Get body from original request
-            outbound_body = request.body
 
-            # Create the requests.Request object
-            request_object = RequestsRequest(
-                method=request.method,
-                url=target_url,
-                headers=outbound_headers,
-                data=outbound_body
-            )
 
-            # --- Pre-processing Pipeline (operates on request_object) --- 
+
+            # --- Pre-processing Pipeline (operates on backend.relay_request) ---
             # Check if pre-processing is required (no request arg needed)
             if backend and backend.requires_pre_processing():
+                remaining_path = kwargs.get('remaining_path', '') # Keep for logging/pattern matching
                 relative_path = remaining_path.lstrip('/')
                 pre_processing_pipeline = []
                 matched_patterns = []
@@ -156,7 +143,7 @@ class AIGatewayView(View):
                     for i, step_func in enumerate(pre_processing_pipeline):
                         try:
                             # Pass the current request_object, expect Request or HttpResponse back
-                            result = step_func(backend, request, request_log, request_object, None)
+                            result = step_func(backend, request_log)
 
                             if isinstance(result, HttpResponse):
                                 logger.warning(
@@ -171,38 +158,35 @@ class AIGatewayView(View):
 
                             elif isinstance(result, RequestsRequest):
                                 # Success, update request_object for the next step
-                                request_object = result
+                                # request_object = result # OLD
+                                backend.relay_request = result # NEW: Update the backend's request instance
                                 logger.debug(f"Pre-processing step {i + 1} completed successfully, request object updated.")
                             else:
                                 # Should not happen based on type hints, but handle defensively
                                 logger.error(
-                                    f"Pre-processing step {i + 1} for path '{relative_path}' returned an unexpected type: {type(result)}. Aborting.")
+                                    f"Pre-processing step {i+1} for path '{relative_path}' returned an unexpected type: {type(result)}. Aborting.")
                                 request_log.status_code = 500
                                 try: request_log.save() # Attempt to save log
                                 except Exception: pass
-                                return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i + 1}"}, status=500)
+                                return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i+1}"}, status=500)
 
                         except Exception as pre_err:
-                            logger.error(f"Error during pre-processing step {i + 1} for path '{relative_path}': {pre_err}", exc_info=True)
+                            logger.error(f"Error during pre-processing step {i+1} for path '{relative_path}': {pre_err}", exc_info=True)
                             request_log.status_code = 500
                             try: request_log.save()
                             except Exception as save_err:
                                 logger.error(f"Failed to save Request log during pre-processing error handling: {save_err}", exc_info=True)
-                            return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i + 1}"}, status=500)
-
+                            return JsonResponse({"error": f"Internal gateway error during request pre-processing step {i+1}"}, status=500)
+                        
                     logger.debug(f"Pre-processing pipeline completed successfully for path '{relative_path}'.")
             else:
-                # Log if pre-processing was not required or backend was None (though unlikely)
-                if backend:
-                     logger.debug(f"Pre-processing not required for path '{remaining_path.lstrip('/')}'")
-                else:
-                    logger.warning("Backend instance not available, cannot perform pre-processing check.")
+               logger.debug(f"Pre-processing not required for path '{kwargs.get('remaining_path', '').lstrip('/')}'")
 
 
             # 4. Prepare and Relay Request using requests.Session
             logger.info(
-                f"Relaying {request_object.method} request for {request.user.email} (Token: {token.name}) "
-                f"to {request_object.url} via Endpoint '{endpoint.name}'"
+                f"Relaying {backend.relay_request.method} request for {request.user.email} (Token: {token.name}) "
+                f"to {backend.relay_request.url} via Endpoint '{endpoint.name}'"
             )
 
             start_time = time.monotonic()
@@ -210,7 +194,8 @@ class AIGatewayView(View):
             # Use a session to prepare and send the request
             with RequestsSession() as session:
                 # Prepare the request (handles headers, body encoding etc.)
-                prepared_request = session.prepare_request(request_object)
+                # prepared_request = session.prepare_request(request_object) # OLD
+                prepared_request = session.prepare_request(backend.relay_request) # NEW
 
                 # Log final headers being sent (optional, be careful with sensitive info)
                 # logger.debug(f"Prepared request headers: {prepared_request.headers}")
@@ -250,7 +235,8 @@ class AIGatewayView(View):
                     f"Request Log {request_log.id if request_log.pk else '(unsaved)'} - Model not specified or found in request, skipping usage extraction.")
 
             request_log.save()  # Save successful request log details
-            logger.debug(f"Saved Request log entry ID: {request_log.id} for {request_object.method} {request_object.url}")
+            # logger.debug(f"Saved Request log entry ID: {request_log.id} for {request_object.method} {request_object.url}") # OLD
+            logger.debug(f"Saved Request log entry ID: {request_log.id} for {backend.relay_request.method} {backend.relay_request.url}") # NEW
 
             # 6. Construct and Return Django Response
             response = HttpResponse(
@@ -270,7 +256,7 @@ class AIGatewayView(View):
 
             # Perform post-processing if required by the backend for this path (no request arg needed)
             if backend and backend.requires_post_processing():
-                relative_path = remaining_path.lstrip('/')
+                relative_path = kwargs.get('remaining_path', '') # Keep for logging/pattern matching
                 # Only run pipeline if the initial response was successful
                 if response.status_code < 400:
                     processing_pipeline = [] # Initialize as empty list
@@ -288,7 +274,7 @@ class AIGatewayView(View):
                         # original_response_status = response.status_code # Keep original status for logging if needed
                         for i, step_func in enumerate(processing_pipeline):
                             try:
-                                response = step_func(backend, request, request_log, response)
+                                response = step_func(backend, request_log, response)
                                 logger.debug(
                                     f"Post-processing step {i + 1} completed. Current status: {response.status_code}")
                                 # Check for error status code (4xx or 5xx) introduced by the step
@@ -313,11 +299,7 @@ class AIGatewayView(View):
                         f"Skipping post-processing for path '{relative_path}' (status code {response.status_code}), because initial response was not successful.")
             else:
                 # Log if post-processing was not required or backend was None
-                if backend:
-                    logger.debug(f"Post-processing not required for path '{remaining_path.lstrip('/')}'")
-                else:
-                    logger.warning("Backend instance not available, cannot perform post-processing check.")
-
+                logger.debug(f"Post-processing not required for path '{kwargs.get('remaining_path', '').lstrip('/')}'")
 
             logger.debug(f"Relay successful: Status {relayed_response.status_code}")
             return response
@@ -325,7 +307,8 @@ class AIGatewayView(View):
         # --- Error Handling for Relaying --- 
         except requests.exceptions.Timeout:
             end_time = time.monotonic()
-            target_url_for_log = target_url if 'target_url' in locals() else "<unknown>"
+            # target_url_for_log = target_url if 'target_url' in locals() else "<unknown>" # OLD
+            target_url_for_log = backend.relay_request.url if backend and backend.relay_request else "<unknown>" # NEW
             logger.warning(f"Gateway timeout relaying request to {target_url_for_log}")
             if request_log:  # Log if request_log object exists
                 request_log.status_code = 504  # Gateway Timeout
@@ -337,7 +320,8 @@ class AIGatewayView(View):
 
         except requests.exceptions.RequestException as e:
             end_time = time.monotonic()
-            target_url_for_log = target_url if 'target_url' in locals() else "<unknown>"
+            # target_url_for_log = target_url if 'target_url' in locals() else "<unknown>" # OLD
+            target_url_for_log = backend.relay_request.url if backend and backend.relay_request else "<unknown>" # NEW
             logger.error(f"Error relaying request to {target_url_for_log}: {e}", exc_info=True)
             if request_log:  # Log if request_log object exists
                 # Try to get status from target response if available

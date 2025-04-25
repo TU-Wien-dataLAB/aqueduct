@@ -12,35 +12,27 @@ from management.models import Endpoint, Model, Usage, Request
 logger = logging.getLogger(__name__)
 
 
-def _transform_models(backend: 'AIGatewayBackend', request: HttpRequest, request_log: Request,
-                      response: HttpResponse) -> HttpResponse:
+def _transform_models(backend: 'AIGatewayBackend', request_log: Request, response: HttpResponse) -> HttpResponse:
     """
     Transforms the /models list response from an OpenAI-compatible API.
     - Filters the models to include only those defined for the request's endpoint (self.endpoint).
     - Replaces the 'id' of each model with its 'display_name' from the database.
     """
+    endpoint = backend.endpoint
     try:
         # 1. Parse the original response content
         # Assuming the response content is valid JSON for OpenAI's SyncPage[Model]
         response_models = openai_sdk.pagination.SyncPage[openai_sdk.types.Model].model_validate_json(
             response.content)
 
-        # 2. Get the Aqueduct Endpoint associated with this request (use self.endpoint)
-        endpoint = backend.endpoint
-        if not endpoint:
-            # Should be unlikely due to __init__ validation
-            logger.error(
-                f"Post-processing: Endpoint not found on backend instance for model transformation (Request log ID: {request_log.id}). Returning original response.")
-            return response
-
-        # 3. Fetch allowed Models from the database for this Endpoint
+        # 2. Fetch allowed Models from the database for this Endpoint
         db_models = Model.objects.filter(endpoint=endpoint)
 
-        # 4. Create a mapping from the internal model name (OpenAI ID) to the desired display name
+        # 3. Create a mapping from the internal model name (OpenAI ID) to the desired display name
         name_to_display_name = {model.name: model.display_name for model in db_models}
         logger.debug(f"Transforming models for endpoint '{endpoint.slug}'. DB models map: {name_to_display_name}")
 
-        # 5. Filter and transform the models from the OpenAI response
+        # 4. Filter and transform the models from the OpenAI response
         transformed_data = []
         original_model_count = len(response_models.data)
         for openai_model in response_models.data:
@@ -58,13 +50,13 @@ def _transform_models(backend: 'AIGatewayBackend', request: HttpRequest, request
                 logger.debug(
                     f"Filtered out model ID '{openai_model.id}' as it's not defined for endpoint '{endpoint.slug}'.")
 
-        # 6. Update the data list in the SyncPage object
+        # 5. Update the data list in the SyncPage object
         response_models.data = transformed_data
 
-        # 7. Serialize the modified SyncPage object back to JSON
+        # 6. Serialize the modified SyncPage object back to JSON
         transformed_content = response_models.model_dump_json()
 
-        # 8. Update the existing HttpResponse with the transformed content
+        # 7. Update the existing HttpResponse with the transformed content
         response.content = transformed_content
         response['Content-Type'] = 'application/json'
         # Django might automatically update Content-Length, but removing it is safer
@@ -91,10 +83,7 @@ def _transform_models(backend: 'AIGatewayBackend', request: HttpRequest, request
         return response
 
 
-def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', django_request: HttpRequest,
-                                             request_log: Request, relay_request: requests.Request,
-                                             response: Optional[HttpResponse]) -> Union[
-    requests.Request, HttpResponse]:
+def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', request_log: Request) -> Union[requests.Request, HttpResponse]:
     """
     Pre-processing step to validate the requested model against the endpoint's
     allowed models (using display_name) and transform it to the internal name
@@ -116,7 +105,6 @@ def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', django
         request_log: The Request log model instance.
         relay_request: The `requests.Request` object being prepared. This object
                         may be modified in place (specifically `.data` and `.headers`).
-        response: The final Django response object (None for pre-processing).
 
     Returns:
         Union[requests.Request, HttpResponse]: The (potentially modified) `relay_request` on success,
@@ -124,23 +112,23 @@ def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', django
     """
     if not backend.model:
         logger.debug("Request has no model associated with it, skipping model validation/transformation.")
-        return relay_request
+        return backend.relay_request
 
-    request_body = relay_request.data
+    request_body = backend.relay_request.data
     if not request_body:
         logger.debug("Pre-processing: Request body is empty, skipping model validation/transformation.")
-        return relay_request  # Return unmodified object
+        return backend.relay_request  # Return unmodified object
 
     try:
         data = json.loads(request_body)
     except json.JSONDecodeError:
         logger.warning("Pre-processing: Failed to decode JSON from request body, skipping model validation.")
-        return relay_request  # Let the target API handle malformed JSON, return unmodified
+        return backend.relay_request  # Let the target API handle malformed JSON, return unmodified
 
     requested_model_display_name = data.get('model')
     if not requested_model_display_name:
         logger.debug("Pre-processing: Request JSON missing 'model' key, skipping validation/transformation.")
-        return relay_request  # No model specified, return unmodified
+        return backend.relay_request  # No model specified, return unmodified
 
     endpoint = backend.endpoint
     try:
@@ -151,17 +139,17 @@ def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend', django
             new_body_bytes = json.dumps(data).encode('utf-8')
 
             # Update the request object's data and headers
-            relay_request.data = new_body_bytes
-            relay_request.headers['Content-Length'] = str(len(new_body_bytes))
+            backend.relay_request.data = new_body_bytes
+            backend.relay_request.headers['Content-Length'] = str(len(new_body_bytes))
 
             logger.info(
                 f"Pre-processing: Transformed model '{requested_model_display_name}' to '{internal_model_name}' for endpoint '{endpoint.slug}'.")
-            return relay_request  # Return modified object
+            return backend.relay_request  # Return modified object
         else:
             # Model provided was already the internal name (and it's allowed)
             logger.debug(
                 f"Pre-processing: Model '{internal_model_name}' provided directly and is valid for endpoint '{endpoint.slug}'.")
-            return relay_request  # Return unmodified object
+            return backend.relay_request  # Return unmodified object
 
     except Exception as e:
         # Capture the correct endpoint slug for logging
@@ -304,8 +292,7 @@ class OpenAIBackend(AIGatewayBackend):
             return Usage(input_tokens=0, output_tokens=0)
 
     def pre_processing_endpoints(self) -> dict[str, list[Callable[
-        ['AIGatewayBackend', HttpRequest, 'Request', requests.Request, Optional[HttpResponse]], Union[
-            requests.Request, HttpResponse]]]]:
+        ['AIGatewayBackend', 'Request'], Union[requests.Request, HttpResponse]]]]:
         """
         Returns a dictionary of path patterns to pre-processing callables for OpenAI.
         """
@@ -317,7 +304,7 @@ class OpenAIBackend(AIGatewayBackend):
         }
 
     def post_processing_endpoints(self) -> dict[
-        str, list[Callable[['AIGatewayBackend', HttpRequest, 'Request', HttpResponse], HttpResponse]]]:
+        str, list[Callable[['AIGatewayBackend', 'Request', HttpResponse], HttpResponse]]]:
         """
         Returns a dictionary of path patterns to post-processing callables for OpenAI.
         """

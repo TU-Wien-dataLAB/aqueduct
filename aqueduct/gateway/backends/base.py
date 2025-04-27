@@ -1,4 +1,5 @@
 import abc
+import asyncio
 import re
 from typing import Optional, Callable, Union, Tuple, Coroutine, Any
 import logging
@@ -62,6 +63,8 @@ class AIGatewayBackend(abc.ABC):
             raise ValueError("AIGatewayBackend requires a valid HttpRequest and Endpoint for initialization.")
         self.request: HttpRequest = request
         self.endpoint: Endpoint = endpoint
+        self.sync_client = httpx.Client(timeout=60, follow_redirects=True)
+        self.async_client = httpx.AsyncClient(timeout=60, follow_redirects=True)
 
     async def initialize(self):
         self.model: Optional[Model] = await self._resolve_model()  # Resolve and store model
@@ -206,6 +209,9 @@ class AIGatewayBackend(abc.ABC):
         # Add/replace auth header for the target endpoint
         self.add_auth_header(outbound_headers)  # Modifies headers in place
 
+        if self.is_streaming_request():
+            outbound_headers["Accept"] = "text/event-stream"
+
         # Get body from original request
         outbound_body = self.request.body
 
@@ -235,17 +241,13 @@ class AIGatewayBackend(abc.ABC):
         start_time = time.monotonic()
         target_url = str(self.relay_request.url)  # httpx.URL needs conversion to str
         response: HttpResponse  # Will hold the final Django response
-        response_time_ms: Optional[int] = None
         relayed_response: Optional[httpx.Response] = None  # Keep track of httpx response
 
         try:
             # Use httpx.Client for synchronous requests
-            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-                # Send the prepared httpx.Request object
-                relayed_response = client.send(self.relay_request)
-                # No need to manually check status here, httpx raises for transport errors
-                # Read the response content immediately for sync processing
-                relayed_response.read()  # Ensure content is loaded
+            # Send the prepared httpx.Request object
+            relayed_response = self.sync_client.send(self.relay_request)
+            relayed_response.read()
 
             # Relay successful (even if target returned 4xx/5xx)
             end_time = time.monotonic()
@@ -412,7 +414,35 @@ class AIGatewayBackend(abc.ABC):
         return final_response if final_response is not None else HttpResponseServerError("Gateway internal error")
 
     async def request_streaming(self, timeout: int = 60) -> StreamingHttpResponse:
-        raise NotImplementedError("Method 'request_streaming' is not implemented.")
+        upstream_response = await self.async_client.send(request=self.relay_request, stream=True)
+
+        async def stream():
+            chunks: bytes = b''
+            try:
+                async for chunk in upstream_response.aiter_bytes():
+                    chunks += chunk
+                    yield chunk
+            except asyncio.CancelledError:
+                # Handle client disconnect
+                raise
+            finally:
+                # Post-processing after stream finishes
+                usage = self.extract_usage(chunks)
+                self.request_log.token_usage = usage
+                await self.request_log.asave()
+
+        response = StreamingHttpResponse(
+            streaming_content=stream(),
+            content_type=upstream_response.headers.get('Content-Type')
+        )
+        response.status_code = upstream_response.status_code
+
+        # # Copy useful headers if needed
+        for header in ["Content-Disposition", "Content-Length"]:
+            if header in upstream_response.headers:
+                response[header] = upstream_response.headers[header]
+
+        return response
 
     @abc.abstractmethod
     def extract_usage(self, response_body: bytes) -> Usage:

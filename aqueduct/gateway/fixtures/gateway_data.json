@@ -1,0 +1,206 @@
+[
+  {
+    "model": "auth.group",
+    "pk": 1,
+    "fields": {
+      "name": "user",
+      "permissions": []
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 2,
+    "fields": {
+      "name": "org-admin",
+      "permissions": []
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 3,
+    "fields": {
+      "name": "admin",
+      "permissions": []
+    }
+  },
+  {
+    "model": "auth.user",
+    "pk": 1,
+    "fields": {
+      "password": "!9ucoIzbzv4ITk318CB603bTU4U31WsB0URYb6iGu",
+      "last_login": null,
+      "is_superuser": true,
+      "username": "Me",
+      "first_name": "",
+      "last_name": "",
+      "email": "me@example.com",
+      "is_staff": true,
+      "is_active": true,
+      "date_joined": "2025-04-17T09:50:03Z",
+      "groups": [
+        3
+      ],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "auth.user",
+    "pk": 2,
+    "fields": {
+      "password": "!c9ZeYMG20VpeyEgWIdiHgRjdAE9car4bQSQmabEp",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "Someone",
+      "first_name": "",
+      "last_name": "",
+      "email": "someone@example.com",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2025-04-17T09:50:37Z",
+      "groups": [
+        2
+      ],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "auth.user",
+    "pk": 3,
+    "fields": {
+      "password": "!N2qez0N9i4Fxqce0qLlKPdodEAZB8nwNEFwRQOdW",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "Else",
+      "first_name": "",
+      "last_name": "",
+      "email": "else@example.com",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2025-04-17T09:51:14Z",
+      "groups": [
+        1
+      ],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "management.org",
+    "pk": 1,
+    "fields": {
+      "requests_per_minute": null,
+      "input_tokens_per_minute": null,
+      "output_tokens_per_minute": null,
+      "name": "E060"
+    }
+  },
+  {
+    "model": "management.team",
+    "pk": 1,
+    "fields": {
+      "requests_per_minute": null,
+      "input_tokens_per_minute": null,
+      "output_tokens_per_minute": null,
+      "name": "Whale",
+      "description": "Team Whale that does whale things",
+      "org": 1
+    }
+  },
+  {
+    "model": "management.userprofile",
+    "pk": 1,
+    "fields": {
+      "requests_per_minute": null,
+      "input_tokens_per_minute": null,
+      "output_tokens_per_minute": null,
+      "user": 1,
+      "org": 1
+    }
+  },
+  {
+    "model": "management.userprofile",
+    "pk": 2,
+    "fields": {
+      "requests_per_minute": null,
+      "input_tokens_per_minute": null,
+      "output_tokens_per_minute": null,
+      "user": 2,
+      "org": 1
+    }
+  },
+  {
+    "model": "management.userprofile",
+    "pk": 3,
+    "fields": {
+      "requests_per_minute": null,
+      "input_tokens_per_minute": null,
+      "output_tokens_per_minute": null,
+      "user": 3,
+      "org": 1
+    }
+  },
+  {
+    "model": "management.teammembership",
+    "pk": 1,
+    "fields": {
+      "user_profile": 1,
+      "team": 1,
+      "is_admin": false,
+      "date_added": "2025-04-17"
+    }
+  },
+  {
+    "model": "management.teammembership",
+    "pk": 2,
+    "fields": {
+      "user_profile": 2,
+      "team": 1,
+      "is_admin": false,
+      "date_added": "2025-04-17"
+    }
+  },
+  {
+    "model": "management.teammembership",
+    "pk": 3,
+    "fields": {
+      "user_profile": 3,
+      "team": 1,
+      "is_admin": false,
+      "date_added": "2025-04-17"
+    }
+  },
+  {
+    "model": "management.serviceaccount",
+    "pk": 1,
+    "fields": {
+      "name": "TUna",
+      "description": "TUna service account",
+      "team": 1
+    }
+  },
+  {
+    "model": "management.token",
+    "pk": 1,
+    "fields": {
+      "name": "My Token",
+      "user": 1,
+      "service_account": null,
+      "key_hash": "750a701272d7624a3e6f10d5e0d9efdf0e2c7e575803219081358db36bfd243a",
+      "key_preview": "sk-...3abc",
+      "created_at": "2025-04-17T09:52:06.053Z",
+      "expires_at": null
+    }
+  },
+  {
+    "model": "management.token",
+    "pk": 2,
+    "fields": {
+      "name": "Initial token for TUna",
+      "user": 1,
+      "service_account": 1,
+      "key_hash": "24c182db5f3cb8cb76ce5c62764e085335e96ab344fb6ef3e40a779be32a7709",
+      "key_preview": "sk-...6UPQ",
+      "created_at": "2025-04-17T09:52:32.153Z",
+      "expires_at": null
+    }
+  }
+]

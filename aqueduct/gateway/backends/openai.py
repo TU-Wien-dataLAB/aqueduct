@@ -34,8 +34,8 @@ async def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse)
 
         # 4. Filter and transform the models from the OpenAI response
         transformed_data = []
-        original_model_count = len(response_models.json)
-        for openai_model in response_models.json:
+        original_model_count = len(response_models.data)
+        for openai_model in response_models.data:
             # Check if the model's ID (e.g., 'gpt-4') is defined in our DB for this endpoint
             if openai_model.id in name_to_display_name:
                 # Replace the ID with the display name from our DB
@@ -51,7 +51,7 @@ async def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse)
                     f"Filtered out model ID '{openai_model.id}' as it's not defined for endpoint '{endpoint.slug}'.")
 
         # 5. Update the data list in the SyncPage object
-        response_models.json = transformed_data
+        response_models.data = transformed_data
 
         # 6. Serialize the modified SyncPage object back to JSON
         transformed_content = response_models.model_dump_json()

@@ -6,7 +6,7 @@ import httpx
 from django.http import HttpRequest, Http404, HttpResponse, JsonResponse
 import openai as openai_sdk
 
-from gateway.backends.base import AIGatewayBackend
+from gateway.backends.base import AIGatewayBackend, MutableRequest
 from management.models import Endpoint, Model, Usage, Request
 
 logger = logging.getLogger(__name__)
@@ -34,8 +34,8 @@ async def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse)
 
         # 4. Filter and transform the models from the OpenAI response
         transformed_data = []
-        original_model_count = len(response_models.data)
-        for openai_model in response_models.data:
+        original_model_count = len(response_models.json)
+        for openai_model in response_models.json:
             # Check if the model's ID (e.g., 'gpt-4') is defined in our DB for this endpoint
             if openai_model.id in name_to_display_name:
                 # Replace the ID with the display name from our DB
@@ -51,7 +51,7 @@ async def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse)
                     f"Filtered out model ID '{openai_model.id}' as it's not defined for endpoint '{endpoint.slug}'.")
 
         # 5. Update the data list in the SyncPage object
-        response_models.data = transformed_data
+        response_models.json = transformed_data
 
         # 6. Serialize the modified SyncPage object back to JSON
         transformed_content = response_models.model_dump_json()
@@ -83,13 +83,33 @@ async def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse)
         return response
 
 
-async def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend') -> Union[httpx.Request, HttpResponse]:
+async def _add_streaming_usage(backend: AIGatewayBackend) -> Union[MutableRequest, HttpResponse]:
+    if not backend.is_streaming_request():
+        return backend.relay_request
+    else:
+        data = backend.relay_request.json
+        if not data:
+            logger.debug("Pre-processing: Request body is empty, skipping model validation/transformation.")
+            return backend.relay_request
+
+        try:
+            if not data.get("stream_options"):
+                data["stream_options"] = {"include_usage": True}
+            else:
+                data["stream_options"]["include_usage"] = True
+
+            return backend.relay_request
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning(f"Pre-processing: Failed to decode JSON from request body ({e}), skipping setting streaming usage.")
+            return backend.relay_request
+
+
+async def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend') -> Union[MutableRequest, HttpResponse]:
     """
     Pre-processing step to validate the requested model against the endpoint's
     allowed models (using display_name) and transform it to the internal name
     within the `httpx.Request` object.
 
-    - Parses the request body (`relay_request.content`) to find the 'model' field.
     - Checks if the provided model name exists as a `display_name` for any `Model`
       associated with the `endpoint`.
     - If found, creates a *new* `httpx.Request` with the `display_name` replaced
@@ -110,17 +130,10 @@ async def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend') 
         logger.debug("Request has no model associated with it, skipping model validation/transformation.")
         return backend.relay_request
 
-    request_content = backend.relay_request.content
-    if not request_content:
+    data = backend.relay_request.json
+    if not data:
         logger.debug("Pre-processing: Request body is empty, skipping model validation/transformation.")
         return backend.relay_request  # Return unmodified object
-
-    try:
-        # Decode content (assuming utf-8)
-        data = json.loads(request_content.decode('utf-8'))
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        logger.warning(f"Pre-processing: Failed to decode JSON from request body ({e}), skipping model validation.")
-        return backend.relay_request  # Let the target API handle malformed JSON, return unmodified
 
     requested_model_display_name = data.get('model')
     if not requested_model_display_name:
@@ -133,28 +146,15 @@ async def _validate_and_transform_model_in_request(backend: 'AIGatewayBackend') 
 
         if requested_model_display_name != internal_model_name:
             data['model'] = internal_model_name
-            new_body_bytes = json.dumps(data).encode('utf-8')
-
-            # Create a new httpx.Request with updated content and headers
-            # Keep original method, url, and other headers (modify Content-Length)
-            new_headers = httpx.Headers(backend.relay_request.headers)
-            new_headers['Content-Length'] = str(len(new_body_bytes))
-
-            new_relay_request = httpx.Request(
-                method=backend.relay_request.method,
-                url=backend.relay_request.url,
-                content=new_body_bytes,
-                headers=new_headers
-            )
 
             logger.info(
                 f"Pre-processing: Transformed model '{requested_model_display_name}' to '{internal_model_name}' for endpoint '{endpoint.slug}'.")
-            return new_relay_request # Return the NEW modified request object
+            return backend.relay_request
         else:
             # Model provided was already the internal name (and it's allowed)
             logger.debug(
                 f"Pre-processing: Model '{internal_model_name}' provided directly and is valid for endpoint '{endpoint.slug}'.")
-            return backend.relay_request  # Return unmodified object
+            return backend.relay_request
 
     except Exception as e:
         # Capture the correct endpoint slug for logging
@@ -169,11 +169,6 @@ class OpenAIBackend(AIGatewayBackend):
     """
     Backend implementation for OpenAI-compatible API endpoints.
     """
-
-    def __init__(self, request: HttpRequest, endpoint: Endpoint):
-        # Call super().__init__ AFTER logging initialization message, as __init__ now resolves the model.
-        logger.debug(f"Initializing OpenAIBackend for endpoint '{endpoint.slug}'")
-        super().__init__(request, endpoint)
 
     async def _resolve_model(self) -> Optional[Model]:
         """
@@ -274,40 +269,31 @@ class OpenAIBackend(AIGatewayBackend):
                         if decoded_line.startswith("data: "):
                             payload = decoded_line[len("data: "):].strip()
                             if payload == "[DONE]":
-                                continue # Skip the termination message
+                                continue  # Skip the termination message
                             if not payload:
-                                continue # Skip empty data lines
+                                continue  # Skip empty data lines
 
                             chunk = json.loads(payload)
                             usage_dict = chunk.get('usage')
 
                             # OpenAI streaming often includes usage in the *last* relevant chunk
                             if isinstance(usage_dict, dict):
-                                last_usage_dict = usage_dict
-                                # Log finding a usage dict, but continue processing in case there's a later one
-                                logger.debug(f"Found potential usage dict in stream chunk: {usage_dict}")
+                                input_tokens += usage_dict.get('prompt_tokens', 0)
+                                output_tokens += usage_dict.get('completion_tokens', 0)
 
                     except json.JSONDecodeError:
                         logger.warning(f"Could not parse JSON from stream line payload: '{payload}'")
-                        continue # Ignore lines that aren't valid JSON chunks after 'data: '
+                        continue  # Ignore lines that aren't valid JSON chunks after 'data: '
                     except UnicodeDecodeError:
-                         logger.warning(f"Could not decode stream line as UTF-8: {line}")
-                         continue # Ignore lines that cannot be decoded
+                        logger.warning(f"Could not decode stream line as UTF-8: {line}")
+                        continue  # Ignore lines that cannot be decoded
                     except Exception as e:
-                         # Catch other potential errors during chunk processing
-                         logger.warning(f"Error processing stream chunk payload '{payload if 'payload' in locals() else '<payload error>'}': {e}")
-                         continue
+                        # Catch other potential errors during chunk processing
+                        logger.warning(
+                            f"Error processing stream chunk payload '{payload if 'payload' in locals() else '<payload error>'}': {e}")
+                        continue
 
-            # After processing all lines, use the last found usage dictionary
-            if last_usage_dict:
-                 input_tokens = last_usage_dict.get('prompt_tokens', 0)
-                 output_tokens = last_usage_dict.get('completion_tokens', 0)
-                 logger.info(
-                    f"OpenAIBackend: Successfully extracted usage from streamed response: Input={input_tokens}, Output={output_tokens}")
-                 return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
-            else:
-                 logger.warning("No 'usage' dictionary found in any chunk of the streamed OpenAI response.")
-                 return Usage(input_tokens=0, output_tokens=0)
+            return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
 
         except Exception as e:
             logger.error(f"Unexpected error extracting usage from OpenAI response: {e}", exc_info=True)
@@ -344,7 +330,8 @@ class OpenAIBackend(AIGatewayBackend):
         return {
             # Match paths commonly requiring a 'model' parameter in the body
             r"^(v1/)?(chat/completions|completions|embeddings)$": [
-                _validate_and_transform_model_in_request # TODO: add pre-processing step that always adds usage: true to streaming options
+                _validate_and_transform_model_in_request,
+                _add_streaming_usage
             ],
         }
 

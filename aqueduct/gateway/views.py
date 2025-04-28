@@ -1,4 +1,5 @@
 # gateway/views.py
+import httpx
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib import auth
 from django.http import HttpResponse, JsonResponse, HttpRequest, Http404
@@ -15,6 +16,9 @@ from management.models import Request, Token, Endpoint, EndpointBackend
 
 logger = logging.getLogger(__name__)
 
+sync_client = httpx.Client(timeout=60, follow_redirects=True)
+async_client = httpx.AsyncClient(timeout=60, follow_redirects=True)
+
 # --- Backend Dispatcher ---
 
 # Map backend enum values (from models.EndpointBackend) to backend classes
@@ -23,6 +27,7 @@ BACKEND_MAP = {
     # Add other backends here, e.g.:
     # EndpointBackend.ANTHROPIC: AnthropicBackend,
 }
+
 
 async def get_endpoint(request: HttpRequest, **kwargs) -> Endpoint:
     """
@@ -50,6 +55,7 @@ async def get_endpoint(request: HttpRequest, **kwargs) -> Endpoint:
     except Endpoint.DoesNotExist:
         logger.warning(f"Endpoint with slug '{endpoint_slug}' not found.")
         raise Http404(f"Endpoint '{endpoint_slug}' not found.")
+
 
 @csrf_exempt
 async def ai_gateway_view(request: HttpRequest, *args, **kwargs):
@@ -92,7 +98,7 @@ async def ai_gateway_view(request: HttpRequest, *args, **kwargs):
         # - Resolving model (raises Http404)
         # - Preparing relay request
         # - Running pre-processing (raises BackendProcessingError or PreProcessingPipelineError)
-        backend: AIGatewayBackend = backend_class(request, endpoint)
+        backend: AIGatewayBackend = backend_class(request, endpoint, sync_client, async_client)
         await backend.initialize()
 
     except Http404 as e:

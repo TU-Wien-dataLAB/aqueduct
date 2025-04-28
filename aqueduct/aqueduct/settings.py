@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -55,7 +57,7 @@ MIDDLEWARE = [
 AUTHENTICATION_BACKENDS = (
     # Add the Token backend - tries this first for API requests
     'gateway.authentication.TokenAuthenticationBackend',
-    
+
     # Keep the custom OIDC backend for web login
     'management.auth.OIDCBackend',
 
@@ -132,12 +134,29 @@ ASGI_APPLICATION = "aqueduct.asgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# 1. First, get which database engine you want
+DATABASE_ENGINE = os.getenv('DATABASE_ENGINE', 'django.db.backends.sqlite3')
+
+# 2. Set up DATABASES based on the engine
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': DATABASE_ENGINE,
     }
 }
+
+# 3. If it's SQLite, fill in the NAME for the file
+if DATABASE_ENGINE == 'django.db.backends.sqlite3':
+    DATABASES['default']['NAME'] = str(BASE_DIR / 'db.sqlite3')
+elif DATABASE_ENGINE == 'django.db.backends.postgresql':
+    DATABASES['default'].update({
+        'NAME': os.getenv('POSTGRES_DB', 'aqueduct'),
+        'USER': os.getenv('POSTGRES_USER', 'aqueduct'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'aqueduct'),
+        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
+        'PORT': os.getenv('POSTGRES_PORT', '5432'),
+    })
+else:
+    raise ImproperlyConfigured(f"Unsupported database engine: {DATABASE_ENGINE}")
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

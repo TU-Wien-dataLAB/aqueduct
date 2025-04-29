@@ -16,6 +16,8 @@ from django.test import TestCase, LiveServerTestCase, Client, override_settings
 
 from gateway.tests.utils import RemoteOpenAIServer
 
+# Import Org for direct DB manipulation
+from management.models import Org
 
 # --- Django Test Class ---
 
@@ -162,3 +164,48 @@ class VLLMIntegrationTests(LiveServerTestCase):
         model_ids = [m.id for m in response.data if hasattr(m, 'id')]
         print(f"Available model IDs: {model_ids}")
         self.assertIn("Qwen-0.5B", model_ids)
+
+    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    def test_org_rate_limit_requests_per_minute(self):
+        """
+        Edits the requests_per_minute of Org 'E060' to 1, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        # Set Org requests_per_minute to 1
+        org = Org.objects.get(name="E060")
+        org.requests_per_minute = 1
+        org.save(update_fields=["requests_per_minute"])
+
+        if not self.open_ai_client:
+            self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
+
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say hello."}
+        ]
+
+        # First request should succeed
+        response1 = self.open_ai_client.chat.completions.create(
+            model="Qwen-0.5B",
+            messages=messages,
+            max_tokens=5,
+            temperature=0.0,
+        )
+        self.assertIsNotNone(response1)
+        self.assertTrue(response1.choices)
+        self.assertGreater(len(response1.choices), 0)
+
+        # Second request should fail with 429
+        from openai import OpenAIError
+        from openai._exceptions import RateLimitError
+
+        with self.assertRaises(RateLimitError) as cm:
+            self.open_ai_client.chat.completions.create(
+                model="Qwen-0.5B",
+                messages=messages,
+                max_tokens=5,
+                temperature=0.0,
+            )
+        # Optionally, check the error message or status
+        err = cm.exception
+        self.assertTrue("429" in str(err) or "rate limit" in str(err).lower())

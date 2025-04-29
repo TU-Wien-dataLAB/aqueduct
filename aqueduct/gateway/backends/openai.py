@@ -1,15 +1,98 @@
 import json
 import logging
 from typing import Optional, Callable, Union, Coroutine, Any
+from datetime import timedelta
 
 import httpx
 from django.http import HttpRequest, Http404, HttpResponse, JsonResponse
+from django.db.models import Sum, Count
+from django.utils import timezone
+from asgiref.sync import sync_to_async
 import openai as openai_sdk
 
 from gateway.backends.base import AIGatewayBackend, MutableRequest
-from management.models import Endpoint, Model, Usage, Request
+from management.models import Endpoint, Model, Usage, Request, Token
 
 logger = logging.getLogger(__name__)
+
+
+async def _check_token_usage_limits(backend: 'AIGatewayBackend') -> Union[MutableRequest, HttpResponse]:
+    """
+    Pre-processing step to check if the requesting token has exceeded its usage limits.
+    Fetches limits using token.get_limit() and compares against recent usage.
+    """
+    token = backend.token
+    if not token:
+        # Should not happen if token resolution succeeded earlier
+        logger.error("Rate limit check: Cannot proceed without a resolved token.")
+        return JsonResponse({"error": "Internal gateway error: Token not resolved"}, status=500)
+
+    try:
+        # Get limits asynchronously
+        limits = await sync_to_async(token.get_limit)()
+        logger.debug(f"Rate limits for Token '{token.name}' (ID: {token.id}): {limits}")
+
+        # Check if any limits are actually set
+        if limits.requests_per_minute is None and \
+           limits.input_tokens_per_minute is None and \
+           limits.output_tokens_per_minute is None:
+            logger.debug(f"No specific rate limits set for Token '{token.name}'. Skipping usage check.")
+            return backend.relay_request # No limits to check
+
+        # Define the time window for usage check (last 60 seconds)
+        time_window_start = timezone.now() - timedelta(seconds=60)
+
+        # Query recent usage asynchronously using Django's async ORM
+        recent_requests_agg = await Request.objects.filter(
+            token=token,
+            timestamp__gte=time_window_start
+        ).aaggregate(
+            request_count=Count('id'),
+            total_input_tokens=Sum('input_tokens'),
+            total_output_tokens=Sum('output_tokens')
+        )
+
+        request_count = recent_requests_agg.get('request_count', 0) or 0
+        total_input = recent_requests_agg.get('total_input_tokens', 0) or 0
+        total_output = recent_requests_agg.get('total_output_tokens', 0) or 0
+
+        logger.debug(f"Recent usage (last 60s) for Token '{token.name}': "
+                     f"Requests={request_count}, Input={total_input}, Output={total_output}")
+
+        # --- Check Limits ---
+        limit_exceeded = False
+        error_message = "Rate limit exceeded. "
+        details = []
+
+        # Check requests per minute
+        if limits.requests_per_minute is not None and request_count >= limits.requests_per_minute:
+            limit_exceeded = True
+            details.append(f"Request limit ({limits.requests_per_minute}/min)")
+
+        # Check input tokens per minute
+        if limits.input_tokens_per_minute is not None and total_input >= limits.input_tokens_per_minute:
+            limit_exceeded = True
+            details.append(f"Input token limit ({limits.input_tokens_per_minute}/min)")
+
+        # Check output tokens per minute (less common to enforce strictly pre-request, but check anyway)
+        if limits.output_tokens_per_minute is not None and total_output >= limits.output_tokens_per_minute:
+            limit_exceeded = True
+            details.append(f"Output token limit ({limits.output_tokens_per_minute}/min)")
+
+        if limit_exceeded:
+            error_message += ", ".join(details) + "."
+            logger.warning(f"Rate limit exceeded for Token '{token.name}' (ID: {token.id}). Details: {error_message}")
+            # Return 429 Too Many Requests
+            return JsonResponse({"error": error_message}, status=429)
+        else:
+            logger.debug(f"Token '{token.name}' is within usage limits.")
+            # Limits are okay, proceed with the request
+            return backend.relay_request
+
+    except Exception as e:
+        logger.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
+        # Fail open? Or return 500? Let's return 500 to indicate an internal issue.
+        return JsonResponse({"error": "Internal gateway error checking rate limits"}, status=500)
 
 
 async def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse) -> HttpResponse:
@@ -330,6 +413,7 @@ class OpenAIBackend(AIGatewayBackend):
         return {
             # Match paths commonly requiring a 'model' parameter in the body
             r"^(v1/)?(chat/completions|completions|embeddings)$": [
+                _check_token_usage_limits, # Check limits first
                 _validate_and_transform_model_in_request,
                 _add_streaming_usage
             ],

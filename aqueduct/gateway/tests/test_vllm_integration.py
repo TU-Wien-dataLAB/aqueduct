@@ -209,3 +209,88 @@ class VLLMIntegrationTests(LiveServerTestCase):
         # Optionally, check the error message or status
         err = cm.exception
         self.assertTrue("429" in str(err) or "rate limit" in str(err).lower())
+
+    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    def test_org_rate_limit_input_tokens_per_minute(self):
+        """
+        Edits the input_tokens_per_minute of Org 'E060' to 5, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        org = Org.objects.get(name="E060")
+        org.input_tokens_per_minute = 5
+        org.save(update_fields=["input_tokens_per_minute"])
+
+        if not self.open_ai_client:
+            self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
+
+        # Use a prompt that is at least 5 tokens (should be easy with a sentence)
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say hello to the world."}
+        ]
+
+        # First request should succeed
+        response1 = self.open_ai_client.chat.completions.create(
+            model="Qwen-0.5B",
+            messages=messages,
+            max_tokens=1,
+            temperature=0.0,
+        )
+        self.assertIsNotNone(response1)
+        self.assertTrue(response1.choices)
+        self.assertGreater(len(response1.choices), 0)
+
+        # Second request should fail with 429
+        from openai._exceptions import RateLimitError
+
+        with self.assertRaises(RateLimitError) as cm:
+            self.open_ai_client.chat.completions.create(
+                model="Qwen-0.5B",
+                messages=messages,
+                max_tokens=1,
+                temperature=0.0,
+            )
+        err = cm.exception
+        self.assertTrue("429" in str(err) or "rate limit" in str(err).lower())
+
+    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    def test_org_rate_limit_output_tokens_per_minute(self):
+        """
+        Edits the output_tokens_per_minute of Org 'E060' to 5, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        org = Org.objects.get(name="E060")
+        org.output_tokens_per_minute = 5
+        org.save(update_fields=["output_tokens_per_minute"])
+
+        if not self.open_ai_client:
+            self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
+
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say something long and verbose about the weather."}
+        ]
+
+        # First request should succeed
+        response1 = self.open_ai_client.chat.completions.create(
+            model="Qwen-0.5B",
+            messages=messages,
+            max_tokens=10,  # Should use up the output token budget
+            temperature=0.0,
+        )
+        self.assertIsNotNone(response1)
+        self.assertTrue(response1.choices)
+        self.assertGreater(len(response1.choices), 0)
+
+        # Second request should fail with 429
+        from openai._exceptions import RateLimitError
+
+        with self.assertRaises(RateLimitError) as cm:
+            self.open_ai_client.chat.completions.create(
+                model="Qwen-0.5B",
+                messages=messages,
+                max_tokens=10,
+                temperature=0.0,
+            )
+        err = cm.exception
+        self.assertTrue("429" in str(err) or "rate limit" in str(err).lower())

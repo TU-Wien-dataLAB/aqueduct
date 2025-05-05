@@ -46,11 +46,14 @@ AI gateway. The implementation follows a phased approach:
     * ~~Support for streaming requests.~~
     * ~~Add usage checks as pre-processing steps to limit requests.~~
     * ~~A functional `docker-compose.yml`~~
-    * Database schema optimization for write-heavy request/usage logging.
+      * Add mock OIDC server to compose for fully-local development.
     * Thorough unit/integration testing of `management` and `gateway`.
+    * Add documentation.
 
 3. 🔄 **Advanced Features:**
    * Limit team access to specific models.
+   * Database schema optimization for write-heavy request/usage logging.
+   * Add `locust` load testing.
    * A `/metrics` endpoint for monitoring.
    * Dashboard to track usage of orgs, teams and users.
    * Implement [Guardrails](https://github.com/guardrails-ai/guardrails) using post-processing on completions. 

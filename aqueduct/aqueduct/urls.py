@@ -16,6 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from django.conf import settings
+from django.conf.urls.static import static
 
 import management.views as views
 
@@ -28,5 +30,5 @@ urlpatterns = [
     path("aqueduct/management/", include("management.urls")),
     path("aqueduct/admin/", admin.site.urls),
     # contains catch all path so has to come last
-    path('', include('gateway.urls')),
-]
+    path('', include('gateway.urls'))
+] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

@@ -1,21 +1,37 @@
 services:
-  database:
-    container_name: postgres
-    image: postgres:17.4-bookworm
-    # Required when running on platform other than amd64, like Apple M1/M2:
-    # platform: linux/amd64
+  migrate:
+    build: .
+    container_name: django_migrate
+    command: python manage.py migrate
     volumes:
-      - ./data/database:/var/lib/postgresql/data
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  web:
+    build: .
+    container_name: django_app
+    command: daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application
+    volumes:
+      - .:/app
     ports:
-      - 5432:5432
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - migrate
+
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
     environment:
-      POSTGRES_USER: "directus"
-      POSTGRES_PASSWORD: "directus"
-      POSTGRES_DB: "directus"
-    healthcheck:
-      test: ["CMD", "pg_isready", "--host=localhost", "--username=directus"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_interval: 5s
-      start_period: 30s
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+volumes:
+  postgres_data:

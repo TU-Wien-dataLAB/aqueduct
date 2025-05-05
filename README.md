@@ -44,8 +44,8 @@ AI gateway. The implementation follows a phased approach:
     * ~~Request parsing for usage tracking.~~
     * ~~Pre-/Post-processing of requests (e.g. to correctly parse the `/models` endpoint to list available models).~~
     * ~~Support for streaming requests.~~
-    * Add usage checks as pre-processing steps to limit requests.
-    * A functional `docker-compose.yml`
+    * ~~Add usage checks as pre-processing steps to limit requests.~~
+    * ~~A functional `docker-compose.yml`~~
     * Database schema optimization for write-heavy request/usage logging.
     * Thorough unit/integration testing of `management` and `gateway`.
 

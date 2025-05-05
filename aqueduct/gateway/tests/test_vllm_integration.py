@@ -18,6 +18,7 @@ from gateway.tests.utils import RemoteOpenAIServer
 
 # Import Org for direct DB manipulation
 from management.models import Org
+from management.models import Request
 
 # --- Django Test Class ---
 
@@ -110,6 +111,8 @@ class VLLMIntegrationTests(LiveServerTestCase):
     def test_chat_completion(self):
         """
         Sends a simple chat completion request to the vLLM server.
+        After the request, checks that the database contains one request,
+        the endpoint matches, and input/output tokens are > 0.
         """
         if not self.open_ai_client:
             self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
@@ -118,6 +121,9 @@ class VLLMIntegrationTests(LiveServerTestCase):
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "What is the capital of France? Respond concisely."}
         ]
+
+        # Clear Request table before test
+        Request.objects.all().delete()
 
         response = self.open_ai_client.chat.completions.create(
             model="Qwen-0.5B",
@@ -142,13 +148,27 @@ class VLLMIntegrationTests(LiveServerTestCase):
         response_text = first_choice.message.content.strip()
         print(response_text)
 
+        # Check that the database contains one request and endpoint matches
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after chat completion.")
+        req = requests[0]
+        self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion.")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
+
     @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_list_models(self):
         """
         Sends a request to list available models from the vLLM server.
+        After the request, checks that the database contains one request and the endpoint matches.
         """
         if not self.open_ai_client:
             self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
+
+        # Clear Request table before test
+        Request.objects.all().delete()
 
         # The OpenAI client should have a .models.list() method
         response = self.open_ai_client.models.list()
@@ -165,11 +185,19 @@ class VLLMIntegrationTests(LiveServerTestCase):
         print(f"Available model IDs: {model_ids}")
         self.assertIn("Qwen-0.5B", model_ids)
 
+        # Check that the database contains one request and endpoint matches
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after list models.")
+        req = requests[0]
+        self.assertIn("models", req.path, "Request endpoint should be for model listing.")
+
     @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_org_rate_limit_requests_per_minute(self):
         """
         Edits the requests_per_minute of Org 'E060' to 1, then makes two requests.
         The second request should raise a 429 HTTP error.
+        After the first request, checks that the database contains one request and the endpoint matches,
+        and input/output tokens are > 0.
         """
         # Set Org requests_per_minute to 1
         org = Org.objects.get(name="E060")
@@ -178,6 +206,9 @@ class VLLMIntegrationTests(LiveServerTestCase):
 
         if not self.open_ai_client:
             self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
+
+        # Clear Request table before test
+        Request.objects.all().delete()
 
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
@@ -194,6 +225,16 @@ class VLLMIntegrationTests(LiveServerTestCase):
         self.assertIsNotNone(response1)
         self.assertTrue(response1.choices)
         self.assertGreater(len(response1.choices), 0)
+
+        # Check that the database contains one request and endpoint matches
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after first chat completion.")
+        req = requests[0]
+        self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion.")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
         # Second request should fail with 429
         from openai import OpenAIError
@@ -215,6 +256,8 @@ class VLLMIntegrationTests(LiveServerTestCase):
         """
         Edits the input_tokens_per_minute of Org 'E060' to 5, then makes two requests.
         The second request should raise a 429 HTTP error.
+        After the first request, checks that the database contains one request and the endpoint matches,
+        and input/output tokens are > 0.
         """
         org = Org.objects.get(name="E060")
         org.input_tokens_per_minute = 5
@@ -222,6 +265,9 @@ class VLLMIntegrationTests(LiveServerTestCase):
 
         if not self.open_ai_client:
             self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
+
+        # Clear Request table before test
+        Request.objects.all().delete()
 
         # Use a prompt that is at least 5 tokens (should be easy with a sentence)
         messages = [
@@ -239,6 +285,16 @@ class VLLMIntegrationTests(LiveServerTestCase):
         self.assertIsNotNone(response1)
         self.assertTrue(response1.choices)
         self.assertGreater(len(response1.choices), 0)
+
+        # Check that the database contains one request and endpoint matches
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after first chat completion.")
+        req = requests[0]
+        self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion.")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
         # Second request should fail with 429
         from openai._exceptions import RateLimitError
@@ -258,6 +314,8 @@ class VLLMIntegrationTests(LiveServerTestCase):
         """
         Edits the output_tokens_per_minute of Org 'E060' to 5, then makes two requests.
         The second request should raise a 429 HTTP error.
+        After the first request, checks that the database contains one request and the endpoint matches,
+        and input/output tokens are > 0.
         """
         org = Org.objects.get(name="E060")
         org.output_tokens_per_minute = 5
@@ -265,6 +323,9 @@ class VLLMIntegrationTests(LiveServerTestCase):
 
         if not self.open_ai_client:
             self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
+
+        # Clear Request table before test
+        Request.objects.all().delete()
 
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
@@ -281,6 +342,16 @@ class VLLMIntegrationTests(LiveServerTestCase):
         self.assertIsNotNone(response1)
         self.assertTrue(response1.choices)
         self.assertGreater(len(response1.choices), 0)
+
+        # Check that the database contains one request and endpoint matches
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after first chat completion.")
+        req = requests[0]
+        self.assertIn("chat/completions", req.path, "Request path should be for chat completion.")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
         # Second request should fail with 429
         from openai._exceptions import RateLimitError

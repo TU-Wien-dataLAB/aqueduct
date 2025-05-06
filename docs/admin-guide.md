@@ -1,5 +1,5 @@
 ---
 title: Admin Guide
-nav_order: 1
+nav_order: 4
 ---
 

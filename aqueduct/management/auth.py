@@ -25,7 +25,7 @@ def get_org_name_from_groups(groups):
 
 class OIDCBackend(OIDCAuthenticationBackend):
     def create_user(self, claims):
-        groups = claims.get('groups', [])
+        groups = claims.get('groups', settings.OIDC_DEFAULT_GROUPS)
 
         org_name = get_org_name_from_groups(groups)
         if not org_name:

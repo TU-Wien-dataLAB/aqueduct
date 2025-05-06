@@ -1,0 +1,19 @@
+# config.yaml
+issuer: http://localhost:5556/dex
+storage:
+  type: memory
+web:
+  http: 0.0.0.0:5556
+staticClients:
+  - id: example-app
+    redirectURIs:
+      - 'http://localhost:8000/oidc/callback/'
+    name: 'Example App'
+    secret: ZXhhbXBsZS1hcHAtc2VjcmV0
+enablePasswordDB: true
+staticPasswords:
+  - email: "you@example.com"
+    hash: "$2a$12$dvOAiVxM0UtJeMD9oId1bO8fYsymfMc/xZmFzbYdnpbmdc1T5LK9q" # 1234
+    username: "you"
+    userID: "1234"
+    # Groups cannot be configured yet: https://github.com/dexidp/dex/issues/1080

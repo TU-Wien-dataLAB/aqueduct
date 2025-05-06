@@ -6,7 +6,7 @@ services:
     volumes:
       - .:/app
     env_file:
-      - .env
+      - .example.env
     depends_on:
       - db
 
@@ -19,7 +19,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - .example.env
     depends_on:
       - migrate
 

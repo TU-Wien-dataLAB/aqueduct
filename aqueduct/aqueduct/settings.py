@@ -99,8 +99,13 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
     return None
 
 
-ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = my_org_name_extractor
-ADMIN_GROUP = "ds-ray-cluster"  # the admin group name
+# OIDC_DEFAULT_GROUPS = []
+# ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = my_org_name_extractor
+# ADMIN_GROUP = "ds-ray-cluster"  # the admin group name
+
+OIDC_DEFAULT_GROUPS = ["default"]
+ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
+ADMIN_GROUP = "default" # all users are admins
 
 EXTRA_NAV_LINKS = {
     'GitHub': 'https://github.com/TU-Wien-dataLAB/aqueduct',  # Example external link

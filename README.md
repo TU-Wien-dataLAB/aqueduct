@@ -46,7 +46,7 @@ AI gateway. The implementation follows a phased approach:
     * ~~Support for streaming requests.~~
     * ~~Add usage checks as pre-processing steps to limit requests.~~
     * ~~A functional `docker-compose.yml`~~
-      * Add mock OIDC server to compose for fully-local development.
+      * Add mock OIDC server to compose for fully local development.
     * Thorough unit/integration testing of `management` and `gateway`.
     * Add documentation.
 
@@ -56,6 +56,7 @@ AI gateway. The implementation follows a phased approach:
    * Add `locust` load testing.
    * A `/metrics` endpoint for monitoring.
    * Dashboard to track usage of orgs, teams and users.
+   * Support more providers on top of vLLM/OpenAI-compatible APIs.
    * Implement [Guardrails](https://github.com/guardrails-ai/guardrails) using post-processing on completions. 
    * Model cooldown and retry logic.
    * Granular access control for models within teams.

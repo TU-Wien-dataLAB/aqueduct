@@ -104,6 +104,7 @@ ADMIN_GROUP = "ds-ray-cluster"  # the admin group name
 
 EXTRA_NAV_LINKS = {
     'GitHub': 'https://github.com/TU-Wien-dataLAB/aqueduct',  # Example external link
+    'Bug Report': 'https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md',
     # 'API Status': '/status/',  # Example internal path
     # 'About Us': 'about_page',  # Example named URL (assuming you have url(..., name='about_page'))
 }

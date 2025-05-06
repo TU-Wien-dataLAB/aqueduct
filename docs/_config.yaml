@@ -1,0 +1,13 @@
+title: Aqueduct Docs
+description: Documentation for the Aqueduct AI Gateway
+theme: just-the-docs
+
+# Set base path if needed
+# baseurl: "/your-repo-name" # Only needed if using project pages
+url: "https://aqueduct.github.io"
+
+# Enable navigation
+just_the_docs:
+  logo: "/assets/Aqueduct_Icon_80x80.png" # optional
+  search_enabled: true
+  nav_sort: case_insensitive

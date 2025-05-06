@@ -1,7 +1,5 @@
 title: Aqueduct Docs
 description: Documentation for the Aqueduct AI Gateway
-baseurl: "" # the subpath of your site, e.g. /blog
-url: "https://tu-wien-datalab.github.io/aqueduct/" # the base hostname & protocol for your site, e.g. http://example.com
 repository: TU-Wien-dataLAB/aqueduct # for github-metadata
 remote_theme: just-the-docs/just-the-docs
 

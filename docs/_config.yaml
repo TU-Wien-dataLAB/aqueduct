@@ -6,8 +6,6 @@ remote_theme: just-the-docs/just-the-docs
 # baseurl: "/your-repo-name" # Only needed if using project pages
 url: "https://aqueduct.github.io"
 
-# Enable navigation
-just_the_docs:
-  logo: "/assets/Aqueduct_Icon_80x80.png" # optional
-  search_enabled: true
-  nav_sort: case_insensitive
+logo: "/assets/Aqueduct_Icon_80x80.png" # optional
+search_enabled: true
+nav_sort: case_insensitive

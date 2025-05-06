@@ -5,15 +5,37 @@ nav_order: 2
 
 # Getting Started
 
-Welcome! Here's how to get up and running:
+Welcome! This guide will help you get up and running with the Aqueduct AI Gateway project.
 
-## Requirements
+## Quick Start
 
-- Ruby (for Jekyll)
-- Bundler
+To set up the project for development using `uv`, follow these steps:
 
-## Local Development
+1. **Install `uv`**  
+   If you don't have `uv` installed, you can install it via pip:
+   ```bash
+   pip install uv
+   ```
 
-```bash
-bundle install
-bundle exec jekyll serve
+2. **Clone the repository**
+   ```bash
+   git clone https://github.com/tu-wien-datalab/aqueduct.git
+   cd aqueduct
+   ```
+
+3. **Create a virtual environment and install dependencies**
+   ```bash
+   uv venv
+   source .venv/bin/activate
+   uv sync
+   ```
+
+4. **Run the Django development server**
+   ```bash
+   uv run aqueduct/manage.py runserver
+   ```
+
+You can now access the admin UI and start exploring the gateway features.
+
+---
+

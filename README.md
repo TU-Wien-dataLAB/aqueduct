@@ -26,7 +26,7 @@ We aim to achieve this by:
 - Using a **pass-through approach** that avoids re-implementing the entire OpenAI-compatible APIs or every new feature, and
 - Building on **Django** for a clean, efficient, and maintainable implementation.
 
-For more please read the [Documentation](https://tu-wien-datalab.github.io/aqueduct/).
+For more information, please read the [Documentation](https://tu-wien-datalab.github.io/aqueduct/).
 
 If you don’t need user self-service, take a look at [Envoy AI Gateway](https://aigateway.envoyproxy.io) instead!
 

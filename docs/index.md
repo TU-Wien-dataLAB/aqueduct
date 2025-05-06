@@ -3,12 +3,29 @@ title: Home
 nav_order: 1
 ---
 
-# Welcome to Your Project Docs
+# Aqueduct AI Gateway
 
-This is the main index page for your documentation.
+**Aqueduct AI Gateway** aims to provide a **simple yet fully-featured** AI gateway you can self-host with:
 
-Use the navigation on the left to explore different sections.
+- no [SSO tax](https://konghq.com/pricing)
+- no [observability tax](https://www.litellm.ai/enterprise)
+- no [self-hosting tax](https://portkey.ai/pricing)
+- no [org management tax](https://www.litellm.ai/enterprise)
+- etc.
 
-## Getting Started
+![Aqueduct Gateway Screenshot](assets/screenshot.png)
 
-To get started, check out [Getting Started](getting-started.md).
+## Key Features
+
+- **Role-Based Access Control:** Manage users, teams, and organizations with flexible permissions.
+- **Usage Tracking:** Monitor and limit API usage by organization, team, or user.
+- **OpenAI-Compatible Relay:** Seamlessly proxy requests to LLM providers.
+- **Admin UI:** Manage everything through a clean Django admin interface.
+
+## Quick Start
+
+To get started, see [Getting Started](getting-started.md).
+
+---
+
+Explore the navigation to learn more about configuration, usage, and advanced features.

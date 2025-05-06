@@ -110,6 +110,7 @@ ADMIN_GROUP = "default" # all users are admins
 EXTRA_NAV_LINKS = {
     'GitHub': 'https://github.com/TU-Wien-dataLAB/aqueduct',  # Example external link
     'Bug Report': 'https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md',
+    'Documentation': 'https://tu-wien-datalab.github.io/aqueduct/'
     # 'API Status': '/status/',  # Example internal path
     # 'About Us': 'about_page',  # Example named URL (assuming you have url(..., name='about_page'))
 }

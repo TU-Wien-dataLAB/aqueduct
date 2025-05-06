@@ -7,6 +7,7 @@
 [![GitHub License](https://img.shields.io/github/license/tu-wien-datalab/aqueduct)](LICENSE)
 [![GitHub last commit](https://img.shields.io/github/last-commit/tu-wien-datalab/aqueduct)](https://github.com/tu-wien-datalab/aqueduct/commits/main)
 [![Project Status: WIP – Initial development is in progress, but there has not yet been a stable, usable release suitable for the public.](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)
+![Static Badge](https://img.shields.io/badge/Documentation-GitHub%20Pages-brightgreen?link=https%3A%2F%2Ftu-wien-datalab.github.io%2Faqueduct%2F)
 
 
 > [!NOTE]
@@ -24,6 +25,8 @@ We aim to achieve this by:
 
 - Using a **pass-through approach** that avoids re-implementing the entire OpenAI-compatible APIs or every new feature, and
 - Building on **Django** for a clean, efficient, and maintainable implementation.
+
+For more please read the [Documentation](https://tu-wien-datalab.github.io/aqueduct/).
 
 If you don’t need user self-service, take a look at [Envoy AI Gateway](https://aigateway.envoyproxy.io) instead!
 

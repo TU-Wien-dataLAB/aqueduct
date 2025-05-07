@@ -447,6 +447,7 @@ class AIGatewayBackend(abc.ABC):
         async def stream():
             start_time = time.monotonic()
             chunks: bytes = b''
+            upstream_response.raise_for_status()
             try:
                 async for chunk in upstream_response.aiter_bytes():
                     chunks += chunk

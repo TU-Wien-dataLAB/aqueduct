@@ -1,26 +1,50 @@
 # tests/test_vllm_integration.py
-
+import json
 import sys
-from typing import Optional, Callable
+from typing import Optional
 
 # Third-party imports
 import httpx  # Using httpx instead of requests
-from openai import OpenAI
-
+from asgiref.sync import async_to_sync
+from django.contrib.auth import get_user_model
 # Django specific imports
-from django.test import TestCase, LiveServerTestCase, Client, override_settings
+from django.test import LiveServerTestCase, Client, override_settings
+from openai import OpenAI
 
 # --- vLLM Internal Imports ---
 from gateway.tests.utils import RemoteOpenAIServer
-
 # Import Org, Team, UserProfile for direct DB manipulation
 from management.models import Org, Team, Request, UserProfile, ServiceAccount
-from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+
 # --- Django Test Class ---
 
+# Define this as a standalone async function or a staticmethod
+async def parse_streamed_data(streaming_content):
+    lines = []
+    try:
+        async for chunk in streaming_content:  # This is where the error likely occurs
+            if isinstance(chunk, bytes):
+                chunk = chunk.decode("utf-8")
+            for line in chunk.splitlines():
+                if line.strip() and line.startswith("data:"):
+                    lines.append(line)
+    except RuntimeError as e:
+        if "Event loop is closed" in str(e):
+            print("RuntimeError: Event loop is closed encountered inside parse_streamed_data's async for loop.")
+            # Potentially add more context here, like what lines have been collected so far
+            print(f"Lines collected before error: {lines}")
+        raise  # Re-raise the exception to fail the test
+    except Exception as e:
+        print(f"Unexpected error during streaming content parsing: {e}")
+        print(f"Lines collected before error: {lines}")
+        raise
+    return lines
+
+
+@override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
 class VLLMIntegrationTests(LiveServerTestCase):
     """
     Integration tests using the embedded RemoteOpenAIServer (with httpx).
@@ -106,7 +130,6 @@ class VLLMIntegrationTests(LiveServerTestCase):
         self.assertEqual(response.status_code, 200,
                          f"Server health check failed ({response.status_code}) at {health_url}")
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_chat_completion(self):
         """
         Sends a simple chat completion request to the vLLM server.
@@ -157,7 +180,78 @@ class VLLMIntegrationTests(LiveServerTestCase):
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    async def test_chat_completion_streaming(self):
+        """
+        Sends a streaming chat completion request to the vLLM server.
+        Checks that multiple chunks are received and the content is non-empty.
+        Also checks that the database contains one request and the endpoint matches.
+        """
+        # TODO: fix async error (RuntimeError: Event loop is closed) for streaming chat completions
+        #  https://channels.readthedocs.io/en/latest/topics/testing.html#channelsliveservertestcase
+        self.skipTest("Streaming causes error as event loop does not seem to be running when iterating over async for.")
+
+        if not self.open_ai_client:
+            self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
+
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Name three countries in Europe."}
+        ]
+
+        # Clear Request table before test
+        await Request.objects.all().adelete()
+
+        # The OpenAI client should support streaming via .create(..., stream=True)
+        chunks = []
+        try:
+            stream = self.open_ai_client.chat.completions.create(
+                model="Qwen-0.5B",
+                messages=messages,
+                max_tokens=50,
+                temperature=0.0,
+                stream=True,
+            )
+        except TypeError:
+            self.skipTest("OpenAI client does not support streaming in this environment.")
+
+        # Collect chunks
+        for chunk in stream:
+            chunks.append(chunk)
+            # Optionally print each chunk for debugging
+            print(f"Stream chunk: {chunk}")
+
+        self.assertGreater(len(chunks), 1, "Should receive more than one chunk in streaming mode.")
+
+        # Concatenate the content from all chunks (if present)
+        content_pieces = []
+        for chunk in chunks:
+            # OpenAI python client: chunk.choices[0].delta.content (for streaming)
+            if hasattr(chunk, "choices") and chunk.choices:
+                choice = chunk.choices[0]
+                # vLLM and OpenAI: streaming delta is in .delta.content
+                if hasattr(choice, "delta") and hasattr(choice.delta, "content"):
+                    piece = choice.delta.content
+                    if piece:
+                        content_pieces.append(piece)
+                # Some clients may use .text or .message
+                elif hasattr(choice, "text"):
+                    piece = choice.text
+                    if piece:
+                        content_pieces.append(piece)
+        full_content = "".join(content_pieces).strip()
+        print(f"Full streamed content: {full_content}")
+        self.assertTrue(full_content, "Streamed content should not be empty.")
+
+        # Check that the database contains one request and endpoint matches
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after streaming chat completion.")
+        req = requests[0]
+        self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion (streaming).")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming)")
+
     def test_list_models(self):
         """
         Sends a request to list available models from the vLLM server.
@@ -189,6 +283,42 @@ class VLLMIntegrationTests(LiveServerTestCase):
         self.assertEqual(len(requests), 1, "There should be exactly one request after list models.")
         req = requests[0]
         self.assertIn("models", req.path, "Request endpoint should be for model listing.")
+
+    def test_list_models_with_invalid_token(self):
+        """
+        Sends a request to list available models from the vLLM server with an invalid API key.
+        Expects an authentication error (401 or 403).
+        """
+        if not self.open_ai_client:
+            self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
+
+        # Save the original API key to restore later
+        original_api_key = self.open_ai_client.api_key
+        try:
+            # Set an invalid API key
+            self.open_ai_client.api_key = "invalid-token-123"
+
+            # Clear Request table before test
+            Request.objects.all().delete()
+
+            # The OpenAI client should have a .models.list() method
+            with self.assertRaises(Exception) as cm:
+                self.open_ai_client.models.list()
+            # Optionally, check the exception type or message
+            # For httpx, it may be openai.AuthenticationError or openai.APIStatusError, or httpx.HTTPStatusError
+            # You can check for 401/403 in the exception message
+            msg = str(cm.exception)
+            self.assertTrue(
+                "401" in msg or "403" in msg or "Unauthorized" in msg or "forbidden" in msg.lower(),
+                f"Expected authentication error, got: {msg}"
+            )
+
+            # There should be no request recorded in the database (or possibly one, depending on implementation)
+            requests = list(Request.objects.all())
+            self.assertEqual(len(requests), 0, "There should be no request recorded for invalid token.")
+        finally:
+            # Restore the original API key
+            self.open_ai_client.api_key = original_api_key
 
     # --- Helper for setting limits on Org, Team, or UserProfile ---
 
@@ -264,7 +394,8 @@ class VLLMIntegrationTests(LiveServerTestCase):
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, f"There should be exactly one request after first chat completion ({limit_desc}).")
+        self.assertEqual(len(requests), 1,
+                         f"There should be exactly one request after first chat completion ({limit_desc}).")
         req = requests[0]
         self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion.")
         self.assertIsNotNone(req.input_tokens)
@@ -285,7 +416,6 @@ class VLLMIntegrationTests(LiveServerTestCase):
         err = cm.exception
         self.assertTrue("429" in str(err) or "rate limit" in str(err).lower())
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_org_rate_limit_requests_per_minute(self):
         """
         Edits the requests_per_minute of Org 'E060' to 1, then makes two requests.
@@ -304,7 +434,6 @@ class VLLMIntegrationTests(LiveServerTestCase):
             limit_desc="org requests_per_minute"
         )
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_team_rate_limit_requests_per_minute(self):
         """
         Edits the requests_per_minute of Team 'Whale' to 1, then makes two requests.
@@ -323,7 +452,6 @@ class VLLMIntegrationTests(LiveServerTestCase):
             limit_desc="team requests_per_minute"
         )
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_user_rate_limit_requests_per_minute(self):
         """
         Edits the requests_per_minute of UserProfile for user 'Me' to 1, then makes two requests.
@@ -342,7 +470,6 @@ class VLLMIntegrationTests(LiveServerTestCase):
             limit_desc="user requests_per_minute"
         )
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_org_rate_limit_input_tokens_per_minute(self):
         """
         Edits the input_tokens_per_minute of Org 'E060' to 5, then makes two requests.
@@ -361,7 +488,6 @@ class VLLMIntegrationTests(LiveServerTestCase):
             limit_desc="org input_tokens_per_minute"
         )
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_team_rate_limit_input_tokens_per_minute(self):
         """
         Edits the input_tokens_per_minute of Team 'Whale' to 5, then makes two requests.
@@ -380,7 +506,6 @@ class VLLMIntegrationTests(LiveServerTestCase):
             limit_desc="team input_tokens_per_minute"
         )
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_user_rate_limit_input_tokens_per_minute(self):
         """
         Edits the input_tokens_per_minute of UserProfile for user 'Me' to 5, then makes two requests.
@@ -399,7 +524,6 @@ class VLLMIntegrationTests(LiveServerTestCase):
             limit_desc="user input_tokens_per_minute"
         )
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_org_rate_limit_output_tokens_per_minute(self):
         """
         Edits the output_tokens_per_minute of Org 'E060' to 5, then makes two requests.
@@ -418,7 +542,6 @@ class VLLMIntegrationTests(LiveServerTestCase):
             limit_desc="org output_tokens_per_minute"
         )
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_team_rate_limit_output_tokens_per_minute(self):
         """
         Edits the output_tokens_per_minute of Team 'Whale' to 5, then makes two requests.
@@ -437,7 +560,6 @@ class VLLMIntegrationTests(LiveServerTestCase):
             limit_desc="team output_tokens_per_minute"
         )
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_user_rate_limit_output_tokens_per_minute(self):
         """
         Edits the output_tokens_per_minute of UserProfile for user 'Me' to 5, then makes two requests.

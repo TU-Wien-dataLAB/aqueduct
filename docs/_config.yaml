@@ -42,3 +42,22 @@ aux_links:
 
 # Makes Aux links open in a new tab. Default is false
 aux_links_new_tab: false
+
+# External navigation links
+nav_external_links:
+  - title: Aqueduct on GitHub
+    url: https://github.com/TU-Wien-dataLAB/aqueduct
+
+# Show navigation error report
+nav_error_report: true # default is false/nil.
+
+liquid:
+  error_mode: strict
+  strict_filters: true
+
+# Footer content
+# appears at the bottom of every page's main content
+
+# Back to top link
+back_to_top: true
+back_to_top_text: "Back to top"

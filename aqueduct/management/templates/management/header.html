@@ -1,39 +1,18 @@
 {% load static %}
 
 <header class="navbar bg-base-100 shadow-md print:hidden sticky top-0 z-50">
-    <div class="navbar-start">
+    <div class="navbar-start flex items-center gap-2">
         {# --- Logo and Site Title --- #}
-        <a href="/" class="flex items-center gap-2"> {# Link logo/title to home page #}
+        <a href="/" class="flex items-center gap-2">
             <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="{{ settings.SITE_NAME|default:'Logo' }}"
-                 class="h-8 w-auto"> {# Logo typically shouldn't invert #}
+                 class="h-8 w-auto">
             <span class="text-xl font-semibold hidden sm:inline">
                 {% block header %}{{ settings.SITE_NAME|default:'Aqueduct AI Gateway' }}{% endblock %}
             </span>
         </a>
         {% if user.is_authenticated %}
-            <span class="ml-4 text-sm">Signed in as <strong>{{ user.email }}</strong></span>
-        {% endif %}
-    </div>
-
-    <div class="navbar-end">
-        <ul class="menu menu-horizontal px-1 items-center space-x-1">
-            {# Extra Links from settings.py #}
-            {% for name, external_url in settings.EXTRA_NAV_LINKS.items %}
+            <ul class="menu menu-horizontal px-1 items-center space-x-1 ml-4">
                 <li>
-                    <a href="{{ external_url }}" class="flex items-center gap-1 hover:underline">
-                        <img src="{% static 'icons/external.svg' %}" alt="(external)" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                        {{ name }}
-                    </a>
-                </li>
-            {% endfor %}
-
-            {# Divider between external and internal links #}
-            {% if user.is_authenticated and settings.EXTRA_NAV_LINKS %}
-                <div class="divider divider-horizontal"></div>
-            {% endif %}
-
-            {% if user.is_authenticated %}
-                <li class="ml-4">
                     <a href="{% url 'tokens' %}" class="btn btn-sm btn-ghost flex items-center gap-1">
                         <img src="{% static 'icons/key.svg' %}" alt="Tokens" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                         Tokens
@@ -57,24 +36,47 @@
                         Admin Panel
                     </a>
                 </li>
+            </ul>
+        {% endif %}
+    </div>
+
+    <div class="navbar-end flex items-center gap-2">
+        {# Extra Links from settings.py #}
+        <ul class="menu menu-horizontal px-1 items-center space-x-1">
+            {% for name, external_url in settings.EXTRA_NAV_LINKS.items %}
                 <li>
-                    <label class="swap swap-rotate">
-                        <!-- this hidden checkbox controls the state -->
-                        <input type="checkbox" class="theme-controller" value="dark" />
-                        <!-- sun icon -->
-                        <img src="{% static 'icons/sun.svg' %}" alt="Light mode" class="swap-off w-4 h-4 [[data-theme=dark]_&]:invert" />
-                        <!-- moon icon -->
-                        <img src="{% static 'icons/moon.svg' %}" alt="Dark mode" class="swap-on w-4 h-4 [[data-theme=dark]_&]:invert" />
-                    </label>
+                    <a href="{{ external_url }}" class="flex items-center gap-1 hover:underline">
+                        <img src="{% static 'icons/external.svg' %}" alt="(external)" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                        {{ name }}
+                    </a>
                 </li>
-                <li class="ml-4">
-                    <form action="{% url 'oidc_logout' %}" method="post" class="p-0 inline">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-error">Logout</button>
-                    </form>
-                </li>
-            {% endif %}
+            {% endfor %}
         </ul>
+        {% if user.is_authenticated %}
+            <label class="swap swap-rotate ml-2">
+                <input type="checkbox" class="theme-controller" value="dark" />
+                <img src="{% static 'icons/sun.svg' %}" alt="Light mode" class="swap-off w-4 h-4 [[data-theme=dark]_&]:invert" />
+                <img src="{% static 'icons/moon.svg' %}" alt="Dark mode" class="swap-on w-4 h-4 [[data-theme=dark]_&]:invert" />
+            </label>
+            <div class="dropdown dropdown-end ml-2">
+                <label tabindex="0" class="btn btn-ghost btn-circle avatar">
+                    <div class="w-7 rounded-full bg-base-200 flex items-center justify-center">
+                        <img src="{% static 'icons/user-circle.svg' %}" alt="User" class="w-4 h-4 [[data-theme=dark]_&]:invert" />
+                    </div>
+                </label>
+                <ul tabindex="0" class="dropdown-content z-10 mt-5 w-65 p-2 shadow bg-base-100 rounded-box flex flex-col gap-1">
+                    <li class="px-2 py-1 text-sm font-medium text-center cursor-default select-text break-words max-w-full">
+                        <span style="word-break: break-all;">{{ user.email }}</span>
+                    </li>
+                    <li>
+                        <form action="{% url 'oidc_logout' %}" method="post">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-error btn-sm w-full">Logout</button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+        {% endif %}
     </div>
 </header>
 
@@ -82,10 +84,9 @@
 document.addEventListener('DOMContentLoaded', () => {
     const themeToggle = document.querySelector('.theme-controller');
     const htmlElement = document.documentElement;
-    const lightTheme = 'light'; // Specify your light theme name if not default
-    const darkTheme = 'dark';   // Specify your dark theme name
+    const lightTheme = 'light';
+    const darkTheme = 'dark';
 
-    // Function to apply theme and update checkbox
     const applyTheme = (theme) => {
         htmlElement.setAttribute('data-theme', theme);
         localStorage.setItem('selectedTheme', theme);
@@ -94,15 +95,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Initial theme load
     const savedTheme = localStorage.getItem('selectedTheme');
-    // You could add logic here to check system preference if savedTheme is null
-    // const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const initialTheme = savedTheme ? savedTheme : lightTheme; // Default to light
+    const initialTheme = savedTheme ? savedTheme : lightTheme;
+    applyTheme(initialTheme);
 
-    applyTheme(initialTheme); // Apply the initial theme
-
-    // Add event listener to the toggle
     if (themeToggle) {
         themeToggle.addEventListener('change', (event) => {
             applyTheme(event.target.checked ? darkTheme : lightTheme);

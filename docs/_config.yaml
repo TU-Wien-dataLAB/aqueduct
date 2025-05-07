@@ -34,3 +34,11 @@ search:
   button: false
   # Focus the search input by pressing `ctrl + focus_shortcut_key` (or `cmd + focus_shortcut_key` on macOS)
   focus_shortcut_key: 'k'
+
+# Aux links for the upper right navigation
+aux_links:
+  "Aqueduct on GitHub":
+    - "https://github.com/TU-Wien-dataLAB/aqueduct"
+
+# Makes Aux links open in a new tab. Default is false
+aux_links_new_tab: false

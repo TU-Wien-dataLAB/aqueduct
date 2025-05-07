@@ -1,4 +1,13 @@
 services:
+  dex:
+    image: dexidp/dex:v2.42.1
+    container_name: dex
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./mock-dex-config.yaml:/etc/dex/config.yaml
+    command: [ "dex", "serve", "/etc/dex/config.yaml" ]
+
   migrate:
     build: .
     container_name: django_migrate
@@ -22,6 +31,7 @@ services:
       - .example.env
     depends_on:
       - migrate
+      - dex
 
   db:
     image: postgres:15

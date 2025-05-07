@@ -44,7 +44,7 @@ The recommended way to get Aqueduct running locally is with Docker Compose. This
 
 2. **Start the services**
    ```bash
-   docker compose -f docker-compose-oidc.yaml up --build
+   docker compose up --build
    ```
    This will build and start all required services using the provided `.example.env` file for environment variables.
 

@@ -1,7 +1,7 @@
 # tests/test_vllm_integration.py
 
 import sys
-from typing import Optional
+from typing import Optional, Callable
 
 # Third-party imports
 import httpx  # Using httpx instead of requests
@@ -11,14 +11,13 @@ from openai import OpenAI
 from django.test import TestCase, LiveServerTestCase, Client, override_settings
 
 # --- vLLM Internal Imports ---
-# These are still required by the embedded RemoteOpenAIServer logic.
-# Ensure vLLM is installed correctly for these to work.
-
 from gateway.tests.utils import RemoteOpenAIServer
 
-# Import Org for direct DB manipulation
-from management.models import Org
-from management.models import Request
+# Import Org, Team, UserProfile for direct DB manipulation
+from management.models import Org, Team, Request, UserProfile, ServiceAccount
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 # --- Django Test Class ---
 
@@ -191,18 +190,60 @@ class VLLMIntegrationTests(LiveServerTestCase):
         req = requests[0]
         self.assertIn("models", req.path, "Request endpoint should be for model listing.")
 
-    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
-    def test_org_rate_limit_requests_per_minute(self):
+    # --- Helper for setting limits on Org, Team, or UserProfile ---
+
+    def setup_limits(self, kind: str, field: str, value: int):
         """
-        Edits the requests_per_minute of Org 'E060' to 1, then makes two requests.
-        The second request should raise a 429 HTTP error.
-        After the first request, checks that the database contains one request and the endpoint matches,
-        and input/output tokens are > 0.
+        Set a rate limit for the given kind ('org', 'team', 'user') and field.
+        Returns the object whose limit was set.
+
+        For 'team', also ensure the service account is associated with the test token.
         """
-        # Set Org requests_per_minute to 1
-        org = Org.objects.get(name="E060")
-        org.requests_per_minute = 1
-        org.save(update_fields=["requests_per_minute"])
+        if kind == "org":
+            org = Org.objects.get(name="E060")
+            setattr(org, field, value)
+            org.save(update_fields=[field])
+            return org
+        elif kind == "team":
+            team = Team.objects.get(name="Whale")
+            setattr(team, field, value)
+            team.save(update_fields=[field])
+            # Ensure a service account exists for the team and associate it with the token
+            # Only associate the service account with the token if the token does not already have a service account
+
+            service_account = ServiceAccount.objects.create(team=team, name="Whale Service")
+
+            from management.models import Token
+            token = Token.objects.filter(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN)).first()
+            if not token:
+                raise RuntimeError("Could not find Token associated with AQUEDUCT_ACCESS_TOKEN.")
+
+            # Only set the service_account if it is not already set
+            if getattr(token, "service_account_id", None) is None:
+                token.service_account = service_account
+                token.save(update_fields=["service_account"])
+            elif token.service_account_id != service_account.id:
+                # If the token is already associated with a different service account, raise an error
+                raise RuntimeError(
+                    f"Token is already associated with a different service account (id={token.service_account_id})."
+                )
+            # Otherwise, already associated with the correct service account, do nothing
+            return team
+        elif kind == "user":
+            user = User.objects.get(username="Me")
+            profile = user.profile if hasattr(user, "profile") else UserProfile.objects.get(user=user)
+            setattr(profile, field, value)
+            profile.save(update_fields=[field])
+            return profile
+        else:
+            raise ValueError(f"Unknown kind: {kind}")
+
+    def _rate_limit_test_template(self, kind: str, field: str, value: int, messages, max_tokens, limit_desc):
+        """
+        Generic template for rate limit tests for org, team, or user.
+        """
+        # Set the limit
+        obj = self.setup_limits(kind, field, value)
 
         if not self.open_ai_client:
             self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
@@ -210,16 +251,11 @@ class VLLMIntegrationTests(LiveServerTestCase):
         # Clear Request table before test
         Request.objects.all().delete()
 
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Say hello."}
-        ]
-
         # First request should succeed
         response1 = self.open_ai_client.chat.completions.create(
             model="Qwen-0.5B",
             messages=messages,
-            max_tokens=5,
+            max_tokens=max_tokens,
             temperature=0.0,
         )
         self.assertIsNotNone(response1)
@@ -228,7 +264,7 @@ class VLLMIntegrationTests(LiveServerTestCase):
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after first chat completion.")
+        self.assertEqual(len(requests), 1, f"There should be exactly one request after first chat completion ({limit_desc}).")
         req = requests[0]
         self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion.")
         self.assertIsNotNone(req.input_tokens)
@@ -237,131 +273,185 @@ class VLLMIntegrationTests(LiveServerTestCase):
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
         # Second request should fail with 429
-        from openai import OpenAIError
         from openai._exceptions import RateLimitError
 
         with self.assertRaises(RateLimitError) as cm:
             self.open_ai_client.chat.completions.create(
                 model="Qwen-0.5B",
                 messages=messages,
-                max_tokens=5,
+                max_tokens=max_tokens,
                 temperature=0.0,
             )
-        # Optionally, check the error message or status
         err = cm.exception
         self.assertTrue("429" in str(err) or "rate limit" in str(err).lower())
+
+    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    def test_org_rate_limit_requests_per_minute(self):
+        """
+        Edits the requests_per_minute of Org 'E060' to 1, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say hello."}
+        ]
+        self._rate_limit_test_template(
+            kind="org",
+            field="requests_per_minute",
+            value=1,
+            messages=messages,
+            max_tokens=5,
+            limit_desc="org requests_per_minute"
+        )
+
+    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    def test_team_rate_limit_requests_per_minute(self):
+        """
+        Edits the requests_per_minute of Team 'Whale' to 1, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say hello from the team."}
+        ]
+        self._rate_limit_test_template(
+            kind="team",
+            field="requests_per_minute",
+            value=1,
+            messages=messages,
+            max_tokens=5,
+            limit_desc="team requests_per_minute"
+        )
+
+    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    def test_user_rate_limit_requests_per_minute(self):
+        """
+        Edits the requests_per_minute of UserProfile for user 'Me' to 1, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say hello from the user."}
+        ]
+        self._rate_limit_test_template(
+            kind="user",
+            field="requests_per_minute",
+            value=1,
+            messages=messages,
+            max_tokens=5,
+            limit_desc="user requests_per_minute"
+        )
 
     @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_org_rate_limit_input_tokens_per_minute(self):
         """
         Edits the input_tokens_per_minute of Org 'E060' to 5, then makes two requests.
         The second request should raise a 429 HTTP error.
-        After the first request, checks that the database contains one request and the endpoint matches,
-        and input/output tokens are > 0.
         """
-        org = Org.objects.get(name="E060")
-        org.input_tokens_per_minute = 5
-        org.save(update_fields=["input_tokens_per_minute"])
-
-        if not self.open_ai_client:
-            self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
-
-        # Clear Request table before test
-        Request.objects.all().delete()
-
-        # Use a prompt that is at least 5 tokens (should be easy with a sentence)
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Say hello to the world."}
         ]
-
-        # First request should succeed
-        response1 = self.open_ai_client.chat.completions.create(
-            model="Qwen-0.5B",
+        self._rate_limit_test_template(
+            kind="org",
+            field="input_tokens_per_minute",
+            value=5,
             messages=messages,
             max_tokens=1,
-            temperature=0.0,
+            limit_desc="org input_tokens_per_minute"
         )
-        self.assertIsNotNone(response1)
-        self.assertTrue(response1.choices)
-        self.assertGreater(len(response1.choices), 0)
 
-        # Check that the database contains one request and endpoint matches
-        requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after first chat completion.")
-        req = requests[0]
-        self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion.")
-        self.assertIsNotNone(req.input_tokens)
-        self.assertIsNotNone(req.output_tokens)
-        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
+    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    def test_team_rate_limit_input_tokens_per_minute(self):
+        """
+        Edits the input_tokens_per_minute of Team 'Whale' to 5, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say hello to the world from the team."}
+        ]
+        self._rate_limit_test_template(
+            kind="team",
+            field="input_tokens_per_minute",
+            value=5,
+            messages=messages,
+            max_tokens=1,
+            limit_desc="team input_tokens_per_minute"
+        )
 
-        # Second request should fail with 429
-        from openai._exceptions import RateLimitError
-
-        with self.assertRaises(RateLimitError) as cm:
-            self.open_ai_client.chat.completions.create(
-                model="Qwen-0.5B",
-                messages=messages,
-                max_tokens=1,
-                temperature=0.0,
-            )
-        err = cm.exception
-        self.assertTrue("429" in str(err) or "rate limit" in str(err).lower())
+    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    def test_user_rate_limit_input_tokens_per_minute(self):
+        """
+        Edits the input_tokens_per_minute of UserProfile for user 'Me' to 5, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say hello to the world from the user."}
+        ]
+        self._rate_limit_test_template(
+            kind="user",
+            field="input_tokens_per_minute",
+            value=5,
+            messages=messages,
+            max_tokens=1,
+            limit_desc="user input_tokens_per_minute"
+        )
 
     @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
     def test_org_rate_limit_output_tokens_per_minute(self):
         """
         Edits the output_tokens_per_minute of Org 'E060' to 5, then makes two requests.
         The second request should raise a 429 HTTP error.
-        After the first request, checks that the database contains one request and the endpoint matches,
-        and input/output tokens are > 0.
         """
-        org = Org.objects.get(name="E060")
-        org.output_tokens_per_minute = 5
-        org.save(update_fields=["output_tokens_per_minute"])
-
-        if not self.open_ai_client:
-            self.skipTest("Skipping test: OpenAI client not available (server setup likely failed).")
-
-        # Clear Request table before test
-        Request.objects.all().delete()
-
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Say something long and verbose about the weather."}
         ]
-
-        # First request should succeed
-        response1 = self.open_ai_client.chat.completions.create(
-            model="Qwen-0.5B",
+        self._rate_limit_test_template(
+            kind="org",
+            field="output_tokens_per_minute",
+            value=5,
             messages=messages,
-            max_tokens=10,  # Should use up the output token budget
-            temperature=0.0,
+            max_tokens=10,
+            limit_desc="org output_tokens_per_minute"
         )
-        self.assertIsNotNone(response1)
-        self.assertTrue(response1.choices)
-        self.assertGreater(len(response1.choices), 0)
 
-        # Check that the database contains one request and endpoint matches
-        requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after first chat completion.")
-        req = requests[0]
-        self.assertIn("chat/completions", req.path, "Request path should be for chat completion.")
-        self.assertIsNotNone(req.input_tokens)
-        self.assertIsNotNone(req.output_tokens)
-        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
+    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    def test_team_rate_limit_output_tokens_per_minute(self):
+        """
+        Edits the output_tokens_per_minute of Team 'Whale' to 5, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say something long and verbose about the weather as a team."}
+        ]
+        self._rate_limit_test_template(
+            kind="team",
+            field="output_tokens_per_minute",
+            value=5,
+            messages=messages,
+            max_tokens=10,
+            limit_desc="team output_tokens_per_minute"
+        )
 
-        # Second request should fail with 429
-        from openai._exceptions import RateLimitError
-
-        with self.assertRaises(RateLimitError) as cm:
-            self.open_ai_client.chat.completions.create(
-                model="Qwen-0.5B",
-                messages=messages,
-                max_tokens=10,
-                temperature=0.0,
-            )
-        err = cm.exception
-        self.assertTrue("429" in str(err) or "rate limit" in str(err).lower())
+    @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+    def test_user_rate_limit_output_tokens_per_minute(self):
+        """
+        Edits the output_tokens_per_minute of UserProfile for user 'Me' to 5, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say something long and verbose about the weather as a user."}
+        ]
+        self._rate_limit_test_template(
+            kind="user",
+            field="output_tokens_per_minute",
+            value=5,
+            messages=messages,
+            max_tokens=10,
+            limit_desc="user output_tokens_per_minute"
+        )

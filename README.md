@@ -34,10 +34,6 @@ If you don’t need user self-service, take a look at [Envoy AI Gateway](https:/
 
 ## 🚀 Getting Started
 
-Aqueduct can be run locally using Docker Compose (recommended) or directly on your machine for development.
-
-### Quick Start (with Docker Compose)
-
 The recommended way to get Aqueduct running locally is with Docker Compose. This will start the Django app, a PostgreSQL database, and a local mock OIDC provider (Dex) for authentication.
 
 1. **Clone the repository**

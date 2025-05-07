@@ -32,6 +32,12 @@ services:
     depends_on:
       - migrate
       - dex
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
 
   db:
     image: postgres:15

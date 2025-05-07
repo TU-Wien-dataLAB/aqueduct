@@ -1,0 +1,20 @@
+name: Aqueduct CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
+  
+  dockerize:
+    needs: test
+    uses: ./.github/workflows/docker.yml
+    secrets: inherit
+  

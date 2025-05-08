@@ -32,7 +32,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           INTEGRATION_TEST_BACKEND: ${{ matrix.backend }}
           START_VLLM_SERVER: ${{ matrix.start }}
-        run: uv run --active python aqueduct/manage.py test gateway
+        run: uv run ${{ matrix.start == 'true' && '--extra vllm' || '' }} python aqueduct/manage.py test gateway
 
   compose:
     runs-on: ubuntu-latest

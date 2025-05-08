@@ -146,9 +146,7 @@ dependencies = [
 postgresql = [
     { name = "psycopg2-binary" },
 ]
-
-[package.dev-dependencies]
-dev = [
+vllm = [
     { name = "vllm" },
 ]
 
@@ -161,12 +159,10 @@ requires-dist = [
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "openai", specifier = ">=1.76.0" },
     { name = "psycopg2-binary", marker = "extra == 'postgresql'", specifier = ">=2.9.10" },
+    { name = "vllm", marker = "extra == 'vllm'", specifier = ">=0.8.4" },
     { name = "whitenoise", specifier = ">=6.9.0" },
 ]
-provides-extras = ["postgresql"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "vllm", specifier = ">=0.8.4" }]
+provides-extras = ["postgresql", "vllm"]
 
 [[package]]
 name = "asgiref"

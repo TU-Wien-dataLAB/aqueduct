@@ -19,7 +19,11 @@ services:
     depends_on:
       - db
     healthcheck:
-      test: [ "NONE" ]
+      test: [ "CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health', timeout=4).raise_for_status()" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 2s
 
   web:
     build: .
@@ -34,6 +38,12 @@ services:
     depends_on:
       - migrate
       - dex
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health', timeout=4).raise_for_status()"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 2s
 
   db:
     image: postgres:15

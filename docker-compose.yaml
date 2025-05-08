@@ -34,10 +34,10 @@ services:
       - dex
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 30s
-      timeout: 10s
+      interval: 5s
+      timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 2s
 
   db:
     image: postgres:15

@@ -30,9 +30,4 @@ WORKDIR /app/aqueduct
 
 EXPOSE 8000
 
-# The timeout for httpx.get() (e.g., 4s) should be less than the HEALTHCHECK --timeout (5s)
-# to allow httpx to handle the timeout gracefully.
-HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 \
-  CMD ["python", "-c", "import httpx; httpx.get('http://localhost:8000/health', timeout=4).raise_for_status()"]
-
 CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "aqueduct.asgi:application"]

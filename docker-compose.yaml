@@ -18,6 +18,8 @@ services:
       - .example.env
     depends_on:
       - db
+    healthcheck:
+      test: [ "NONE" ]
 
   web:
     build: .
@@ -32,12 +34,6 @@ services:
     depends_on:
       - migrate
       - dex
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 2s
 
   db:
     image: postgres:15

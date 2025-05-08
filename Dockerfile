@@ -20,6 +20,12 @@ RUN uv pip install --prefix=/install ".[postgresql]"
 # Final image
 FROM base AS final
 
+# Runtime system deps
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
 # Copy installed Python packages
 COPY --from=builder /install /usr/local
 

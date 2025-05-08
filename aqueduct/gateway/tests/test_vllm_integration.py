@@ -1,7 +1,8 @@
 # tests/test_vllm_integration.py
 import json
+import os
 import sys
-from typing import Optional
+from typing import Optional, Literal
 
 # Third-party imports
 import httpx  # Using httpx instead of requests
@@ -11,8 +12,23 @@ from django.contrib.auth import get_user_model
 from django.test import LiveServerTestCase, Client, override_settings
 from openai import OpenAI
 
+INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get("INTEGRATION_TEST_BACKEND", "vllm")
+if INTEGRATION_TEST_BACKEND not in ["vllm", "openai"]:
+    raise ValueError("Integration test backend must be one of 'vllm' or 'openai‘.")
+
+START_VLLM_SERVER = INTEGRATION_TEST_BACKEND == "vllm" and os.environ.get("START_VLLM_SERVER", "true") == "true"
+
 # --- vLLM Internal Imports ---
-from gateway.tests.utils import RemoteOpenAIServer
+RemoteOpenAIServer = None
+_VLLM_AVAILABLE = False
+if START_VLLM_SERVER:
+    try:
+        from gateway.tests.utils import RemoteOpenAIServer
+
+        _VLLM_AVAILABLE = True
+    except ImportError as e:
+        _VLLM_IMPORT_ERROR = e
+
 # Import Org, Team, UserProfile for direct DB manipulation
 from management.models import Org, Team, Request, UserProfile, ServiceAccount
 
@@ -49,23 +65,23 @@ class VLLMIntegrationTests(LiveServerTestCase):
     """
     Integration tests using the embedded RemoteOpenAIServer (with httpx).
     """
-    vllm_server: Optional[RemoteOpenAIServer] = None
+    vllm_server: Optional["RemoteOpenAIServer"] = None
     client: Optional[Client] = None
     open_ai_client: Optional[OpenAI] = None
-    MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"  # Or any other small model
+    model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "gpt-4o-mini"
 
     # Hash: 750a701272d7624a3e6f10d5e0d9efdf0e2c7e575803219081358db36bfd243a
     # Preview: k-...3abc
     AQUEDUCT_ACCESS_TOKEN = "sk-123abc"
 
     VLLM_SEED = 42
-    fixtures = ["gateway_data.json", "vllm_endpoint.json"]
+    fixtures = ["gateway_data.json", "vllm_endpoint.json", "openai_endpoint.json"]
 
     @classmethod
     def get_client(cls, **kwargs) -> OpenAI:
         if "timeout" not in kwargs:
             kwargs["timeout"] = 600.0  # Use float for httpx compatibility underlying openai client
-        base_url = cls.live_server_url.rstrip("/") + "/vllm"
+        base_url = cls.live_server_url.rstrip("/") + f"/{INTEGRATION_TEST_BACKEND}"
         return OpenAI(
             base_url=base_url,
             api_key=cls.AQUEDUCT_ACCESS_TOKEN,
@@ -77,26 +93,37 @@ class VLLMIntegrationTests(LiveServerTestCase):
     def setUpClass(cls):
         super().setUpClass()
 
-        print(f"\nStarting vLLM server for {cls.__name__}...")
-        try:
-            vllm_args = ["--host", "0.0.0.0", "--port", "8009"]
-            cls.vllm_server = RemoteOpenAIServer(
-                model=cls.MODEL_NAME,
-                vllm_serve_args=vllm_args,
-                seed=cls.VLLM_SEED,
-                auto_port=False,
-                max_wait_seconds=300
-            )
-            print(f"vLLM server started on: {cls.vllm_server.url_root}")
-            cls.open_ai_client = cls.get_client()
-            print("OpenAI client configured.")
+        if INTEGRATION_TEST_BACKEND == "vllm" and START_VLLM_SERVER:
+            if not _VLLM_AVAILABLE:
+                raise RuntimeError(
+                    f"vLLM integration tests require vllm to be installed. "
+                    f"Import error: {_VLLM_IMPORT_ERROR}"
+                )
+            print(f"\nStarting vLLM server for {cls.__name__}...")
+            try:
+                MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"  # Or any other small model
+                vllm_args = ["--host", "0.0.0.0", "--port", "8009"]
+                cls.vllm_server = RemoteOpenAIServer(
+                    model=MODEL_NAME,
+                    vllm_serve_args=vllm_args,
+                    seed=cls.VLLM_SEED,
+                    auto_port=False,
+                    max_wait_seconds=300
+                )
+                print(f"vLLM server started on: {cls.vllm_server.url_root}")
 
-        except (ImportError, RuntimeError, Exception) as e:
-            import traceback
-            traceback.print_exc()  # Print full traceback for setup errors
-            print(f"ERROR starting vLLM server: {e}", file=sys.stderr)
-            cls.vllm_server = None
-            raise AssertionError(f"Failed to set up vLLM server: {e}") from e
+            except (ImportError, RuntimeError, Exception) as e:
+                import traceback
+                traceback.print_exc()  # Print full traceback for setup errors
+                print(f"ERROR starting vLLM server: {e}", file=sys.stderr)
+                cls.vllm_server = None
+                raise AssertionError(f"Failed to set up vLLM server: {e}") from e
+        elif INTEGRATION_TEST_BACKEND == "openai":
+            if not os.environ.get("OPENAI_API_KEY"):
+                raise RuntimeError("OPENAI_API_KEY environment variable has to be set for OpenAI integration.")
+
+        cls.open_ai_client = cls.get_client()
+        print("OpenAI client configured.")
 
     @classmethod
     def tearDownClass(cls):
@@ -119,6 +146,9 @@ class VLLMIntegrationTests(LiveServerTestCase):
 
     def test_vllm_server_is_running(self):
         """Checks if the server setup appears successful using httpx."""
+        if not START_VLLM_SERVER:
+            self.skipTest(reason="No self managed vLLM server.")
+
         self.assertIsNotNone(self.vllm_server, "vLLM server instance should exist (check setUpClass)")
         self.assertTrue(hasattr(self.vllm_server, 'proc'), "vLLM server should have a process attribute")
         self.assertIsNone(self.vllm_server.proc.poll(), "vLLM server process should be running")
@@ -148,7 +178,7 @@ class VLLMIntegrationTests(LiveServerTestCase):
         Request.objects.all().delete()
 
         response = self.open_ai_client.chat.completions.create(
-            model="Qwen-0.5B",
+            model=self.model,
             messages=messages,
             max_tokens=50,
             temperature=0.0,
@@ -205,7 +235,7 @@ class VLLMIntegrationTests(LiveServerTestCase):
         chunks = []
         try:
             stream = self.open_ai_client.chat.completions.create(
-                model="Qwen-0.5B",
+                model=self.model,
                 messages=messages,
                 max_tokens=50,
                 temperature=0.0,
@@ -276,7 +306,7 @@ class VLLMIntegrationTests(LiveServerTestCase):
         # Check that at least one model matches the expected model name
         model_ids = [m.id for m in response.data if hasattr(m, 'id')]
         print(f"Available model IDs: {model_ids}")
-        self.assertIn("Qwen-0.5B", model_ids)
+        self.assertIn(self.model, model_ids)
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
@@ -383,7 +413,7 @@ class VLLMIntegrationTests(LiveServerTestCase):
 
         # First request should succeed
         response1 = self.open_ai_client.chat.completions.create(
-            model="Qwen-0.5B",
+            model=self.model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=0.0,
@@ -408,7 +438,7 @@ class VLLMIntegrationTests(LiveServerTestCase):
 
         with self.assertRaises(RateLimitError) as cm:
             self.open_ai_client.chat.completions.create(
-                model="Qwen-0.5B",
+                model=self.model,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=0.0,

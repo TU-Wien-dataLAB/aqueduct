@@ -20,6 +20,10 @@ jobs:
           python-version-file: ".python-version"
 
       - name: Run Docker
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          INTEGRATION_TEST_BACKEND: vllm
+          START_VLLM_SERVER: false
         run: |
           git clone --depth 1 --branch v0.8.4 https://github.com/vllm-project/vllm.git
           cd vllm
@@ -42,13 +46,9 @@ jobs:
           
           echo -e "\nPrint the vllm container logs\n"
           docker logs vllm
+          
+          uv run --no-dev python aqueduct/manage.py test gateway
 
-      - name: Gateway Tests
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          INTEGRATION_TEST_BACKEND: vllm
-          START_VLLM_SERVER: false
-        run: uv run --active python aqueduct/manage.py test gateway
 
 
   gateway:

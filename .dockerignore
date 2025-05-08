@@ -2,11 +2,21 @@ data
 extensions
 uploads
 .directus-template-cli
-.DS_Store
+**/.DS_Store
 venv
 .idea
 .vscode
 **/fixtures/.*.json
+.git
+.github
+.gitignore
+docs
+Dockerfile
+README.md
+mock-dex-config.yaml
+examples
+docker-compose.yaml
+.example.env
 
 # Created by https://www.toptal.com/developers/gitignore/api/django
 # Edit at https://www.toptal.com/developers/gitignore?templates=django

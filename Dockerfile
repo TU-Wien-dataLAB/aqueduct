@@ -26,6 +26,11 @@ WORKDIR /app/aqueduct
 
 FROM base
 
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
 COPY --from=builder /install /usr/local
 
 # Copy project files

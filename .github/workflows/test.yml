@@ -39,7 +39,6 @@ jobs:
           echo "Loop until the endpoint responds successfully"
           while ! curl --silent --fail --get "http://localhost:8009/ping" >/dev/null; do
             echo "Ping not available yet. Retrying in 5 seconds..."
-            docker logs vllm
             sleep 5
           done
           echo -e "\nPing is now available!\n"
@@ -47,6 +46,7 @@ jobs:
           echo -e "\nPrint the vllm container logs\n"
           docker logs vllm
           
+          cd ..
           uv run --no-dev python aqueduct/manage.py test gateway
 
 

@@ -64,17 +64,17 @@
                         <img src="{% static 'icons/user-circle.svg' %}" alt="User" class="w-4 h-4 [[data-theme=dark]_&]:invert" />
                     </div>
                 </summary>
-                <ul class="menu dropdown-content z-10 mt-5 w-65 p-2 shadow bg-base-100 rounded-box flex flex-col gap-1">
-                    <li class="px-2 py-1 text-sm font-medium text-center cursor-default select-text break-words max-w-full">
+                <div class="dropdown-content z-10 mt-5 w-65 p-2 shadow bg-base-100 rounded-box flex flex-col gap-2 min-w-[12rem]">
+                    <div class="px-2 py-1 text-sm font-medium text-center cursor-default select-text break-words max-w-full">
                         <span style="word-break: break-all;">{{ user.email }}</span>
-                    </li>
-                    <li>
+                    </div>
+                    <div>
                         <form action="{% url 'oidc_logout' %}" method="post">
                             {% csrf_token %}
                             <button type="submit" class="btn btn-error btn-sm w-full">Logout</button>
                         </form>
-                    </li>
-                </ul>
+                    </div>
+                </div>
             </details>
         {% endif %}
     </div>

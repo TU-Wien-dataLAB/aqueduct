@@ -1,5 +1,6 @@
 from django import forms
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 from .models import Team, ServiceAccount, Token
 from django.conf import settings
@@ -113,12 +114,17 @@ class TeamCreateForm(forms.ModelForm):
 class TokenCreateForm(forms.ModelForm):
     class Meta:
         model = Token
-        fields = ['name']  # Only allow user to set the name
+        fields = ['name', 'expires_at']
         widgets = {
             'name': forms.TextInput(attrs={'placeholder': 'Enter token name'}),
+            'expires_at': forms.DateTimeInput(
+                attrs={'type': 'datetime-local', 'class': 'input'},
+                format='%Y-%m-%dT%H:%M'
+            ),
         }
         labels = {
             'name': 'Token Name',
+            'expires_at': 'Expiration Date (optional)',
         }
 
     def __init__(self, *args, **kwargs):
@@ -126,6 +132,7 @@ class TokenCreateForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if not self.user:
             raise ValueError("User must be provided to TokenCreateForm.")
+        self.fields['expires_at'].input_formats = ['%Y-%m-%dT%H:%M']
 
     def clean(self):
         cleaned_data = super().clean()
@@ -136,4 +143,10 @@ class TokenCreateForm(forms.ModelForm):
             token_count = token_count.exclude(pk=self.instance.pk)
         if token_count.count() >= max_tokens:
             raise ValidationError(f"You can only have {max_tokens} tokens.")
+        
+        expires_at = cleaned_data.get('expires_at')
+        if expires_at:
+            if expires_at <= timezone.now():
+                self.add_error('expires_at', "Expiration date must be in the future.")
+
         return cleaned_data

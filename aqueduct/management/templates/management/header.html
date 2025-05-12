@@ -58,13 +58,13 @@
                 <img src="{% static 'icons/sun.svg' %}" alt="Light mode" class="swap-off w-4 h-4 [[data-theme=dark]_&]:invert" />
                 <img src="{% static 'icons/moon.svg' %}" alt="Dark mode" class="swap-on w-4 h-4 [[data-theme=dark]_&]:invert" />
             </label>
-            <div class="dropdown dropdown-end ml-2">
-                <label class="btn btn-ghost btn-circle avatar">
+            <details class="dropdown dropdown-end ml-2">
+                <summary class="btn btn-ghost btn-circle avatar list-none flex items-center justify-center">
                     <div class="w-7 rounded-full bg-base-200 flex items-center justify-center">
                         <img src="{% static 'icons/user-circle.svg' %}" alt="User" class="w-4 h-4 [[data-theme=dark]_&]:invert" />
                     </div>
-                </label>
-                <ul class="dropdown-content z-10 mt-5 w-65 p-2 shadow bg-base-100 rounded-box flex flex-col gap-1">
+                </summary>
+                <ul class="menu dropdown-content z-10 mt-5 w-65 p-2 shadow bg-base-100 rounded-box flex flex-col gap-1">
                     <li class="px-2 py-1 text-sm font-medium text-center cursor-default select-text break-words max-w-full">
                         <span style="word-break: break-all;">{{ user.email }}</span>
                     </li>
@@ -75,7 +75,7 @@
                         </form>
                     </li>
                 </ul>
-            </div>
+            </details>
         {% endif %}
     </div>
 </header>

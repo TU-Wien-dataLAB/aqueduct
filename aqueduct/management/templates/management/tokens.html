@@ -24,6 +24,19 @@
                             <span class="text-sm opacity-50 flex-shrink-0 ml-2">
                                 Token: <span class="font-mono text-xs">{{ token.key_preview }}</span>
                             </span>
+                            <span class="text-sm opacity-50 flex-shrink-0 ml-2">
+                                {% if token.expires_at %}
+                                    Expires: 
+                                    <span {% if token.expires_at <= now %}class="text-error font-semibold"{% endif %}>
+                                        {{ token.expires_at|date:"Y-m-d H:i" }} {{ tz |default:'UTC' }}
+                                        {% if token.is_expired %}
+                                            (Expired)
+                                        {% endif %}
+                                    </span>
+                                {% else %}
+                                    Expires: Never
+                                {% endif %}
+                            </span>
                         </div>
                         <div class="flex items-center space-x-2 flex-shrink-0">
                             <form action="{% url 'token_regenerate' token.id %}" method="post" class="inline">

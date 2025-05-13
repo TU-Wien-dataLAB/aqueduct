@@ -338,6 +338,10 @@ class Token(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)  # Optional expiry
 
+    @property
+    def is_expired(self):
+        return self.expires_at is not None and self.expires_at <= timezone.now()
+
     # The clean method checking for self.user is implicitly handled by the ForeignKey
     # unless null=True is added to the user field, which doesn't seem intended here.
 

@@ -5,7 +5,7 @@
     <div class="max-w-lg mx-auto mt-8"> {# Center content, limit width #}
         <h1 class="text-3xl font-bold mb-6">{{ view_title|default:"Create Token" }}</h1> {# Use title from context #}
 
-        <form method="post" class="card bg-base-100 shadow-xl">
+        <form id="token-create-form" method="post" class="card bg-base-100 shadow-xl">
             {% csrf_token %} {# Important for security #}
 
             <div class="card-body">
@@ -83,4 +83,22 @@
             {# End card-body #}
         </form>
     </div>
+
+    <script>
+      // Helper to zero-pad numbers for date/time formatting
+      const pad = (num) => num.toString().padStart(2, '0');
+
+      document.addEventListener('DOMContentLoaded', function () {
+        const input = document.getElementById('{{ form.expires_at.id_for_label }}');
+        const serverNowUtc = new Date("{{ now }}Z"); // {{ now }} should be like "YYYY-MM-DDTHH:MM:SS"
+        input.min = `${serverNowUtc.getFullYear()}-${pad(serverNowUtc.getMonth() + 1)}-${pad(serverNowUtc.getDate())}T${pad(serverNowUtc.getHours())}:${pad(serverNowUtc.getMinutes())}`;
+      });
+
+      document.getElementById('token-create-form').addEventListener('submit', function (e) {
+        const input = document.getElementById('{{ form.expires_at.id_for_label }}');
+        const localDate = new Date(input.value); // input.value is "YYYY-MM-DDTHH:MM" (local)
+        input.value = localDate.toISOString().slice(0, 16);
+      });
+    </script>
+
 {% endblock %} 

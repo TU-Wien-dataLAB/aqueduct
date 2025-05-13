@@ -1,3 +1,6 @@
+from django.conf import settings
+from django.utils import timezone
+
 from .base import BaseAqueductView
 from django.views.generic import TemplateView, CreateView, DeleteView
 from ..models import Token, ServiceAccount
@@ -75,6 +78,10 @@ class TokenCreateView(BaseAqueductView, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['view_title'] = 'Create New Token'
+
+        now = timezone.now().replace(second=0, microsecond=0)
+        context['now'] = now.strftime('%Y-%m-%dT%H:%M')
+        context['tz'] = settings.TIME_ZONE
         return context
 
 class TokenDeleteView(BaseAqueductView, DeleteView):

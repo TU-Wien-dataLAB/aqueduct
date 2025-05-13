@@ -12,11 +12,11 @@ nav_order: 5
 {: .no_toc .text-delta }
 
 1. TOC
-   {:toc}
+{:toc}
 
 ---
 
-# OpenAI SDK Chat Completion
+## OpenAI SDK Chat Completion
 
 Aqueduct supports OpenAI-compatible APIs. You can use the official OpenAI Python SDK to interact with Aqueduct
 endpoints. Below is an example of how to make a call using your Aqueduct token:

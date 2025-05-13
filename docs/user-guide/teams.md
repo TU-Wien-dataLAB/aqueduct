@@ -5,6 +5,7 @@ nav_order: 2
 ---
 
 # Teams
+{: .no_toc }
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -13,6 +14,8 @@ nav_order: 2
 {:toc}
 
 ---
+
+## Teams View
 
 The Teams page displays a list of teams within the organization.
 

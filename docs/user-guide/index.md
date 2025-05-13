@@ -5,9 +5,6 @@ nav_order: 3
 
 # User Guide
 
-## Table of Contents
-{: .no_toc .text-delta }
-
 The main sections of the Aqueduct AI Gateway are the Tokens page, Teams page, Models page, and the Admin Panel.
 
 The Tokens page allows users to manage tokens. The Teams page provides functionality to view and manage teams. The

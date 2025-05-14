@@ -54,5 +54,5 @@ You can also edit service accounts to change their name and description.
 Below the service accounts list, you’ll see the team members. Each member has a tag indicating their permissions (User,
 Team-Admin, Org-Admin, or Admin). If you are a Team-Admin, you can promote standard users to Team-Admin. If you do not have any service accounts, you can be removed from the team.
 
-If you are not part of a team, you can be added using the "Add Users to Team" function. Any user in the organization can
+If a user is not part of a team, they can be added using the "Add Users to Team" function. Any user in the organization can
 be added to a team.

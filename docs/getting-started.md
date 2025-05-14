@@ -4,6 +4,15 @@ nav_order: 2
 ---
 
 # Getting Started
+{: .no_toc }
+
+## Table of contents
+{: .no_toc .text-delta }
+
+1. TOC
+{:toc}
+
+---
 
 Welcome! This guide will help you get up and running with the Aqueduct AI Gateway project.
 
@@ -65,6 +74,6 @@ If you prefer to run Aqueduct directly on your machine (for development), you ca
    uv run aqueduct/manage.py runserver
    ```
 
-_Note: You will need to have Dex running locally, or adjust your environment variables accordingly._
+_Note: You will need to have Dex running locally, or adjust your environment variables accordingly to use an existing OIDC provider._
 
 ---

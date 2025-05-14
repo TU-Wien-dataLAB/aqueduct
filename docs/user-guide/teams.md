@@ -51,8 +51,9 @@ account, you cannot be removed from the team.
 You can regenerate service account tokens, and you can delete service accounts, which also deletes the associated token.
 You can also edit service accounts to change their name and description.
 
+![Team Admins](../assets/user_guide/team_admin.png)
+
 Below the service accounts list, you’ll see the team members. Each member has a tag indicating their permissions (User,
 Team-Admin, Org-Admin, or Admin). If you are a Team-Admin, you can promote standard users to Team-Admin. If you do not have any service accounts, you can be removed from the team.
 
-If a user is not part of a team, they can be added using the "Add Users to Team" function. Any user in the organization can
-be added to a team.
+If a user is not part of a team, they can be added using the "Add Users to Team" list. Any user in the organization can be added to a team.

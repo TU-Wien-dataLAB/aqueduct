@@ -91,6 +91,7 @@ AI gateway. The implementation follows a phased approach:
    * A `/metrics` endpoint for monitoring.
    * Dashboard to track usage of orgs, teams and users.
    * Support more providers on top of vLLM/OpenAI-compatible APIs.
+   * Support users belonging to multiple `Orgs`
    * Implement [Guardrails](https://github.com/guardrails-ai/guardrails) using post-processing on completions. 
    * Model cooldown and retry logic.
    * Granular access control for models within teams.

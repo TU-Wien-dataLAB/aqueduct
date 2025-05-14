@@ -43,6 +43,23 @@ database, and a local mock OIDC provider (Dex) for authentication.
 
 You can now access the admin UI and start exploring the gateway features.
 
+To use an actual provider, you can run vLLM locally on your machine, e.g. with:
+
+```bash
+vllm serve Qwen/Qwen2.5-0.5B-Instruct -p 8001
+```
+
+For more information, follow the [Quickstart](https://docs.vllm.ai/en/stable/getting_started/quickstart.html) guide on vLLM.
+
+Then follow the [User Guide](user-guide/models.md) to create an Endpoint with the (internal URL `http://host.docker.internal:8001/v1` and add the model with the name `Qwen/Qwen2.5-0.5B-Instruct` and a display name of your choosing.
+
+You can then create a token and run the examples in the [User Guide](user-guide/examples.md), for example:
+
+```bash
+curl http://localhost:8000/vllm/models \
+  -H "Authorization: Bearer YOUR_AQUEDUCT_TOKEN"
+```
+
 ---
 
 ## Local Setup (with `uv`)

@@ -19,5 +19,5 @@ postgresql = [
     "psycopg2-binary>=2.9.10",
 ]
 vllm = [
-    "vllm>=0.8.4",
+    "vllm==0.8.4",
 ]

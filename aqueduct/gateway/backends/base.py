@@ -32,8 +32,9 @@ class MutableRequest:
     url: str
     headers: dict | None = None,
     json: dict[str, Any] | None = None
+    timeout: float | None = 60
 
-    def build(self, client: httpx.Client | httpx.AsyncClient) -> httpx.Request:
+    def build(self, client: httpx.AsyncClient) -> httpx.Request:
         new_body_bytes = json.dumps(self.json).encode('utf-8')
 
         # Create a new httpx.Request with updated content and headers
@@ -46,6 +47,7 @@ class MutableRequest:
             url=self.url,
             headers=self.headers,
             json=self.json,
+            timeout=self.timeout,
         )
 
 
@@ -66,8 +68,7 @@ class AIGatewayBackend(abc.ABC):
     request_log: Request
     relay_request: httpx.Request
 
-    def __init__(self, request: HttpRequest, endpoint: Endpoint, sync_client: httpx.Client,
-                 async_client: httpx.AsyncClient):
+    def __init__(self, request: HttpRequest, endpoint: Endpoint, async_client: httpx.AsyncClient):
         """
         Initializes the backend instance, resolves the Model and Token,
         creates the initial Request log entry, prepares the relay request,
@@ -87,7 +88,6 @@ class AIGatewayBackend(abc.ABC):
             raise ValueError("AIGatewayBackend requires a valid HttpRequest and Endpoint for initialization.")
         self.request: HttpRequest = request
         self.endpoint: Endpoint = endpoint
-        self.sync_client = sync_client
         self.async_client = async_client
 
     async def initialize(self):
@@ -254,7 +254,7 @@ class AIGatewayBackend(abc.ABC):
         logger.debug(f"Prepared initial relay request: {request_object.method} {request_object.url}")
         return request_object
 
-    def _send_relay_request(self, timeout: int) -> Tuple[HttpResponse, Optional[int]]:
+    async def _send_relay_request(self, timeout: int) -> Tuple[HttpResponse, Optional[int]]:
         """
         Sends the prepared relay request using httpx, handles exceptions,
         and creates the initial Django HttpResponse.
@@ -274,7 +274,7 @@ class AIGatewayBackend(abc.ABC):
         try:
             # Use httpx.Client for synchronous requests
             # Send the prepared httpx.Request object
-            relayed_response = self.sync_client.send(self.relay_request.build(self.sync_client))
+            relayed_response = await self.async_client.send(self.relay_request.build(self.async_client))
             relayed_response.read()
 
             # Relay successful (even if target returned 4xx/5xx)
@@ -367,7 +367,7 @@ class AIGatewayBackend(abc.ABC):
 
         return django_response
 
-    async def request_sync(self, timeout: int = 60) -> HttpResponse:
+    async def request_non_streaming(self, timeout: int = 60) -> HttpResponse:
         """
         Synchronously sends the prepared relay request, processes the response,
         runs post-processing, and logs the outcome.
@@ -389,7 +389,7 @@ class AIGatewayBackend(abc.ABC):
 
         try:
             # Step 1: Send relay request & get initial Django response (handles relay errors internally)
-            initial_django_response, duration_ms = self._send_relay_request(timeout)
+            initial_django_response, duration_ms = await self._send_relay_request(timeout)
             response_time_ms = duration_ms  # Store duration
             logger.debug(
                 f"_send_relay_request completed. Initial Status: {initial_django_response.status_code}, Time: {response_time_ms}ms")

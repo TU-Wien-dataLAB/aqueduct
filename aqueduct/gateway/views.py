@@ -16,7 +16,6 @@ from management.models import Request, Token, Endpoint, EndpointBackend
 
 logger = logging.getLogger(__name__)
 
-sync_client = httpx.Client(timeout=60, follow_redirects=True)
 async_client = httpx.AsyncClient(timeout=60, follow_redirects=True)
 
 # --- Backend Dispatcher ---
@@ -98,7 +97,7 @@ async def ai_gateway_view(request: HttpRequest, *args, **kwargs):
         # - Resolving model (raises Http404)
         # - Preparing relay request
         # - Running pre-processing (raises BackendProcessingError or PreProcessingPipelineError)
-        backend: AIGatewayBackend = backend_class(request, endpoint, sync_client, async_client)
+        backend: AIGatewayBackend = backend_class(request, endpoint, async_client)
         await backend.initialize()
 
     except Http404 as e:
@@ -113,6 +112,6 @@ async def ai_gateway_view(request: HttpRequest, *args, **kwargs):
     if backend.is_streaming_request():
         response = await backend.request_streaming()
     else:
-        response = await backend.request_sync()
+        response = await backend.request_non_streaming()
 
     return response

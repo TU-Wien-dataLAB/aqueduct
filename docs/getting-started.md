@@ -43,6 +43,8 @@ database, and a local mock OIDC provider (Dex) for authentication.
 
 You can now access the admin UI and start exploring the gateway features.
 
+### Starting vLLM
+
 To use an actual provider, you can run vLLM locally on your machine, e.g. with:
 
 ```bash

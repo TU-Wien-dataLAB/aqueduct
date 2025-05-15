@@ -2,6 +2,7 @@
 import httpx
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib import auth
+from django.core.handlers.asgi import ASGIRequest
 from django.http import HttpResponse, JsonResponse, HttpRequest, Http404
 from django.views.decorators.csrf import csrf_exempt
 import logging
@@ -57,7 +58,7 @@ async def get_endpoint(request: HttpRequest, **kwargs) -> Endpoint:
 
 
 @csrf_exempt
-async def ai_gateway_view(request: HttpRequest, *args, **kwargs):
+async def ai_gateway_view(request: ASGIRequest, *args, **kwargs):
     """
     Functional view for AI Gateway endpoint.
     Handles:
@@ -69,10 +70,12 @@ async def ai_gateway_view(request: HttpRequest, *args, **kwargs):
     6. Returning the response from the target or an error response.
     """
     # 1. Authentication Check
-    if not getattr(request, "user", None) or not request.user.is_authenticated:
+    if not (await request.auser()).is_authenticated:
         user = await auth.aauthenticate(request=request)
         if user is not None:
             request.user = user  # Manually assign user
+    else:
+        request.user = await request.auser()
 
     if not getattr(request, "user", None) or not request.user.is_authenticated:
         logger.warning("Authentication check failed in ai_gateway_view: request.user is not authenticated.")

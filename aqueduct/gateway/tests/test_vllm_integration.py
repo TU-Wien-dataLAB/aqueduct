@@ -6,11 +6,11 @@ from typing import Optional, Literal
 
 # Third-party imports
 import httpx  # Using httpx instead of requests
-from asgiref.sync import async_to_sync
+from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
 # Django specific imports
 from django.test import TransactionTestCase, Client, override_settings
-from openai.types.chat import ChatCompletion  # Use OpenAI types for response parsing
+from openai.types.chat import ChatCompletion, ChatCompletionChunk  # Use OpenAI types for response parsing
 import functools
 
 
@@ -21,11 +21,13 @@ def reset_gateway_httpx_async_client(test_func):
     For each test requiring a relay request, the async client, therefore, has to be reset.
     See: https://github.com/encode/httpx/discussions/2959
     """
+
     @functools.wraps(test_func)
     def wrapper(self, *args, **kwargs):
         import gateway.views
         gateway.views.async_client = httpx.AsyncClient(timeout=60, follow_redirects=True)
         return test_func(self, *args, **kwargs)
+
     return wrapper
 
 
@@ -54,28 +56,6 @@ User = get_user_model()
 
 # --- Django Test Class ---
 
-# Define this as a standalone async function or a staticmethod
-async def parse_streamed_data(streaming_content):
-    lines = []
-    try:
-        async for chunk in streaming_content:  # This is where the error likely occurs
-            if isinstance(chunk, bytes):
-                chunk = chunk.decode("utf-8")
-            for line in chunk.splitlines():
-                if line.strip() and line.startswith("data:"):
-                    lines.append(line)
-    except RuntimeError as e:
-        if "Event loop is closed" in str(e):
-            print("RuntimeError: Event loop is closed encountered inside parse_streamed_data's async for loop.")
-            # Potentially add more context here, like what lines have been collected so far
-            print(f"Lines collected before error: {lines}")
-        raise  # Re-raise the exception to fail the test
-    except Exception as e:
-        print(f"Unexpected error during streaming content parsing: {e}")
-        print(f"Lines collected before error: {lines}")
-        raise
-    return lines
-
 
 @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
 class VLLMIntegrationTests(TransactionTestCase):
@@ -88,7 +68,7 @@ class VLLMIntegrationTests(TransactionTestCase):
     # Hash: 750a701272d7624a3e6f10d5e0d9efdf0e2c7e575803219081358db36bfd243a
     # Preview: k-...3abc
     AQUEDUCT_ACCESS_TOKEN = "sk-123abc"
-    AQUEDUCT_ENDPOINT = "vllm"
+    AQUEDUCT_ENDPOINT = "vllm" if INTEGRATION_TEST_BACKEND == "vllm" else "openai"
 
     VLLM_SEED = 42
     fixtures = ["gateway_data.json", "vllm_endpoint.json", "openai_endpoint.json"]
@@ -232,13 +212,14 @@ class VLLMIntegrationTests(TransactionTestCase):
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
     @reset_gateway_httpx_async_client
-    def test_chat_completion_streaming(self):
+    @async_to_sync
+    async def test_chat_completion_streaming(self):
         """
         Sends a streaming chat completion request to the vLLM server using the Django test client.
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
-        self.skipTest(reason="Have to figure out how to run streaming requests without event loop closing to read response.")
+        # reset_gateway_httpx_async_client(lambda: None)
 
         # Use Django's test client to POST to the chat completion endpoint with stream=True
         messages = [
@@ -247,7 +228,9 @@ class VLLMIntegrationTests(TransactionTestCase):
         ]
 
         # Clear Request table before test
-        Request.objects.all().delete()
+        await Request.objects.all().adelete()
+        # For some reason authentication does not work in async test case...
+        await sync_to_async(lambda: self.async_client.force_login(User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
 
         # Prepare headers and payload
         headers = {
@@ -262,8 +245,8 @@ class VLLMIntegrationTests(TransactionTestCase):
             "stream": True,
         }
 
-        # POST to the OpenAI-compatible endpoint (streaming)
-        response = self.client.post(
+        # POST to the OpenAI-compatible endpoint (streaming) using self.async_client
+        response = await self.async_client.post(
             f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
             data=json.dumps(payload),
             content_type="application/json",
@@ -276,20 +259,17 @@ class VLLMIntegrationTests(TransactionTestCase):
         # Collect all streamed chunks (each line is a data: ... event)
         streamed_lines = []
 
-        async def consume_streaming_content():
-            async for chunk in response.streaming_content:
-                # chunk may be bytes, decode if needed
-                if isinstance(chunk, bytes):
-                    chunk = chunk.decode("utf-8")
-                for line in chunk.splitlines():
-                    line = line.strip()
-                    if line.startswith("data: "):
-                        data = line[len("data: "):]
-                        if data == "[DONE]":
-                            continue
-                        streamed_lines.append(data)
-
-        async_to_sync(consume_streaming_content)()
+        async for chunk in response.streaming_content:
+            # chunk may be bytes, decode if needed
+            if isinstance(chunk, bytes):
+                chunk = chunk.decode("utf-8")
+            for line in chunk.splitlines():
+                line = line.strip()
+                if line.startswith("data: "):
+                    data = line[len("data: "):]
+                    if data == "[DONE]":
+                        continue
+                    streamed_lines.append(data)
 
         self.assertGreater(len(streamed_lines), 0, "Should receive at least one streamed data chunk.")
 
@@ -297,22 +277,23 @@ class VLLMIntegrationTests(TransactionTestCase):
         content_pieces = []
         for data in streamed_lines:
             try:
-                chunk_json = json.loads(data)
+                # Use OpenAI's ChatCompletionChunk for validation and parsing
+                chunk = ChatCompletionChunk.model_validate(json.loads(data))
             except Exception as e:
-                self.fail(f"Failed to parse streamed chunk as JSON: {data} ({e})")
-            # OpenAI streaming: chunk_json['choices'][0]['delta']['content']
-            choices = chunk_json.get("choices", [])
+                self.fail(f"Failed to parse streamed chunk as ChatCompletionChunk: {data} ({e})")
+            # OpenAI streaming: chunk.choices[0].delta.content
+            choices = chunk.choices
             if choices:
-                delta = choices[0].get("delta", {})
-                piece = delta.get("content")
+                delta = choices[0].delta
+                piece = getattr(delta, "content", None)
                 if piece:
                     content_pieces.append(piece)
         full_content = "".join(content_pieces).strip()
         print(f"Full streamed content: {full_content}")
-        self.assertTrue(full_content, "Streamed content should not be empty.")
+        self.assertTrue(full_content, "Streamed content should not be empty.")  
 
         # Check that the database contains one request and endpoint matches
-        requests = list(Request.objects.all())
+        requests = await sync_to_async(lambda: list(Request.objects.all()))()
         self.assertEqual(len(requests), 1, "There should be exactly one request after streaming chat completion.")
         req = requests[0]
         self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion (streaming).")

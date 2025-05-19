@@ -69,5 +69,21 @@ class OIDCBackend(OIDCAuthenticationBackend):
             user.profile.org = org
             user.profile.save()
 
+        # Check if user is admin
+        if hasattr(settings, 'ADMIN_GROUP'):
+            is_admin = settings.ADMIN_GROUP in groups
+        else:
+            is_admin = False
+
+        if is_admin:
+            user.profile.group = "admin"
+        elif user.is_superuser:
+            # If user was admin make them "user"
+            user.profile.group = "user"
+
+        user.is_staff = is_admin
+        user.is_superuser = is_admin
+        user.save()
+        user.profile.save()
 
         return user

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-settings
+data:
+  settings.py: |
+    {{ .Files.Get "files/settings.py" | nindent 4 }}
+    {{ .Values.settingsPy.extra | nindent 4 }}
+    {{- if .Values.ingress.enabled }}
+    ALLOWED_HOSTS = [{{ .Values.ingress.host | quote }}]
+    {{- if .Values.ingress.tls  }}
+    SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
+    {{- end}}
+    {{- end}}

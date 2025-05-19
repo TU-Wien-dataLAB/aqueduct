@@ -1,0 +1,74 @@
+global:
+  postgresql:
+    fullnameOverride: "postgresql"
+    auth:
+      username: aqueduct
+      password: aqueduct
+      database: aqueduct
+      # existingSecret: ""
+      # secretKeys:
+      #   adminPasswordKey: ""
+      #   userPasswordKey: ""
+      #   replicationPasswordKey: ""
+    service:
+      ports:
+        postgresql: "5432"
+
+image:
+  repository: ghcr.io/tu-wien-datalab/aqueduct
+  tag: latest
+  pullPolicy: IfNotPresent
+
+djangoSecretKey:
+    value: ""
+    valueFrom:
+      secretKeyRef:
+        name: ""
+        key: ""
+
+oidc:
+  signAlgo: "RS256"
+  jwksEndpoint: ""
+  authorizationEndpoint: ""
+  tokenEndpoint: ""
+  userEndpoint: ""
+  clientId: "" # If using direct value
+  clientSecret: "" # If using direct value
+  # existingSecret: "" # Uncomment to use a secret
+  # secretKeys:
+  #   clientIdKey: ""
+  #   clientSecretKey: ""
+
+env:
+  - name: DATABASE_ENGINE
+    value: "django.db.backends.postgresql"
+  # - name: DATABASE_ENGINE
+  #   value: "django.db.backends.sqlite3"
+
+settingsPy:
+  extra: |
+    # You can add/override settings here
+    # OIDC_DEFAULT_GROUPS = ["default"]
+    # ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
+    # ADMIN_GROUP = "default"
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: { }
+  host: chart-example.local
+  path: /
+  pathType: Prefix
+  tls: false
+  tlsSecretName: ""
+
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi

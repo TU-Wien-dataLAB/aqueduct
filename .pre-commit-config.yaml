@@ -1,0 +1,12 @@
+# .pre-commit-config.yaml
+repos:
+-   repo: local
+    hooks:
+    -   id: copy-aqueduct-settings
+        name: Copy aqueduct settings to charts destination
+        language: system
+        entry: sh -c 'cp aqueduct/aqueduct/settings.py charts/aqueduct/files/settings.py && git add charts/aqueduct/files/settings.py'
+        # This regex ensures the hook runs if the source file is part of the commit.
+        files: ^aqueduct/aqueduct/settings\.py$
+        stages: [pre-commit]
+        pass_filenames: false # The script doesn't use passed filenames

@@ -21,3 +21,8 @@ postgresql = [
 vllm = [
     "vllm==0.8.4",
 ]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.2.0",
+]

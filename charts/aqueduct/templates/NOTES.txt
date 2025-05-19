@@ -1,0 +1,12 @@
+1. Create a secret with your sensitive values before installing the chart:
+
+kubectl create secret generic aqueduct-secrets \
+  --from-literal=SECRET_KEY=your-secret-key \
+  --from-literal=OIDC_RP_CLIENT_SECRET=your-oidc-secret \
+  # ... add all other secrets
+
+2. Install the chart:
+
+helm install aqueduct ./aqueduct-chart
+
+3. To override settings, edit values.yaml or use --set.

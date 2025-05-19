@@ -1,0 +1,153 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [ "python", "manage.py", "migrate" ]
+          env:
+            {{ toYaml .Values.env | nindent 12 }}
+            - name: DJANGO_DEBUG
+              value: "False"
+            - name: SECRET_KEY
+              {{- if .Values.djangoSecretKey.value }}
+              value: {{ .Values.djangoSecretKey.value }}
+              {{- else }}
+              valueFrom:
+              {{ toYaml .Values.djangoSecretKey.valueFrom | nindent 16 }}
+              {{- end }}
+            # Postgres configuration
+            - name: POSTGRES_DB
+              value: {{ .Values.global.postgresql.auth.database }}
+            - name: POSTGRES_USER
+              value: {{ .Values.global.postgresql.auth.username }}
+            {{- if .Values.global.postgresql.auth.existingSecret }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.postgresql.auth.existingSecret }}
+                  key: {{ .Values.global.postgresql.auth.secretKeys.userPasswordKey | default "password" }}
+            {{- else }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.global.postgresql.auth.password | quote }}
+            {{- end }}
+            - name: POSTGRES_HOST
+              value: {{ .Values.global.postgresql.fullnameOverride }}
+            - name: POSTGRES_PORT
+              value: "{{ .Values.global.postgresql.service.ports.postgresql }}"
+            # OIDC configuration
+            - name: OIDC_RP_SIGN_ALGO
+              value: {{ .Values.oidc.signAlgo | quote }}
+            - name: OIDC_OP_JWKS_ENDPOINT
+              value: {{ .Values.oidc.jwksEndpoint | quote }}
+            - name: OIDC_OP_AUTHORIZATION_ENDPOINT
+              value: {{ .Values.oidc.authorizationEndpoint | quote }}
+            - name: OIDC_OP_TOKEN_ENDPOINT
+              value: {{ .Values.oidc.tokenEndpoint | quote }}
+            - name: OIDC_OP_USER_ENDPOINT
+              value: {{ .Values.oidc.userEndpoint | quote }}
+            {{- if .Values.oidc.existingSecret }}
+            - name: OIDC_RP_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.existingSecret }}
+                  key: {{ .Values.oidc.secretKeys.clientIdKey | default "clientId" }}
+            - name: OIDC_RP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.existingSecret }}
+                  key: {{ .Values.oidc.secretKeys.clientSecretKey | default "clientSecret" }}
+            {{- else }}
+            - name: OIDC_RP_CLIENT_ID
+              value: {{ .Values.oidc.clientId | quote }}
+            - name: OIDC_RP_CLIENT_SECRET
+              value: {{ .Values.oidc.clientSecret | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: settings-py
+              mountPath: /app/aqueduct/aqueduct/settings.py
+              subPath: settings.py
+      containers:
+        - name: django
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            {{ toYaml .Values.env | nindent 12 }}
+            - name: DJANGO_DEBUG
+              value: "False"
+            - name: SECRET_KEY
+              {{- if .Values.djangoSecretKey.value }}
+              value: {{ .Values.djangoSecretKey.value }}
+              {{- else }}
+              valueFrom:
+              {{ toYaml .Values.djangoSecretKey.valueFrom | nindent 16 }}
+              {{- end }}
+            # Postgres configuration
+            - name: POSTGRES_DB
+              value: {{ .Values.global.postgresql.auth.database }}
+            - name: POSTGRES_USER
+              value: {{ .Values.global.postgresql.auth.username }}
+            {{- if .Values.global.postgresql.auth.existingSecret }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.postgresql.auth.existingSecret }}
+                  key: {{ .Values.global.postgresql.auth.secretKeys.userPasswordKey | default "password" }}
+            {{- else }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.global.postgresql.auth.password | quote }}
+            {{- end }}
+            - name: POSTGRES_HOST
+              value: {{ .Values.global.postgresql.fullnameOverride }}
+            - name: POSTGRES_PORT
+              value: "{{ .Values.global.postgresql.service.ports.postgresql }}"
+            # OIDC configuration
+            - name: OIDC_RP_SIGN_ALGO
+              value: {{ .Values.oidc.signAlgo | quote }}
+            - name: OIDC_OP_JWKS_ENDPOINT
+              value: {{ .Values.oidc.jwksEndpoint | quote }}
+            - name: OIDC_OP_AUTHORIZATION_ENDPOINT
+              value: {{ .Values.oidc.authorizationEndpoint | quote }}
+            - name: OIDC_OP_TOKEN_ENDPOINT
+              value: {{ .Values.oidc.tokenEndpoint | quote }}
+            - name: OIDC_OP_USER_ENDPOINT
+              value: {{ .Values.oidc.userEndpoint | quote }}
+            {{- if .Values.oidc.existingSecret }}
+            - name: OIDC_RP_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.existingSecret }}
+                  key: {{ .Values.oidc.secretKeys.clientIdKey | default "clientId" }}
+            - name: OIDC_RP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.existingSecret }}
+                  key: {{ .Values.oidc.secretKeys.clientSecretKey | default "clientSecret" }}
+            {{- else }}
+            - name: OIDC_RP_CLIENT_ID
+              value: {{ .Values.oidc.clientId | quote }}
+            - name: OIDC_RP_CLIENT_SECRET
+              value: {{ .Values.oidc.clientSecret | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: settings-py
+              mountPath: /app/aqueduct/aqueduct/settings.py
+              subPath: settings.py
+      volumes:
+        - name: settings-py
+          configMap:
+            name: {{ .Release.Name }}-settings

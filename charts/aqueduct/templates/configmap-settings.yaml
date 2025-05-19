@@ -8,6 +8,7 @@ data:
     {{ .Values.settingsPy.extra | nindent 4 }}
     {{- if .Values.ingress.enabled }}
     ALLOWED_HOSTS = [{{ .Values.ingress.host | quote }}]
+    SESSION_COOKIE_DOMAIN = "{{ .Values.ingress.host }}"
     {{- if .Values.ingress.tls  }}
     SECURE_SSL_REDIRECT = True
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

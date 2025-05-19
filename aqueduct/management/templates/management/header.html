@@ -30,12 +30,14 @@
                         Models
                     </a>
                 </li>
+                {% if user.is_superuser %}
                 <li>
                     <a href="{% url 'admin:index' %}" tabindex="4" class="btn btn-sm btn-ghost flex items-center gap-1">
                         <img src="{% static 'icons/wrench.svg' %}" alt="Admin Panel" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                         Admin Panel
                     </a>
                 </li>
+                {% endif %}
             </ul>
         {% endif %}
     </div>

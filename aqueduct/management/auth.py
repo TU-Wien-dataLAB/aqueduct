@@ -47,14 +47,17 @@ class OIDCBackend(OIDCAuthenticationBackend):
         # Check if user is admin
         if hasattr(settings, 'ADMIN_GROUP'):
             is_admin = settings.ADMIN_GROUP in groups
-            profile.group = "admin"
         else:
             is_admin = False
-            profile.group = "user"
         user.is_staff = is_admin
         user.is_superuser = is_admin
+        if is_admin:
+            profile.group = "admin"
+        else:
+            profile.group = "user"
 
         user.save()
+        profile.save()
         return user
 
     def update_user(self, user, claims):

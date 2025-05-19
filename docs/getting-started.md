@@ -43,7 +43,10 @@ database, and a local mock OIDC provider (Dex) for authentication.
 
 You can now access the admin UI and start exploring the gateway features.
 
-### Starting vLLM
+> [!NOTE]
+> This starts Django in debug mode and is not suitable for production deployments. Change the [necessary settings](https://docs.djangoproject.com/en/5.2/topics/settings/#the-basics) for a production deployment.
+
+### Starting vLLM (Optional)
 
 To use an actual provider, you can run vLLM locally on your machine, e.g. with:
 

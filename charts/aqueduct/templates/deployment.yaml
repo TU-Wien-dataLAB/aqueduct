@@ -13,6 +13,13 @@ spec:
         app: {{ .Release.Name }}
     spec:
       initContainers:
+        - name: collectstatic
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [ "python", "manage.py", "collectstatic", "--noinput" ]
+          volumeMounts:
+            - name: staticfiles
+              mountPath: /app/aqueduct/staticfiles
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -147,7 +154,11 @@ spec:
             - name: settings-py
               mountPath: /app/aqueduct/aqueduct/settings.py
               subPath: settings.py
+            - name: staticfiles
+              mountPath: /app/aqueduct/staticfiles
       volumes:
         - name: settings-py
           configMap:
             name: {{ .Release.Name }}-settings
+        - name: staticfiles
+          emptyDir: { }

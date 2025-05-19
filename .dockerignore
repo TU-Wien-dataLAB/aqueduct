@@ -19,6 +19,7 @@ docker-compose.yaml
 .example.env
 **/__pycache__/
 **/*.sqlite3
+aqueduct/staticfiles
 
 # Created by https://www.toptal.com/developers/gitignore/api/django
 # Edit at https://www.toptal.com/developers/gitignore?templates=django

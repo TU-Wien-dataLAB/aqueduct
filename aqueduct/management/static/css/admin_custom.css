@@ -1,0 +1,30 @@
+/* Admin sidebar, optional */
+header, .breadcrumbs {
+    background-color: var(--darkened-bg) !important;
+    --breadcrumbs-fg: var(--header-bg);
+    --breadcrumbs-link-fg: var(--primary) 
+}
+
+header div ul {
+    margin: unset;
+}
+
+header .hidden {
+    display: inline !important;
+}
+
+header * a:link, header * a:visited {
+    color: var(--body-loud-color) !important;
+}
+
+header * .ml-4 {
+    margin-left: calc(var(--spacing) * 4) !important;
+}
+
+header {
+    font-family: var(--default-font-family, ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji');
+}
+
+header * li {
+    font-size: unset !important;
+}

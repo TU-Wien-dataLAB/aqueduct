@@ -1,0 +1,13 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <!-- Include Tailwind + DaisyUI -->
+  {% include "management/_cdn.html" %}
+  <link rel="stylesheet" href="{% static 'css/admin_custom.css' %}">
+{% endblock %}
+
+{% block header %}
+  {% include "management/header.html" %}
+{% endblock %}

@@ -9,10 +9,12 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 
 # Get the access token from environment variables
 endpoint_access_token = os.getenv("AQUEDUCT_GATEWAY_ACCESS_TOKEN")
+endpoint_access_token = "sk-w7MoIVQQ46yPPvpA3m9mMqr5HsFI1_pwXgkR1v663SY"
 
 # Define the base URL for the API endpoint
 # BASE_URL = "https://lite-llm.ai.datalab.tuwien.ac.at"
 BASE_URL = "http://localhost:8000/vllm"  # Using localhost as in the original script
+BASE_URL = "https://aqueduct.ai.datalab.tuwien.ac.at/vllm"
 
 # Define the model name
 # MODEL = "qwen-32b"

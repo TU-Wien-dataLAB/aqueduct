@@ -588,6 +588,11 @@ class Endpoint(models.Model):
         else:
             return self.access_token
 
+    def clean(self):
+        super().clean()
+        if self.slug and self.slug.lower() == "aqueduct":
+            raise ValidationError({'slug': 'The slug "aqueduct" is reserved.'})
+
 
 class Model(models.Model):
     """Represents a LLM model."""

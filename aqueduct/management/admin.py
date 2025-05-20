@@ -1,6 +1,8 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
+from django.urls import reverse
+from django.utils.html import format_html
 
 from .models import Org, Team, UserProfile, ServiceAccount, Token, Request, Model, Endpoint, TeamMembership
 
@@ -14,9 +16,62 @@ class ProfileInline(admin.StackedInline):
     fk_name = 'user'
 
 
+def set_user_group(queryset, group_name):
+    group, _ = Group.objects.get_or_create(name=group_name)
+    is_admin = group_name == "admin"
+    for user in queryset:
+        user.groups.clear()
+        user.groups.add(group)
+        if is_admin:
+            user.is_staff = True
+            user.is_superuser = True
+        else:
+            user.is_staff = False
+            user.is_superuser = False
+        user.save()
+
+
+@admin.action(description="Make Admin")
+def make_admin(modeladmin, request, queryset):
+    set_user_group(queryset, "admin")
+
+
+@admin.action(description="Make Org-Admin")
+def make_org_admin(modeladmin, request, queryset):
+    set_user_group(queryset, "org-admin")
+
+
+@admin.action(description="Make User")
+def make_user(modeladmin, request, queryset):
+    set_user_group(queryset, "user")
+
+
 # Define a new User admin
 class UserAdmin(BaseUserAdmin):
     inlines = (ProfileInline,)
+    list_display = ('email', 'is_staff', 'get_groups', 'request_limit', 'input_limit', 'output_limit')
+    list_select_related = ['profile']
+    actions = [make_admin, make_org_admin, make_user]
+
+    def get_groups(self, obj):
+        return ", ".join([g.name for g in obj.groups.all()])
+
+    get_groups.short_description = 'Groups'
+
+    def request_limit(self, obj) -> int:
+        return obj.profile.requests_per_minute
+
+    request_limit.short_description = "Requests per minute"
+
+    def input_limit(self, obj) -> int:
+        return obj.profile.input_tokens_per_minute
+
+    input_limit.short_description = "Input tokens per minute"
+
+    def output_limit(self, obj) -> int:
+        return obj.profile.output_tokens_per_minute
+
+    output_limit.short_description = "Output tokens per minute"
 
 
 # Re-register UserAdmin
@@ -36,15 +91,92 @@ class TeamMembershipInline(admin.TabularInline):  # or admin.StackedInline for a
 # Customize Team Admin
 @admin.register(Team)
 class TeamAdmin(admin.ModelAdmin):
-    list_display = ('name',)
+    list_display = ('name', 'org_link', 'requests_per_minute', 'input_tokens_per_minute', 'output_tokens_per_minute')
+    list_select_related = ["org"]
     search_fields = ('name',)
     inlines = [TeamMembershipInline]  # Add the inline here
+    list_filter = ['org__name']
+
+    def org_link(self, obj):
+        link = reverse("admin:management_org_change", args=[obj.org.id])
+        return format_html('<a href="{}">{}</a>', link, obj.org.name)
+
+    org_link.short_description = "Org"
 
 
-admin.site.register(Org)
-# admin.site.register(Team)
-admin.site.register(ServiceAccount)
-admin.site.register(Token)
-admin.site.register(Request)
-admin.site.register(Model)
-admin.site.register(Endpoint)
+@admin.register(Endpoint)
+class EndpointAdmin(admin.ModelAdmin):
+    list_display = ('name', 'slug', 'backend', 'url')
+
+
+@admin.register(Model)
+class ModelAdmin(admin.ModelAdmin):
+    list_display = ('name', 'endpoint_link', 'display_name', 'endpoint')
+    list_select_related = ['endpoint']
+    list_filter = ['endpoint__name']
+
+    def endpoint_link(self, obj):
+        link = reverse("admin:management_endpoint_change", args=[obj.endpoint.id])
+        return format_html('<a href="{}">{}</a>', link, obj.endpoint.name)
+
+    endpoint_link.short_description = "Endpoint"
+
+
+@admin.register(Org)
+class OrgAdmin(admin.ModelAdmin):
+    list_display = ('name', 'requests_per_minute', 'input_tokens_per_minute', 'output_tokens_per_minute')
+
+
+@admin.register(Request)
+class RequestAdmin(admin.ModelAdmin):
+    list_display = ('id', 'input_tokens', 'output_tokens', 'status_code', 'response_time_ms', 'endpoint_link', 'model_link')
+    list_filter = ['status_code', 'endpoint__name', 'model__name']
+
+    def endpoint_link(self, obj):
+        if obj.endpoint is None:
+            return ""
+        link = reverse("admin:management_endpoint_change", args=[obj.endpoint.id])
+        return format_html('<a href="{}">{}</a>', link, obj.endpoint.name)
+
+    endpoint_link.short_description = "Endpoint"
+
+    def model_link(self, obj):
+        if obj.model is None:
+            return "-"
+        link = reverse("admin:management_model_change", args=[obj.model.id])
+        return format_html('<a href="{}">{}</a>', link, obj.model.name)
+
+    model_link.short_description = "Model"
+
+@admin.register(ServiceAccount)
+class ServiceAccountAdmin(admin.ModelAdmin):
+    list_display = ('name', 'description', 'team_link')
+    list_select_related = ['team']
+    list_filter = ['team__name']
+
+    def team_link(self, obj):
+        link = reverse("admin:management_team_change", args=[obj.team.id])
+        return format_html('<a href="{}">{}</a>', link, obj.team.name)
+
+    team_link.short_description = "Team"
+
+
+@admin.register(Token)
+class TokenAdmin(admin.ModelAdmin):
+    list_display = ('name', 'expires_at', 'user_link', 'sa_link')
+    list_select_related = ['user', 'service_account', 'service_account__team']
+    list_filter = ['service_account__team__name']
+
+    def sa_link(self, obj):
+        if obj.service_account is None:
+            return "-"
+        link = reverse("admin:management_serviceaccount_change", args=[obj.service_account.id])
+        return format_html('<a href="{}">{}</a>', link, f"{obj.service_account.name} ({obj.service_account.team.name})")
+
+    sa_link.short_description = "Service Account"
+
+    def user_link(self, obj):
+        link = reverse("admin:auth_user_change", args=[obj.user.id])
+        return format_html('<a href="{}">{}</a>', link, obj.user.email)
+
+    user_link.short_description = "User"

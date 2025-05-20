@@ -1,8 +1,8 @@
 /* Admin sidebar, optional */
 header, .breadcrumbs {
     background-color: var(--darkened-bg) !important;
-    --breadcrumbs-fg: var(--header-bg);
-    --breadcrumbs-link-fg: var(--primary) 
+    --breadcrumbs-fg: var(--body-fg);
+    --breadcrumbs-link-fg: var(--link-fg)
 }
 
 header div ul {

@@ -80,7 +80,7 @@ class LimitMixin(models.Model):
 
 class Org(LimitMixin, models.Model):
     """Represents an Organization."""
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(verbose_name="Org name", max_length=255, unique=True)
 
     def __str__(self):
         return self.name
@@ -88,7 +88,7 @@ class Org(LimitMixin, models.Model):
 
 class Team(LimitMixin, models.Model):
     """Represents a Team within an Organization."""
-    name = models.CharField(max_length=255)
+    name = models.CharField(verbose_name="Team name", max_length=255)
     description = models.TextField(blank=True)
 
     org = models.ForeignKey(
@@ -243,7 +243,7 @@ class TeamMembership(models.Model):
 
 class ServiceAccount(models.Model):
     """Represents a Service Account, typically associated with a Team."""
-    name = models.CharField(max_length=255)
+    name = models.CharField(verbose_name="Service Account name", max_length=255)
     description = models.TextField(blank=True)
     team = models.ForeignKey(
         Team,
@@ -308,7 +308,7 @@ class Token(models.Model):
     Represents an authentication token (e.g., API Key), associated with a User
     and optionally a Service Account.
     """
-    name = models.CharField(max_length=255, null=False)
+    name = models.CharField(verbose_name="Token name", max_length=255, null=False)
     # Link to the standard Django User model
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,  # Use settings.AUTH_USER_MODEL
@@ -558,7 +558,7 @@ class EndpointBackend(models.TextChoices):
 
 class Endpoint(models.Model):
     """Represents an API endpoint, likely serving multiple Models."""
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(verbose_name="Endpoint name", max_length=255, unique=True)
     slug = models.SlugField(max_length=255, unique=True)
 
     backend = models.CharField(
@@ -591,7 +591,7 @@ class Endpoint(models.Model):
 
 class Model(models.Model):
     """Represents a LLM model."""
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(verbose_name="Model name", max_length=255, unique=True)
     display_name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
     endpoint = models.ForeignKey(

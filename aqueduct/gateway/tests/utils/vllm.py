@@ -7,7 +7,6 @@ from contextlib import closing
 from typing import List, Optional, Dict
 
 import httpx
-from openai import OpenAI, AsyncOpenAI
 from vllm import AsyncEngineArgs
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.model_executor.model_loader import get_model_loader
@@ -185,3 +184,31 @@ class RemoteOpenAIServer:
         path = "/".join(str(p).strip("/") for p in parts if p)
         return f"{self.url_root}/{path}"
 
+
+import threading
+
+_server_instance = None
+_server_lock = threading.Lock()
+
+def get_openai_server(model_name, vllm_serve_args, seed, auto_port=False, max_wait_seconds=300):
+    global _server_instance
+    with _server_lock:
+        if _server_instance is None:
+            _server_instance = RemoteOpenAIServer(
+                model=model_name,
+                vllm_serve_args=vllm_serve_args,
+                seed=seed,
+                auto_port=auto_port,
+                max_wait_seconds=max_wait_seconds
+            )
+        return _server_instance
+
+def stop_openai_server():
+    global _server_instance
+    with _server_lock:
+        if _server_instance is not None:
+            try:
+                _server_instance.__exit__(None, None, None)
+            except Exception:
+                pass
+            _server_instance = None

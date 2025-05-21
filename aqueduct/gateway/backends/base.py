@@ -9,6 +9,7 @@ import time
 
 import httpx  # Replace requests with httpx
 from asgiref.sync import async_to_sync, sync_to_async
+from django.conf import settings
 from django.http import HttpRequest, HttpResponse, Http404, HttpResponseServerError, JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 
@@ -32,7 +33,8 @@ class MutableRequest:
     url: str
     headers: dict | None = None,
     json: dict[str, Any] | None = None
-    timeout: float | None = 60
+    timeout: float | None = None
+    stream: bool = False
 
     def build(self, client: httpx.AsyncClient) -> httpx.Request:
         new_body_bytes = json.dumps(self.json).encode('utf-8')
@@ -42,12 +44,17 @@ class MutableRequest:
         new_headers = httpx.Headers(self.headers)
         new_headers['Content-Length'] = str(len(new_body_bytes))
 
+        if self.stream:
+            timeout = httpx.Timeout(settings.STREAM_REQUEST_TIMEOUT, connect=5.0)
+        else:
+            timeout = httpx.Timeout(settings.RELAY_REQUEST_TIMEOUT, connect=5.0)
+
         return client.build_request(
             method=self.method,
             url=self.url,
             headers=self.headers,
             json=self.json,
-            timeout=self.timeout,
+            timeout=timeout,
         )
 
 
@@ -254,13 +261,10 @@ class AIGatewayBackend(abc.ABC):
         logger.debug(f"Prepared initial relay request: {request_object.method} {request_object.url}")
         return request_object
 
-    async def _send_relay_request(self, timeout: int) -> Tuple[HttpResponse, Optional[int]]:
+    async def _send_relay_request(self) -> Tuple[HttpResponse, Optional[int]]:
         """
         Sends the prepared relay request using httpx, handles exceptions,
         and creates the initial Django HttpResponse.
-
-        Args:
-            timeout (int): Timeout in seconds for the request.
 
         Returns:
             Tuple containing:
@@ -367,13 +371,10 @@ class AIGatewayBackend(abc.ABC):
 
         return django_response
 
-    async def request_non_streaming(self, timeout: int = 60) -> HttpResponse:
+    async def request_non_streaming(self) -> HttpResponse:
         """
         Synchronously sends the prepared relay request, processes the response,
         runs post-processing, and logs the outcome.
-
-        Args:
-            timeout (int): Timeout in seconds for the request. Default 60.
 
         Returns:
             HttpResponse | JsonResponse: The final Django response object.
@@ -389,7 +390,7 @@ class AIGatewayBackend(abc.ABC):
 
         try:
             # Step 1: Send relay request & get initial Django response (handles relay errors internally)
-            initial_django_response, duration_ms = await self._send_relay_request(timeout)
+            initial_django_response, duration_ms = await self._send_relay_request()
             response_time_ms = duration_ms  # Store duration
             logger.debug(
                 f"_send_relay_request completed. Initial Status: {initial_django_response.status_code}, Time: {response_time_ms}ms")
@@ -441,26 +442,54 @@ class AIGatewayBackend(abc.ABC):
         # Ensure we always return a response
         return final_response if final_response is not None else HttpResponseServerError("Gateway internal error")
 
-    async def request_streaming(self, timeout: int = 60) -> StreamingHttpResponse:
-        upstream_response = await self.async_client.send(request=self.relay_request.build(self.async_client), stream=True)
+    async def request_streaming(self) -> StreamingHttpResponse:
+        self.relay_request.stream = True
+        start_time = time.monotonic()
+        request = self.relay_request.build(self.async_client)
+        try:
+            upstream_response = await self.async_client.send(
+                request=request,
+                stream=self.relay_request.stream,
+            )
+        except httpx.TimeoutException:
+            logger.warning("Timeout while sending streaming relay request.")
+            self.request_log.status_code = 504
+            self.request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
+            await self.request_log.asave()
+            return StreamingHttpResponse(
+                streaming_content=(chunk for chunk in []),  # empty generator
+                content_type="application/json",
+                status=504,
+                reason="Gateway Timeout"
+            )
 
         async def stream():
-            start_time = time.monotonic()
             chunks: bytes = b''
-            upstream_response.raise_for_status()
             try:
-                async for chunk in upstream_response.aiter_bytes():
-                    chunks += chunk
-                    yield chunk
-            except asyncio.CancelledError:
-                # Handle client disconnect
-                raise
+                upstream_response.raise_for_status()
+                try:
+                    async for chunk in upstream_response.aiter_bytes():
+                        elapsed = time.monotonic() - start_time
+                        # Raises read timeout after overall request limit is reached
+                        # guaranteed to be raised after RELAY_REQUEST_TIMEOUT + STREAM_REQUEST_TIMEOUT + epsilon seconds
+                        if elapsed >= settings.RELAY_REQUEST_TIMEOUT:
+                            raise httpx.TimeoutException("Streaming request timed out!", request=request)
+                        chunks += chunk
+                        yield chunk
+                except httpx.TimeoutException:
+                    logger.warning("Timeout while streaming response from upstream.")
+                    # Optionally, yield a partial error message if appropriate
+                    # But for now, just break the stream
+                    # TODO: what to return when timeout happens while reading
+                    return
+                except asyncio.CancelledError:
+                    # Handle client disconnect
+                    raise
             finally:
-                # Post-processing after stream finishes
+                # Post-processing after stream finishes or error
                 usage = self.extract_usage(chunks)
                 self.request_log.token_usage = usage
-                end_time = time.monotonic()
-                self.request_log.response_time_ms = int((end_time - start_time) * 1000)
+                self.request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
                 await self.request_log.asave()
 
         response = StreamingHttpResponse(
@@ -471,7 +500,7 @@ class AIGatewayBackend(abc.ABC):
         self.request_log.status_code = upstream_response.status_code
         await self.request_log.asave()
 
-        # # Copy useful headers if needed
+        # Copy useful headers if needed
         for header in ["Content-Disposition", "Content-Length"]:
             if header in upstream_response.headers:
                 response[header] = upstream_response.headers[header]

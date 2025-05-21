@@ -213,6 +213,49 @@ class VLLMIntegrationTests(TransactionTestCase):
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
     @reset_gateway_httpx_async_client
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
+    def test_chat_completion_timeout(self):
+        """
+        Sends a simple chat completion request to the vLLM server using the Django test client.
+        After the request, checks that the database contains one request,
+        the endpoint matches, and input/output tokens are > 0.
+        """
+
+        # Use Django's test client to POST to the chat completion endpoint
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Write me a short poem!"}
+        ]
+
+        # Clear Request table before test
+        Request.objects.all().delete()
+
+        # Prepare headers and payload
+        headers = {
+            "HTTP_AUTHORIZATION": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
+            "CONTENT_TYPE": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": 50,
+            "temperature": 0.0,
+        }
+
+        # POST to the OpenAI-compatible endpoint
+        response = self.client.post(
+            f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **headers
+        )
+
+        self.assertEqual(
+            response.status_code, 504,
+            f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}"
+        )
+
+    @reset_gateway_httpx_async_client
     @async_to_sync
     async def test_chat_completion_streaming(self):
         """
@@ -231,7 +274,8 @@ class VLLMIntegrationTests(TransactionTestCase):
         # Clear Request table before test
         await Request.objects.all().adelete()
         # For some reason authentication does not work in async test case...
-        await sync_to_async(lambda: self.async_client.force_login(User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
+        await sync_to_async(lambda: self.async_client.force_login(
+            User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
 
         # Prepare headers and payload
         headers = {
@@ -292,7 +336,7 @@ class VLLMIntegrationTests(TransactionTestCase):
                     content_pieces.append(piece)
         full_content = "".join(content_pieces).strip()
         print(f"Full streamed content: {full_content}")
-        self.assertTrue(full_content, "Streamed content should not be empty.")  
+        self.assertTrue(full_content, "Streamed content should not be empty.")
 
         # Check that the database contains one request and endpoint matches
         requests = await sync_to_async(lambda: list(Request.objects.all()))()
@@ -303,6 +347,122 @@ class VLLMIntegrationTests(TransactionTestCase):
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming)")
+
+
+    @reset_gateway_httpx_async_client
+    @override_settings(STREAM_REQUEST_TIMEOUT=0.001)
+    @async_to_sync
+    async def test_chat_completion_streaming_stream_request_timeout(self):
+        """
+        Sends a streaming chat completion request to the vLLM server using the Django test client.
+        After the request, checks that the database contains one request,
+        the endpoint matches, and input/output tokens are > 0.
+        """
+        # reset_gateway_httpx_async_client(lambda: None)
+
+        # Use Django's test client to POST to the chat completion endpoint with stream=True
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Name three countries in Europe."}
+        ]
+
+        # Clear Request table before test
+        await Request.objects.all().adelete()
+        # For some reason authentication does not work in async test case...
+        await sync_to_async(lambda: self.async_client.force_login(
+            User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
+
+        # Prepare headers and payload
+        headers = {
+            "HTTP_AUTHORIZATION": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
+            "CONTENT_TYPE": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": 50,
+            "temperature": 0.0,
+            "stream": True,
+        }
+
+        # POST to the OpenAI-compatible endpoint (streaming) using self.async_client
+        response = await self.async_client.post(
+            f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **headers
+        )
+
+        # Timeout happens before the streaming even started and can return 504
+        self.assertEqual(
+            response.status_code, 504,
+            f"Expected 504 Gateway Timeout, got {response.status_code}!"
+        )
+
+
+    @reset_gateway_httpx_async_client
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
+    @async_to_sync
+    async def test_chat_completion_streaming_relay_request_timeout(self):
+        """
+        Sends a streaming chat completion request to the vLLM server using the Django test client.
+        After the request, checks that the database contains one request,
+        the endpoint matches, and input/output tokens are > 0.
+        """
+        # reset_gateway_httpx_async_client(lambda: None)
+
+        # Use Django's test client to POST to the chat completion endpoint with stream=True
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Name three countries in Europe."}
+        ]
+
+        # Clear Request table before test
+        await Request.objects.all().adelete()
+        # For some reason authentication does not work in async test case...
+        await sync_to_async(lambda: self.async_client.force_login(
+            User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
+
+        # Prepare headers and payload
+        headers = {
+            "HTTP_AUTHORIZATION": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
+            "CONTENT_TYPE": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": 50,
+            "temperature": 0.0,
+            "stream": True,
+        }
+
+        # POST to the OpenAI-compatible endpoint (streaming) using self.async_client
+        response = await self.async_client.post(
+            f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **headers
+        )
+
+        # Timeout happens while streaming -> 200 returned
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
+
+        # Collect all streamed chunks (each line is a data: ... event)
+        streamed_lines = []
+
+        async for chunk in response.streaming_content:
+            # chunk may be bytes, decode if needed
+            if isinstance(chunk, bytes):
+                chunk = chunk.decode("utf-8")
+            for line in chunk.splitlines():
+                line = line.strip()
+                if line.startswith("data: "):
+                    data = line[len("data: "):]
+                    if data == "[DONE]":
+                        continue
+                    streamed_lines.append(data)
+
+        self.assertEqual(len(streamed_lines), 0, "Timeout prevents streaming content")
 
     @reset_gateway_httpx_async_client
     def test_list_models(self):

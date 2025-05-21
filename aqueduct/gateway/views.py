@@ -1,6 +1,7 @@
 # gateway/views.py
 import httpx
 from asgiref.sync import async_to_sync, sync_to_async
+from django.conf import settings
 from django.contrib import auth
 from django.core.handlers.asgi import ASGIRequest
 from django.http import HttpResponse, JsonResponse, HttpRequest, Http404
@@ -17,7 +18,7 @@ from management.models import Request, Token, Endpoint, EndpointBackend
 
 logger = logging.getLogger(__name__)
 
-async_client = httpx.AsyncClient(timeout=60, follow_redirects=True)
+async_client = httpx.AsyncClient(timeout=settings.RELAY_REQUEST_TIMEOUT, follow_redirects=True)
 
 # --- Backend Dispatcher ---
 

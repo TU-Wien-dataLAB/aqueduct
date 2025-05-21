@@ -115,6 +115,9 @@ EXTRA_NAV_LINKS = {
     # 'About Us': 'about_page',  # Example named URL (assuming you have url(..., name='about_page'))
 }
 
+RELAY_REQUEST_TIMEOUT = 60
+STREAM_REQUEST_TIMEOUT = 1
+
 # ------------------------------------------------------------------------
 
 ROOT_URLCONF = 'aqueduct.urls'

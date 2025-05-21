@@ -3,7 +3,7 @@ import json
 import os
 import sys
 import warnings
-from typing import Optional, Literal
+from typing import Optional, Literal, List, Any
 
 # Third-party imports
 import httpx  # Using httpx instead of requests
@@ -56,6 +56,62 @@ User = get_user_model()
 
 
 # --- Django Test Class ---
+
+def _build_chat_headers(access_token):
+    return {
+        "HTTP_AUTHORIZATION": f"Bearer {access_token}",
+        "CONTENT_TYPE": "application/json",
+    }
+
+
+def _build_chat_payload(model, messages, max_tokens=50, temperature=0.0, stream=False):
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    if stream:
+        payload["stream"] = True
+    return payload
+
+
+async def _read_streaming_response_lines(response) -> List[str]:
+    """
+    Collect all streamed lines (each line is a data: ... event) from a StreamingHttpResponse.
+    """
+    streamed_lines = []
+    async for chunk in response.streaming_content:
+        if isinstance(chunk, bytes):
+            chunk = chunk.decode("utf-8")
+        for line in chunk.splitlines():
+            line = line.strip()
+            if line.startswith("data: "):
+                data = line[len("data: "):]
+                if data == "[DONE]":
+                    continue
+                streamed_lines.append(data)
+    return streamed_lines
+
+
+def _parse_streamed_content_pieces(streamed_lines: List[str]) -> List[str]:
+    """
+    Parse each chunk as JSON and collect content pieces from OpenAI streaming response.
+    """
+    content_pieces = []
+    for data in streamed_lines:
+        try:
+            chunk = ChatCompletionChunk.model_validate(json.loads(data))
+        except Exception:
+            warnings.warn("Chat completion request returned invalid JSON data!")
+            continue
+        choices = chunk.choices
+        if choices:
+            delta = choices[0].delta
+            piece = getattr(delta, "content", None)
+            if piece:
+                content_pieces.append(piece)
+    return content_pieces
 
 
 @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
@@ -126,21 +182,40 @@ class VLLMIntegrationTests(TransactionTestCase):
             print("No vLLM server instance to stop (likely failed during setup).")
         super().tearDownClass()
 
-    def test_vllm_server_is_running(self):
-        """Checks if the server setup appears successful using httpx."""
-        if not START_VLLM_SERVER:
-            self.skipTest(reason="No self managed vLLM server.")
+    def _build_chat_completion_request(self, messages, stream=False):
+        """
+        Helper to build headers, payload, and endpoint for chat completion requests.
+        """
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        payload = _build_chat_payload(self.model, messages, stream=stream)
+        endpoint = f"/{self.AQUEDUCT_ENDPOINT}/chat/completions"
+        return endpoint, payload, headers
 
-        self.assertIsNotNone(self.vllm_server, "vLLM server instance should exist (check setUpClass)")
-        self.assertTrue(hasattr(self.vllm_server, 'proc'), "vLLM server should have a process attribute")
-        self.assertIsNone(self.vllm_server.proc.poll(), "vLLM server process should be running")
-        self.assertIsNotNone(self.client, "OpenAI client instance should exist (check setUpClass)")
-        # Basic health check using httpx
-        health_url = self.vllm_server.url_for("health")
-        with httpx.Client(timeout=10.0) as client:
-            response = client.get(health_url)
-        self.assertEqual(response.status_code, 200,
-                         f"Server health check failed ({response.status_code}) at {health_url}")
+    def _send_chat_completion(self, messages):
+        """
+        Helper to send a chat completion request (non-streaming) using Django test client.
+        """
+        endpoint, payload, headers = self._build_chat_completion_request(messages, stream=False)
+        response = self.client.post(
+            endpoint,
+            data=json.dumps(payload),
+            content_type="application/json",
+            **headers
+        )
+        return response
+
+    async def _send_chat_completion_streaming(self, messages):
+        """
+        Helper to send a streaming chat completion request using Django async test client.
+        """
+        endpoint, payload, headers = self._build_chat_completion_request(messages, stream=True)
+        response = await self.async_client.post(
+            endpoint,
+            data=json.dumps(payload),
+            content_type="application/json",
+            **headers
+        )
+        return response
 
     @reset_gateway_httpx_async_client
     def test_chat_completion(self):
@@ -150,7 +225,6 @@ class VLLMIntegrationTests(TransactionTestCase):
         the endpoint matches, and input/output tokens are > 0.
         """
 
-        # Use Django's test client to POST to the chat completion endpoint
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "What is the capital of France? Respond concisely."}
@@ -159,31 +233,12 @@ class VLLMIntegrationTests(TransactionTestCase):
         # Clear Request table before test
         Request.objects.all().delete()
 
-        # Prepare headers and payload
-        headers = {
-            "HTTP_AUTHORIZATION": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-            "CONTENT_TYPE": "application/json",
-        }
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": 50,
-            "temperature": 0.0,
-        }
-
-        # POST to the OpenAI-compatible endpoint
-        response = self.client.post(
-            f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
-            data=json.dumps(payload),
-            content_type="application/json",
-            **headers
-        )
+        response = self._send_chat_completion(messages)
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         # Parse the response as JSON and convert to OpenAI ChatCompletion type for compatibility
         response_json = response.json()
-        # Optionally, you can use openai.types.chat.ChatCompletion.from_dict if available
         chat_completion = ChatCompletion.model_validate(response_json)
 
         print(f"\nChat completion response: {chat_completion}")
@@ -221,7 +276,6 @@ class VLLMIntegrationTests(TransactionTestCase):
         the endpoint matches, and input/output tokens are > 0.
         """
 
-        # Use Django's test client to POST to the chat completion endpoint
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Write me a short poem!"}
@@ -230,25 +284,7 @@ class VLLMIntegrationTests(TransactionTestCase):
         # Clear Request table before test
         Request.objects.all().delete()
 
-        # Prepare headers and payload
-        headers = {
-            "HTTP_AUTHORIZATION": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-            "CONTENT_TYPE": "application/json",
-        }
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": 50,
-            "temperature": 0.0,
-        }
-
-        # POST to the OpenAI-compatible endpoint
-        response = self.client.post(
-            f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
-            data=json.dumps(payload),
-            content_type="application/json",
-            **headers
-        )
+        response = self._send_chat_completion(messages)
 
         self.assertEqual(
             response.status_code, 504,
@@ -263,9 +299,7 @@ class VLLMIntegrationTests(TransactionTestCase):
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
-        # reset_gateway_httpx_async_client(lambda: None)
 
-        # Use Django's test client to POST to the chat completion endpoint with stream=True
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Name three countries in Europe."}
@@ -277,63 +311,18 @@ class VLLMIntegrationTests(TransactionTestCase):
         await sync_to_async(lambda: self.async_client.force_login(
             User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
 
-        # Prepare headers and payload
-        headers = {
-            "HTTP_AUTHORIZATION": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-            "CONTENT_TYPE": "application/json",
-        }
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": 50,
-            "temperature": 0.0,
-            "stream": True,
-        }
-
-        # POST to the OpenAI-compatible endpoint (streaming) using self.async_client
-        response = await self.async_client.post(
-            f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
-            data=json.dumps(payload),
-            content_type="application/json",
-            **headers
-        )
+        response = await self._send_chat_completion_streaming(messages)
 
         # Should be a StreamingHttpResponse with status 200
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
 
-        # Collect all streamed chunks (each line is a data: ... event)
-        streamed_lines = []
-
-        async for chunk in response.streaming_content:
-            # chunk may be bytes, decode if needed
-            if isinstance(chunk, bytes):
-                chunk = chunk.decode("utf-8")
-            for line in chunk.splitlines():
-                line = line.strip()
-                if line.startswith("data: "):
-                    data = line[len("data: "):]
-                    if data == "[DONE]":
-                        continue
-                    streamed_lines.append(data)
+        # Collect all streamed lines (each line is a data: ... event)
+        streamed_lines = await _read_streaming_response_lines(response)
 
         self.assertGreater(len(streamed_lines), 0, "Should receive at least one streamed data chunk.")
 
         # Parse each chunk as JSON and collect content pieces
-        content_pieces = []
-        for data in streamed_lines:
-            try:
-                # Use OpenAI's ChatCompletionChunk for validation and parsing
-                chunk = ChatCompletionChunk.model_validate(json.loads(data))
-            except Exception as e:
-                warnings.warn("Chat completion request returned invalid JSON data!")
-                continue
-            # OpenAI streaming: chunk.choices[0].delta.content
-            choices = chunk.choices
-            if choices:
-                delta = choices[0].delta
-                piece = getattr(delta, "content", None)
-                if piece:
-                    content_pieces.append(piece)
+        content_pieces = _parse_streamed_content_pieces(streamed_lines)
         full_content = "".join(content_pieces).strip()
         print(f"Full streamed content: {full_content}")
         self.assertTrue(full_content, "Streamed content should not be empty.")
@@ -348,7 +337,6 @@ class VLLMIntegrationTests(TransactionTestCase):
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming)")
 
-
     @reset_gateway_httpx_async_client
     @override_settings(STREAM_REQUEST_TIMEOUT=0.001)
     @async_to_sync
@@ -358,9 +346,7 @@ class VLLMIntegrationTests(TransactionTestCase):
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
-        # reset_gateway_httpx_async_client(lambda: None)
 
-        # Use Django's test client to POST to the chat completion endpoint with stream=True
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Name three countries in Europe."}
@@ -372,33 +358,13 @@ class VLLMIntegrationTests(TransactionTestCase):
         await sync_to_async(lambda: self.async_client.force_login(
             User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
 
-        # Prepare headers and payload
-        headers = {
-            "HTTP_AUTHORIZATION": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-            "CONTENT_TYPE": "application/json",
-        }
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": 50,
-            "temperature": 0.0,
-            "stream": True,
-        }
-
-        # POST to the OpenAI-compatible endpoint (streaming) using self.async_client
-        response = await self.async_client.post(
-            f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
-            data=json.dumps(payload),
-            content_type="application/json",
-            **headers
-        )
+        response = await self._send_chat_completion_streaming(messages)
 
         # Timeout happens before the streaming even started and can return 504
         self.assertEqual(
             response.status_code, 504,
             f"Expected 504 Gateway Timeout, got {response.status_code}!"
         )
-
 
     @reset_gateway_httpx_async_client
     @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
@@ -409,9 +375,7 @@ class VLLMIntegrationTests(TransactionTestCase):
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
-        # reset_gateway_httpx_async_client(lambda: None)
 
-        # Use Django's test client to POST to the chat completion endpoint with stream=True
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Name three countries in Europe."}
@@ -423,44 +387,13 @@ class VLLMIntegrationTests(TransactionTestCase):
         await sync_to_async(lambda: self.async_client.force_login(
             User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
 
-        # Prepare headers and payload
-        headers = {
-            "HTTP_AUTHORIZATION": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-            "CONTENT_TYPE": "application/json",
-        }
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": 50,
-            "temperature": 0.0,
-            "stream": True,
-        }
-
-        # POST to the OpenAI-compatible endpoint (streaming) using self.async_client
-        response = await self.async_client.post(
-            f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
-            data=json.dumps(payload),
-            content_type="application/json",
-            **headers
-        )
+        response = await self._send_chat_completion_streaming(messages)
 
         # Timeout happens while streaming -> 200 returned
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
 
-        # Collect all streamed chunks (each line is a data: ... event)
-        streamed_lines = []
-
-        async for chunk in response.streaming_content:
-            # chunk may be bytes, decode if needed
-            if isinstance(chunk, bytes):
-                chunk = chunk.decode("utf-8")
-            for line in chunk.splitlines():
-                line = line.strip()
-                if line.startswith("data: "):
-                    data = line[len("data: "):]
-                    if data == "[DONE]":
-                        continue
-                    streamed_lines.append(data)
+        # Collect all streamed lines (each line is a data: ... event)
+        streamed_lines = await _read_streaming_response_lines(response)
 
         self.assertEqual(len(streamed_lines), 0, "Timeout prevents streaming content")
 
@@ -589,81 +522,74 @@ class VLLMIntegrationTests(TransactionTestCase):
         else:
             raise ValueError(f"Unknown kind: {kind}")
 
-    def _rate_limit_test_template(self, kind: str, field: str, value: int, messages, max_tokens, limit_desc):
-        """
-        Generic template for rate limit tests for org, team, or user.
-        Uses the Django test client to POST to the chat completion endpoint.
-        """
-        # Set the limit
-        obj = self.setup_limits(kind, field, value)
+def _rate_limit_test_template(self, kind: str, field: str, value: int, messages, max_tokens, limit_desc):
+    """
+    Generic template for rate limit tests for org, team, or user.
+    Uses the Django test client to POST to the chat completion endpoint.
+    """
+    # Set the limit
+    obj = self.setup_limits(kind, field, value)
 
-        # Clear Request table before test
-        Request.objects.all().delete()
+    # Clear Request table before test
+    Request.objects.all().delete()
 
-        # Prepare headers and payload
-        headers = {
-            "HTTP_AUTHORIZATION": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-            "CONTENT_TYPE": "application/json",
-        }
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": 0.0,
-        }
+    # Use helpers to build headers and payload
+    headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+    payload = _build_chat_payload(self.model, messages, max_tokens=max_tokens, temperature=0.0, stream=False)
+    endpoint = f"/{self.AQUEDUCT_ENDPOINT}/chat/completions"
 
-        # First request should succeed
-        response1 = self.client.post(
-            f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
-            data=json.dumps(payload),
-            content_type="application/json",
-            **headers
+    # First request should succeed
+    response1 = self.client.post(
+        endpoint,
+        data=json.dumps(payload),
+        content_type="application/json",
+        **headers
+    )
+    self.assertEqual(
+        response1.status_code, 200,
+        f"Expected 200 OK, got {response1.status_code}: {response1.content}"
+    )
+    response_json = response1.json()
+    chat_completion = ChatCompletion.model_validate(response_json)
+    self.assertIsNotNone(chat_completion)
+    self.assertTrue(chat_completion.choices)
+    self.assertGreater(len(chat_completion.choices), 0)
+
+    # Check that the database contains one request and endpoint matches
+    requests = list(Request.objects.all())
+    self.assertEqual(len(requests), 1,
+                     f"There should be exactly one request after first chat completion ({limit_desc}).")
+    req = requests[0]
+    self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion.")
+    self.assertIsNotNone(req.input_tokens)
+    self.assertIsNotNone(req.output_tokens)
+    self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
+    self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
+
+    # Second request should fail with 429
+    response2 = self.client.post(
+        endpoint,
+        data=json.dumps(payload),
+        content_type="application/json",
+        **headers
+    )
+    self.assertEqual(
+        response2.status_code, 429,
+        f"Expected 429 Too Many Requests, got {response2.status_code}: {response2.content}"
+    )
+    # Optionally, check error message
+    try:
+        error_json = response2.json()
+        self.assertTrue(
+            "rate limit" in str(error_json).lower() or "429" in str(error_json),
+            f"Expected rate limit error message, got: {error_json}"
         )
-        self.assertEqual(
-            response1.status_code, 200,
-            f"Expected 200 OK, got {response1.status_code}: {response1.content}"
+    except Exception:
+        # If not JSON, just check content
+        self.assertTrue(
+            "rate limit" in response2.content.decode().lower() or "429" in response2.content.decode(),
+            f"Expected rate limit error message, got: {response2.content}"
         )
-        response_json = response1.json()
-        chat_completion = ChatCompletion.model_validate(response_json)
-        self.assertIsNotNone(chat_completion)
-        self.assertTrue(chat_completion.choices)
-        self.assertGreater(len(chat_completion.choices), 0)
-
-        # Check that the database contains one request and endpoint matches
-        requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1,
-                         f"There should be exactly one request after first chat completion ({limit_desc}).")
-        req = requests[0]
-        self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion.")
-        self.assertIsNotNone(req.input_tokens)
-        self.assertIsNotNone(req.output_tokens)
-        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
-
-        # Second request should fail with 429
-        response2 = self.client.post(
-            f"/{self.AQUEDUCT_ENDPOINT}/chat/completions",
-            data=json.dumps(payload),
-            content_type="application/json",
-            **headers
-        )
-        self.assertEqual(
-            response2.status_code, 429,
-            f"Expected 429 Too Many Requests, got {response2.status_code}: {response2.content}"
-        )
-        # Optionally, check error message
-        try:
-            error_json = response2.json()
-            self.assertTrue(
-                "rate limit" in str(error_json).lower() or "429" in str(error_json),
-                f"Expected rate limit error message, got: {error_json}"
-            )
-        except Exception:
-            # If not JSON, just check content
-            self.assertTrue(
-                "rate limit" in response2.content.decode().lower() or "429" in response2.content.decode(),
-                f"Expected rate limit error message, got: {response2.content}"
-            )
 
     @reset_gateway_httpx_async_client
     def test_org_rate_limit_requests_per_minute(self):

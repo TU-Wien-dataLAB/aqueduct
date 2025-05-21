@@ -2,7 +2,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from .base import BaseAqueductView
-from django.views.generic import TemplateView, CreateView, DeleteView
+from django.views.generic import TemplateView, CreateView, DeleteView, UpdateView
 from ..models import Token, ServiceAccount
 from django.urls import reverse_lazy, reverse
 from django.contrib import messages
@@ -82,6 +82,25 @@ class TokenCreateView(BaseAqueductView, CreateView):
         now = timezone.now().replace(second=0, microsecond=0)
         context['now'] = now.strftime('%Y-%m-%dT%H:%M')
         context['tz'] = settings.TIME_ZONE
+        return context
+
+
+class TokenEditView(BaseAqueductView, UpdateView):
+    model = Token
+    form_class = TokenCreateForm
+    template_name = 'management/edit/token.html'
+    pk_url_kwarg = 'id'
+    success_url = reverse_lazy('tokens')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['view_title'] = 'Edit Token'
+        context['cancel_url'] = self.get_success_url()
         return context
 
 class TokenDeleteView(BaseAqueductView, DeleteView):

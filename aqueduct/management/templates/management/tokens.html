@@ -48,6 +48,9 @@
                                     <img src="{% static 'icons/update.svg' %}" alt="Regenerate" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                 </button>
                             </form>
+                            <a href="{% url 'token_edit' token.id %}" class="btn btn-info btn-sm btn-square" title="Edit {{ token.name }}">
+                                <img src="{% static 'icons/edit.svg' %}" alt="Edit" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                            </a>
                             <a href="{% url 'token_delete' token.id %}" class="btn btn-error btn-sm btn-square" title="Delete {{ token.name }}">
                                 <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                             </a>

@@ -159,7 +159,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         )
 
     @reset_gateway_httpx_async_client
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     @async_to_sync
     async def test_chat_completion_streaming_relay_request_timeout(self):
         """

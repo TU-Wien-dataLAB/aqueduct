@@ -48,16 +48,16 @@
                                     <thead>
                                     <tr class="bg-base-200">
                                         <th>Model Name</th>
-                                        <th>Display Name</th>
                                         <th>Description</th>
+                                        <th>Relay Name</th>
                                     </tr>
                                     </thead>
                                     <tbody>
                                     {% for model in endpoint.models.all %}
                                         <tr>
-                                            <td class="font-mono">{{ model.name }}</td>
-                                            <td>{{ model.display_name }}</td>
+                                            <td class="font-mono">{{ model.display_name }}</td>
                                             <td>{{ model.description|default:"-" }}</td>
+                                            <td class="font-mono">{{ model.name }}</td>
                                         </tr>
                                     {% endfor %}
                                     </tbody>

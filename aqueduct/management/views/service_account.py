@@ -69,6 +69,9 @@ class ServiceAccountCreateView(BaseTeamView, TeamAdminRequiredMixin, CreateView)
             )
             # Generate and set key data on the new token instance
             secret_key = new_token._set_new_key()
+            expires_at = form.cleaned_data.get('token_expires_at')
+            if expires_at:
+                new_token.expires_at = expires_at
 
             # Save the token (hash and preview are now set)
             new_token.save()
@@ -151,6 +154,17 @@ class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
     pk_url_kwarg = 'service_account_id' # Tell base view how to find the SA ID
     context_object_name = 'service_account' # Match template usage
 
+    def get_initial(self):
+        initial = super().get_initial()
+        try:
+            token = Token.objects.get(service_account=self.get_object())
+            if token.expires_at:
+                # Format for datetime-local input
+                initial['token_expires_at'] = token.expires_at.strftime('%Y-%m-%dT%H:%M')
+        except Token.DoesNotExist:
+            pass
+        return initial
+
     # Permission checking is handled by TeamAdminRequiredMixin (via BaseServiceAccountView)
 
     def get_form_kwargs(self):
@@ -163,6 +177,17 @@ class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
     def form_valid(self, form):
         """Adds a success message upon successful update."""
         response = super().form_valid(form)
+        # Update the token's expiration date if provided
+        expires_at = form.cleaned_data.get('token_expires_at')
+        try:
+            token = Token.objects.get(service_account=self.object)
+            if expires_at:
+                token.expires_at = expires_at
+            else:
+                token.expires_at = None
+            token.save(update_fields=['expires_at'])
+        except Token.DoesNotExist:
+            pass  # Optionally handle this case
         messages.success(self.request, f"Service Account '{self.object.name}' updated successfully.")
         return response
 

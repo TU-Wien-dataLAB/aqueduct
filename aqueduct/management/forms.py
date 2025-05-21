@@ -7,6 +7,16 @@ from django.conf import settings
 
 
 class ServiceAccountForm(forms.ModelForm):
+    token_expires_at = forms.DateTimeField(
+        required=False,
+        widget=forms.DateTimeInput(
+            attrs={'type': 'datetime-local', 'class': 'input'},
+            format='%Y-%m-%dT%H:%M'
+        ),
+        label='Token Expiration Date (optional)',
+        help_text='Set an expiration date for the service account token (optional).'
+    )
+
     class Meta:
         model = ServiceAccount
         fields = ['name', 'description']
@@ -62,7 +72,10 @@ class ServiceAccountForm(forms.ModelForm):
                     f"Team '{self.team.name}' has reached the maximum limit of {limit} service accounts.",
                     code='limit_reached'
                 )
-
+        expires_at = cleaned_data.get('token_expires_at')
+        if expires_at:
+            if expires_at <= timezone.now():
+                self.add_error('expires_at', "Expiration date must be in the future.")
         return cleaned_data
 
 

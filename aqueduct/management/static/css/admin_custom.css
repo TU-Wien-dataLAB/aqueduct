@@ -1,10 +1,35 @@
-/* Admin sidebar, optional */
-header, .breadcrumbs {
-    background-color: var(--darkened-bg) !important;
+/* Style Admin Panel (not important) */
+
+:root {
+    --aqueduct-selected-rgb: 150, 150, 150;
+    --body-bg: var(--color-base-200) !important;
+    --darkened-bg: var(--color-base-300) !important;
+    background-color: var(--color-base-200) !important;
+}
+
+.module h2, .module caption, .inline-group h2 {
+    background: var(--color-primary);
+}
+
+#nav-sidebar .current-model {
+    background: rgba(var(--aqueduct-selected-rgb), 0.5);
+}
+
+#changelist tbody tr:has(.action-select:checked) {
+    background: rgba(var(--aqueduct-selected-rgb), 0.5) !important;
+}
+
+.submit-row a.deletelink {
+    height: unset !important;
+}
+
+.breadcrumbs {
+    background-color: var(--body-bg) !important;
     --breadcrumbs-fg: var(--body-fg);
     --breadcrumbs-link-fg: var(--link-fg)
 }
 
+/* Fix header in Admin Panel (important) */
 header div ul {
     margin: unset;
 }

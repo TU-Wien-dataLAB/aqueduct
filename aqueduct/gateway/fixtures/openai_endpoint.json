@@ -15,8 +15,8 @@
     "model": "management.model",
     "pk": 2,
     "fields": {
-      "name": "gpt-4o-mini",
-      "display_name": "gpt-4o-mini",
+      "name": "gpt-4.1-nano",
+      "display_name": "gpt-4.1-nano",
       "description": "",
       "endpoint": 2
     }

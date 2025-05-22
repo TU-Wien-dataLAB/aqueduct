@@ -45,6 +45,10 @@ class BaseAqueductView(LoginRequiredMixin, View):
         """
         return self.profile.org
 
+    def is_admin(self) -> bool:
+        """Checks if the current user is a global admin."""
+        return self.profile.is_admin()
+
     def is_org_admin(self) -> bool:
         """Checks if the current user is an admin of their associated organization."""
         # Relies on the is_org_admin method defined in the UserProfile model.

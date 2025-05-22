@@ -2,12 +2,26 @@
 {% load static %}
 
 {% block content %}
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="mb-1">
-            <span class="text-xl font-normal text-base-content opacity-75">Org</span>
-            <span class="text-3xl font-semibold ml-1">{{ user.profile.org.name }}</span>
-        </h1>
-        {# check if user can create teams #}
+    <div class="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <div class="flex items-center gap-4 flex-wrap">
+            <h1 class="mb-0 mr-4 flex items-center gap-2">
+                <span class="text-xl font-normal text-base-content opacity-75">Org</span>
+                <span class="text-3xl font-semibold ml-1">{{ user.profile.org.name }}</span>
+            </h1>
+            {% if user.profile.is_admin %}
+                <form method="post" action="{% url 'org_switch' %}" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <label for="org-switch" class="mr-1 font-medium text-xs text-base-content opacity-70">Switch Organization:</label>
+                    <select name="org_id" id="org-switch" class="select select-bordered select-xs" onchange="this.form.submit()">
+                        {% for org in all_orgs %}
+                            <option value="{{ org.id }}" {% if org.id == user.profile.org.id %}selected{% endif %}>
+                                {{ org.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </form>
+            {% endif %}
+        </div>
         {% if is_org_admin %}
             <a href="{% url 'team_create' %}" class="btn btn-primary btn-sm">Create New Team</a>
         {% endif %}

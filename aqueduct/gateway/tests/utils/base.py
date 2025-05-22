@@ -36,7 +36,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     Integration tests using the embedded RemoteOpenAIServer (with httpx).
     """
     vllm_server: Optional["RemoteOpenAIServer"] = None
-    model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "gpt-4o-mini"
+    model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "gpt-4.1-nano"
 
     # Hash: 750a701272d7624a3e6f10d5e0d9efdf0e2c7e575803219081358db36bfd243a
     # Preview: k-...3abc

@@ -34,10 +34,10 @@ async def _check_token_usage_limits(backend: 'AIGatewayBackend') -> Union[Mutabl
 
         # Check if any limits are actually set
         if limits.requests_per_minute is None and \
-           limits.input_tokens_per_minute is None and \
-           limits.output_tokens_per_minute is None:
+                limits.input_tokens_per_minute is None and \
+                limits.output_tokens_per_minute is None:
             logger.debug(f"No specific rate limits set for Token '{token.name}'. Skipping usage check.")
-            return backend.relay_request # No limits to check
+            return backend.relay_request  # No limits to check
 
         # Define the time window for usage check (last 60 seconds)
         time_window_start = timezone.now() - timedelta(seconds=60)
@@ -93,6 +93,46 @@ async def _check_token_usage_limits(backend: 'AIGatewayBackend') -> Union[Mutabl
         logger.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
         # Fail open? Or return 500? Let's return 500 to indicate an internal issue.
         return JsonResponse({"error": "Internal gateway error checking rate limits"}, status=500)
+
+
+async def _model_info_path(backend: 'AIGatewayBackend') -> Union[MutableRequest, HttpResponse]:
+    """
+    Adjusts the relay request path for a model info request.
+    Extracts the model display name from the request path, finds the corresponding internal model,
+    and rewrites the relay request URL to use the internal model name.
+    """
+    # Example path: openai/v1/models/{model_display_name}
+    path = backend.request.path
+    # Extract the model display name from the path; assumes path ends with /models/{model_display_name}
+    path_parts = path.strip('/').split('/')
+    assert path_parts[0] == backend.endpoint.slug
+    if len(path_parts) < 3 or path_parts[-2] != "models":
+        return JsonResponse({"error": "Invalid model info path."}, status=400)
+    model_display_name = path_parts[-1]
+
+    # Find the model in the database by display_name for this endpoint
+    db_model = await Model.objects.filter(endpoint=backend.endpoint, display_name=model_display_name).afirst()
+    if not db_model:
+        return JsonResponse({"error": f"Model {model_display_name} not found!"}, status=404)
+    relay_request = backend.relay_request
+    relay_request.path = f"models/{db_model.name}"
+    return relay_request
+
+
+async def _transform_model(backend: 'AIGatewayBackend', response: HttpResponse) -> HttpResponse:
+    """
+    Transforms a single model info response from the OpenAI-compatible API.
+    Replaces the 'id' field in the response with the display_name from the database.
+    """
+    # Parse the response content as an OpenAI Model
+    model = openai_sdk.types.Model.model_validate_json(response.content)
+    # Find the model in the database by internal name for this endpoint
+    db_model = await Model.objects.filter(endpoint=backend.endpoint, name=model.id).afirst()
+    if not db_model:
+        return JsonResponse({"error": f"Model {model.id} not found!"}, status=404)
+    model.id = db_model.display_name
+    response.content = model.model_dump_json()
+    return response
 
 
 async def _transform_models(backend: 'AIGatewayBackend', response: HttpResponse) -> HttpResponse:
@@ -183,7 +223,8 @@ async def _add_streaming_usage(backend: AIGatewayBackend) -> Union[MutableReques
 
             return backend.relay_request
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            logger.warning(f"Pre-processing: Failed to decode JSON from request body ({e}), skipping setting streaming usage.")
+            logger.warning(
+                f"Pre-processing: Failed to decode JSON from request body ({e}), skipping setting streaming usage.")
             return backend.relay_request
 
 
@@ -413,10 +454,11 @@ class OpenAIBackend(AIGatewayBackend):
         return {
             # Match paths commonly requiring a 'model' parameter in the body
             r"^(v1/)?(chat/completions|completions|embeddings)$": [
-                _check_token_usage_limits, # Check limits first
+                _check_token_usage_limits,  # Check limits first
                 _validate_and_transform_model_in_request,
                 _add_streaming_usage
             ],
+            r"^(v1/)?models/.*$": [_model_info_path]
         }
 
     def post_processing_endpoints(self) -> dict[
@@ -427,4 +469,5 @@ class OpenAIBackend(AIGatewayBackend):
         return {
             # Match 'models' or 'v1/models' exactly
             r"^(v1/)?models$": [_transform_models],
+            r"^(v1/)?models/.*$": [_transform_model]
         }

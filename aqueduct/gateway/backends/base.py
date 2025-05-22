@@ -30,11 +30,16 @@ class PreProcessingPipelineError(Exception):
 @dataclasses.dataclass
 class MutableRequest:
     method: str
-    url: str
+    endpoint: str
+    path: str
     headers: dict | None = None,
     json: dict[str, Any] | None = None
     timeout: float | None = None
     stream: bool = False
+
+    @property
+    def url(self) -> str:
+        return f"{self.endpoint}/{self.path}"
 
     def build(self, client: httpx.AsyncClient) -> httpx.Request:
         new_body_bytes = json.dumps(self.json).encode('utf-8')
@@ -229,7 +234,6 @@ class AIGatewayBackend(abc.ABC):
         # Ensure leading/trailing slashes are handled correctly for joining
         target_api_base = self.endpoint.url.rstrip('/')
         remaining_path_cleaned = remaining_path.lstrip('/')
-        target_url = f"{target_api_base}/{remaining_path_cleaned}"
 
         # Prepare initial headers and body for the outbound request
         # Copy relevant headers, being careful about case and sensitive info
@@ -253,7 +257,8 @@ class AIGatewayBackend(abc.ABC):
         # Create the MutableRequest object
         request_object = MutableRequest(
             method=self.request.method,
-            url=target_url,
+            endpoint=target_api_base,
+            path=remaining_path_cleaned,
             headers=outbound_headers,
             json=json_content,
         )

@@ -256,6 +256,8 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         Sends a request to /models/{model} endpoint to get info about a specific model.
         Checks that the response is correct and contains the expected model info.
         """
+        if self.AQUEDUCT_ENDPOINT == "vllm":
+            self.skipTest("Model info endpoint not available in vllm.")
         # Use the model name as returned by the list models endpoint
         model_id = self.model
 

@@ -87,6 +87,8 @@ AI gateway. The implementation follows a phased approach:
 3. 🔄 **Advanced Features:**
    * Limit team access to specific models.
    * Database schema optimization for write-heavy request/usage logging.
+     * Data retention
+     * Partitioning?
    * Add `locust` load testing.
    * A `/metrics` endpoint for monitoring.
    * Dashboard to track usage of orgs, teams and users.

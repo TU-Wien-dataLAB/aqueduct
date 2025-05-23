@@ -7,10 +7,63 @@ from openai.types.chat import ChatCompletion  # Use OpenAI types for response pa
 
 from gateway.tests.utils import reset_gateway_httpx_async_client, _build_chat_headers, _build_chat_payload, \
     _read_streaming_response_lines, _parse_streamed_content_pieces
-from gateway.tests.utils.base import GatewayIntegrationTestCase
+from gateway.tests.utils.base import GatewayIntegrationTestCase, INTEGRATION_TEST_BACKEND
 from management.models import Request, UserProfile, ServiceAccount, Team, Org
 
 User = get_user_model()
+
+
+class EmbeddingTest(GatewayIntegrationTestCase):
+    model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "text-embedding-3-small"
+
+    @reset_gateway_httpx_async_client
+    @override_settings(RELAY_REQUEST_TIMEOUT=5)
+    def test_embeddings(self):
+        """
+        Sends a simple embeddings request to the vLLM server using the Django test client.
+        After the request, checks that the database contains one request,
+        the endpoint matches, and input/output tokens are > 0.
+        """
+        if self.AQUEDUCT_ENDPOINT == "vllm":
+            self.skipTest(
+                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase to manage multiple servers!")
+
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        payload = {
+            "model": self.model,
+            "input": ["The quick brown fox jumps over the lazy dog."]
+        }
+        endpoint = f"/{self.AQUEDUCT_ENDPOINT}/embeddings"
+        response = self.client.post(
+            endpoint,
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+
+        response_json = response.json()
+        print(f"\nEmbeddings response: {response_json}")
+
+        # OpenAI-style embeddings response should have 'data' and 'embedding' fields
+        self.assertIn("data", response_json)
+        self.assertIsInstance(response_json["data"], list)
+        self.assertGreater(len(response_json["data"]), 0)
+        embedding_obj = response_json["data"][0]
+        self.assertIn("embedding", embedding_obj)
+        self.assertIsInstance(embedding_obj["embedding"], list)
+        self.assertGreater(len(embedding_obj["embedding"]), 0)
+
+        # Check that the database contains one request and endpoint matches
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after embeddings.")
+        req = requests[0]
+        self.assertIn("embeddings", req.path, "Request endpoint should be for embeddings.")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
+        self.assertEqual(req.output_tokens, 0, "output_tokens should be 0")
 
 
 class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):

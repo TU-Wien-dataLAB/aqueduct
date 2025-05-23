@@ -24,7 +24,7 @@
                         <h2 class="text-xl font-semibold mb-3">Endpoint: {{ endpoint.name }}</h2>
                         <div class="mb-1 flex items-center">
                             <span class="font-medium text-sm text-gray-600 mr-2">URL:</span>
-                            <pre id="endpoint-url-{{ endpoint.slug }}" class="bg-base-200 rounded px-2 py-1 text-sm font-mono text-gray-800 overflow-x-auto whitespace-nowrap mr-2">{{ request.scheme }}://{{ request.get_host }}/{{ endpoint.slug }}</pre>
+                            <pre id="endpoint-url-{{ endpoint.slug }}" class="bg-base-200 rounded px-2 py-1 text-sm font-mono overflow-x-auto whitespace-nowrap mr-2">{{ request.scheme }}://{{ request.get_host }}/{{ endpoint.slug }}</pre>
                             <button type="button"
                                     class="btn btn-xs btn-soft"
                                     onclick="navigator.clipboard.writeText(document.getElementById('endpoint-url-{{ endpoint.slug }}').textContent).then(() => { 

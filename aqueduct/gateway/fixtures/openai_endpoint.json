@@ -20,5 +20,15 @@
       "description": "",
       "endpoint": 2
     }
+  },
+  {
+    "model": "management.model",
+    "pk": 3,
+    "fields": {
+      "name": "text-embedding-3-small",
+      "display_name": "text-embedding-3-small",
+      "description": "",
+      "endpoint": 2
+    }
   }
 ]

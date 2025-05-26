@@ -17,6 +17,9 @@ from django.core.exceptions import ImproperlyConfigured
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+TIME_ZONE = 'UTC'
+USE_TZ = True
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
@@ -39,6 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'mozilla_django_oidc',
+    'django_celery_beat',
     'management.apps.AqueductManagementConfig',
     "gateway.apps.GatewayConfig"
 ]
@@ -118,6 +122,25 @@ EXTRA_NAV_LINKS = {
 RELAY_REQUEST_TIMEOUT = 60
 STREAM_REQUEST_TIMEOUT = 1
 
+REQUEST_RETENTION_ENABLED = True
+REQUEST_RETENTION_DAYS = 7
+REQUEST_RETENTION_SCHEDULE = "*/15 * * * *"
+
+# Celery Settings -------------------------------------------------------
+
+CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == "true"
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_WORKER_CONCURRENCY = os.environ.get('CELERY_WORKER_CONCURRENCY', 1)
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+
+CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_ACCEPT_CONTENT = ['application/json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+
 # ------------------------------------------------------------------------
 
 ROOT_URLCONF = 'aqueduct.urls'
@@ -191,12 +214,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
-
-TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
-USE_TZ = True
 
 STORAGES = {
     # ...

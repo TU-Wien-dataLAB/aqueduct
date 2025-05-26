@@ -9,6 +9,8 @@ venv
 **/fixtures/.*.json
 examples/k8s/.*.yaml
 aqueduct/staticfiles
+dump.rdb
+*.db
 
 # Created by https://www.toptal.com/developers/gitignore/api/django
 # Edit at https://www.toptal.com/developers/gitignore?templates=django

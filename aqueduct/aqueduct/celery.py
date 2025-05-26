@@ -3,6 +3,7 @@ import os
 from celery import Celery
 from celery.schedules import crontab
 from django.conf import settings
+from django.utils import timezone
 
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'aqueduct.settings')
@@ -24,10 +25,19 @@ def setup_periodic_tasks(sender: Celery, **kwargs):
     # Executes on the specified time in settings
     sender.add_periodic_task(
         crontab.from_string(settings.REQUEST_RETENTION_SCHEDULE),
-        debug_task.s(),
+        delete_old_requests.s(),
     )
 
 
 @app.task(bind=True, ignore_result=True)
-def debug_task(self):
-    print(f'Deleting requests older than {settings.REQUEST_RETENTION_DAYS} days!')
+def delete_old_requests(self):
+    """
+    Deletes Request objects older than REQUEST_RETENTION_DAYS.
+    """
+    from management.models import Request  # Import here to avoid issues at startup
+    retention_days = getattr(settings, "REQUEST_RETENTION_DAYS", 30)
+    cutoff = timezone.now() - timezone.timedelta(days=retention_days)
+    old_requests = Request.objects.filter(timestamp__lt=cutoff)
+    count = old_requests.count()
+    old_requests.delete()
+    print(f"Deleted {count} requests older than {retention_days} days (before {cutoff})")

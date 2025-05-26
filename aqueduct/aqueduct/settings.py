@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -123,8 +124,8 @@ RELAY_REQUEST_TIMEOUT = 60
 STREAM_REQUEST_TIMEOUT = 1
 
 REQUEST_RETENTION_ENABLED = True
-REQUEST_RETENTION_DAYS = 7
-REQUEST_RETENTION_SCHEDULE = "*/15 * * * *"
+REQUEST_RETENTION_DAYS = float(os.environ.get("REQUEST_RETENTION_DAYS", 7))
+REQUEST_RETENTION_SCHEDULE = os.environ.get("REQUEST_RETENTION_SCHEDULE", "* 4 * * *")
 
 # Celery Settings -------------------------------------------------------
 
@@ -140,6 +141,13 @@ CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+
+CELERY_BEAT_SCHEDULE = {
+    'delete-old-requests': {
+        'task': 'aqueduct.celery.delete_old_requests',  # full dotted path to the task
+        'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    },
+}
 
 # ------------------------------------------------------------------------
 

@@ -19,16 +19,6 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 # Load task modules from all registered Django apps.
 app.autodiscover_tasks()
 
-
-@app.on_after_configure.connect
-def setup_periodic_tasks(sender: Celery, **kwargs):
-    # Executes on the specified time in settings
-    sender.add_periodic_task(
-        crontab.from_string(settings.REQUEST_RETENTION_SCHEDULE),
-        delete_old_requests.s(),
-    )
-
-
 @app.task(bind=True, ignore_result=True)
 def delete_old_requests(self):
     """

@@ -39,6 +39,17 @@ oidc:
   #   clientIdKey: ""
   #   clientSecretKey: ""
 
+
+requestRetentionSchedule:
+  enabled: false
+  celery:
+    brokerUrl: "redis://redis-master:6379/0"
+    workerConcurrency: 1
+    requestRetentionDays: 7
+    schedule: "* 4 * * *"
+    workerDeployment:
+      replicas: 1
+      resources: {}
 env:
   - name: DATABASE_ENGINE
     value: "django.db.backends.postgresql"
@@ -72,3 +83,12 @@ postgresql:
     persistence:
       enabled: true
       size: 10Gi
+
+redis:
+  fullnameOverride: "redis"
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: false

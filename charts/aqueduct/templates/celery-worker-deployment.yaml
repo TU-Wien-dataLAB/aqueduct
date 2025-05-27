@@ -1,0 +1,27 @@
+{{- if .Values.requestRetentionSchedule.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-celery-worker
+spec:
+  replicas: {{ .Values.requestRetentionSchedule.celery.workerDeployment.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      component: celery-worker
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+        component: celery-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          command: ["python", "-m", "celery", "-A", "aqueduct", "worker", "--loglevel=info"]
+          env:
+            {{- include "aqueduct.env" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.requestRetentionSchedule.celery.workerDeployment.resources | nindent 12 }}
+{{- end }}

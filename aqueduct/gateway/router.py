@@ -1,31 +1,25 @@
-import warnings
-from typing import Optional
+from functools import lru_cache
 
 import yaml
+from django.conf import settings
 from litellm import Router
 from litellm.types.router import RouterConfig
 
-_config: Optional[RouterConfig] = None
-_router: Optional[Router] = None
 
-
-def load_router(path: str):
-    global _config, _router
+@lru_cache(maxsize=1)
+def get_router_config() -> RouterConfig:
+    path = settings.LITELLM_ROUTER_CONFIG_FILE_PATH
     try:
         with open(path) as f:
             data = yaml.safe_load(f)
     except (FileNotFoundError, TypeError):
-        warnings.warn(f"Router config file {path} not found")
-        return
-    _config = RouterConfig.model_validate(data)
-    _router = Router(**_config.model_dump())
+        raise RuntimeError(f'Unable to load router config from {path}')
+    return RouterConfig.model_validate(data)
 
 
+@lru_cache(maxsize=1)
 def get_router() -> Router:
-    global _router
-    return _router
-
-
-def get_router_config() -> RouterConfig:
-    global _config
-    return _config
+    config = get_router_config()
+    if config is None:
+        raise RuntimeError(f"Router config not found!")
+    return Router(**config.model_dump())

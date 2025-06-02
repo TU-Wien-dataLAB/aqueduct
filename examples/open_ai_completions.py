@@ -35,6 +35,18 @@ client = OpenAI(
 
 # Send the request to the API with streaming enabled
 print(f"Sending request to {BASE_URL} with model {MODEL}...")
+# --- Embedding Example ---
+print("--- Embedding Example ---")
+embedding_response = client.embeddings.create(
+    model="openai-embedding",
+    input=PROMPT,
+)
+if embedding_response.data:
+    embedding_vector = embedding_response.data[0].embedding
+    print(f"Embedding vector (first 10 values): {embedding_vector[:10]}")
+print("--- End of Embedding Example ---")
+
+
 print("--- Streaming Chat Response ---")
 
 response = client.chat.completions.create(

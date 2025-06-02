@@ -1,5 +1,6 @@
 import os
 import sys
+from textwrap import dedent
 from typing import Optional, Literal
 
 from django.contrib.auth import get_user_model
@@ -8,6 +9,33 @@ from django.test import TransactionTestCase, override_settings
 INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get("INTEGRATION_TEST_BACKEND", "vllm")
 if INTEGRATION_TEST_BACKEND not in ["vllm", "openai"]:
     raise ValueError("Integration test backend must be one of 'vllm' or 'openai‘.")
+
+ROUTER_CONFIG_PATH = f"/tmp/aqueduct/{INTEGRATION_TEST_BACKEND}-router-config.yaml"
+ROUTER_CONFIG_VLLM = dedent("""
+model_list:
+- model_name: Qwen-0.5B
+  litellm_params:
+    model: openai/Qwen/Qwen2.5-0.5B-Instruct
+    api_key: "dummy-vllm-key"
+    api_base: http://localhost:8009/v1
+  tpm: 10000
+  rpm: 100
+""")
+
+ROUTER_CONFIG_OPENAI = dedent("""
+model_list:
+- model_name: gpt-4.1-nano
+  litellm_params:
+    model: openai/gpt-4.1-nano
+    api_key: "os.environ/OPENAI_API_KEY"
+- model_name: text-embedding-ada-002
+  litellm_params:
+    model: openai/text-embedding-ada-002
+    api_key: "os.environ/OPENAI_API_KEY"
+  model_info:
+       mode: embedding
+""")
+ROUTER_CONFIG = ROUTER_CONFIG_VLLM if INTEGRATION_TEST_BACKEND == "vllm" else ROUTER_CONFIG_OPENAI
 
 START_VLLM_SERVER = INTEGRATION_TEST_BACKEND == "vllm" and os.environ.get("START_VLLM_SERVER", "true") == "true"
 
@@ -30,7 +58,8 @@ User = get_user_model()
 
 
 # --- Django Test Class ---
-@override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'])
+@override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
+                   LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
 class GatewayIntegrationTestCase(TransactionTestCase):
     """
     Integration tests using the embedded RemoteOpenAIServer (with httpx).
@@ -41,13 +70,19 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     # Hash: 750a701272d7624a3e6f10d5e0d9efdf0e2c7e575803219081358db36bfd243a
     # Preview: k-...3abc
     AQUEDUCT_ACCESS_TOKEN = "sk-123abc"
-    AQUEDUCT_ENDPOINT = "vllm" if INTEGRATION_TEST_BACKEND == "vllm" else "openai"
 
     VLLM_SEED = 42
-    fixtures = ["gateway_data.json", "vllm_endpoint.json", "openai_endpoint.json"]
+    fixtures = ["gateway_data.json"]
+
+    @classmethod
+    def _write_router_config(cls):
+        os.makedirs(os.path.dirname(ROUTER_CONFIG_PATH), exist_ok=True)
+        with open(ROUTER_CONFIG_PATH, "w") as f:
+            f.write(ROUTER_CONFIG)
 
     @classmethod
     def setUpClass(cls):
+        cls._write_router_config()
         super().setUpClass()
         if INTEGRATION_TEST_BACKEND == "vllm" and START_VLLM_SERVER:
             if not _VLLM_AVAILABLE:

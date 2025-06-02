@@ -5,8 +5,10 @@ from datetime import timedelta
 from functools import wraps
 from typing import AsyncGenerator, Any
 
+import litellm
 import openai
 from asgiref.sync import async_to_sync, sync_to_async
+from django.conf import settings
 from django.contrib import auth
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Sum, Count
@@ -28,7 +30,6 @@ from management.models import Request, Token, Usage
 from gateway.router import get_router
 
 logger = logging.getLogger(__name__)
-
 
 COMPLETION_TYPE = openai.types.Completion
 CHAT_COMPLETION_TYPE = openai.types.chat.ChatCompletion
@@ -71,6 +72,7 @@ def parse_body(model: TypeAdapter):
                 body = request.body.decode('utf-8')
                 model.validate_json(body)
                 kwargs['pydantic_model'] = json.loads(body)
+                kwargs['pydantic_model']['timeout'] = settings.RELAY_REQUEST_TIMEOUT
                 return await view_func(request, *args, **kwargs)
             except ValidationError as e:
                 return JsonResponse({'error': str(e)}, status=400)
@@ -209,8 +211,22 @@ def log_request(view_func):
 
     return wrapper
 
-def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper, request_log: Request) -> AsyncGenerator[str, Any]:
+
+def handle_timeout(view_func):
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        try:
+            return await view_func(request, *args, **kwargs)
+        except litellm.Timeout as e:
+            return JsonResponse({"error": str(e)}, status=504)
+
+    return wrapper
+
+
+def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper, request_log: Request) -> \
+        AsyncGenerator[str, Any]:
     start_time = time.monotonic()
+
     async def stream():
         token_usage = Usage(0, 0)
         async for chunk in completion:
@@ -226,6 +242,7 @@ def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper
         await request_log.asave()
         # Streaming is done, yield the [DONE] chunk
         yield f"data: [DONE]\n\n"
+
     return stream()
 
 
@@ -236,7 +253,9 @@ def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper
 @parse_body(model=TypeAdapter(openai.types.CompletionCreateParams))
 @ensure_usage
 @log_request
-async def completions(request: ASGIRequest, pydantic_model: openai.types.CompletionCreateParams, request_log: Request, *args, **kwargs):
+@handle_timeout
+async def completions(request: ASGIRequest, pydantic_model: openai.types.CompletionCreateParams, request_log: Request,
+                      *args, **kwargs):
     router = get_router()
     completion: TextCompletionResponse | TextCompletionStreamWrapper = await router.atext_completion(**pydantic_model)
     if isinstance(completion, TextCompletionStreamWrapper):
@@ -257,12 +276,15 @@ async def completions(request: ASGIRequest, pydantic_model: openai.types.Complet
 @parse_body(model=TypeAdapter(openai.types.chat.CompletionCreateParams))
 @ensure_usage
 @log_request
+@handle_timeout
 async def chat_completions(request: ASGIRequest, pydantic_model: openai.types.chat.CompletionCreateParams,
                            request_log: Request, *args, **kwargs):
     router = get_router()
     chat_completion: CustomStreamWrapper | ModelResponse = await router.acompletion(**pydantic_model)
     if isinstance(chat_completion, CustomStreamWrapper):
-        return StreamingHttpResponse(streaming_content=_openai_stream(completion=chat_completion, request_log=request_log), content_type='text/event-stream')
+        return StreamingHttpResponse(
+            streaming_content=_openai_stream(completion=chat_completion, request_log=request_log),
+            content_type='text/event-stream')
     elif isinstance(chat_completion, ModelResponse):
         data = chat_completion.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
@@ -275,10 +297,13 @@ async def chat_completions(request: ASGIRequest, pydantic_model: openai.types.ch
 @require_POST
 @token_authenticated
 @check_limits
-@parse_body(model=TypeAdapter(openai.types.CompletionCreateParams))
+@parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
 @ensure_usage
 @log_request
-async def embeddings(request: ASGIRequest, pydantic_model: openai.types.chat.CompletionCreateParams, *args, **kwargs):
+@handle_timeout
+async def embeddings(request: ASGIRequest, pydantic_model: openai.types.EmbeddingCreateParams, request_log: Request, *args, **kwargs):
     router = get_router()
     embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
-    return JsonResponse(data=embedding.model_dump(), status=200)
+    data = embedding.model_dump(exclude_none=True, exclude_unset=True)
+    request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
+    return JsonResponse(data=data, status=200)

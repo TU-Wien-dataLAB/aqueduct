@@ -3,18 +3,18 @@ import json
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
 from django.test import override_settings
-from openai.types.chat import ChatCompletion  # Use OpenAI types for response parsing
+from openai.types.chat import ChatCompletion
 
 from gateway.tests.utils import reset_gateway_httpx_async_client, _build_chat_headers, _build_chat_payload, \
     _read_streaming_response_lines, _parse_streamed_content_pieces
-from gateway.tests.utils.base import GatewayIntegrationTestCase, INTEGRATION_TEST_BACKEND
+from gateway.tests.utils.base import GatewayIntegrationTestCase, INTEGRATION_TEST_BACKEND, ROUTER_CONFIG
 from management.models import Request, UserProfile, ServiceAccount, Team, Org
 
 User = get_user_model()
 
 
 class EmbeddingTest(GatewayIntegrationTestCase):
-    model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "text-embedding-3-small"
+    model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "text-embedding-ada-002"
 
     @reset_gateway_httpx_async_client
     @override_settings(RELAY_REQUEST_TIMEOUT=5)
@@ -24,16 +24,17 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
-        if self.AQUEDUCT_ENDPOINT == "vllm":
+        if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest(
                 "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase to manage multiple servers!")
 
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        assert self.model in ROUTER_CONFIG
         payload = {
             "model": self.model,
             "input": ["The quick brown fox jumps over the lazy dog."]
         }
-        endpoint = f"/{self.AQUEDUCT_ENDPOINT}/embeddings"
+        endpoint = f"/embeddings"
         response = self.client.post(
             endpoint,
             data=json.dumps(payload),
@@ -78,7 +79,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         """
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         payload = _build_chat_payload(self.model, messages, stream=stream, **payload_kwargs)
-        endpoint = f"/{self.AQUEDUCT_ENDPOINT}/chat/completions"
+        endpoint = f"/chat/completions"
         return dict(path=endpoint, data=json.dumps(payload), headers=headers)
 
     def _send_chat_completion(self, messages, **payload_kwargs):
@@ -192,28 +193,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming)")
 
     @reset_gateway_httpx_async_client
-    @override_settings(STREAM_REQUEST_TIMEOUT=0.001)
-    @async_to_sync
-    async def test_chat_completion_streaming_stream_request_timeout(self):
-        """
-        Sends a streaming chat completion request to the vLLM server using the Django test client.
-        After the request, checks that the database contains one request,
-        the endpoint matches, and input/output tokens are > 0.
-        """
-        # For some reason authentication does not work in async test case...
-        await sync_to_async(lambda: self.async_client.force_login(
-            User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
-
-        response = await self._send_chat_completion_streaming(self.MESSAGES)
-
-        # Timeout happens before the streaming even started and can return 504
-        self.assertEqual(
-            response.status_code, 504,
-            f"Expected 504 Gateway Timeout, got {response.status_code}!"
-        )
-
-    @reset_gateway_httpx_async_client
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.01)
     @async_to_sync
     async def test_chat_completion_streaming_relay_request_timeout(self):
         """
@@ -227,18 +207,17 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
 
         response = await self._send_chat_completion_streaming(self.MESSAGES)
 
-        # Timeout happens while streaming -> 200 returned
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
-
-        streamed_lines = await _read_streaming_response_lines(response)
-        self.assertEqual(len(streamed_lines), 0, "Timeout prevents streaming content")
+        self.assertEqual(
+            response.status_code, 504,
+            f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}"
+        )
 
 
 class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
     def _send_model_list_request(self):
         return self.client.get(
-            f"/{self.AQUEDUCT_ENDPOINT}/models",
+            f"/models",
             data='',
             content_type="application/json",
             headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
@@ -287,7 +266,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # No payload needed for model listing
         response = self.client.get(
-            f"/{self.AQUEDUCT_ENDPOINT}/models",
+            f"/models",
             data='',
             content_type="application/json",
             **headers
@@ -309,13 +288,13 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         Sends a request to /models/{model} endpoint to get info about a specific model.
         Checks that the response is correct and contains the expected model info.
         """
-        if self.AQUEDUCT_ENDPOINT == "vllm":
+        if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("Model info endpoint not available in vllm.")
         # Use the model name as returned by the list models endpoint
         model_id = self.model
 
         response = self.client.get(
-            f"/{self.AQUEDUCT_ENDPOINT}/models/{model_id}",
+            f"/models/{model_id}",
             data='',
             content_type="application/json",
             headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)

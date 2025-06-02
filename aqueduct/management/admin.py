@@ -4,7 +4,7 @@ from django.contrib.auth.models import User, Group
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .models import Org, Team, UserProfile, ServiceAccount, Token, Request, Model, Endpoint, TeamMembership
+from .models import Org, Team, UserProfile, ServiceAccount, Token, Request, TeamMembership
 
 
 # Define an inline admin descriptor for UserProfile model
@@ -104,24 +104,6 @@ class TeamAdmin(admin.ModelAdmin):
     org_link.short_description = "Org"
 
 
-@admin.register(Endpoint)
-class EndpointAdmin(admin.ModelAdmin):
-    list_display = ('name', 'slug', 'backend', 'url')
-
-
-@admin.register(Model)
-class ModelAdmin(admin.ModelAdmin):
-    list_display = ('name', 'endpoint_link', 'display_name', 'endpoint')
-    list_select_related = ['endpoint']
-    list_filter = ['endpoint__name']
-
-    def endpoint_link(self, obj):
-        link = reverse("admin:management_endpoint_change", args=[obj.endpoint.id])
-        return format_html('<a href="{}">{}</a>', link, obj.endpoint.name)
-
-    endpoint_link.short_description = "Endpoint"
-
-
 @admin.register(Org)
 class OrgAdmin(admin.ModelAdmin):
     list_display = ('name', 'requests_per_minute', 'input_tokens_per_minute', 'output_tokens_per_minute')
@@ -129,24 +111,8 @@ class OrgAdmin(admin.ModelAdmin):
 
 @admin.register(Request)
 class RequestAdmin(admin.ModelAdmin):
-    list_display = ('id', 'input_tokens', 'output_tokens', 'status_code', 'response_time_ms', 'endpoint_link', 'model_link')
-    list_filter = ['status_code', 'endpoint__name', 'model__name']
-
-    def endpoint_link(self, obj):
-        if obj.endpoint is None:
-            return ""
-        link = reverse("admin:management_endpoint_change", args=[obj.endpoint.id])
-        return format_html('<a href="{}">{}</a>', link, obj.endpoint.name)
-
-    endpoint_link.short_description = "Endpoint"
-
-    def model_link(self, obj):
-        if obj.model is None:
-            return "-"
-        link = reverse("admin:management_model_change", args=[obj.model.id])
-        return format_html('<a href="{}">{}</a>', link, obj.model.name)
-
-    model_link.short_description = "Model"
+    list_display = ('id', 'input_tokens', 'output_tokens', 'status_code', 'response_time_ms', 'model')
+    list_filter = ['status_code', 'model']
 
 @admin.register(ServiceAccount)
 class ServiceAccountAdmin(admin.ModelAdmin):

@@ -4,77 +4,57 @@
 {% block header %}{{ title }}{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-6">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold">{{ title }}</h1>
-        {# Add buttons for admin users #}
-        {% if user.profile.is_admin %}
-            <div class="space-x-2">
-                <a href="{% url 'admin:management_endpoint_add' %}" class="btn btn-primary btn-sm">Create Endpoint</a>
-                <a href="{% url 'admin:management_model_add' %}" class="btn btn-primary btn-sm">Create Model</a>
+    <div class="container mx-auto px-4 py-6">
+        <h1 class="text-3xl font-bold mb-6">{{ title }}</h1>
+        <div class="mb-1 flex items-center">
+            <span class="font-medium text-sm text-gray-600 mr-2">URL:</span>
+            <pre id="endpoint-url-{{ endpoint.slug }}"
+                 class="bg-base-200 rounded px-2 py-1 text-sm font-mono overflow-x-auto whitespace-nowrap mr-2">{{ request.scheme }}://{{ request.get_host }}/{{ endpoint.slug }}</pre>
+            <button type="button"
+                    class="btn btn-xs btn-soft"
+                    onclick="navigator.clipboard.writeText(document.getElementById('endpoint-url-{{ endpoint.slug }}').textContent).then(() => {
+                            this.textContent = 'Copied!';
+                            this.classList.add('btn-success');
+                            setTimeout(() => { this.textContent = 'Copy'; this.classList.remove('btn-success'); }, 1200);
+                            });"
+                    title="Copy URL to clipboard"
+            >Copy
+            </button>
+        </div>
+
+        {% if model_list %}
+            <div class="overflow-x-auto">
+                <table class="table table-sm w-full">
+                    <thead>
+                    <tr class="bg-base-200">
+                        <th>Model Name</th>
+                        <th>Default TPM</th>
+                        <th>Default RPM</th>
+                        <th>litellm_params</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for model in model_list %}
+                        <tr>
+                            <td class="font-mono">{{ model.model_name }}</td>
+                            <td>{{ model.tpm }}</td>
+                            <td>{{ model.rpm }}</td>
+                            <td>
+                                <pre class="bg-base-200 rounded px-2 py-1 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+{{ model.litellm_params.model_dump | pprint }}
+                                </pre>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="alert alert-info shadow-lg">
+                <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
+                     class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
+                <span>No models found.</span>
             </div>
         {% endif %}
     </div>
-
-    {% if endpoints %}
-        <div class="space-y-8">
-            {% for endpoint in endpoints %}
-                <div class="mb-8">
-                    <div class="list bg-base-100 rounded-box shadow-md p-4">
-                        <h2 class="text-xl font-semibold mb-3">Endpoint: {{ endpoint.name }}</h2>
-                        <div class="mb-1 flex items-center">
-                            <span class="font-medium text-sm text-gray-600 mr-2">URL:</span>
-                            <pre id="endpoint-url-{{ endpoint.slug }}" class="bg-base-200 rounded px-2 py-1 text-sm font-mono overflow-x-auto whitespace-nowrap mr-2">{{ request.scheme }}://{{ request.get_host }}/{{ endpoint.slug }}</pre>
-                            <button type="button"
-                                    class="btn btn-xs btn-soft"
-                                    onclick="navigator.clipboard.writeText(document.getElementById('endpoint-url-{{ endpoint.slug }}').textContent).then(() => { 
-                                        this.textContent = 'Copied!'; 
-                                        this.classList.add('btn-success'); 
-                                        setTimeout(() => { this.textContent = 'Copy'; this.classList.remove('btn-success'); }, 1200); 
-                                    });"
-                                    title="Copy URL to clipboard"
-                            >Copy</button>
-                        </div>
-                        {% if endpoint.description %}
-                            <p class="text-sm text-gray-600 mb-1"><span class="font-medium">Description:</span> {{ endpoint.description }}</p>
-                        {% endif %}
-                        <p class="text-sm text-gray-600 mb-1"><span class="font-medium">Slug:</span> {{ endpoint.slug }}</p>
-                        <p class="text-sm text-gray-600 mb-4"><span class="font-medium">Relay URL:</span> {{ endpoint.url }}</p>
-
-                        <h3 class="text-lg font-medium mt-4 mb-3">Models</h3>
-                        {% if endpoint.models.all %}
-                            <div class="overflow-x-auto">
-                                <table class="table table-sm w-full">
-                                    <thead>
-                                    <tr class="bg-base-200">
-                                        <th>Model Name</th>
-                                        <th>Description</th>
-                                        <th>Relay Name</th>
-                                    </tr>
-                                    </thead>
-                                    <tbody>
-                                    {% for model in endpoint.models.all %}
-                                        <tr>
-                                            <td class="font-mono">{{ model.display_name }}</td>
-                                            <td>{{ model.description|default:"-" }}</td>
-                                            <td class="font-mono">{{ model.name }}</td>
-                                        </tr>
-                                    {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                        {% else %}
-                            <p class="text-gray-500 italic">No models associated with this endpoint.</p>
-                        {% endif %}
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    {% else %}
-        <div class="alert alert-info shadow-lg">
-            <img src="{% static 'icons/info.svg' %}" alt="Info Icon" class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
-            <span>No endpoints found.</span>
-        </div>
-    {% endif %}
-</div>
-{% endblock %} 
+{% endblock %}

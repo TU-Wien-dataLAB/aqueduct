@@ -9,10 +9,15 @@ urlpatterns = [
     # Redirect to the management views if no direct path is given
     path('', RedirectView.as_view(url='/aqueduct/management/tokens/', permanent=True)),
 
-    # Use endpoint slug to determine the target endpoint
-    path(
-        '<slug:endpoint_slug>/<path:remaining_path>', # Capture endpoint slug and remaining path
-        views.ai_gateway_view, # Point to the base view
-        name='api_gateway' # More generic name
-    ),
+    # Completions endpoints
+    path('completions', views.completions, name='completions'),
+    path('v1/completions', views.completions, name='v1_completions'),
+
+    # Chat completions endpoints
+    path('chat/completions', views.chat_completions, name='chat_completions'),
+    path('v1/chat/completions', views.chat_completions, name='v1_chat_completions'),
+
+    # Embeddings endpoints
+    path('embeddings', views.embeddings, name='embeddings'),
+    path('v1/embeddings', views.embeddings, name='v1_embeddings'),
 ]

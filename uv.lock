@@ -151,6 +151,7 @@ dependencies = [
     { name = "django" },
     { name = "django-celery-beat" },
     { name = "httpx" },
+    { name = "litellm" },
     { name = "mozilla-django-oidc" },
     { name = "openai" },
     { name = "whitenoise" },
@@ -177,6 +178,7 @@ requires-dist = [
     { name = "django", specifier = ">=5.2" },
     { name = "django-celery-beat", specifier = ">=2.8.1" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "litellm", specifier = ">=1.71.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "openai", specifier = ">=1.76.0" },
     { name = "psycopg2-binary", marker = "extra == 'postgresql'", specifier = ">=2.9.10" },
@@ -1074,6 +1076,19 @@ wheels = [
 ]
 
 [[package]]
+name = "httpx-aiohttp"
+version = "0.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "httpx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/83/34/07ee45949f76701c4327d95bbaf31c6d62d72c74677ba6a2087b13df7743/httpx_aiohttp-0.1.4.tar.gz", hash = "sha256:61030eed28deeac26286d2e872b7c167f5450b7b0eec5a617ae7d3f7da9c8684", size = 8375, upload_time = "2025-05-23T20:33:20.09Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/77/04b416a0b6e351edf4a0a7a5ff18e9b0ab5dd59d3614cf41030fb86ccaaf/httpx_aiohttp-0.1.4-py3-none-any.whl", hash = "sha256:740a8725af7b7a03d12f21ccd48a83457baa037304646589b87595746c05c87e", size = 4977, upload_time = "2025-05-23T20:33:19.306Z" },
+]
+
+[[package]]
 name = "huggingface-hub"
 version = "0.30.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1278,6 +1293,29 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/af/60/bc7622aefb2aee1c0b4ba23c1446d3e30225c8770b38d7aedbfb65ca9d5a/lark-1.2.2.tar.gz", hash = "sha256:ca807d0162cd16cef15a8feecb862d7319e7a09bdb13aef927968e45040fed80", size = 252132, upload_time = "2024-08-13T19:49:00.652Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2d/00/d90b10b962b4277f5e64a78b6609968859ff86889f5b898c1a778c06ec00/lark-1.2.2-py3-none-any.whl", hash = "sha256:c2276486b02f0f1b90be155f2c8ba4a8e194d42775786db622faccd652d8e80c", size = 111036, upload_time = "2024-08-13T19:48:58.603Z" },
+]
+
+[[package]]
+name = "litellm"
+version = "1.71.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "click" },
+    { name = "httpx" },
+    { name = "httpx-aiohttp" },
+    { name = "importlib-metadata" },
+    { name = "jinja2" },
+    { name = "jsonschema" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "tiktoken" },
+    { name = "tokenizers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8d/f7/1d51b81e608543c6a79b275a4e2b43f6b4b7f32588566b303102014b725d/litellm-1.71.1.tar.gz", hash = "sha256:c20e5917fdbe771ba4b6d1862b3d38d6e89cfba53e85bb337013f848256566eb", size = 7935681, upload_time = "2025-05-25T14:24:10.744Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/34/0e/328e077a66726dc1d4cfee37c67548b151a33a6d196a32737c85a034712b/litellm-1.71.1-py3-none-any.whl", hash = "sha256:9b94e250c58fba3c87c6ebb77e33c1cc8aa9110cee99dfdc37b368a11cec57c7", size = 7921387, upload_time = "2025-05-25T14:24:08.205Z" },
 ]
 
 [[package]]

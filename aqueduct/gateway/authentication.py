@@ -8,6 +8,25 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
+def token_from_request(request) -> str | None:
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        # No valid header, authentication cannot proceed with this backend.
+        logger.debug("TokenAuthenticationBackend: No 'Bearer ' auth header found.")
+        return None
+
+    try:
+        token_key = auth_header.split(' ')[1]
+        if not token_key:
+            raise IndexError
+        logger.debug(
+            f"TokenAuthenticationBackend: Attempting to authenticate with token starting with {Token._generate_preview(token_key)}")
+        return token_key
+    except IndexError:
+        logger.warning("Authentication failed: Empty or badly formatted Bearer token in header.")
+        return None
+
+
 class TokenAuthenticationBackend(BaseBackend):
     """
     Authenticates against a Bearer token provided in the Authorization header,
@@ -27,20 +46,8 @@ class TokenAuthenticationBackend(BaseBackend):
             None otherwise.
         """
         logger.debug("TokenAuthenticationBackend: authenticate method called.")
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            # No valid header, authentication cannot proceed with this backend.
-            logger.debug("TokenAuthenticationBackend: No 'Bearer ' auth header found.")
-            return None
-
-        try:
-            token_key = auth_header.split(' ')[1]
-            if not token_key:
-                raise IndexError
-            logger.debug(
-                f"TokenAuthenticationBackend: Attempting to authenticate with token starting with {Token._generate_preview(token_key)}")
-        except IndexError:
-            logger.warning("Authentication failed: Empty or badly formatted Bearer token in header.")
+        token_key = token_from_request(request)
+        if not token_key:
             return None
 
         # Find the token using the provided key

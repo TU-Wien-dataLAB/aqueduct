@@ -1,22 +1,18 @@
-from django.views.generic import ListView
+from django.views.generic import ListView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
-from ..models import Endpoint
 
-class ModelListView(LoginRequiredMixin, ListView):
+from gateway.router import get_router_config
+
+
+class ModelListView(LoginRequiredMixin, TemplateView):
     """
-    Displays a list of Endpoints and the Models associated with each.
+    Displays a list of models from the Pydantic RouterConfig.
     """
-    model = Endpoint
     template_name = 'management/model_list.html'
-    context_object_name = 'endpoints'  # Use 'endpoints' in the template
-
-    def get_queryset(self):
-        """
-        Optimize query by prefetching related models.
-        """
-        return Endpoint.objects.prefetch_related('models').order_by('name')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['title'] = "Models and Endpoints"
-        return context 
+        config = get_router_config()
+        context['title'] = "Models"
+        context['model_list'] = config.model_list
+        return context

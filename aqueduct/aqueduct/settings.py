@@ -127,6 +127,8 @@ REQUEST_RETENTION_ENABLED = True
 REQUEST_RETENTION_DAYS = float(os.environ.get("REQUEST_RETENTION_DAYS", 7))
 REQUEST_RETENTION_SCHEDULE = os.environ.get("REQUEST_RETENTION_SCHEDULE", "* 4 * * *")
 
+LITELLM_ROUTER_CONFIG_FILE_PATH = os.environ.get("LITELLM_ROUTER_CONFIG_FILE_PATH")
+
 # Celery Settings -------------------------------------------------------
 
 CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == "true"

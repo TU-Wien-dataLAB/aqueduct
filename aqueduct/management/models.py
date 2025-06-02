@@ -467,6 +467,22 @@ class Usage:
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
 
+    def __add__(self, other):
+        if not isinstance(other, Usage):
+            return NotImplemented
+        return Usage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens
+        )
+
+    def __sub__(self, other):
+        if not isinstance(other, Usage):
+            return NotImplemented
+        return Usage(
+            input_tokens=self.input_tokens - other.input_tokens,
+            output_tokens=self.output_tokens - other.output_tokens
+        )
+
 
 class Request(models.Model):
     """Represents a request made using a custom Token."""
@@ -491,20 +507,10 @@ class Request(models.Model):
         on_delete=models.CASCADE,  # If Token is deleted, delete its associated Requests
         related_name='requests'
     )
-    model = models.ForeignKey(
-        'Model',
-        on_delete=models.SET_NULL, # Set to NULL if the Model is deleted
-        null=True, # Allow the database field to be NULL
-        blank=True, # Allow the field to be blank in forms/admin
-        related_name='requests'
-    )
-    endpoint = models.ForeignKey(
-        'Endpoint',
-        on_delete=models.CASCADE,
-        related_name='requests',
-        null=False,
-        blank=False,
-        help_text="The endpoint to which this request was made"
+    model = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Model used in request"
     )
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
 
@@ -550,63 +556,3 @@ class Request(models.Model):
 
     def __str__(self):
         return f"{self.id}"
-
-
-class EndpointBackend(models.TextChoices):
-    OPENAI = 'openai', 'OpenAI'
-
-
-class Endpoint(models.Model):
-    """Represents an API endpoint, likely serving multiple Models."""
-    name = models.CharField(verbose_name="Endpoint name", max_length=255, unique=True)
-    slug = models.SlugField(max_length=255, unique=True)
-
-    backend = models.CharField(
-        max_length=32,
-        choices=EndpointBackend.choices,
-        default=EndpointBackend.OPENAI,
-        help_text="Backend provider for this endpoint (currently only 'openai' is supported)."
-    )
-    url = models.CharField(max_length=255, unique=True)
-    description = models.TextField(blank=True)
-    access_token = models.CharField(
-        max_length=128,
-        unique=False,
-        help_text="API access token required to access this endpoint. Can be the literal token, prefixed with 'os.environ/' to read from environment variables, or prefixed with 'settings/' to read from Django settings (e.g., 'settings/MY_ENDPOINT_TOKEN')."
-    )
-
-    def __str__(self):
-        model_count = self.models.count()
-        return f"{self.name} ({model_count} model{'s' if model_count != 1 else ''})"
-
-    def get_access_token(self) -> Optional[str]:
-        if self.access_token.startswith("os.environ/"):
-            return os.environ.get(self.access_token.lstrip("os.environ/"))
-        elif self.access_token.startswith("settings/"):
-            setting_key = self.access_token.lstrip("settings/")
-            return getattr(settings, setting_key, None)  # Return None if setting not found
-        else:
-            return self.access_token
-
-    def clean(self):
-        super().clean()
-        if self.slug and self.slug.lower() == "aqueduct":
-            raise ValidationError({'slug': 'The slug "aqueduct" is reserved.'})
-
-
-class Model(models.Model):
-    """Represents a LLM model."""
-    name = models.CharField(verbose_name="Model name", max_length=255, unique=True)
-    display_name = models.CharField(max_length=255, unique=True)
-    description = models.TextField(blank=True)
-    endpoint = models.ForeignKey(
-        Endpoint,
-        on_delete=models.CASCADE,  # If endpoint is deleted, delete associated models
-        related_name='models'
-    )
-
-    class Meta:
-        unique_together = ('name', 'endpoint')
-
-    def __str__(self):
-        return f"{self.name} ({self.endpoint.name})"

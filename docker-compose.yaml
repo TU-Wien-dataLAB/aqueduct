@@ -22,7 +22,8 @@ services:
   web:
     build: .
     container_name: django_app
-    command: daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application
+    command: |
+      sh -c "python manage.py collectstatic --no-input && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
     volumes:
       - .:/app
     ports:

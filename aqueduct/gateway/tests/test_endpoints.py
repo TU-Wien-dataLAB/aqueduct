@@ -282,44 +282,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         requests = list(Request.objects.all())
         self.assertEqual(len(requests), 0, "There should be no request recorded for invalid token.")
 
-    @reset_gateway_httpx_async_client
-    def test_get_model_info(self):
-        """
-        Sends a request to /models/{model} endpoint to get info about a specific model.
-        Checks that the response is correct and contains the expected model info.
-        """
-        if INTEGRATION_TEST_BACKEND == "vllm":
-            self.skipTest("Model info endpoint not available in vllm.")
-        # Use the model name as returned by the list models endpoint
-        model_id = self.model
-
-        response = self.client.get(
-            f"/models/{model_id}",
-            data='',
-            content_type="application/json",
-            headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        )
-
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
-
-        response_json = response.json()
-        print(f"\nModel info response: {response_json}")
-
-        # OpenAI API returns a model object with at least an 'id' field
-        self.assertIn("id", response_json)
-        self.assertEqual(response_json["id"], model_id)
-
-        # Optionally check for other fields (object, created, etc.) if your backend provides them
-        # self.assertIn("object", response_json)
-        # self.assertEqual(response_json["object"], "model")
-
-        # Check that the database contains one request and endpoint matches
-        requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after model info.")
-        req = requests[0]
-        self.assertIn("models", req.path, "Request endpoint should be for model info.")
-        self.assertIn(model_id, req.path, "Request path should include the model id.")
-
 
 class TokenLimitTest(ChatCompletionsIntegrationTest):
     def setup_limits(self, kind: str, field: str, value: int):

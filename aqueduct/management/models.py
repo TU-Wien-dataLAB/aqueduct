@@ -509,6 +509,7 @@ class Request(models.Model):
     )
     model = models.CharField(
         max_length=255,
+        null=True,
         blank=True,
         help_text="Model used in request"
     )

@@ -17,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 import logging
 
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_GET
 from litellm import Router, TextCompletionStreamWrapper
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.types.utils import ModelResponse, TextCompletionResponse, EmbeddingResponse
@@ -27,7 +27,7 @@ from typing_extensions import Type, TypedDict
 
 from gateway.authentication import token_from_request
 from management.models import Request, Token, Usage
-from gateway.router import get_router
+from gateway.router import get_router, get_router_config
 
 logger = logging.getLogger(__name__)
 
@@ -301,9 +301,35 @@ async def chat_completions(request: ASGIRequest, pydantic_model: openai.types.ch
 @ensure_usage
 @log_request
 @handle_timeout
-async def embeddings(request: ASGIRequest, pydantic_model: openai.types.EmbeddingCreateParams, request_log: Request, *args, **kwargs):
+async def embeddings(request: ASGIRequest, pydantic_model: openai.types.EmbeddingCreateParams, request_log: Request,
+                     *args, **kwargs):
     router = get_router()
     embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
     data = embedding.model_dump(exclude_none=True, exclude_unset=True)
     request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
     return JsonResponse(data=data, status=200)
+
+
+MODEL_CREATION_TIMESTAMP = int(timezone.now().timestamp())
+
+
+@csrf_exempt
+@require_GET
+@token_authenticated
+@log_request
+async def models(request: ASGIRequest, *args, **kwargs):
+    router_config = get_router_config()
+    model_list: list[dict] = router_config["model_list"]
+
+    return JsonResponse(data=dict(
+        data=[
+            {
+                "id": model["model_name"],
+                "object": "model",
+                "created": MODEL_CREATION_TIMESTAMP,
+                "owned_by": "aqueduct",
+            }
+            for model in model_list
+        ],
+        object="list",
+    ))

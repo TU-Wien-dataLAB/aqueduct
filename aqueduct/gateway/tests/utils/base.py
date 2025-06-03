@@ -33,7 +33,7 @@ model_list:
     model: openai/text-embedding-ada-002
     api_key: "os.environ/OPENAI_API_KEY"
   model_info:
-       mode: embedding
+    mode: embedding
 """)
 ROUTER_CONFIG = ROUTER_CONFIG_VLLM if INTEGRATION_TEST_BACKEND == "vllm" else ROUTER_CONFIG_OPENAI
 

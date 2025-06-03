@@ -7,7 +7,7 @@
     <div class="container mx-auto px-4 py-6">
         <h1 class="text-3xl font-bold mb-6">{{ title }}</h1>
         <div class="mb-1 flex items-center">
-            <span class="font-medium text-sm text-gray-600 mr-2">URL:</span>
+            <span class="font-medium text-sm text-base mr-2">Gateway URL:</span>
             <pre id="endpoint-url-{{ endpoint.slug }}"
                  class="bg-base-200 rounded px-2 py-1 text-sm font-mono overflow-x-auto whitespace-nowrap mr-2">{{ request.scheme }}://{{ request.get_host }}/{{ endpoint.slug }}</pre>
             <button type="button"
@@ -41,7 +41,7 @@
                             <td>{{ model.rpm }}</td>
                             <td>
                                 <pre class="bg-base-200 rounded px-2 py-1 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
-{{ model.litellm_params.model_dump | pprint }}
+{{ model.litellm_params | pprint }}
                                 </pre>
                             </td>
                         </tr>

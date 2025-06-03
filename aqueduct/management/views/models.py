@@ -14,5 +14,5 @@ class ModelListView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         config = get_router_config()
         context['title'] = "Models"
-        context['model_list'] = config.model_list
+        context['model_list'] = config["model_list"]
         return context

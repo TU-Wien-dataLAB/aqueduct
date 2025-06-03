@@ -193,7 +193,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming)")
 
     @reset_gateway_httpx_async_client
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.01)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
     @async_to_sync
     async def test_chat_completion_streaming_relay_request_timeout(self):
         """
@@ -209,7 +209,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
 
         self.assertEqual(
             response.status_code, 504,
-            f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}"
+            f"Expected 504 Gateway Timeout, got {response.status_code}"
         )
 
 

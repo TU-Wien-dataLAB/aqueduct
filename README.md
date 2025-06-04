@@ -23,8 +23,8 @@
 
 We aim to achieve this by:
 
-- Using a **pass-through approach** that avoids re-implementing the entire OpenAI-compatible APIs or every new feature, and
-- Building on **Django** for a clean, efficient, and maintainable implementation.
+- Building on top of the **LiteLLM Router SDK** to provide enhanced control and routing capabilities, while avoiding re-implementing the entire OpenAI-compatible APIs or every new feature, and
+- Using **Django** for a clean, efficient, and maintainable implementation.
 
 For more information, please read the [Documentation](https://tu-wien-datalab.github.io/aqueduct/).
 
@@ -82,19 +82,19 @@ AI gateway. The implementation follows a phased approach:
     * ~~A functional `docker-compose.yml`~~
       * ~~Add mock OIDC server to compose for fully local development.~~
     * Thorough unit/integration testing of `management` and `gateway`.
-    * Add documentation.
+    * ~~Add documentation.~~
 
 3. 🔄 **Advanced Features:**
    * Limit team access to specific models.
    * Database schema optimization for write-heavy request/usage logging.
-     * Data retention
+     * ~~Data retention~~
      * Partitioning?
    * Add `locust` load testing.
    * A `/metrics` endpoint for monitoring.
    * Dashboard to track usage of orgs, teams and users.
    * Support more providers on top of vLLM/OpenAI-compatible APIs.
    * Support users belonging to multiple `Orgs`
-   * Implement [Guardrails](https://github.com/guardrails-ai/guardrails) using post-processing on completions. 
+   * Implement [Guardrails](https://github.com/guardrails-ai/guardrails) using post-processing on completions.
    * Model cooldown and retry logic.
    * Granular access control for models within teams.
    * Management of MCP tool calling server endpoints e.g. from
@@ -102,10 +102,6 @@ AI gateway. The implementation follows a phased approach:
      * host a code-sandbox MCP server for executing tool calls.
    * Daily usage quotas/limits for models.
    * Simple chat interface to try models.
-
-4. 🔄 **(Optional) API Abstraction:**
-    * Implementation of a stable API interface (e.g., OpenAI-compatible).
-    * Development of backend adapters for different LLM providers.
 
 
 ## ⚙️ Architecture

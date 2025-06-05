@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-router-config
+data:
+  router_config.yaml: |
+    {{ toYaml .Values.routerConfig | nindent 4 }}

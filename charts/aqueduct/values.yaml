@@ -63,6 +63,9 @@ settingsPy:
     # ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
     # ADMIN_GROUP = "default"
 
+# Router configuration for litellm router
+routerConfig: {}
+
 service:
   type: ClusterIP
   port: 8000

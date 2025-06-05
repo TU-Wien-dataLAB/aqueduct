@@ -5,6 +5,7 @@ metadata:
 data:
   settings.py: |
     {{ .Files.Get "files/settings.py" | nindent 4 }}
+    LITELLM_ROUTER_CONFIG_FILE_PATH = "/etc/aqueduct/router_config.yaml"
     {{ .Values.settingsPy.extra | nindent 4 }}
     {{- if .Values.ingress.enabled }}
     ALLOWED_HOSTS = [{{ .Values.ingress.host | quote }}]

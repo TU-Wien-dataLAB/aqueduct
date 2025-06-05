@@ -26,6 +26,9 @@ spec:
               subPath: settings.py
             - name: staticfiles
               mountPath: /app/aqueduct/staticfiles
+            - name: router-config
+              mountPath: /etc/aqueduct/router_config.yaml
+              subPath: router_config.yaml
       initContainers:
         - name: collectstatic
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -64,3 +67,6 @@ spec:
             name: {{ .Release.Name }}-settings
         - name: staticfiles
           emptyDir: { }
+        - name: router-config
+          configMap:
+            name: {{ .Release.Name }}-router-config

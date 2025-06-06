@@ -3,12 +3,13 @@ import dataclasses
 import os
 import secrets
 import hashlib
-from typing import Literal, Optional
+from typing import Literal, Optional, Callable
 
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.contrib.auth.models import Group
+from django.db.models import JSONField
 from django.utils import timezone
 
 
@@ -78,7 +79,31 @@ class LimitMixin(models.Model):
         abstract = True  # Important: Makes this a mixin, no DB table created
 
 
-class Org(LimitMixin, models.Model):
+class ModelExclusionMixin(models.Model):
+    """
+    An abstract base model providing a model exclusion list.
+    Add Model names to the list to indicate which models should be excluded for the specific object.
+    """
+    excluded_models = JSONField(
+        default=list,
+        help_text="Models to exclude from the config."
+    )
+
+    def add_excluded_model(self, model_name: str):
+        if model_name not in self.excluded_models:
+            self.excluded_models.append(model_name)
+            self.save(update_fields=['excluded_models'])
+
+    def remove_excluded_model(self, model_name: str):
+        if model_name in self.excluded_models:
+            self.excluded_models.remove(model_name)
+            self.save(update_fields=['excluded_models'])
+
+    class Meta:
+        abstract = True  # Important: Makes this a mixin, no DB table created
+
+
+class Org(LimitMixin, ModelExclusionMixin, models.Model):
     """Represents an Organization."""
     name = models.CharField(verbose_name="Org name", max_length=255, unique=True)
 
@@ -86,7 +111,7 @@ class Org(LimitMixin, models.Model):
         return self.name
 
 
-class Team(LimitMixin, models.Model):
+class Team(LimitMixin, ModelExclusionMixin, models.Model):
     """Represents a Team within an Organization."""
     name = models.CharField(verbose_name="Team name", max_length=255)
     description = models.TextField(blank=True)
@@ -104,7 +129,7 @@ class Team(LimitMixin, models.Model):
         return f"{self.name} ({self.org.name})"
 
 
-class UserProfile(LimitMixin, models.Model):
+class UserProfile(LimitMixin, ModelExclusionMixin, models.Model):
     """
     Holds additional information related to the built-in Django User model.
     Each Django User should have one corresponding UserProfile.
@@ -411,17 +436,7 @@ class Token(models.Model):
         # (Handled by save() method)
         super().clean()
 
-    def get_limit(self) -> 'LimitSet':
-        """
-        Determines the effective rate limits for this token, returning a LimitSet dataclass.
-        Assumes database integrity for related objects.
-
-        Hierarchy Rules:
-        - Service Account Token: Uses Team limits, falls back to Org limits.
-        - User Token: Uses UserProfile limits, falls back to Org limits.
-        """
-        # Fetch the current token instance with potentially needed related objects
-        # Using select_related is efficient as it avoids subsequent DB queries
+    def _get_from_hierarchy(self, retrieval_function: Callable):
         token_instance = Token.objects.select_related(
             'user__profile__org',  # Needed for User Tokens
             'service_account__team__org'  # Needed for Service Account Tokens
@@ -432,12 +447,47 @@ class Token(models.Model):
             # Path for Service Account Tokens
             team = token_instance.service_account.team  # Team holds specific SA limits
             org = team.org  # Team's Org holds fallback limits
-            return LimitSet.from_objects(team, org)
+            return retrieval_function(team, org)
         else:
             # Path for standard User Tokens
             profile = token_instance.user.profile  # UserProfile holds specific user limits
             org = profile.org  # Profile's Org holds fallback limits
-            return LimitSet.from_objects(profile, org)
+            return retrieval_function(profile, org)
+
+    def get_limit(self) -> 'LimitSet':
+        """
+        Determines the effective rate limits for this token, returning a LimitSet dataclass.
+        Assumes database integrity for related objects.
+
+        Hierarchy Rules:
+        - Service Account Token: Uses Team limits, falls back to Org limits.
+        - User Token: Uses UserProfile limits, falls back to Org limits.
+        """
+        return self._get_from_hierarchy(LimitSet.from_objects)
+
+    @classmethod
+    def _exclusion_list_from_objects(cls,
+                                     specific_exclusion: Optional['ModelExclusionMixin'],
+                                     org_exclusion: Optional['ModelExclusionMixin']) -> list[str]:
+        specific_exclusion_list = specific_exclusion.excluded_models if specific_exclusion else []
+        if len(specific_exclusion_list) > 0:
+            return specific_exclusion_list
+
+        return org_exclusion.excluded_models if org_exclusion else []
+
+    def model_exclusion_list(self) -> list[str]:
+        """
+        Determines if a model is excluded for this token, returning a either True or False.
+        Assumes database integrity for related objects.
+
+        Hierarchy Rules:
+        - Service Account Token: Uses the Team exclusion list, falls back to the Org exclusion list.
+        - User Token: Uses the UserProfile exclusion list, falls back to the Org exclusion list.
+        """
+        return self._get_from_hierarchy(Token._exclusion_list_from_objects)
+
+    def model_excluded(self, model: str):
+        return model in self.model_exclusion_list()
 
     @classmethod
     def find_by_key(cls, key_value: str) -> Optional['Token']:

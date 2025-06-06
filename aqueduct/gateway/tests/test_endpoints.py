@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import override_settings
 from openai.types.chat import ChatCompletion
 
+from gateway.router import get_router_config
 from gateway.tests.utils import reset_gateway_httpx_async_client, _build_chat_headers, _build_chat_payload, \
     _read_streaming_response_lines, _parse_streamed_content_pieces
 from gateway.tests.utils.base import GatewayIntegrationTestCase, INTEGRATION_TEST_BACKEND, ROUTER_CONFIG
@@ -281,6 +282,40 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         # There should be no request recorded in the database (or possibly one, depending on implementation)
         requests = list(Request.objects.all())
         self.assertEqual(len(requests), 0, "There should be no request recorded for invalid token.")
+
+    @reset_gateway_httpx_async_client
+    def test_list_excluded_model(self):
+        org = Org.objects.get(name="E060")
+        org.add_excluded_model(self.model)
+        org.save()
+        assert len(org.excluded_models) == 1
+
+        router_config = get_router_config()
+        model_list: list[dict] = router_config["model_list"]
+
+        response = self._send_model_list_request()
+
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+
+        response_json = response.json()
+        print(f"\nList models response: {response_json}")
+
+        # OpenAI API returns an object with a 'data' attribute that is a list of models
+        self.assertIn("data", response_json)
+        self.assertIsInstance(response_json["data"], list)
+        self.assertGreater(len(response_json["data"]), 0)
+
+        # Check that at least one model matches the expected model name
+        model_ids = [m["id"] for m in response_json["data"] if "id" in m]
+        print(f"Available model IDs: {model_ids}")
+        self.assertEqual(len(model_ids), len(model_list) - 1)
+        self.assertNotIn(self.model, model_ids)
+
+        # Check that the database contains one request and endpoint matches
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after list models.")
+        req = requests[0]
+        self.assertIn("models", req.path, "Request endpoint should be for model listing.")
 
 
 class TokenLimitTest(ChatCompletionsIntegrationTest):

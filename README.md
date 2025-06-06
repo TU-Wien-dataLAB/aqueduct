@@ -85,7 +85,7 @@ AI gateway. The implementation follows a phased approach:
     * ~~Add documentation.~~
 
 3. 🔄 **Advanced Features:**
-   * Limit team access to specific models.
+   * Limit org/team/user access to specific models.
    * Database schema optimization for write-heavy request/usage logging.
      * ~~Data retention~~
      * Partitioning?
@@ -102,6 +102,7 @@ AI gateway. The implementation follows a phased approach:
      * host a code-sandbox MCP server for executing tool calls.
    * Daily usage quotas/limits for models.
    * Simple chat interface to try models.
+   * Batch API for throughput-heavy workloads, e.g., synthetic data generation.
 
 
 ## ⚙️ Architecture

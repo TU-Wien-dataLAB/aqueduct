@@ -8,6 +8,10 @@
   <link rel="stylesheet" href="{% static 'css/admin_custom.css' %}">
 {% endblock %}
 
+{% block extrahead %}
+    <link rel="shortcut icon" type="image/png" href="{% static 'images/Aqueduct_Icon_80x80.png' %}" >
+{% endblock %}
+
 {% block header %}
   {% include "management/header.html" %}
 {% endblock %}

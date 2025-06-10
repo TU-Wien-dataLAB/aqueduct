@@ -9,7 +9,7 @@ from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.contrib.auth.models import Group
-from django.db.models import JSONField
+from django.db.models import JSONField, BooleanField
 from django.utils import timezone
 
 
@@ -87,6 +87,12 @@ class ModelExclusionMixin(models.Model):
     excluded_models = JSONField(
         default=list,
         help_text="Models to exclude from the config."
+    )
+
+    merge_exclusion_lists = BooleanField(
+        default=True,
+        null=False,
+        help_text="When enabled, this object's exclusion list will be combined with the exclusion list from its parent in the hierarchy (such as combining a User's and an Org's lists). Disable to use only this object's exclusions."
     )
 
     def add_excluded_model(self, model_name: str):
@@ -469,11 +475,15 @@ class Token(models.Model):
     def _exclusion_list_from_objects(cls,
                                      specific_exclusion: Optional['ModelExclusionMixin'],
                                      org_exclusion: Optional['ModelExclusionMixin']) -> list[str]:
-        specific_exclusion_list = specific_exclusion.excluded_models if specific_exclusion else []
-        if len(specific_exclusion_list) > 0:
-            return specific_exclusion_list
+        exclusion_list: list[str] = specific_exclusion.excluded_models if specific_exclusion else []
+        if specific_exclusion.merge_exclusion_lists:
+            org_exclusion_list: list[str] = org_exclusion.excluded_models if org_exclusion else []
+            exclusion_list = exclusion_list + org_exclusion_list
+            if org_exclusion.merge_exclusion_lists:
+                settings_exclusion_list: list[str] = getattr(settings, "AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST", [])
+                exclusion_list = exclusion_list + settings_exclusion_list
 
-        return org_exclusion.excluded_models if org_exclusion else []
+        return list(set(exclusion_list))
 
     def model_exclusion_list(self) -> list[str]:
         """

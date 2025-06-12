@@ -1,5 +1,9 @@
-{% extends 'management/base.html' %} {% load static %} {% block header %}{{
-    title }}{% endblock %} {% block content %}
+{% extends 'management/base.html' %}
+{% load static %}
+
+{% block header %}{{ title }}{% endblock %}
+
+{% block content %}
     <div class="container mx-auto px-4 py-6 space-y-6">
         <h1 class="text-3xl font-bold mb-6">{{ title }}</h1>
         <div class="flex items-center space-x-4">
@@ -32,8 +36,9 @@
                     <a
                             class="tab{% if sp == selected_span %} tab-active{% endif %}"
                             data-span="{{ sp }}"
-                    >{{ sp }}</a
                     >
+                        {{ sp }}
+                    </a>
                 {% endfor %}
             </div>
         </div>
@@ -96,17 +101,20 @@
                             checked="checked"
                             {% endif %}
                     />
-                    <div class="tab-content bg-base-100 border border-base-300 rounded-box shadow p-4 mt-2 min-w-[220px]">
+                    <div
+                            class="tab-content bg-base-100 border border-base-300 rounded-box shadow p-4 mt-2 min-w-[220px]"
+                    >
                         <ul class="list-decimal list-inside space-y-2">
                             {% for item in top_items|slice:":k" %}
                                 <li class="flex items-center justify-between">
                                     <span class="font-medium">{{ item.name }}</span>
-                                    <span class="badge badge-primary badge-outline">{{ item.count }}</span>
+                                    <span class="badge badge-primary badge-outline"
+                                    >{{ item.count }}</span
+                                    >
                                 </li>
-                            {% endfor %}
-                            {% if top_items|length == 0 %}
-                                <li class="text-base-content/50">No data available.</li>
-                            {% endif %}
+                            {% endfor %} {% if top_items|length == 0 %}
+                            <li class="text-base-content/50">No data available.</li>
+                        {% endif %}
                         </ul>
                     </div>
                 {% endfor %}
@@ -115,17 +123,16 @@
 
         <div>
             <h2 class="text-xl font-semibold mb-2">Requests by Model</h2>
-            <ul class="list-disc list-inside space-y-1">
-                {% for m in per_model %}
-                    <li>{{ m.model|default:"(none)" }}: {{ m.count }}</li>
-                {% endfor %}
-            </ul>
+            <div id="model-bar-chart" style="height: 100px"></div>
         </div>
     </div>
 
     <script>
       const timeseries = JSON.parse("{{ timeseries|escapejs }}");
       const topItems = JSON.parse("{{ top_items_json|escapejs }}");
+      const perModel = JSON.parse("{{ per_model_json|escapejs }}");
+      const chartHeight = perModel.length * 30 + 20;
+      document.getElementById("model-bar-chart").style.height = `${chartHeight}px`;
       const selectedSpan = "{{ selected_span }}";
 
       function onOrgChange() {
@@ -166,6 +173,36 @@
               type: "line",
               data: timeseries,
               showSymbol: false,
+            },
+          ],
+        });
+
+        // --- Requests by Model bar chart ---
+        const modelBarChart = echarts.init(
+          document.getElementById("model-bar-chart"),
+          null,
+          {renderer: "svg"},
+        );
+
+        // Prepare data
+        const modelNames = perModel.map((x) => x.model ?? "(none)");
+        const modelCounts = perModel.map((x) => x.count);
+
+        modelBarChart.setOption({
+          tooltip: {trigger: "axis"},
+          xAxis: {type: "value"},
+          yAxis: {
+            type: "category",
+            data: modelNames,
+            inverse: true,
+          },
+          series: [
+            {
+              type: "bar",
+              data: modelCounts,
+              itemStyle: {
+                color: "#2563eb",
+              },
             },
           ],
         });

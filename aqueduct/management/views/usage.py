@@ -132,7 +132,7 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
             'top_k_choices': [10, 25, 100],
             'total_requests': total_requests,
             'failed_requests': failed_requests,
-            'per_model': list(per_model),
+            'per_model_json': json.dumps(list(per_model)),
             'avg_time_completion': avg_time_comp or 0,
             'avg_time_embedding': avg_time_emb or 0,
             'input_tokens': input_tokens,

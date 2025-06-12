@@ -306,7 +306,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
         self.assertIsInstance(response_json["data"], list)
-        self.assertGreater(len(response_json["data"]), 0)
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]

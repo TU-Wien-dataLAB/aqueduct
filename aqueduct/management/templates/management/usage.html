@@ -1,11 +1,174 @@
-{% extends 'management/base.html' %}
-{% load static %}
-
-{% block header %}{{ title }}{% endblock %}
-
-{% block content %}
-    <div class="container mx-auto px-4 py-6">
+{% extends 'management/base.html' %} {% load static %} {% block header %}{{
+    title }}{% endblock %} {% block content %}
+    <div class="container mx-auto px-4 py-6 space-y-6">
         <h1 class="text-3xl font-bold mb-6">{{ title }}</h1>
-        <p>This is a placeholder for the Usage Dashboard page.</p>
+        <div class="flex items-center space-x-4">
+            {% if is_global_admin %}
+                <label for="org-select" class="font-medium">Organization:</label>
+                <select
+                        id="org-select"
+                        class="select select-bordered"
+                        onchange="onOrgChange()"
+                >
+                    <option value="all" {% if not selected_org %}selected{% endif %}>
+                        All
+                    </option>
+                    {% for org in orgs %}
+                        <option
+                                value="{{ org.id }}"
+                                {% if selected_org and org.id == selected_org.id %}selected{% endif %}
+                        >
+                            {{ org.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            {% else %}
+                <span class="font-medium">Organization: {{ selected_org.name }}</span>
+            {% endif %}
+
+            <label class="font-medium">Time Frame:</label>
+            <div id="span-tabs" class="tabs tabs-box">
+                {% for sp in span_choices %}
+                    <a
+                            class="tab{% if sp == selected_span %} tab-active{% endif %}"
+                            data-span="{{ sp }}"
+                    >{{ sp }}</a
+                    >
+                {% endfor %}
+            </div>
+        </div>
+
+        <div
+                class="stats stats-vertical lg:stats-horizontal shadow bg-base-100 rounded-box"
+        >
+            <div class="stat">
+                <div class="stat-title">Total Requests</div>
+                <div class="stat-value">{{ total_requests }}</div>
+            </div>
+            <div class="stat">
+                <div class="stat-title">Failed Requests</div>
+                <div class="stat-value">{{ failed_requests }}</div>
+            </div>
+            <div class="stat">
+                <div class="stat-title">Avg Resp Time (Completion)</div>
+                <div class="stat-value">
+                    {{ avg_time_completion|floatformat:2 }} ms
+                </div>
+            </div>
+            <div class="stat">
+                <div class="stat-title">Avg Resp Time (Embedding)</div>
+                <div class="stat-value">
+                    {{ avg_time_embedding|floatformat:2 }} ms
+                </div>
+            </div>
+            <div class="stat">
+                <div class="stat-title">Input Tokens</div>
+                <div class="stat-value">{{ input_tokens }}</div>
+            </div>
+            <div class="stat">
+                <div class="stat-title">Output Tokens</div>
+                <div class="stat-value">{{ output_tokens }}</div>
+            </div>
+            <div class="stat">
+                <div class="stat-title">Total Tokens</div>
+                <div class="stat-value">{{ total_tokens }}</div>
+            </div>
+        </div>
+
+        <div>
+            <h2 class="text-xl font-semibold mb-2">Requests Over Time</h2>
+            <div id="usage-chart" style="height: 350px"></div>
+        </div>
+
+        <div>
+            <h2 class="text-xl font-semibold mb-2">
+                Top {% if selected_org %}Tokens{% else %}Orgs{% endif %}
+            </h2>
+            <div class="tabs tabs-box">
+                {% for k in top_k_choices %}
+                    <input
+                            type="radio"
+                            name="topk_tabs"
+                            id="topk_tab_{{ k }}"
+                            class="tab"
+                            aria-label="Top {{ k }}"
+                            {% if forloop.first %}
+                            checked="checked"
+                            {% endif %}
+                    />
+                    <div class="tab-content bg-base-100 border border-base-300 rounded-box shadow p-4 mt-2 min-w-[220px]">
+                        <ul class="list-decimal list-inside space-y-2">
+                            {% for item in top_items|slice:":k" %}
+                                <li class="flex items-center justify-between">
+                                    <span class="font-medium">{{ item.name }}</span>
+                                    <span class="badge badge-primary badge-outline">{{ item.count }}</span>
+                                </li>
+                            {% endfor %}
+                            {% if top_items|length == 0 %}
+                                <li class="text-base-content/50">No data available.</li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div>
+            <h2 class="text-xl font-semibold mb-2">Requests by Model</h2>
+            <ul class="list-disc list-inside space-y-1">
+                {% for m in per_model %}
+                    <li>{{ m.model|default:"(none)" }}: {{ m.count }}</li>
+                {% endfor %}
+            </ul>
+        </div>
     </div>
+
+    <script>
+      const timeseries = JSON.parse("{{ timeseries|escapejs }}");
+      const topItems = JSON.parse("{{ top_items_json|escapejs }}");
+      const selectedSpan = "{{ selected_span }}";
+
+      function onOrgChange() {
+        const sel = document.getElementById("org-select");
+        const val = sel.value;
+        const params = new URLSearchParams(window.location.search);
+        val === "all" ? params.set("org", "all") : params.set("org", val);
+        window.location.search = params.toString();
+      }
+
+      function onSpanChange(span) {
+        const params = new URLSearchParams(window.location.search);
+        params.set("span", span);
+        window.location.search = params.toString();
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        // span-tabs click handler
+        document.querySelectorAll("#span-tabs .tab").forEach((tab) => {
+          tab.addEventListener("click", () => {
+            document
+              .querySelectorAll("#span-tabs .tab")
+              .forEach((t) => t.classList.remove("tab-active"));
+            tab.classList.add("tab-active");
+            onSpanChange(tab.dataset.span);
+          });
+        });
+
+        // initialize ECharts for the selected time span
+        const chart = echarts.init(document.getElementById("usage-chart"));
+        chart.setOption({
+          tooltip: {trigger: "axis"},
+          xAxis: {type: "time"},
+          yAxis: {type: "value"},
+          series: [
+            {
+              name: selectedSpan,
+              type: "line",
+              data: timeseries,
+              showSymbol: false,
+            },
+          ],
+        });
+      });
+    </script>
 {% endblock %}

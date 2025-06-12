@@ -85,7 +85,7 @@ AI gateway. The implementation follows a phased approach:
     * ~~Add documentation.~~
 
 3. 🔄 **Advanced Features:**
-   * Limit org/team/user access to specific models.
+   * ~~Limit org/team/user access to specific models.~~
    * Database schema optimization for write-heavy request/usage logging.
      * ~~Data retention~~
      * Partitioning?
@@ -93,13 +93,10 @@ AI gateway. The implementation follows a phased approach:
    * A `/metrics` endpoint for monitoring.
    * Dashboard to track usage of orgs, teams and users.
    * Support more providers on top of vLLM/OpenAI-compatible APIs.
-   * Support users belonging to multiple `Orgs`
+   * Support users belonging to multiple `Orgs`.
    * Implement [Guardrails](https://github.com/guardrails-ai/guardrails) using post-processing on completions.
-   * Model cooldown and retry logic.
-   * Granular access control for models within teams.
    * Management of MCP tool calling server endpoints e.g. from
      the [MCP Server list](https://github.com/modelcontextprotocol/servers?tab=readme-ov-file).
-     * host a code-sandbox MCP server for executing tool calls.
    * Daily usage quotas/limits for models.
    * Simple chat interface to try models.
    * Batch API for throughput-heavy workloads, e.g., synthetic data generation.

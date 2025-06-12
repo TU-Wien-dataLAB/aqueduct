@@ -5,7 +5,8 @@ from django.contrib.auth import get_user_model
 from django.test import override_settings
 from openai.types.chat import ChatCompletion
 
-from gateway.tests.utils import reset_gateway_httpx_async_client, _build_chat_headers, _build_chat_payload, \
+from gateway.router import get_router_config
+from gateway.tests.utils import _build_chat_headers, _build_chat_payload, \
     _read_streaming_response_lines, _parse_streamed_content_pieces
 from gateway.tests.utils.base import GatewayIntegrationTestCase, INTEGRATION_TEST_BACKEND, ROUTER_CONFIG
 from management.models import Request, UserProfile, ServiceAccount, Team, Org
@@ -16,7 +17,6 @@ User = get_user_model()
 class EmbeddingTest(GatewayIntegrationTestCase):
     model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "text-embedding-ada-002"
 
-    @reset_gateway_httpx_async_client
     @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_embeddings(self):
         """
@@ -97,7 +97,6 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         response = await self.async_client.post(**request, content_type="application/json")
         return response
 
-    @reset_gateway_httpx_async_client
     def test_chat_completion(self):
         """
         Sends a simple chat completion request to the vLLM server using the Django test client.
@@ -138,7 +137,6 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
-    @reset_gateway_httpx_async_client
     @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     def test_chat_completion_timeout(self):
         """
@@ -153,7 +151,6 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}"
         )
 
-    @reset_gateway_httpx_async_client
     @override_settings(STREAM_REQUEST_TIMEOUT=5)
     @async_to_sync
     async def test_chat_completion_streaming(self):
@@ -192,7 +189,6 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming)")
 
-    @reset_gateway_httpx_async_client
     @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
     @async_to_sync
     async def test_chat_completion_streaming_relay_request_timeout(self):
@@ -212,6 +208,17 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             f"Expected 504 Gateway Timeout, got {response.status_code}"
         )
 
+    def test_chat_completion_excluded_model(self):
+        org = Org.objects.get(name="E060")
+        org.add_excluded_model(self.model)
+        org.save()
+        assert len(org.excluded_models) == 1
+
+        response = self._send_chat_completion(self.MESSAGES)
+
+        self.assertEqual(response.status_code, 404,
+                         f"Expected 404 Model not found, got {response.status_code}: {response.content}")
+
 
 class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
@@ -223,7 +230,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
             headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         )
 
-    @reset_gateway_httpx_async_client
     def test_list_models(self):
         """
         Sends a request to list available models from the vLLM server using the Django test client.
@@ -252,7 +258,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         req = requests[0]
         self.assertIn("models", req.path, "Request endpoint should be for model listing.")
 
-    @reset_gateway_httpx_async_client
     def test_list_models_with_invalid_token(self):
         """
         Sends a request to list available models from the vLLM server with an invalid API key.
@@ -281,6 +286,38 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         # There should be no request recorded in the database (or possibly one, depending on implementation)
         requests = list(Request.objects.all())
         self.assertEqual(len(requests), 0, "There should be no request recorded for invalid token.")
+
+    def test_list_excluded_model(self):
+        org = Org.objects.get(name="E060")
+        org.add_excluded_model(self.model)
+        org.save()
+        assert len(org.excluded_models) == 1
+
+        router_config = get_router_config()
+        model_list: list[dict] = router_config["model_list"]
+
+        response = self._send_model_list_request()
+
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+
+        response_json = response.json()
+        print(f"\nList models response: {response_json}")
+
+        # OpenAI API returns an object with a 'data' attribute that is a list of models
+        self.assertIn("data", response_json)
+        self.assertIsInstance(response_json["data"], list)
+
+        # Check that at least one model matches the expected model name
+        model_ids = [m["id"] for m in response_json["data"] if "id" in m]
+        print(f"Available model IDs: {model_ids}")
+        self.assertEqual(len(model_ids), len(model_list) - 1)
+        self.assertNotIn(self.model, model_ids)
+
+        # Check that the database contains one request and endpoint matches
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after list models.")
+        req = requests[0]
+        self.assertIn("models", req.path, "Request endpoint should be for model listing.")
 
 
 class TokenLimitTest(ChatCompletionsIntegrationTest):
@@ -380,7 +417,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
                 f"Expected rate limit error message, got: {response2.content}"
             )
 
-    @reset_gateway_httpx_async_client
     def test_org_rate_limit_requests_per_minute(self):
         """
         Edits the requests_per_minute of Org 'E060' to 1, then makes two requests.
@@ -395,7 +431,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             limit_desc="org requests_per_minute"
         )
 
-    @reset_gateway_httpx_async_client
     def test_team_rate_limit_requests_per_minute(self):
         """
         Edits the requests_per_minute of Team 'Whale' to 1, then makes two requests.
@@ -410,7 +445,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             limit_desc="team requests_per_minute"
         )
 
-    @reset_gateway_httpx_async_client
     def test_user_rate_limit_requests_per_minute(self):
         """
         Edits the requests_per_minute of UserProfile for user 'Me' to 1, then makes two requests.
@@ -425,7 +459,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             limit_desc="user requests_per_minute"
         )
 
-    @reset_gateway_httpx_async_client
     def test_org_rate_limit_input_tokens_per_minute(self):
         """
         Edits the input_tokens_per_minute of Org 'E060' to 5, then makes two requests.
@@ -440,7 +473,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             limit_desc="org input_tokens_per_minute"
         )
 
-    @reset_gateway_httpx_async_client
     def test_team_rate_limit_input_tokens_per_minute(self):
         """
         Edits the input_tokens_per_minute of Team 'Whale' to 5, then makes two requests.
@@ -455,7 +487,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             limit_desc="team input_tokens_per_minute"
         )
 
-    @reset_gateway_httpx_async_client
     def test_user_rate_limit_input_tokens_per_minute(self):
         """
         Edits the input_tokens_per_minute of UserProfile for user 'Me' to 5, then makes two requests.
@@ -470,7 +501,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             limit_desc="user input_tokens_per_minute"
         )
 
-    @reset_gateway_httpx_async_client
     def test_org_rate_limit_output_tokens_per_minute(self):
         """
         Edits the output_tokens_per_minute of Org 'E060' to 5, then makes two requests.
@@ -485,7 +515,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             limit_desc="org output_tokens_per_minute"
         )
 
-    @reset_gateway_httpx_async_client
     def test_team_rate_limit_output_tokens_per_minute(self):
         """
         Edits the output_tokens_per_minute of Team 'Whale' to 5, then makes two requests.
@@ -500,7 +529,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             limit_desc="team output_tokens_per_minute"
         )
 
-    @reset_gateway_httpx_async_client
     def test_user_rate_limit_output_tokens_per_minute(self):
         """
         Edits the output_tokens_per_minute of UserProfile for user 'Me' to 5, then makes two requests.

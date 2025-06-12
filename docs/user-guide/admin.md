@@ -41,4 +41,23 @@ As an admin, you can assign yourself or other users to different organizations w
 
 ## Managing User Limits
 
-You can also change the request usage limits for individual users within the UserProfile inline model. This functionality is currently not available in the main UI and must be performed through the Django Admin interface.
+You can also change the request usage limits for individual users within the UserProfile inline model. 
+This functionality is currently not available in the main UI and must be performed through the Django Admin interface.
+
+## Excluding Models
+
+To exclude models for Orgs, Teams or specific UserProfiles, select the models to be excluded in the detail view admin interface of the specific entity.
+Excluded models are not available in any endpoints (returns 404) and are filtered from the model list.
+
+![Exclude Models](../assets/user_guide/exclude_models.png)
+
+### Merge Exclusion Lists
+
+The `merge_exclusion_lists` field determines how exclusion lists are built across the User, Team, Org, and global settings levels. When `merge_exclusion_lists` is enabled, the exclusion list for an entity is constructed by merging its own list with those from higher levels—moving upward through Org and finally the global settings. If `merge_exclusion_lists` is disabled at any level, merging stops there, and higher-level exclusions (including global) are not included.
+
+**Example:**  
+Suppose a User has an exclusion list `["A", "B"]` and `merge_exclusion_lists=True`; their Org has `["C"]` with `merge_exclusion_lists=False`; and the global exclusion list is `["D"]`. The effective exclusion list for the User would be `["A", "B", "C"]`—the Org’s `merge_exclusion_lists=False` means the global settings are ignored.
+
+This system provides fine-grained control over how and where model exclusions are inherited.
+
+

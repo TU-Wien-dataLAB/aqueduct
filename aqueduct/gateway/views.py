@@ -104,8 +104,7 @@ def ensure_usage(view_func):
 def check_limits(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token_key = token_from_request(request)
-        token = await sync_to_async(Token.find_by_key)(token_key)
+        token: Token | None = kwargs.get('token', None)
         if not token:
             return JsonResponse({'error': 'Token not found'}, status=404)
 
@@ -223,6 +222,27 @@ def handle_timeout(view_func):
     return wrapper
 
 
+def check_model_availability(view_func):
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        token: Token | None = kwargs.get('token', None)
+        if not token:
+            return JsonResponse({'error': 'Token not found'}, status=404)
+        body: dict | None = kwargs.get('pydantic_model', None)
+        if not body:
+            return await view_func(request, *args, **kwargs)
+        else:
+            model: str | None = body.get('model', None)
+            if not model:
+                return await view_func(request, *args, **kwargs)
+            else:
+                if await sync_to_async(token.model_excluded)(model):
+                    return JsonResponse({'error': 'Model not found!'}, status=404)
+                return await view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
 def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper, request_log: Request) -> \
         AsyncGenerator[str, Any]:
     start_time = time.monotonic()
@@ -253,6 +273,7 @@ def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper
 @parse_body(model=TypeAdapter(openai.types.CompletionCreateParams))
 @ensure_usage
 @log_request
+@check_model_availability
 @handle_timeout
 async def completions(request: ASGIRequest, pydantic_model: openai.types.CompletionCreateParams, request_log: Request,
                       *args, **kwargs):
@@ -276,6 +297,7 @@ async def completions(request: ASGIRequest, pydantic_model: openai.types.Complet
 @parse_body(model=TypeAdapter(openai.types.chat.CompletionCreateParams))
 @ensure_usage
 @log_request
+@check_model_availability
 @handle_timeout
 async def chat_completions(request: ASGIRequest, pydantic_model: openai.types.chat.CompletionCreateParams,
                            request_log: Request, *args, **kwargs):
@@ -300,6 +322,7 @@ async def chat_completions(request: ASGIRequest, pydantic_model: openai.types.ch
 @parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
 @ensure_usage
 @log_request
+@check_model_availability
 @handle_timeout
 async def embeddings(request: ASGIRequest, pydantic_model: openai.types.EmbeddingCreateParams, request_log: Request,
                      *args, **kwargs):
@@ -317,9 +340,10 @@ MODEL_CREATION_TIMESTAMP = int(timezone.now().timestamp())
 @require_GET
 @token_authenticated
 @log_request
-async def models(request: ASGIRequest, *args, **kwargs):
+async def models(request: ASGIRequest, token: Token, *args, **kwargs):
     router_config = get_router_config()
     model_list: list[dict] = router_config["model_list"]
+    excluded_models = set(await sync_to_async(token.model_exclusion_list)())
 
     return JsonResponse(data=dict(
         data=[
@@ -330,6 +354,7 @@ async def models(request: ASGIRequest, *args, **kwargs):
                 "owned_by": "aqueduct",
             }
             for model in model_list
+            if model["model_name"] not in excluded_models
         ],
         object="list",
     ))

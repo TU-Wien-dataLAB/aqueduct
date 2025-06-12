@@ -6,21 +6,6 @@ from typing import List
 import httpx
 from openai.types.chat import ChatCompletionChunk
 
-def reset_gateway_httpx_async_client(test_func):
-    """
-    This is needed since the httpxAsyncClient uses connection pooling and cannot run under different event loops.
-    When Django runs tests for async views, async_to_sync is called, which spawns a new event loop, breaking connection pooling.
-    For each test requiring a relay request, the async client, therefore, has to be reset.
-    See: https://github.com/encode/httpx/discussions/2959
-    """
-
-    @functools.wraps(test_func)
-    def wrapper(self, *args, **kwargs):
-        import gateway.views
-        gateway.views.async_client = httpx.AsyncClient(timeout=60, follow_redirects=True)
-        return test_func(self, *args, **kwargs)
-
-    return wrapper
 
 
 def _build_chat_headers(access_token):

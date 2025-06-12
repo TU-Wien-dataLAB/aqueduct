@@ -101,13 +101,11 @@
                             checked="checked"
                             {% endif %}
                     />
-                    <div
-                            class="tab-content bg-base-100 border border-base-300 rounded-box shadow p-4 mt-2 min-w-[220px]"
-                    >
+                    <div class="tab-content bg-base-100 border border-base-300 rounded-box shadow p-4 mt-2">
                         <ul class="list-decimal list-inside space-y-2">
                             {% for item in top_items|slice:":k" %}
                                 <li class="flex items-center justify-between">
-                                    <span class="font-medium">{{ item.name }}</span>
+                                    <span class="font-medium">{{ item.object.name }}</span>
                                     <span class="badge badge-primary badge-outline"
                                     >{{ item.count }}</span
                                     >
@@ -129,7 +127,6 @@
 
     <script>
       const timeseries = JSON.parse("{{ timeseries|escapejs }}");
-      const topItems = JSON.parse("{{ top_items_json|escapejs }}");
       const perModel = JSON.parse("{{ per_model_json|escapejs }}");
       const chartHeight = perModel.length * 30 + 20;
       document.getElementById("model-bar-chart").style.height = `${chartHeight}px`;

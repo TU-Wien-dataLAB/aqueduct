@@ -81,26 +81,31 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
                         F('token__user__profile__org_id'),
                         F('token__service_account__team__org_id')
                     ),
-                    org_name=Coalesce(
-                        F('token__user__profile__org__name'),
-                        F('token__service_account__team__org__name')
-                    )
                 )
-                .values('org_id', 'org_name')
+                .values('org_id')
                 .annotate(count=Count('id'))
                 .order_by('-count')[:100]
             )
-            top_items = [{'id': o['org_id'], 'name': o['org_name'], 'count': o['count']} for o in agg]
+            org_ids = [o['org_id'] for o in agg if o['org_id'] is not None]
+            org_objs = {org.id: org for org in Org.objects.filter(id__in=org_ids)}
+            top_items = [
+                {'object': org_objs.get(o['org_id']), 'count': o['count']}
+                for o in agg
+                if o['org_id'] in org_objs
+            ]
         else:
             # Top tokens by request count
             agg = (
-                reqs.values('token__id', 'token__name')
+                reqs.values('token__id')
                 .annotate(count=Count('id'))
                 .order_by('-count')[:100]
             )
+            token_ids = [t['token__id'] for t in agg if t['token__id'] is not None]
+            token_objs = {tok.id: tok for tok in Token.objects.filter(id__in=token_ids)}
             top_items = [
-                {'id': t['token__id'], 'name': t['token__name'], 'count': t['count']}
+                {'object': token_objs.get(t['token__id']), 'count': t['count']}
                 for t in agg
+                if t['token__id'] in token_objs
             ]
 
         # Simple statistics
@@ -128,7 +133,6 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
             'selected_span': selected_span,
             'timeseries': json.dumps(timeseries),
             'top_items': top_items,
-            'top_items_json': json.dumps(top_items),
             'top_k_choices': [10, 25, 100],
             'total_requests': total_requests,
             'failed_requests': failed_requests,

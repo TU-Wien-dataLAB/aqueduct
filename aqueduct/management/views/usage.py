@@ -76,7 +76,7 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
         if selected_org is None:
             # Top orgs by request count (up to 100)
             agg = (
-                reqs.annotate(
+                reqs_span.annotate(
                     org_id=Coalesce(
                         F('token__user__profile__org_id'),
                         F('token__service_account__team__org_id')
@@ -96,7 +96,7 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
         else:
             # Top tokens by request count
             agg = (
-                reqs.values('token__id')
+                reqs_span.values('token__id')
                 .annotate(count=Count('id'))
                 .order_by('-count')[:100]
             )

@@ -85,39 +85,63 @@
             <div id="usage-chart" style="height: 350px"></div>
         </div>
 
-        <div>
-            <h2 class="text-xl font-semibold mb-2">
-                Top {% if selected_org %}Tokens{% else %}Orgs{% endif %}
-            </h2>
-            <div class="tabs tabs-box">
-                {% for k in top_k_choices %}
-                    <input
-                            type="radio"
-                            name="topk_tabs"
-                            id="topk_tab_{{ k }}"
-                            class="tab"
-                            aria-label="Top {{ k }}"
-                            {% if forloop.first %}
-                            checked="checked"
-                            {% endif %}
-                    />
-                    <div class="tab-content bg-base-100 border border-base-300 rounded-box shadow p-4 mt-2">
-                        <ul class="list-decimal list-inside space-y-2">
-                            {% for item in top_items|slice:":k" %}
-                                <li class="flex items-center justify-between">
-                                    <span class="font-medium">{{ item.object.name }}</span>
-                                    <span class="badge badge-primary badge-outline"
-                                    >{{ item.count }}</span
-                                    >
-                                </li>
-                            {% endfor %} {% if top_items|length == 0 %}
-                            <li class="text-base-content/50">No data available.</li>
+        <div class="mt-4">
+            <h2 class="text-xl font-semibold mb-2">Request Counts by
+                {% if selected_org %}Token{% else %}Organization{% endif %}</h2>
+            <div style="max-height: 400px; overflow-y: auto;">
+                <table class="table w-full table-zebra">
+                    <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>{% if selected_org %}Token Name{% else %}Organization{% endif %}</th>
+                        <th>Request Count</th>
+                        {% if selected_org %}
+                            <th>User</th>
+                            <th>Service Account</th>
                         {% endif %}
-                        </ul>
-                    </div>
-                {% endfor %}
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% if top_items %}
+                        {% for item in top_items %}
+                            <tr>
+                                <td>{{ forloop.counter }}</td>
+                                <td>
+                                <span class="font-medium">
+                                    {{ item.object.name | default:"N/A" }}
+                                </span>
+                                </td>
+                                <td>
+                                    {{ item.count }}
+                                </td>
+                                {% if selected_org %}
+                                    <td>
+                                        {{ item.object.user.email }}
+                                    </td>
+                                    <td>
+                                        {% if item.object.service_account %}
+                                            <img src="{% static 'icons/check.svg' %}" alt="Checkmark Icon"
+                                                 class="h-4 w-4 shrink-0">
+                                            {% else %}
+                                            <img src="{% static 'icons/missing.svg' %}" alt="Missing Icon"
+                                                 class="h-4 w-4 shrink-0">
+                                        {% endif %}
+                                    </td>
+                                {% endif %}
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="3" class="text-base-content/50">
+                                No data available.
+                            </td>
+                        </tr>
+                    {% endif %}
+                    </tbody>
+                </table>
             </div>
         </div>
+
 
         <div>
             <h2 class="text-xl font-semibold mb-2">Requests by Model</h2>

@@ -101,7 +101,8 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
                 .order_by('-count')[:100]
             )
             token_ids = [t['token__id'] for t in agg if t['token__id'] is not None]
-            token_objs = {tok.id: tok for tok in Token.objects.filter(id__in=token_ids)}
+            token_objs = {tok.id: tok for tok in
+                          Token.objects.filter(id__in=token_ids).select_related('user', 'service_account')}
             top_items = [
                 {'object': token_objs.get(t['token__id']), 'count': t['count']}
                 for t in agg

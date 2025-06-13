@@ -9,6 +9,29 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 
 from ..models import Request, Token, Org
 
+def get_all_buckets(start_time, now, freq_label):
+    points = []
+    if freq_label == "1h":
+        # one point per minute
+        delta = timedelta(minutes=1)
+        get_next = lambda d: d + delta
+        round_time = lambda d: d.replace(second=0, microsecond=0)
+    elif freq_label == "1d":
+        # one point per hour
+        delta = timedelta(hours=1)
+        get_next = lambda d: d + delta
+        round_time = lambda d: d.replace(minute=0, second=0, microsecond=0)
+    else:
+        # one point per day
+        delta = timedelta(days=1)
+        get_next = lambda d: d + delta
+        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
+    d = round_time(start_time)
+    end_time = round_time(now)
+    while d <= end_time:
+        points.append(int(d.timestamp() * 1000))
+        d = get_next(d)
+    return points
 
 class UsageDashboardView(LoginRequiredMixin, TemplateView):
     """
@@ -67,10 +90,9 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
             .annotate(count=Count('id'))
             .order_by('period')
         )
-        timeseries = [
-            [int(item['period'].timestamp() * 1000), item['count']]
-            for item in qs
-        ]
+        period_to_count = {int(item['period'].timestamp() * 1000): item['count'] for item in qs}
+        buckets = get_all_buckets(start_time, now, selected_span)
+        timeseries = [[b, period_to_count.get(b, 0)] for b in buckets]
 
         # Top entities: tokens per org or orgs global
         if selected_org is None:

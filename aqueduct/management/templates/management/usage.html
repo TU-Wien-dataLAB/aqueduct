@@ -46,35 +46,35 @@
     <div class="stats stats-vertical md:stats-horizontal shadow bg-base-100 rounded-box mb-4 w-full">
         <div class="stat">
             <div class="stat-title">Total Requests</div>
-            <div class="stat-value">{{ total_requests }}</div>
+            <div class="stat-value text-primary">{{ total_requests }}</div>
         </div>
         <div class="stat">
             <div class="stat-title">Failed Requests</div>
-            <div class="stat-value">{{ failed_requests }}</div>
+            <div class="stat-value text-primary">{{ failed_requests }}</div>
         </div>
         <div class="stat">
             <div class="stat-title">Avg Resp Time (Completion)</div>
-            <div class="stat-value">
-                {{ avg_time_completion|floatformat:2 }} ms
+            <div class="stat-value text-primary">
+                {{ avg_time_completion|floatformat:1 }} ms
             </div>
         </div>
         <div class="stat">
             <div class="stat-title">Avg Resp Time (Embedding)</div>
-            <div class="stat-value">
-                {{ avg_time_embedding|floatformat:2 }} ms
+            <div class="stat-value text-primary">
+                {{ avg_time_embedding|floatformat:1 }} ms
             </div>
         </div>
         <div class="stat">
             <div class="stat-title">Input Tokens</div>
-            <div class="stat-value">{{ input_tokens }}</div>
+            <div class="stat-value text-primary">{{ input_tokens }}</div>
         </div>
         <div class="stat">
             <div class="stat-title">Output Tokens</div>
-            <div class="stat-value">{{ output_tokens }}</div>
+            <div class="stat-value text-primary">{{ output_tokens }}</div>
         </div>
         <div class="stat">
             <div class="stat-title">Total Tokens</div>
-            <div class="stat-value">{{ total_tokens }}</div>
+            <div class="stat-value text-primary">{{ total_tokens }}</div>
         </div>
     </div>
 
@@ -119,11 +119,11 @@
                             <tr>
                                 <td>{{ forloop.counter }}</td>
                                 <td>
-                                    <span class="font-medium">
+                                    <span class="font-bold">
                                         {{ item.object.name | default:"N/A" }}
                                     </span>
                                 </td>
-                                <td>
+                                <td class="font-bold text-primary">
                                     {{ item.count }}
                                 </td>
                                 {% if selected_org %}
@@ -132,11 +132,9 @@
                                     </td>
                                     <td>
                                         {% if item.object.service_account %}
-                                            <img src="{% static 'icons/check.svg' %}" alt="Checkmark Icon"
-                                                 class="h-4 w-4 shrink-0">
+                                            item.object.service_account.name
                                         {% else %}
-                                            <img src="{% static 'icons/missing.svg' %}" alt="Missing Icon"
-                                                 class="h-4 w-4 shrink-0">
+                                            -
                                         {% endif %}
                                     </td>
                                 {% endif %}
@@ -161,6 +159,7 @@
       const chartHeight = perModel.length * 30 + 20;
       document.getElementById("model-bar-chart").style.height = `${chartHeight}px`;
       const selectedSpan = "{{ selected_span }}";
+      const color = window.getComputedStyle(document.body).getPropertyValue('--color-primary')
 
       function onOrgChange() {
         const sel = document.getElementById("org-select");
@@ -205,6 +204,10 @@
               type: "bar",
               data: timeseries,
               showSymbol: false,
+              itemStyle: {
+                color: color,
+              },
+              emphasis: {itemStyle: {color: 'inherit'}, areaStyle: {color: 'inherit'}},
             },
           ],
         });
@@ -232,6 +235,11 @@
             {
               type: "bar",
               data: modelCounts,
+              itemStyle: {
+                color: color,
+              },
+              // https://github.com/apache/echarts/issues/20757
+              emphasis: {itemStyle: {color: 'inherit'}, areaStyle: {color: 'inherit'}},
             },
           ],
         });

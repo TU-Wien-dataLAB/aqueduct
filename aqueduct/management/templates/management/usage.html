@@ -4,97 +4,109 @@
 {% block header %}{{ title }}{% endblock %}
 
 {% block content %}
-    <div class="container mx-auto px-4 py-6 space-y-6">
-        <h1 class="text-3xl font-bold mb-6">{{ title }}</h1>
-        <div class="flex items-center space-x-4">
-            {% if is_global_admin %}
-                <label for="org-select" class="font-medium">Organization:</label>
-                <select
-                        id="org-select"
-                        class="select select-bordered"
-                        onchange="onOrgChange()"
-                >
-                    <option value="all" {% if not selected_org %}selected{% endif %}>
-                        All
-                    </option>
-                    {% for org in orgs %}
-                        <option
-                                value="{{ org.id }}"
-                                {% if selected_org and org.id == selected_org.id %}selected{% endif %}
-                        >
-                            {{ org.name }}
-                        </option>
-                    {% endfor %}
-                </select>
-            {% else %}
-                <span class="font-medium">Organization: {{ selected_org.name }}</span>
-            {% endif %}
-
-            <label class="font-medium">Time Frame:</label>
-            <div id="span-tabs" class="tabs tabs-box">
-                {% for sp in span_choices %}
-                    <a
-                            class="tab{% if sp == selected_span %} tab-active{% endif %}"
-                            data-span="{{ sp }}"
+    <h1 class="text-3xl font-bold mb-6">{{ title }}</h1>
+    <div class="flex items-center space-x-4 mb-6">
+        {% if is_global_admin %}
+            <label for="org-select" class="font-medium">Organization:</label>
+            <select
+                    id="org-select"
+                    class="select select-bordered"
+                    onchange="onOrgChange()"
+            >
+                <option value="all" {% if not selected_org %}selected{% endif %}>
+                    All
+                </option>
+                {% for org in orgs %}
+                    <option
+                            value="{{ org.id }}"
+                            {% if selected_org and org.id == selected_org.id %}selected{% endif %}
                     >
-                        {{ sp }}
-                    </a>
+                        {{ org.name }}
+                    </option>
                 {% endfor %}
+            </select>
+        {% else %}
+            <span class="font-medium">Organization: {{ selected_org.name }}</span>
+        {% endif %}
+
+        <label class="font-medium">Time Frame:</label>
+        <div id="span-tabs" class="tabs tabs-box">
+            {% for sp in span_choices %}
+                <a
+                        class="tab{% if sp == selected_span %} tab-active{% endif %}"
+                        data-span="{{ sp }}"
+                >
+                    {{ sp }}
+                </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- STATS BAR -->
+    <div class="stats stats-vertical md:stats-horizontal shadow bg-base-100 rounded-box mb-4 w-full">
+        <div class="stat">
+            <div class="stat-title">Total Requests</div>
+            <div class="stat-value">{{ total_requests }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Failed Requests</div>
+            <div class="stat-value">{{ failed_requests }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Avg Resp Time (Completion)</div>
+            <div class="stat-value">
+                {{ avg_time_completion|floatformat:2 }} ms
+            </div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Avg Resp Time (Embedding)</div>
+            <div class="stat-value">
+                {{ avg_time_embedding|floatformat:2 }} ms
+            </div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Input Tokens</div>
+            <div class="stat-value">{{ input_tokens }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Output Tokens</div>
+            <div class="stat-value">{{ output_tokens }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Total Tokens</div>
+            <div class="stat-value">{{ total_tokens }}</div>
+        </div>
+    </div>
+
+    <!-- FLEX CONTAINER: CHARTS + TABLE -->
+    <div class="flex flex-col lg:flex-row gap-6">
+
+        <!-- LEFT: CHARTS COLUMN (50% width) -->
+        <div class="flex flex-col gap-6 w-full lg:w-1/2">
+            <!-- Requests Over Time Chart -->
+            <div class="flex flex-col">
+                <h2 class="text-xl font-semibold mb-2">Requests Over Time</h2>
+                <div id="usage-chart" style="height: 220px;"></div>
+            </div>
+
+            <!-- Requests by Model Bar Chart -->
+            <div class="flex flex-col">
+                <h2 class="text-xl font-semibold mb-2">Requests by Model</h2>
+                <div id="model-bar-chart" style="height: 150px;"></div>
             </div>
         </div>
 
-        <div
-                class="stats stats-vertical lg:stats-horizontal shadow bg-base-100 rounded-box"
-        >
-            <div class="stat">
-                <div class="stat-title">Total Requests</div>
-                <div class="stat-value">{{ total_requests }}</div>
-            </div>
-            <div class="stat">
-                <div class="stat-title">Failed Requests</div>
-                <div class="stat-value">{{ failed_requests }}</div>
-            </div>
-            <div class="stat">
-                <div class="stat-title">Avg Resp Time (Completion)</div>
-                <div class="stat-value">
-                    {{ avg_time_completion|floatformat:2 }} ms
-                </div>
-            </div>
-            <div class="stat">
-                <div class="stat-title">Avg Resp Time (Embedding)</div>
-                <div class="stat-value">
-                    {{ avg_time_embedding|floatformat:2 }} ms
-                </div>
-            </div>
-            <div class="stat">
-                <div class="stat-title">Input Tokens</div>
-                <div class="stat-value">{{ input_tokens }}</div>
-            </div>
-            <div class="stat">
-                <div class="stat-title">Output Tokens</div>
-                <div class="stat-value">{{ output_tokens }}</div>
-            </div>
-            <div class="stat">
-                <div class="stat-title">Total Tokens</div>
-                <div class="stat-value">{{ total_tokens }}</div>
-            </div>
-        </div>
-
-        <div>
-            <h2 class="text-xl font-semibold mb-2">Requests Over Time</h2>
-            <div id="usage-chart" style="height: 350px"></div>
-        </div>
-
-        <div class="mt-4">
+        <!-- RIGHT: REQUESTS TABLE (50% width, full height) -->
+        <div class="w-full lg:w-1/2 flex-shrink-0 flex flex-col" style="min-width:600px;">
             <h2 class="text-xl font-semibold mb-2">Request Counts by
                 {% if selected_org %}Token{% else %}Organization{% endif %}</h2>
-            <div style="max-height: 400px; overflow-y: auto;">
+            <div class="flex-1 overflow-y-auto" style="max-height: 600px;">
                 <table class="table w-full table-zebra">
                     <thead>
                     <tr>
                         <th>#</th>
                         <th>{% if selected_org %}Token Name{% else %}Organization{% endif %}</th>
-                        <th>Request Count</th>
+                        <th>Requests</th>
                         {% if selected_org %}
                             <th>User</th>
                             <th>Service Account</th>
@@ -107,9 +119,9 @@
                             <tr>
                                 <td>{{ forloop.counter }}</td>
                                 <td>
-                                <span class="font-medium">
-                                    {{ item.object.name | default:"N/A" }}
-                                </span>
+                                    <span class="font-medium">
+                                        {{ item.object.name | default:"N/A" }}
+                                    </span>
                                 </td>
                                 <td>
                                     {{ item.count }}
@@ -140,12 +152,6 @@
                     </tbody>
                 </table>
             </div>
-        </div>
-
-
-        <div>
-            <h2 class="text-xl font-semibold mb-2">Requests by Model</h2>
-            <div id="model-bar-chart" style="height: 100px"></div>
         </div>
     </div>
 

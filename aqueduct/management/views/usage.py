@@ -7,7 +7,9 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 
+from gateway.router import get_router_config
 from ..models import Request, Token, Org
+
 
 def get_all_buckets(start_time, now, freq_label):
     points = []
@@ -32,6 +34,7 @@ def get_all_buckets(start_time, now, freq_label):
         points.append(int(d.timestamp() * 1000))
         d = get_next(d)
     return points
+
 
 class UsageDashboardView(LoginRequiredMixin, TemplateView):
     """
@@ -134,11 +137,17 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
         # Simple statistics
         total_requests = reqs_span.count()
         failed_requests = reqs_span.filter(status_code__gte=400).count()
-        per_model = (
+
+        per_model = list(
             reqs_span.values('model')
             .annotate(count=Count('id'))
             .order_by('-count')
         )
+        present_models = {m['model'] for m in per_model}
+        missing_models = [{"model": m['model_name'], "count": 0} for m in get_router_config()['model_list'] if
+                          m['model_name'] not in present_models]
+        per_model += missing_models
+
         avg_time_comp = reqs_span.filter(path__icontains='completion').aggregate(avg=Avg('response_time_ms'))['avg']
         avg_time_emb = reqs_span.filter(path__icontains='embedding').aggregate(avg=Avg('response_time_ms'))['avg']
         tokens_sum = reqs_span.aggregate(
@@ -159,7 +168,7 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
             'top_k_choices': [10, 25, 100],
             'total_requests': total_requests,
             'failed_requests': failed_requests,
-            'per_model_json': json.dumps(list(per_model)),
+            'per_model_json': json.dumps(per_model),
             'avg_time_completion': avg_time_comp or 0,
             'avg_time_embedding': avg_time_emb or 0,
             'input_tokens': input_tokens,

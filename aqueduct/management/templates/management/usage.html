@@ -229,6 +229,11 @@
             },
           ],
         });
+
+        window.addEventListener('resize', function () {
+          chart.resize();
+          modelBarChart.resize();
+        });
       });
     </script>
 {% endblock %}

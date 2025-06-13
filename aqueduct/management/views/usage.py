@@ -8,6 +8,7 @@ from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 
 from gateway.router import get_router_config
+from .base import BaseAqueductView
 from ..models import Request, Token, Org
 
 
@@ -36,7 +37,7 @@ def get_all_buckets(start_time, now, freq_label):
     return points
 
 
-class UsageDashboardView(LoginRequiredMixin, TemplateView):
+class UsageDashboardView(BaseAqueductView, TemplateView):
     """
     Usage dashboard page: switch between all orgs (global) and per-org token usage.
     """
@@ -44,8 +45,7 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        user = self.request.user
-        profile = getattr(user, 'profile', None)
+        profile = self.profile
         is_global_admin = profile.is_admin() if profile else False
 
         # Organization selection: 'all' for global, or org id
@@ -58,16 +58,28 @@ class UsageDashboardView(LoginRequiredMixin, TemplateView):
                 selected_org = Org.objects.get(
                     pk=int(sel)) if sel and sel.isdigit() and is_global_admin else profile.org
             except Org.DoesNotExist:
-                selected_org = profile.org
+                selected_org = self.org
 
         # Base queryset of requests in scope
+        # Global admins see all requests; org admins see all for the selected org;
+        # standard users see only their own tokens or service accounts of teams they belong to
         if selected_org is None:
             reqs = Request.objects.all()
         else:
-            reqs = Request.objects.filter(
-                Q(token__user__profile__org=selected_org)
-                | Q(token__service_account__team__org=selected_org)
-            )
+            # Org-level access: full org view for org admins
+            if profile.is_org_admin(selected_org):
+                reqs = Request.objects.filter(
+                    Q(token__user__profile__org=selected_org)
+                    | Q(token__service_account__team__org=selected_org)
+                )
+            else:
+                # Standard user: restrict to own user tokens or service accounts in their teams
+                user = profile.user
+                teams = self.get_teams_for_user()
+                reqs = Request.objects.filter(
+                    Q(token__user=user)
+                    | Q(token__service_account__team__in=teams)
+                )
 
         # Time frame selection: 1 day, 1 week, or 1 month
         span_choices = {

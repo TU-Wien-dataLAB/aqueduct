@@ -91,16 +91,14 @@ AI gateway. The implementation follows a phased approach:
      * Partitioning?
    * Add `locust` load testing.
    * A `/metrics` endpoint for monitoring.
-   * Dashboard to track usage of orgs, teams and users.
-   * Support more providers on top of vLLM/OpenAI-compatible APIs.
+   * ~~Dashboard to track usage of orgs, teams and users.~~
    * Support users belonging to multiple `Orgs`.
-   * Implement [Guardrails](https://github.com/guardrails-ai/guardrails) using post-processing on completions.
    * Management of MCP tool calling server endpoints e.g. from
      the [MCP Server list](https://github.com/modelcontextprotocol/servers?tab=readme-ov-file).
    * Daily usage quotas/limits for models.
-   * Simple chat interface to try models.
-   * Integrate [llama-stack](https://github.com/meta-llama/llama-stack) APIs (/v1/responses OAI API, Agents, VectorIO, ...).
+   * Integrate [llama-stack](https://github.com/meta-llama/llama-stack) APIs (`/v1/responses` OAI API, Agents, VectorIO, ...).
      * Coming soon: Batch API for throughput-heavy workloads, e.g., synthetic data generation.
+     * Implement [Guardrails](https://github.com/guardrails-ai/guardrails) on completions.
      * Tighter coupling in general - could use SDK as well.
 
 

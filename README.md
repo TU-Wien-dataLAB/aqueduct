@@ -99,7 +99,9 @@ AI gateway. The implementation follows a phased approach:
      the [MCP Server list](https://github.com/modelcontextprotocol/servers?tab=readme-ov-file).
    * Daily usage quotas/limits for models.
    * Simple chat interface to try models.
-   * Batch API for throughput-heavy workloads, e.g., synthetic data generation.
+   * Integrate [llama-stack](https://github.com/meta-llama/llama-stack) APIs (/v1/responses OAI API, Agents, VectorIO, ...).
+     * Coming soon: Batch API for throughput-heavy workloads, e.g., synthetic data generation.
+     * Tighter coupling in general - could use SDK as well.
 
 
 ## ⚙️ Architecture

@@ -1,0 +1,253 @@
+{% extends 'management/base.html' %}
+{% load static %}
+
+{% block header %}{{ title }}{% endblock %}
+
+{% block content %}
+    <h1 class="text-3xl font-bold mb-6">{{ title }}</h1>
+    <div class="flex items-center space-x-4 mb-6">
+        {% if is_global_admin %}
+            <label for="org-select" class="font-medium">Organization:</label>
+            <select
+                    id="org-select"
+                    class="select select-bordered"
+                    onchange="onOrgChange()"
+            >
+                <option value="all" {% if not selected_org %}selected{% endif %}>
+                    All
+                </option>
+                {% for org in orgs %}
+                    <option
+                            value="{{ org.id }}"
+                            {% if selected_org and org.id == selected_org.id %}selected{% endif %}
+                    >
+                        {{ org.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        {% else %}
+            <span class="font-medium">Organization: {{ selected_org.name }}</span>
+        {% endif %}
+
+        <label class="font-medium">Time Frame:</label>
+        <div id="span-tabs" class="tabs tabs-box">
+            {% for sp in span_choices %}
+                <a
+                        class="tab{% if sp == selected_span %} tab-active{% endif %}"
+                        data-span="{{ sp }}"
+                >
+                    {{ sp }}
+                </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- STATS BAR -->
+    <div class="stats stats-vertical md:stats-horizontal shadow bg-base-100 rounded-box mb-4 w-full">
+        <div class="stat">
+            <div class="stat-title">Total Requests</div>
+            <div class="stat-value text-primary">{{ total_requests }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Failed Requests</div>
+            <div class="stat-value text-primary">{{ failed_requests }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Avg Resp Time (Completion)</div>
+            <div class="stat-value text-primary">
+                {{ avg_time_completion|floatformat:1 }} ms
+            </div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Avg Resp Time (Embedding)</div>
+            <div class="stat-value text-primary">
+                {{ avg_time_embedding|floatformat:1 }} ms
+            </div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Input Tokens</div>
+            <div class="stat-value text-primary">{{ input_tokens }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Output Tokens</div>
+            <div class="stat-value text-primary">{{ output_tokens }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Total Tokens</div>
+            <div class="stat-value text-primary">{{ total_tokens }}</div>
+        </div>
+    </div>
+
+    <!-- FLEX CONTAINER: CHARTS + TABLE -->
+    <div class="flex flex-col lg:flex-row gap-6">
+
+        <!-- LEFT: CHARTS COLUMN (50% width) -->
+        <div class="flex flex-col gap-6 w-full lg:w-1/2">
+            <!-- Requests Over Time Chart -->
+            <div class="flex flex-col">
+                <h2 class="text-xl font-semibold mb-2">Requests Over Time</h2>
+                <div id="usage-chart" style="height: 220px;"></div>
+            </div>
+
+            <!-- Requests by Model Bar Chart -->
+            <div class="flex flex-col">
+                <h2 class="text-xl font-semibold mb-2">Requests by Model</h2>
+                <div id="model-bar-chart" style="height: 150px;"></div>
+            </div>
+        </div>
+
+        <!-- RIGHT: REQUESTS TABLE (50% width, full height) -->
+        <div class="w-full lg:w-1/2 flex-shrink-0 flex flex-col" style="min-width:600px;">
+            <h2 class="text-xl font-semibold mb-2">Request Counts by
+                {% if selected_org %}Token{% else %}Organization{% endif %}</h2>
+            <div class="flex-1 overflow-y-auto" style="max-height: 600px;">
+                <table class="table w-full table-zebra">
+                    <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>{% if selected_org %}Token Name{% else %}Organization{% endif %}</th>
+                        <th>Requests</th>
+                        {% if selected_org %}
+                            <th>User</th>
+                            <th>Service Account</th>
+                        {% endif %}
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% if top_items %}
+                        {% for item in top_items %}
+                            <tr>
+                                <td>{{ forloop.counter }}</td>
+                                <td>
+                                    <span class="font-bold">
+                                        {{ item.object.name | default:"N/A" }}
+                                    </span>
+                                </td>
+                                <td class="font-bold text-primary">
+                                    {{ item.count }}
+                                </td>
+                                {% if selected_org %}
+                                    <td>
+                                        {{ item.object.user.email }}
+                                    </td>
+                                    <td>
+                                        {% if item.object.service_account %}
+                                            item.object.service_account.name
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                {% endif %}
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="3" class="text-base-content/50">
+                                No data available.
+                            </td>
+                        </tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+      const timeseries = JSON.parse("{{ timeseries|escapejs }}");
+      const perModel = JSON.parse("{{ per_model_json|escapejs }}");
+      const chartHeight = perModel.length * 30 + 20;
+      document.getElementById("model-bar-chart").style.height = `${chartHeight}px`;
+      const selectedSpan = "{{ selected_span }}";
+      const color = window.getComputedStyle(document.body).getPropertyValue('--color-primary')
+
+      function onOrgChange() {
+        const sel = document.getElementById("org-select");
+        const val = sel.value;
+        const params = new URLSearchParams(window.location.search);
+        val === "all" ? params.set("org", "all") : params.set("org", val);
+        window.location.search = params.toString();
+      }
+
+      function onSpanChange(span) {
+        const params = new URLSearchParams(window.location.search);
+        params.set("span", span);
+        window.location.search = params.toString();
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        // span-tabs click handler
+        document.querySelectorAll("#span-tabs .tab").forEach((tab) => {
+          tab.addEventListener("click", () => {
+            document
+              .querySelectorAll("#span-tabs .tab")
+              .forEach((t) => t.classList.remove("tab-active"));
+            tab.classList.add("tab-active");
+            onSpanChange(tab.dataset.span);
+          });
+        });
+
+        // initialize ECharts for the selected time span
+        const chart = echarts.init(document.getElementById("usage-chart"), null, {renderer: "svg"});
+        chart.setOption({
+          useUTC: selectedSpan === '1w',
+          tooltip: {trigger: "axis"},
+          xAxis: {
+            type: "time",
+            min: timeseries.length > 0 ? timeseries[0][0] : undefined,
+            max: timeseries.length > 0 ? timeseries[timeseries.length - 1][0] : undefined
+          },
+          yAxis: {type: "value"},
+          series: [
+            {
+              name: selectedSpan,
+              type: "bar",
+              data: timeseries,
+              showSymbol: false,
+              itemStyle: {
+                color: color,
+              },
+              emphasis: {itemStyle: {color: 'inherit'}, areaStyle: {color: 'inherit'}},
+            },
+          ],
+        });
+
+        // --- Requests by Model bar chart ---
+        const modelBarChart = echarts.init(
+          document.getElementById("model-bar-chart"),
+          null,
+          {renderer: "svg"},
+        );
+
+        // Prepare data
+        const modelNames = perModel.map((x) => x.model ?? "(none)");
+        const modelCounts = perModel.map((x) => x.count);
+
+        modelBarChart.setOption({
+          tooltip: {trigger: "axis"},
+          xAxis: {type: "value"},
+          yAxis: {
+            type: "category",
+            data: modelNames,
+            inverse: true,
+          },
+          series: [
+            {
+              type: "bar",
+              data: modelCounts,
+              itemStyle: {
+                color: color,
+              },
+              // https://github.com/apache/echarts/issues/20757
+              emphasis: {itemStyle: {color: 'inherit'}, areaStyle: {color: 'inherit'}},
+            },
+          ],
+        });
+
+        window.addEventListener('resize', function () {
+          chart.resize();
+          modelBarChart.resize();
+        });
+      });
+    </script>
+{% endblock %}

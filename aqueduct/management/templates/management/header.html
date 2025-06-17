@@ -14,41 +14,52 @@
             <ul class="menu menu-horizontal items-center space-x-1 ml-4">
                 <li>
                     <a href="{% url 'tokens' %}" tabindex="1" class="btn btn-sm btn-ghost flex items-center gap-1">
-                        <img src="{% static 'icons/key.svg' %}" alt="Tokens" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                        <img src="{% static 'icons/key.svg' %}" alt="Tokens"
+                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
                         Tokens
                     </a>
                 </li>
                 <li>
                     <a href="{% url 'org' %}" tabindex="2" class="btn btn-sm btn-ghost flex items-center gap-1">
-                        <img src="{% static 'icons/team.svg' %}" alt="Teams" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                        <img src="{% static 'icons/team.svg' %}" alt="Teams"
+                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
                         Teams
                     </a>
                 </li>
                 <li>
                     <a href="{% url 'models' %}" tabindex="3" class="btn btn-sm btn-ghost flex items-center gap-1">
-                        <img src="{% static 'icons/model.svg' %}" alt="Models" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                        <img src="{% static 'icons/model.svg' %}" alt="Models"
+                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
                         Models
                     </a>
                 </li>
                 <li>
                     <a href="{% url 'usage' %}" tabindex="4" class="btn btn-sm btn-ghost flex items-center gap-1">
-                        <img src="{% static 'icons/dashboard.svg' %}" alt="Usage" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                        <img src="{% static 'icons/dashboard.svg' %}" alt="Usage"
+                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
                         Usage
                     </a>
                 </li>
                 {% if user.is_superuser %}
-                <li>
-                    <a href="{% url 'silk:summary' %}" class="btn btn-sm btn-ghost flex items-center gap-1">
-                        <img src="{% static 'icons/dashboard.svg' %}" alt="Profiling" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                        Profiling
-                    </a>
-                </li>
-                <li>
-                    <a href="{% url 'admin:index' %}" tabindex="5" class="btn btn-sm btn-ghost flex items-center gap-1">
-                        <img src="{% static 'icons/wrench.svg' %}" alt="Admin Panel" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                        Admin Panel
-                    </a>
-                </li>
+                    {% if settings.SILKY_ENABLED %}
+                        <li>
+                            <a href="{% url 'silk:summary' %}" class="btn btn-sm btn-ghost flex items-center gap-1">
+                                <img src="{% static 'icons/profiling.svg' %}" alt="Profiling"
+                                     class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                Profiling
+                            </a>
+                        </li>
+                    {% endif %}
+
+
+                    <li>
+                        <a href="{% url 'admin:index' %}" tabindex="5"
+                           class="btn btn-sm btn-ghost flex items-center gap-1">
+                            <img src="{% static 'icons/wrench.svg' %}" alt="Admin Panel"
+                                 class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                            Admin Panel
+                        </a>
+                    </li>
                 {% endif %}
             </ul>
         {% endif %}
@@ -60,7 +71,8 @@
             {% for name, external_url in settings.EXTRA_NAV_LINKS.items %}
                 <li>
                     <a href="{{ external_url }}" class="flex items-center gap-1 hover:underline">
-                        <img src="{% static 'icons/external.svg' %}" alt="(external)" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                        <img src="{% static 'icons/external.svg' %}" alt="(external)"
+                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
                         {{ name }}
                     </a>
                 </li>
@@ -68,14 +80,17 @@
         </ul>
         {% if user.is_authenticated %}
             <label class="swap swap-rotate ml-2">
-                <input type="checkbox" class="theme-controller" value="dark" />
-                <img src="{% static 'icons/sun.svg' %}" alt="Light mode" class="swap-off w-4 h-4 [[data-theme=dark]_&]:invert" />
-                <img src="{% static 'icons/moon.svg' %}" alt="Dark mode" class="swap-on w-4 h-4 [[data-theme=dark]_&]:invert" />
+                <input type="checkbox" class="theme-controller" value="dark"/>
+                <img src="{% static 'icons/sun.svg' %}" alt="Light mode"
+                     class="swap-off w-4 h-4 [[data-theme=dark]_&]:invert"/>
+                <img src="{% static 'icons/moon.svg' %}" alt="Dark mode"
+                     class="swap-on w-4 h-4 [[data-theme=dark]_&]:invert"/>
             </label>
             <details class="dropdown dropdown-end ml-2">
                 <summary class="btn btn-ghost btn-circle avatar list-none flex items-center justify-center">
                     <div class="w-7 rounded-full bg-base-200 flex items-center justify-center">
-                        <img src="{% static 'icons/user-circle.svg' %}" alt="User" class="w-4 h-4 [[data-theme=dark]_&]:invert" />
+                        <img src="{% static 'icons/user-circle.svg' %}" alt="User"
+                             class="w-4 h-4 [[data-theme=dark]_&]:invert"/>
                     </div>
                 </summary>
                 <div class="dropdown-content z-10 mt-5 w-65 p-2 shadow bg-base-100 rounded-box flex flex-col gap-2 min-w-[12rem]">
@@ -95,18 +110,18 @@
 </header>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', () => {
     const themeToggle = document.querySelector('.theme-controller');
     const htmlElement = document.documentElement;
     const lightTheme = 'light';
     const darkTheme = 'dark';
 
     const applyTheme = (theme) => {
-        htmlElement.setAttribute('data-theme', theme);
-        localStorage.setItem('selectedTheme', theme);
-        if (themeToggle) {
-            themeToggle.checked = (theme === darkTheme);
-        }
+      htmlElement.setAttribute('data-theme', theme);
+      localStorage.setItem('selectedTheme', theme);
+      if (themeToggle) {
+        themeToggle.checked = (theme === darkTheme);
+      }
     };
 
     const savedTheme = localStorage.getItem('selectedTheme');
@@ -114,9 +129,9 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTheme(initialTheme);
 
     if (themeToggle) {
-        themeToggle.addEventListener('change', (event) => {
-            applyTheme(event.target.checked ? darkTheme : lightTheme);
-        });
+      themeToggle.addEventListener('change', (event) => {
+        applyTheme(event.target.checked ? darkTheme : lightTheme);
+      });
     }
-});
+  });
 </script>

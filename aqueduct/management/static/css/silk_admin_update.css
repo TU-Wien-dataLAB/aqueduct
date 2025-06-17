@@ -1,6 +1,6 @@
-*:not(header, header *)[data-theme="dark"] {
-    color: unset !important;
-}
+/**:not(header, header *)[data-theme="dark"] {*/
+/*    color: unset !important;*/
+/*}*/
 
 *:not(header, header *) {
     font-weight: unset !important;
@@ -10,11 +10,69 @@ header, header * {
     color: var(--color-base-content) !important;
 }
 
-body {
+body, #content {
     height: 100%;
+    background-color: var(--darkened-bg);
+    color: var(--color-base-content) !important;
 }
 
 html {
     height: 100vh;
     overflow: auto;
+}
+
+#content * a, #content * a:link, #content * a:visited {
+    color: var(--color-base-content) !important;
++ background-color: var(--color-base-100);
+}
+
+.row .cell {
+    background-color: var(--color-base-300) !important;
+}
+
+.row-wrapper .row:hover {
+    background-color: var(--color-base-100) !important;
+}
+
+#header {
+    background-color: var(--color-base-100) !important;
+}
+
+.menu-item, .menu-item:hover, input, #filters input, #filters span {
+    color: var(--color-base-content) !important;
+    background: var(--color-base-100) !important;
+}
+
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+  /*safari and chrome*/
+  select {
+    background-color: var(--color-base-100) !important;
+  }
+}
+select {
+    background-color: var(--color-base-100) !important;
+}
+
+.menu-item-selected {
+    background-color: var(--color-base-300) !important;
+}
+
+.selectable-menu-item:hover {
+    background-color: var(--color-base-300) !important;
+}
+
+table, pre, code {
+    background-color: var(--color-base-100) !important;
+}
+
+.headers tr:hover {
+    background-color: var(--color-base-300) !important;
+}
+
+*[data-theme="light"] #filter-item {
+    filter: invert(1) !important;
+}
+
+*[data-theme="dark"] #filter-image {
+    filter: invert(1) !important;
 }

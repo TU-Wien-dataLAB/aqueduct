@@ -149,11 +149,7 @@ CELERY_BEAT_SCHEDULE = {
     'delete-old-requests': {
         'task': 'aqueduct.celery.delete_old_requests',
         'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
-    },
-    'delete-silk-logs': {
-        'task': 'aqueduct.celery.delete_silk_models',
-        'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
-    },
+    }
 }
 
 # Django Silk profiling configuration --------------------------------------------------
@@ -170,6 +166,10 @@ if SILKY_ENABLED:
     SILKY_META = True
     # do not log request body (regardless of size)
     SILKY_LOG_REQUEST_BODY = False
+    CELERY_BEAT_SCHEDULE['delete-silk-logs'] = {
+        'task': 'aqueduct.celery.delete_silk_models',
+        'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    }
 
 ROOT_URLCONF = 'aqueduct.urls'
 

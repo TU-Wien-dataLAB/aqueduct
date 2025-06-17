@@ -31,3 +31,18 @@ def delete_old_requests(self):
     count = old_requests.count()
     old_requests.delete()
     print(f"Deleted {count} requests older than {retention_days} days (before {cutoff})")
+
+
+@app.task(bind=True, ignore_result=True)
+def delete_silk_models(self):
+    """
+    Clears Silk's profiling logs.
+    """
+    import silk.models
+    from silk.utils.data_deletion import delete_model
+
+    delete_model(silk.models.Profile)
+    delete_model(silk.models.SQLQuery)
+    delete_model(silk.models.Response)
+    delete_model(silk.models.Request)
+    print("Cleared Silk profiling logs.")

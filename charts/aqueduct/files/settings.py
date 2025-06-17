@@ -147,7 +147,11 @@ CELERY_RESULT_SERIALIZER = 'json'
 
 CELERY_BEAT_SCHEDULE = {
     'delete-old-requests': {
-        'task': 'aqueduct.celery.delete_old_requests',  # full dotted path to the task
+        'task': 'aqueduct.celery.delete_old_requests',
+        'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    },
+    'delete-silk-logs': {
+        'task': 'aqueduct.celery.delete_silk_models',
         'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
     },
 }

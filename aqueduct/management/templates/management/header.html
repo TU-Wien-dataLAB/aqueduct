@@ -11,7 +11,7 @@
             </span>
         </a>
         {% if user.is_authenticated %}
-            <ul class="menu menu-horizontal px-1 items-center space-x-1 ml-4">
+            <ul class="menu menu-horizontal items-center space-x-1 ml-4">
                 <li>
                     <a href="{% url 'tokens' %}" tabindex="1" class="btn btn-sm btn-ghost flex items-center gap-1">
                         <img src="{% static 'icons/key.svg' %}" alt="Tokens" class="w-4 h-4 [[data-theme=dark]_&]:invert">
@@ -38,6 +38,12 @@
                 </li>
                 {% if user.is_superuser %}
                 <li>
+                    <a href="{% url 'silk:summary' %}" class="btn btn-sm btn-ghost flex items-center gap-1">
+                        <img src="{% static 'icons/dashboard.svg' %}" alt="Profiling" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                        Profiling
+                    </a>
+                </li>
+                <li>
                     <a href="{% url 'admin:index' %}" tabindex="5" class="btn btn-sm btn-ghost flex items-center gap-1">
                         <img src="{% static 'icons/wrench.svg' %}" alt="Admin Panel" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                         Admin Panel
@@ -50,7 +56,7 @@
 
     <div class="navbar-end flex items-center gap-2">
         {# Extra Links from settings.py #}
-        <ul class="menu menu-horizontal px-1 items-center space-x-1">
+        <ul class="menu menu-horizontal items-center space-x-1">
             {% for name, external_url in settings.EXTRA_NAV_LINKS.items %}
                 <li>
                     <a href="{{ external_url }}" class="flex items-center gap-1 hover:underline">

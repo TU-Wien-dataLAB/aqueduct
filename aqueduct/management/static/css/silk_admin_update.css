@@ -1,0 +1,20 @@
+*:not(header, header *)[data-theme="dark"] {
+    color: unset !important;
+}
+
+*:not(header, header *) {
+    font-weight: unset !important;
+}
+
+header, header * {
+    color: var(--color-base-content) !important;
+}
+
+body {
+    height: 100%;
+}
+
+html {
+    height: 100vh;
+    overflow: auto;
+}

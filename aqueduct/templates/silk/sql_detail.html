@@ -1,8 +1,9 @@
-{% extends "silk/summary.html" %}
+{% extends "silk/sql.html" %}
 {% load static %}
 
-{% block top %}
-    {% include "management/header.html" %}
+{% block js %}
+    {{ block.super }}
+    {% include "management/_cdn.html" %}
 {% endblock %}
 
 {% block style %}

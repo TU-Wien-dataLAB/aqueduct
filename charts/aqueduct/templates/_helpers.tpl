@@ -71,4 +71,10 @@ Usage:
 - name: REQUEST_RETENTION_SCHEDULE
   value: {{ .Values.requestRetentionSchedule.celery.schedule | quote }}
 {{- end }}
+- name: SILKY_ENABLED
+{{- if .Values.silk.enabled }}
+  value: "True"
+{{- else }}
+  value: "False"
+{{- end }}
 {{- end }}

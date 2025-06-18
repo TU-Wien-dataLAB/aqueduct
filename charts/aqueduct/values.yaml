@@ -50,6 +50,10 @@ requestRetentionSchedule:
     workerDeployment:
       replicas: 1
       resources: {}
+
+silk:
+  enabled: true
+
 env:
   - name: DATABASE_ENGINE
     value: "django.db.backends.postgresql"

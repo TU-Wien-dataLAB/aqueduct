@@ -150,6 +150,7 @@ dependencies = [
     { name = "daphne" },
     { name = "django" },
     { name = "django-celery-beat" },
+    { name = "django-silk" },
     { name = "litellm" },
     { name = "mozilla-django-oidc" },
     { name = "openai" },
@@ -176,6 +177,7 @@ requires-dist = [
     { name = "daphne", specifier = ">=4.1.2" },
     { name = "django", specifier = ">=5.2" },
     { name = "django-celery-beat", specifier = ">=2.8.1" },
+    { name = "django-silk", specifier = ">=5.4.0" },
     { name = "litellm", specifier = "==1.72.0" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "openai", specifier = ">=1.76.0" },
@@ -722,6 +724,20 @@ wheels = [
 ]
 
 [[package]]
+name = "django-silk"
+version = "5.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "gprof2dot" },
+    { name = "sqlparse" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/70/9d/b638031cc89ce79cc1d46f27c3a5cc6c2e6aaedab4be6f8238d51c08c58f/django_silk-5.4.0.tar.gz", hash = "sha256:2247870ac8080b6c6c5db17f2f1042d39d95e4a5fa061d661882777ec9adb672", size = 4494394, upload_time = "2025-06-01T23:22:23.915Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3e/fc/ad0f20a97d56e36c6bd7c785b7e158be5b78597665a9312d3de7c7d672e2/django_silk-5.4.0-py3-none-any.whl", hash = "sha256:caf720a06e24a6cf1acf825c1868b2a6ece8158b13725363f6d3a1a9994d0fa6", size = 1944115, upload_time = "2025-06-01T23:22:38.845Z" },
+]
+
+[[package]]
 name = "django-timezone-field"
 version = "7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -952,6 +968,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/39/24/33db22342cf4a2ea27c9955e6713140fedd51e8b141b5ce5260897020f1a/googleapis_common_protos-1.70.0.tar.gz", hash = "sha256:0e1b44e0ea153e6594f9f394fef15193a68aaaea2d843f83e2742717ca753257", size = 145903, upload_time = "2025-04-14T10:17:02.924Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/86/f1/62a193f0227cf15a920390abe675f386dec35f7ae3ffe6da582d3ade42c7/googleapis_common_protos-1.70.0-py3-none-any.whl", hash = "sha256:b8bfcca8c25a2bb253e0e0b0adaf8c00773e5e6af6fd92397576680b807e0fd8", size = 294530, upload_time = "2025-04-14T10:17:01.271Z" },
+]
+
+[[package]]
+name = "gprof2dot"
+version = "2025.4.14"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bb/fd/cad13fa1f7a463a607176432c4affa33ea162f02f58cc36de1d40d3e6b48/gprof2dot-2025.4.14.tar.gz", hash = "sha256:35743e2d2ca027bf48fa7cba37021aaf4a27beeae1ae8e05a50b55f1f921a6ce", size = 39536, upload_time = "2025-04-14T07:21:45.76Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/ed/89d760cb25279109b89eb52975a7b5479700d3114a2421ce735bfb2e7513/gprof2dot-2025.4.14-py3-none-any.whl", hash = "sha256:0742e4c0b4409a5e8777e739388a11e1ed3750be86895655312ea7c20bd0090e", size = 37555, upload_time = "2025-04-14T07:21:43.319Z" },
 ]
 
 [[package]]

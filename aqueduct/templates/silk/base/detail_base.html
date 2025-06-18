@@ -1,0 +1,18 @@
+{% extends "silk/base/detail_base.html" %}
+{% load static %}
+
+{% block top %}
+    {% include "management/header.html" %}
+    {{ block.super }}
+{% endblock %}
+
+{% block js %}
+    {{ block.super }}
+    {% include "management/_cdn.html" %}
+{% endblock %}
+
+{% block style %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'css/admin_custom.css' %}">
+    <link rel="stylesheet" href="{% static 'css/silk_admin_update.css' %}">
+{% endblock %}

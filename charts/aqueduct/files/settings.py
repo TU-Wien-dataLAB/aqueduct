@@ -147,12 +147,29 @@ CELERY_RESULT_SERIALIZER = 'json'
 
 CELERY_BEAT_SCHEDULE = {
     'delete-old-requests': {
-        'task': 'aqueduct.celery.delete_old_requests',  # full dotted path to the task
+        'task': 'aqueduct.celery.delete_old_requests',
         'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
-    },
+    }
 }
 
-# ------------------------------------------------------------------------
+# Django Silk profiling configuration --------------------------------------------------
+# Silk can be disabled via the SILKY_ENABLED env var.
+SILKY_ENABLED = os.getenv("SILKY_ENABLED", "True").lower() == "true"
+if SILKY_ENABLED:
+    INSTALLED_APPS.append("silk")
+    # insert Silk middleware first to capture all requests
+    MIDDLEWARE.insert(0, "silk.middleware.SilkyMiddleware")
+    # only superusers should have access to the /silk/ UI
+    SILKY_AUTHENTICATION = True
+    SILKY_AUTHORISATION = True
+    # use meta profiling to measure performance overhead
+    SILKY_META = True
+    # do not log request body (regardless of size)
+    SILKY_LOG_REQUEST_BODY = False
+    CELERY_BEAT_SCHEDULE['delete-silk-logs'] = {
+        'task': 'aqueduct.celery.delete_silk_models',
+        'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    }
 
 ROOT_URLCONF = 'aqueduct.urls'
 

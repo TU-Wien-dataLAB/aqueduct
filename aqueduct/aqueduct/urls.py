@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from django.conf import settings
 
 import management.views as views
 
@@ -30,3 +31,10 @@ urlpatterns = [
     # contains catch all path so has to come last
     path('', include('gateway.urls'))
 ]
+
+# Silk profiling URLs must be added before the gateway catch-all
+if getattr(settings, "SILKY_ENABLED", False):
+    urlpatterns.insert(
+        len(urlpatterns) - 1,
+        path("silk/", include("silk.urls", namespace="silk")),
+    )

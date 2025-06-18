@@ -31,7 +31,11 @@
 
 /* Fix header in Admin Panel (important) */
 header div ul {
-    margin: unset;
+    margin: unset !important;
+}
+
+header * li {
+    padding: 0 !important;
 }
 
 header .hidden {
@@ -39,7 +43,7 @@ header .hidden {
 }
 
 header * a:link, header * a:visited {
-    color: var(--body-loud-color) !important;
+    color: var(--color-base-content) !important;
 }
 
 header * .ml-4 {
@@ -47,7 +51,13 @@ header * .ml-4 {
 }
 
 header {
-    font-family: var(--default-font-family, ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji');
+    font-family: var(--default-font-family, ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji') !important;
+    font-weight: 400 !important;
+}
+
+header * .menu {
+    height: unset !important;
+    padding: .5rem;
 }
 
 header * li {

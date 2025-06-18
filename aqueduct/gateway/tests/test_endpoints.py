@@ -219,6 +219,126 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 404,
                          f"Expected 404 Model not found, got {response.status_code}: {response.content}")
 
+    @override_settings(RELAY_REQUEST_TIMEOUT=5)
+    def test_chat_completion_schema_generation(self):
+        """
+        Sends a chat completion request with a JSON schema, non-streaming.
+        Verifies the response content adheres to the schema and logs the request.
+        """
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        json_schema = {
+            "type": "object",
+            "properties": {
+                "greeting": {"type": "string"},
+                "count": {"type": "integer"}
+            },
+            "required": ["greeting", "count"]
+        }
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You produce JSON output based on a schema."},
+                {"role": "user", "content": "Generate JSON matching the provided schema."}
+            ],
+            # { "type": "json_schema", "json_schema": {...} }
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "schema", "schema": json_schema}
+            },
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+        endpoint = "/chat/completions"
+        response = self.client.post(
+            endpoint,
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 200,
+                         f"Expected 200 OK, got {response.status_code}: {response.content}")
+        response_json = response.json()
+        chat_completion = ChatCompletion.model_validate(response_json)
+        content = chat_completion.choices[0].message.content.strip()
+        result = json.loads(content)
+        self.assertIsInstance(result, dict)
+        self.assertEqual(set(result.keys()), set(json_schema["properties"].keys()))
+        self.assertIsInstance(result["greeting"], str)
+        self.assertIsInstance(result["count"], int)
+
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after schema generation.")
+        req = requests[0]
+        self.assertIn("chat/completions", req.path,
+                      "Request endpoint should be for chat completion schema generation.")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for schema generation")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for schema generation")
+
+    @override_settings(STREAM_REQUEST_TIMEOUT=5)
+    @async_to_sync
+    async def test_chat_completion_schema_generation_streaming(self):
+        """
+        Sends a streaming chat completion request with a JSON schema.
+        Verifies the streamed content adheres to the schema and logs the request.
+        """
+        await sync_to_async(lambda: self.async_client.force_login(
+            User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
+
+        json_schema = {
+            "type": "object",
+            "properties": {
+                "greeting": {"type": "string"},
+                "count": {"type": "integer"}
+            },
+            "required": ["greeting", "count"]
+        }
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You produce JSON output based on a schema."},
+                {"role": "user", "content": "Generate JSON matching the provided schema."}
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "schema", "schema": json_schema}
+            },
+            "max_tokens": 50,
+            "temperature": 0.0,
+            "stream": True
+        }
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        response = await self.async_client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
+        streamed_lines = await _read_streaming_response_lines(response)
+        self.assertGreater(len(streamed_lines), 0, "Should receive at least one streamed data chunk.")
+
+        content_pieces = _parse_streamed_content_pieces(streamed_lines)
+        full_content = "".join(content_pieces).strip()
+        result = json.loads(full_content)
+        self.assertIsInstance(result, dict)
+        self.assertEqual(set(result.keys()), set(json_schema["properties"].keys()))
+        self.assertIsInstance(result["greeting"], str)
+        self.assertIsInstance(result["count"], int)
+
+        requests = await sync_to_async(lambda: list(Request.objects.all()))()
+        self.assertEqual(len(requests), 1, "There should be exactly one request after schema generation streaming.")
+        req = requests[0]
+        self.assertIn("chat/completions", req.path,
+                      "Request endpoint should be for chat completion (streaming schema generation).")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming schema generation)")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming schema generation)")
+
 
 class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 

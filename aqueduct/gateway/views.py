@@ -211,17 +211,6 @@ def log_request(view_func):
     return wrapper
 
 
-def handle_timeout(view_func):
-    @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
-        try:
-            return await view_func(request, *args, **kwargs)
-        except litellm.Timeout as e:
-            return JsonResponse({"error": str(e)}, status=504)
-
-    return wrapper
-
-
 def check_model_availability(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
@@ -266,6 +255,38 @@ def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper
     return stream()
 
 
+def catch_router_exceptions(view_func):
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        # https://docs.litellm.ai/docs/exception_mapping#litellm-exceptions
+        try:
+            return await view_func(request, *args, **kwargs)
+        except litellm.BadRequestError as e:
+            return JsonResponse({"error": str(e)}, status=400)
+        except litellm.AuthenticationError as e:
+            return JsonResponse({"error": str(e)}, status=401)
+        except litellm.exceptions.PermissionDeniedError as e:
+            return JsonResponse({"error": str(e)}, status=403)
+        except litellm.NotFoundError as e:
+            return JsonResponse({"error": str(e)}, status=404)
+        except litellm.UnprocessableEntityError as e:
+            return JsonResponse({"error": str(e)}, status=422)
+        except litellm.RateLimitError as e:
+            return JsonResponse({"error": str(e)}, status=429)
+        except (litellm.APIConnectionError, litellm.APIError) as e:
+            return JsonResponse({"error": str(e)}, status=500)
+        except litellm.Timeout as e:
+            return JsonResponse({"error": str(e)}, status=504)
+        except litellm.ServiceUnavailableError as e:
+            return JsonResponse({"error": str(e)}, status=503)
+        except litellm.InternalServerError as e:
+            return JsonResponse({"error": str(e)}, status=500)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return wrapper
+
+
 @csrf_exempt
 @require_POST
 @token_authenticated
@@ -274,7 +295,7 @@ def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper
 @ensure_usage
 @log_request
 @check_model_availability
-@handle_timeout
+@catch_router_exceptions
 async def completions(request: ASGIRequest, pydantic_model: openai.types.CompletionCreateParams, request_log: Request,
                       *args, **kwargs):
     router = get_router()
@@ -298,7 +319,7 @@ async def completions(request: ASGIRequest, pydantic_model: openai.types.Complet
 @ensure_usage
 @log_request
 @check_model_availability
-@handle_timeout
+@catch_router_exceptions
 async def chat_completions(request: ASGIRequest, pydantic_model: openai.types.chat.CompletionCreateParams,
                            request_log: Request, *args, **kwargs):
     router = get_router()
@@ -323,7 +344,7 @@ async def chat_completions(request: ASGIRequest, pydantic_model: openai.types.ch
 @ensure_usage
 @log_request
 @check_model_availability
-@handle_timeout
+@catch_router_exceptions
 async def embeddings(request: ASGIRequest, pydantic_model: openai.types.EmbeddingCreateParams, request_log: Request,
                      *args, **kwargs):
     router = get_router()

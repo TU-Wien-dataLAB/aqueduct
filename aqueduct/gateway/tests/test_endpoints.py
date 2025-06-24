@@ -219,6 +219,21 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 404,
                          f"Expected 404 Model not found, got {response.status_code}: {response.content}")
 
+    def test_chat_completion_unknown_model(self):
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        payload = {
+            "model": "unknown-model",
+            "messages": self.MESSAGES,
+        }
+        response = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400,
+                         f"Expected 400 Bad Request, got {response.status_code}: {response.content}")
+
     @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_chat_completion_schema_generation(self):
         """

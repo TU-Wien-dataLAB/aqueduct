@@ -166,6 +166,9 @@ if SILKY_ENABLED:
     SILKY_META = True
     # do not log request body (regardless of size)
     SILKY_LOG_REQUEST_BODY = False
+    SILKY_MAX_REQUEST_BODY_SIZE = 0
+    SILKY_MAX_RESPONSE_BODY_SIZE = 0
+
     CELERY_BEAT_SCHEDULE['delete-silk-logs'] = {
         'task': 'aqueduct.celery.delete_silk_models',
         'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),

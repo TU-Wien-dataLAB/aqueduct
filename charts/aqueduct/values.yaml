@@ -46,7 +46,7 @@ requestRetentionSchedule:
     brokerUrl: "redis://redis-master:6379/0"
     workerConcurrency: 1
     requestRetentionDays: 7
-    schedule: "* 4 * * *"
+    schedule: "0 4 * * *"
     workerDeployment:
       replicas: 1
       resources: {}
@@ -89,7 +89,14 @@ postgresql:
   primary:
     persistence:
       enabled: true
-      size: 10Gi
+      size: 100Gi
+    resources:
+      limits:
+        cpu: "8"
+        memory: "24Gi"
+      requests:
+        cpu: "8"
+        memory: "24Gi"
 
 redis:
   fullnameOverride: "redis"

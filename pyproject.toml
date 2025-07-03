@@ -28,4 +28,5 @@ vllm = [
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
+    "tbump>=6.11.0",
 ]

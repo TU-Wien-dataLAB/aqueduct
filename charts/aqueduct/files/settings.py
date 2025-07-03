@@ -30,7 +30,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "insecure-secret-key")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["localhost"]
 
 # Application definition
 
@@ -111,7 +111,7 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
 
 OIDC_DEFAULT_GROUPS = ["default"]
 ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
-ADMIN_GROUP = "default" # all users are admins
+ADMIN_GROUP = "aqueduct-admin"  # all users are admins
 
 EXTRA_NAV_LINKS = {
     'Bug Report': 'https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md',
@@ -145,6 +145,7 @@ CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 
+# TODO: if data retention schedule changes, old one is still used
 CELERY_BEAT_SCHEDULE = {
     'delete-old-requests': {
         'task': 'aqueduct.celery.delete_old_requests',

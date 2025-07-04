@@ -4,8 +4,22 @@
 {% block header %}{{ title }}{% endblock %}
 
 {% block content %}
-    <h1 class="text-3xl font-bold mb-6">{{ title }}</h1>
-        <div class="flex items-center space-x-4 mb-6">
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-baseline">
+            <h1 class="text-3xl font-bold">{{ title }}</h1>
+            {% if selected_token %}
+            <span class="text-lg text-base-content/50 font-normal ml-4">
+                for "{{ selected_token.name }}"
+            </span>
+            {% endif %}
+        </div>
+        {% if selected_token %}
+        <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
+            Show all
+        </a>
+        {% endif %}
+    </div>
+    <div class="flex items-center space-x-4 mb-6">
         {% if is_global_admin %}
             <label for="org-select" class="font-medium">Organization:</label>
             <select
@@ -27,10 +41,6 @@
             </select>
         {% else %}
             <span class="font-medium">Organization: {{ selected_org.name }}</span>
-        {% endif %}
-        {% if selected_token %}
-            <label class="font-medium">Token:</label>
-            <span class="badge badge-outline">{{ selected_token.name }}</span>
         {% endif %}
 
         <label class="font-medium">Time Frame:</label>
@@ -161,13 +171,6 @@
                     </tbody>
                 </table>
             </div>
-            {% if selected_token %}
-            <div class="p-2 flex justify-end">
-                <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
-                    Show all
-                </a>
-            </div>
-            {% endif %}
         </div>
     </div>
 

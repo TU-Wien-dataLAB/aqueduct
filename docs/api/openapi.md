@@ -15,7 +15,7 @@ nav_order: 4
 
 <script>
 const ui = SwaggerUIBundle({
-  url: 'https://raw.githubusercontent.com/TU-Wien-dataLAB/aqueduct/refs/heads/9-add-api-documentation/docs/openapi.yaml',
+  url: 'https://raw.githubusercontent.com/TU-Wien-dataLAB/aqueduct/refs/heads/main/docs/openapi.yaml',
   dom_id: '#openapi-ui',
   presets: [
     SwaggerUIBundle.presets.apis,

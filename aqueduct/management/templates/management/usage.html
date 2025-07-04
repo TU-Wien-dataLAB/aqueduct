@@ -61,26 +61,12 @@
             <div class="stat-value text-primary">
                 {{ avg_time_completion|floatformat:1 }} ms
             </div>
-            {% if selected_token %}
-            <div class="p-2 flex justify-end">
-                <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
-                    Show all
-                </a>
-            </div>
-            {% endif %}
         </div>
         <div class="stat">
             <div class="stat-title">Avg Resp Time (Embedding)</div>
             <div class="stat-value text-primary">
                 {{ avg_time_embedding|floatformat:1 }} ms
             </div>
-            {% if selected_token %}
-            <div class="p-2 flex justify-end">
-                <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
-                    Show all
-                </a>
-            </div>
-            {% endif %}
         </div>
         <div class="stat">
             <div class="stat-title">Input Tokens</div>

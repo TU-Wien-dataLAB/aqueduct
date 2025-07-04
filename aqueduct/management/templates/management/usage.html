@@ -5,7 +5,7 @@
 
 {% block content %}
     <h1 class="text-3xl font-bold mb-6">{{ title }}</h1>
-    <div class="flex items-center space-x-4 mb-6">
+        <div class="flex items-center space-x-4 mb-6">
         {% if is_global_admin %}
             <label for="org-select" class="font-medium">Organization:</label>
             <select
@@ -27,6 +27,10 @@
             </select>
         {% else %}
             <span class="font-medium">Organization: {{ selected_org.name }}</span>
+        {% endif %}
+        {% if selected_token %}
+            <label class="font-medium">Token:</label>
+            <span class="badge badge-outline">{{ selected_token.name }}</span>
         {% endif %}
 
         <label class="font-medium">Time Frame:</label>
@@ -57,12 +61,26 @@
             <div class="stat-value text-primary">
                 {{ avg_time_completion|floatformat:1 }} ms
             </div>
+            {% if selected_token %}
+            <div class="p-2 flex justify-end">
+                <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
+                    Show all
+                </a>
+            </div>
+            {% endif %}
         </div>
         <div class="stat">
             <div class="stat-title">Avg Resp Time (Embedding)</div>
             <div class="stat-value text-primary">
                 {{ avg_time_embedding|floatformat:1 }} ms
             </div>
+            {% if selected_token %}
+            <div class="p-2 flex justify-end">
+                <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
+                    Show all
+                </a>
+            </div>
+            {% endif %}
         </div>
         <div class="stat">
             <div class="stat-title">Input Tokens</div>
@@ -119,9 +137,16 @@
                             <tr>
                                 <td>{{ forloop.counter }}</td>
                                 <td>
-                                    <span class="font-bold">
-                                        {{ item.object.name | default:"N/A" }}
-                                    </span>
+                                    {% if selected_org %}
+                                        <a href="?org={{ selected_org.id }}&span={{ selected_span }}&token={{ item.object.id }}"
+                                           class="font-bold link link-hover text-primary">
+                                            {{ item.object.name|default:"N/A" }}
+                                        </a>
+                                    {% else %}
+                                        <span class="font-bold">
+                                            {{ item.object.name|default:"N/A" }}
+                                        </span>
+                                    {% endif %}
                                 </td>
                                 <td class="font-bold text-primary">
                                     {{ item.count }}
@@ -150,6 +175,13 @@
                     </tbody>
                 </table>
             </div>
+            {% if selected_token %}
+            <div class="p-2 flex justify-end">
+                <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
+                    Show all
+                </a>
+            </div>
+            {% endif %}
         </div>
     </div>
 

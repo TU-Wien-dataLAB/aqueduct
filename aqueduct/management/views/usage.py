@@ -85,6 +85,23 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         allowed_models = [m['model_name'] for m in get_router_config().get('model_list', [])]
         reqs = reqs.filter(model__in=allowed_models)
 
+        # Optional token selection: filter to a single token if provided
+        token_param = self.request.GET.get('token')
+        selected_token = None
+        if token_param and token_param.isdigit():
+            try:
+                tok = Token.objects.get(pk=int(token_param))
+                # Ensure the token belongs to the selected_org if scoped
+                if selected_org is not None:
+                    tok_org_id = tok.user.profile.org_id if tok.user else None
+                    sa_org_id = tok.service_account.team.org_id if tok.service_account else None
+                    if tok_org_id != selected_org.id and sa_org_id != selected_org.id:
+                        raise Token.DoesNotExist
+                selected_token = tok
+                reqs = reqs.filter(token=selected_token)
+            except Token.DoesNotExist:
+                selected_token = None
+
         # Time frame selection: 1 day, 1 week, or 1 month
         span_choices = {
             '1h': {'delta': timedelta(hours=1), 'trunc': TruncMinute('timestamp')},
@@ -177,6 +194,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             'is_global_admin': is_global_admin,
             'orgs': orgs,
             'selected_org': selected_org,
+            'selected_token': selected_token,
             'span_choices': list(span_choices.keys()),
             'selected_span': selected_span,
             'timeseries': json.dumps(timeseries),

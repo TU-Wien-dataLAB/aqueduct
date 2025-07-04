@@ -81,6 +81,10 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                     | Q(token__service_account__team__in=teams)
                 )
 
+        # Only include requests for models configured in the router
+        allowed_models = [m['model_name'] for m in get_router_config().get('model_list', [])]
+        reqs = reqs.filter(model__in=allowed_models)
+
         # Time frame selection: 1 day, 1 week, or 1 month
         span_choices = {
             '1h': {'delta': timedelta(hours=1), 'trunc': TruncMinute('timestamp')},

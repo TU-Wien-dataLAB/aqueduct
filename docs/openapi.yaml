@@ -49,17 +49,17 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml#/components/schemas/CreateChatCompletionRequest"
+              $ref: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml#/components/schemas/CreateChatCompletionRequest"
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: "https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml#/components/schemas/CreateChatCompletionResponse"
+                $ref: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml#/components/schemas/CreateChatCompletionResponse"
             text/event-stream:
               schema:
-                $ref: "https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml#/components/schemas/CreateChatCompletionStreamResponse"
+                $ref: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml#/components/schemas/CreateChatCompletionStreamResponse"
       x-oaiMeta:
         name: Create chat completion
         group: chat
@@ -943,14 +943,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml#/components/schemas/CreateCompletionRequest"
+              $ref: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml#/components/schemas/CreateCompletionRequest"
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: "https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml#/components/schemas/CreateCompletionResponse"
+                $ref: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml#/components/schemas/CreateCompletionResponse"
       x-oaiMeta:
         name: Create completion
         group: completions
@@ -1087,14 +1087,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml#/components/schemas/CreateEmbeddingRequest"
+              $ref: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml#/components/schemas/CreateEmbeddingRequest"
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: "https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml#/components/schemas/CreateEmbeddingResponse"
+                $ref: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml#/components/schemas/CreateEmbeddingResponse"
       x-oaiMeta:
         name: Create embeddings
         group: embeddings
@@ -1193,7 +1193,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml#/components/schemas/ListModelsResponse"
+                $ref: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml#/components/schemas/ListModelsResponse"
       x-oaiMeta:
         name: List models
         group: models

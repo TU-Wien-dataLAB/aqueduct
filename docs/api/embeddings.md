@@ -78,4 +78,4 @@ print(response.data[0].embedding)
 
 ## Error Responses
 
-Same as [Completions](/api/completions) endpoint.
+Same as [Completions](completions.md) endpoint.

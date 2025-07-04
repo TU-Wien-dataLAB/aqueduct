@@ -115,4 +115,4 @@ curl https://your-aqueduct-domain.com/chat/completions \
 
 ## Error Responses
 
-Same as [Completions](/api/completions) endpoint.
+Same as [Completions](completions.md) endpoint.

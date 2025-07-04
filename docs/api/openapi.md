@@ -1,5 +1,5 @@
 ---
-title: List Models
+title: OpenAPI Reference
 parent: API Reference
 nav_order: 4
 ---

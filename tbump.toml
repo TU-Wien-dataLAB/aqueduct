@@ -25,6 +25,10 @@ tag_template = "v{new_version}"
 [[file]]
 src = "pyproject.toml"
 
+[[file]]
+src = "charts/aqueduct/Chart.yaml"
+search = 'appVersion: "{current_version}"'
+
 # You can specify a list of commands to
 # run after the files have been patched
 # and before the git commit is made

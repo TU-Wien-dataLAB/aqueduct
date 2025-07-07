@@ -97,6 +97,55 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
+### Multimodal Input Example
+
+```bash
+curl https://your-aqueduct-domain.com/chat/completions \
+  -H "Authorization: Bearer YOUR_AQUEDUCT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "your-model-name",
+      "messages": [
+          {
+              "role": "user",
+              "content": [
+                  {"type": "text", "text": "What’s in this image?"},
+                  {"type": "image_url", "image_url": {"url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"}}
+              ]
+          }
+      ],
+      "max_tokens": 50,
+      "temperature": 0.0
+  }'
+```
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="YOUR_AQUEDUCT_TOKEN",
+    base_url="https://your-aqueduct-domain.com/v1",
+)
+
+image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+
+response = client.chat.completions.create(
+    model="your-model-name",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What’s in this image?"},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ],
+        }
+    ],
+    max_tokens=50,
+    temperature=0.0,
+)
+print(response.choices[0].message.content)
+```
+
 ### Streaming Example
 
 ```bash

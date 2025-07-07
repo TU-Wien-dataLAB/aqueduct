@@ -292,6 +292,51 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for schema generation")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for schema generation")
 
+    def test_chat_completion_multimodal_input(self):
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest(
+                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase to manage multiple servers!")
+
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What’s in this image?"},
+                     {"type": "image_url", "image_url": {"url": image_url}},
+                 ]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+        endpoint = "/chat/completions"
+        response = self.client.post(
+            endpoint,
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 200,
+                         f"Expected 200 OK, got {response.status_code}: {response.content}")
+        response_json = response.json()
+        chat_completion = ChatCompletion.model_validate(response_json)
+        content = chat_completion.choices[0].message.content.strip()
+        self.assertGreater(len(content), 0)
+
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after multimodal input.")
+        req = requests[0]
+        self.assertIn("chat/completions", req.path,
+                      "Request endpoint should be chat completion for multimodal input.")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for multimodal input")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for multimodal input")
+
     @override_settings(STREAM_REQUEST_TIMEOUT=5)
     @async_to_sync
     async def test_chat_completion_schema_generation_streaming(self):

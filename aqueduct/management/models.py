@@ -3,6 +3,7 @@ import dataclasses
 import os
 import secrets
 import hashlib
+import uuid
 from typing import Literal, Optional, Callable
 
 from django.db import models
@@ -617,3 +618,53 @@ class Request(models.Model):
 
     def __str__(self):
         return f"{self.id}"
+
+
+def generate_file_id() -> str:
+    """Generate a new FileObject primary key with a 'file-' prefix."""
+    return f"file-{uuid.uuid4().hex}"
+
+
+class FileObject(models.Model):
+    """
+    Mirrors the structure of OpenAI's FileObject type, excluding deprecated fields.
+    """
+    id = models.CharField(
+        max_length=100,
+        primary_key=True,
+        default=generate_file_id,
+        editable=False,
+        help_text="The file identifier, which can be referenced in the API endpoints."
+    )
+    bytes = models.BigIntegerField(
+        help_text="The size of the file, in bytes."
+    )
+    created_at = models.PositiveIntegerField(
+        help_text="The Unix timestamp (in seconds) for when the file was created."
+    )
+    filename = models.CharField(
+        max_length=255,
+        help_text="The name of the file."
+    )
+    PURPOSE_CHOICES = [
+        ("assistants", "assistants"),
+        ("batch", "batch"),
+        ("fine-tune", "fine-tune"),
+        ("vision", "vision"),
+        ("user_data", "user_data"),
+        ("evals", "evals"),
+    ]
+    purpose = models.CharField(
+        max_length=20,
+        choices=PURPOSE_CHOICES,
+        help_text="The intended purpose of the file."
+    )
+    expires_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the file will expire."
+    )
+
+    class Meta:
+        verbose_name = "File Object"
+        verbose_name_plural = "File Objects"

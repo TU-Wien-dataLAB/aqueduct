@@ -130,6 +130,8 @@ LITELLM_ROUTER_CONFIG_FILE_PATH = os.environ.get("LITELLM_ROUTER_CONFIG_FILE_PAT
 
 AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST: list[str] = []
 
+AQUEDUCT_FILES_API_ROOT = os.environ.get("AQUEDUCT_FILES_API_ROOT", "/tmp")
+
 # Celery Settings -------------------------------------------------------
 
 CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == "true"

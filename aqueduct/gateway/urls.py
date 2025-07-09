@@ -24,4 +24,12 @@ urlpatterns = [
     # Models endpoints
     path('models', views.models, name='models'),
     path('v1/models', views.models, name='v1_models'),
+
+    # Files endpoints
+    path('files', views.files, name='files'),
+    path('v1/files', views.files, name='v1_files'),
+    path('files/<str:file_id>', views.file, name='file'),
+    path('v1/files/<str:file_id>', views.file, name='v1_file'),
+    path('files/<str:file_id>/content', views.file_content, name='file_content'),
+    path('v1/files/<str:file_id>/content', views.file_content, name='v1_file_content'),
 ]

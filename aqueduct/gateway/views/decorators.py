@@ -1,39 +1,24 @@
-# gateway/views.py
 import json
+import logging
 import time
 from datetime import timedelta
 from functools import wraps
-from typing import AsyncGenerator, Any
 
 import litellm
-import openai
-from asgiref.sync import async_to_sync, sync_to_async
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib import auth
 from django.core.handlers.asgi import ASGIRequest
-from django.db.models import Sum, Count
-from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
-from django.views.decorators.csrf import csrf_exempt
-import logging
-
+from django.db.models import Count, Sum
+from django.http import JsonResponse, HttpResponse, StreamingHttpResponse
 from django.utils import timezone
-from django.views.decorators.http import require_POST, require_GET
-from litellm import Router, TextCompletionStreamWrapper
-from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-from litellm.types.utils import ModelResponse, TextCompletionResponse, EmbeddingResponse
+from pydantic import ValidationError, TypeAdapter
 from openai.types.chat import ChatCompletionStreamOptionsParam
-from pydantic import BaseModel, TypeAdapter, ValidationError
-from typing_extensions import Type, TypedDict
 
 from gateway.authentication import token_from_request
 from management.models import Request, Token, Usage
-from gateway.router import get_router, get_router_config
 
 logger = logging.getLogger(__name__)
-
-COMPLETION_TYPE = openai.types.Completion
-CHAT_COMPLETION_TYPE = openai.types.chat.ChatCompletion
-STREAMING_CHAT_COMPLETION_TYPE = openai.types.chat.ChatCompletionChunk
 
 
 # TODO: check auth only on token backend (import token backend and call authenticate)
@@ -162,21 +147,6 @@ def check_limits(view_func):
     return wrapper
 
 
-def _usage_from_bytes(content: bytes) -> Usage:
-    try:
-        usage_dict = json.loads(content).get('usage', None)
-        if isinstance(usage_dict, dict):
-            # CompletionUsage(completion_tokens=70, prompt_tokens=35, total_tokens=105, completion_tokens_details=None, prompt_tokens_details=None)
-            return Usage(
-                input_tokens=usage_dict.get('prompt_tokens', 0),
-                output_tokens=usage_dict.get('completion_tokens', 0)
-            )
-        else:
-            return Usage(input_tokens=0, output_tokens=0)
-    except json.JSONDecodeError:
-        return Usage(input_tokens=0, output_tokens=0)
-
-
 def log_request(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
@@ -232,29 +202,6 @@ def check_model_availability(view_func):
     return wrapper
 
 
-def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper, request_log: Request) -> \
-        AsyncGenerator[str, Any]:
-    start_time = time.monotonic()
-
-    async def stream():
-        token_usage = Usage(0, 0)
-        async for chunk in completion:
-            chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
-            token_usage += _usage_from_bytes(chunk_str.encode('utf-8'))
-            try:
-                yield f"data: {chunk_str}\n\n"
-            except Exception as e:
-                yield f"data: {str(e)}\n\n"
-
-        request_log.token_usage = token_usage
-        request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
-        await request_log.asave()
-        # Streaming is done, yield the [DONE] chunk
-        yield f"data: [DONE]\n\n"
-
-    return stream()
-
-
 def catch_router_exceptions(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
@@ -285,97 +232,3 @@ def catch_router_exceptions(view_func):
             return JsonResponse({"error": str(e)}, status=500)
 
     return wrapper
-
-
-@csrf_exempt
-@require_POST
-@token_authenticated
-@check_limits
-@parse_body(model=TypeAdapter(openai.types.CompletionCreateParams))
-@ensure_usage
-@log_request
-@check_model_availability
-@catch_router_exceptions
-async def completions(request: ASGIRequest, pydantic_model: openai.types.CompletionCreateParams, request_log: Request,
-                      *args, **kwargs):
-    router = get_router()
-    completion: TextCompletionResponse | TextCompletionStreamWrapper = await router.atext_completion(**pydantic_model)
-    if isinstance(completion, TextCompletionStreamWrapper):
-        return StreamingHttpResponse(streaming_content=_openai_stream(completion=completion, request_log=request_log),
-                                     headers={'Content-Type': 'text/event-stream'})
-    elif isinstance(completion, TextCompletionResponse):
-        data = completion.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
-        return JsonResponse(data=completion.model_dump(), status=200)
-    else:
-        raise NotImplementedError(f"Completion for response type {type(completion)} is not implemented.")
-
-
-@csrf_exempt
-@require_POST
-@token_authenticated
-@check_limits
-@parse_body(model=TypeAdapter(openai.types.chat.CompletionCreateParams))
-@ensure_usage
-@log_request
-@check_model_availability
-@catch_router_exceptions
-async def chat_completions(request: ASGIRequest, pydantic_model: openai.types.chat.CompletionCreateParams,
-                           request_log: Request, *args, **kwargs):
-    router = get_router()
-    chat_completion: CustomStreamWrapper | ModelResponse = await router.acompletion(**pydantic_model)
-    if isinstance(chat_completion, CustomStreamWrapper):
-        return StreamingHttpResponse(
-            streaming_content=_openai_stream(completion=chat_completion, request_log=request_log),
-            content_type='text/event-stream')
-    elif isinstance(chat_completion, ModelResponse):
-        data = chat_completion.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
-        return JsonResponse(data=data, status=200)
-    else:
-        raise NotImplementedError(f"Completion for response type {type(chat_completion)} is not implemented.")
-
-
-@csrf_exempt
-@require_POST
-@token_authenticated
-@check_limits
-@parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
-@ensure_usage
-@log_request
-@check_model_availability
-@catch_router_exceptions
-async def embeddings(request: ASGIRequest, pydantic_model: openai.types.EmbeddingCreateParams, request_log: Request,
-                     *args, **kwargs):
-    router = get_router()
-    embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
-    data = embedding.model_dump(exclude_none=True, exclude_unset=True)
-    request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
-    return JsonResponse(data=data, status=200)
-
-
-MODEL_CREATION_TIMESTAMP = int(timezone.now().timestamp())
-
-
-@csrf_exempt
-@require_GET
-@token_authenticated
-@log_request
-async def models(request: ASGIRequest, token: Token, *args, **kwargs):
-    router_config = get_router_config()
-    model_list: list[dict] = router_config["model_list"]
-    excluded_models = set(await sync_to_async(token.model_exclusion_list)())
-
-    return JsonResponse(data=dict(
-        data=[
-            {
-                "id": model["model_name"],
-                "object": "model",
-                "created": MODEL_CREATION_TIMESTAMP,
-                "owned_by": "aqueduct",
-            }
-            for model in model_list
-            if model["model_name"] not in excluded_models
-        ],
-        object="list",
-    ))

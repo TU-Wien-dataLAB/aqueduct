@@ -5,6 +5,7 @@ from django.views.decorators.http import require_http_methods, require_GET
 from asgiref.sync import sync_to_async
 from django.db.models import Sum
 from django.utils import timezone
+from django.conf import settings
 
 from openai.types.file_object import FileObject as OpenAIFileObject
 from management.models import FileObject
@@ -38,16 +39,28 @@ async def files(request: ASGIRequest, token, *args, **kwargs):
     if not filename.endswith(".jsonl"):
         return JsonResponse({"error": "Only .jsonl files are currently supported."}, status=400)
     data = uploaded.read()
-    if len(data) > 8 * 1024 * 1024:
-        return JsonResponse({"error": "File too large. Individual file must be <= 8MB."}, status=400)
+    # Enforce per-file size limit from settings
+    max_file_bytes = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024
+    if len(data) > max_file_bytes:
+        return JsonResponse(
+            {"error": f"File too large. Individual file must be <= {settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB}MB."},
+            status=400,
+        )
     sum_res = await FileObject.objects.filter(token=token).aaggregate(sum_bytes=Sum("bytes"))
     current_total = sum_res.get("sum_bytes") or 0
-    if current_total + len(data) > 1024 * 1024 * 1024:
-        return JsonResponse({"error": "Total files size exceeds 1GB limit."}, status=400)
+    # Enforce per-token total storage limit from settings
+    max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB * 1024 * 1024
+    if current_total + len(data) > max_total_bytes:
+        return JsonResponse(
+            {"error": f"Total files size exceeds {settings.AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB}MB limit."},
+            status=400,
+        )
     now = timezone.now()
     created_at = int(now.timestamp())
     # Expire file after 1 week
-    expires_at = int((now + timezone.timedelta(weeks=1)).timestamp())
+    # Set expiry based on settings (days)
+    expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
+    expires_at = int((now + timezone.timedelta(days=expiry_days)).timestamp())
     file_obj = FileObject(
         token=token,
         bytes=len(data),

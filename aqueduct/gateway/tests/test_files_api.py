@@ -88,7 +88,9 @@ class TestFilesAPI(GatewayFilesTestCase):
 
     def test_oversize_file(self):
         """File >8MB should be rejected."""
-        big = b"a" * (8 * 1024 * 1024 + 1)
+        from django.conf import settings
+        max_mb = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB
+        big = b"a" * (max_mb * 1024 * 1024 + 1)
         f = SimpleUploadedFile("big.jsonl", big, content_type="application/json")
         resp = self.client.post(
             "/files", {"file": f, "purpose": "batch"}, headers=self.headers
@@ -138,6 +140,7 @@ class TestFilesAPI(GatewayFilesTestCase):
     def test_expires_at_and_cleanup_task(self):
         """Verify expires_at is set 1 week ahead and expired files get purged."""
         from django.utils import timezone
+        from django.conf import settings
         from management.models import FileObject
         from aqueduct.celery import delete_expired_files
 
@@ -152,7 +155,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         # Expires_at ~ now + 7 days
         now = timezone.now()
         expires_ts = data.get("expires_at")
-        expected = int((now + timezone.timedelta(weeks=1)).timestamp())
+        expected = int((now + timezone.timedelta(days=settings.AQUEDUCT_FILES_API_EXPIRY_DAYS)).timestamp())
         # allow small delta for execution time
         self.assertTrue(abs(expires_ts - expected) <= 5)
 

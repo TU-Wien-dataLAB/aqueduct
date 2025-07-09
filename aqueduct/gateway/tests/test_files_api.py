@@ -57,3 +57,80 @@ class TestFilesAPI(GatewayFilesTestCase):
         list_data = response.json()
         self.assertEqual(len(list_data["data"]), 0)
         self.assertNotIn(file_id, [f["id"] for f in list_data["data"]])
+
+    def test_validation_errors(self):
+        """Missing or bad parameters should return 400."""
+        # Missing both file and purpose
+        resp = self.client.post("/files", {}, headers=self.headers)
+        self.assertEqual(resp.status_code, 400)
+        # Missing file only
+        resp = self.client.post("/files", {"purpose": "batch"}, headers=self.headers)
+        self.assertEqual(resp.status_code, 400)
+        # Missing purpose only
+        f = SimpleUploadedFile("a.jsonl", b"{}\n", content_type="application/json")
+        resp = self.client.post("/files", {"file": f}, headers=self.headers)
+        self.assertEqual(resp.status_code, 400)
+
+    def test_unsupported_and_bad_extension(self):
+        """Unsupported purpose or wrong file extension yields 400."""
+        good = SimpleUploadedFile("ok.jsonl", b"{}\n", content_type="application/json")
+        # unsupported purpose
+        resp = self.client.post(
+            "/files", {"file": good, "purpose": "fine-tune"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 400)
+        # wrong extension
+        bad = SimpleUploadedFile("nope.txt", b"{}\n", content_type="text/plain")
+        resp = self.client.post(
+            "/files", {"file": bad, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_oversize_file(self):
+        """File >8MB should be rejected."""
+        big = b"a" * (8 * 1024 * 1024 + 1)
+        f = SimpleUploadedFile("big.jsonl", big, content_type="application/json")
+        resp = self.client.post(
+            "/files", {"file": f, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_not_found_cases(self):
+        """GET/DELETE on nonexistent file returns 404."""
+        for method in ("get", "delete"):
+            resp = getattr(self.client, method)(
+                "/files/nonexistent", headers=self.headers
+            )
+            self.assertEqual(resp.status_code, 404)
+        resp = self.client.get("/files/nonexistent/content", headers=self.headers)
+        self.assertEqual(resp.status_code, 404)
+
+    def test_list_empty_and_bulk_operations(self):
+        """Listing on empty, multiple uploads, and deletion among many."""
+        # Initially empty
+        resp = self.client.get("/files", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"], [])
+
+        # Upload several files
+        ids = []
+        for name in ("a.jsonl", "b.jsonl", "c.jsonl"):
+            f = SimpleUploadedFile(name, b"{}\n", content_type="application/json")
+            resp = self.client.post(
+                "/files", {"file": f, "purpose": "batch"}, headers=self.headers
+            )
+            self.assertEqual(resp.status_code, 200)
+            ids.append(resp.json()["id"])
+
+        # Confirm all appear
+        resp = self.client.get("/files", headers=self.headers)
+        data_ids = [f["id"] for f in resp.json()["data"]]
+        self.assertCountEqual(data_ids, ids)
+
+        # Delete the middle one and re-list
+        mid = ids[1]
+        resp = self.client.delete(f"/files/{mid}", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        remaining = [ids[0], ids[2]]
+        resp = self.client.get("/files", headers=self.headers)
+        self.assertCountEqual([f["id"] for f in resp.json()["data"]], remaining)

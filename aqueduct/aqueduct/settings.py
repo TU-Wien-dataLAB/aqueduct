@@ -152,6 +152,10 @@ CELERY_BEAT_SCHEDULE = {
     'delete-old-requests': {
         'task': 'aqueduct.celery.delete_old_requests',
         'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    },
+    'delete-expired-files': {
+        'task': 'aqueduct.celery.delete_expired_files',
+        'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
     }
 }
 

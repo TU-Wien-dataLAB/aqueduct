@@ -44,8 +44,18 @@ async def files(request: ASGIRequest, token, *args, **kwargs):
     current_total = sum_res.get("sum_bytes") or 0
     if current_total + len(data) > 1024 * 1024 * 1024:
         return JsonResponse({"error": "Total files size exceeds 1GB limit."}, status=400)
-    created_at = int(timezone.now().timestamp())
-    file_obj = FileObject(token=token, bytes=len(data), filename=filename, created_at=created_at, purpose=purpose)
+    now = timezone.now()
+    created_at = int(now.timestamp())
+    # Expire file after 1 week
+    expires_at = int((now + timezone.timedelta(weeks=1)).timestamp())
+    file_obj = FileObject(
+        token=token,
+        bytes=len(data),
+        filename=filename,
+        created_at=created_at,
+        purpose=purpose,
+        expires_at=expires_at,
+    )
     await sync_to_async(file_obj.save)()
     await sync_to_async(file_obj.write)(data)
     openai_file = file_obj.model

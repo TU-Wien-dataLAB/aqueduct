@@ -134,3 +134,38 @@ class TestFilesAPI(GatewayFilesTestCase):
         remaining = [ids[0], ids[2]]
         resp = self.client.get("/files", headers=self.headers)
         self.assertCountEqual([f["id"] for f in resp.json()["data"]], remaining)
+
+    def test_expires_at_and_cleanup_task(self):
+        """Verify expires_at is set 1 week ahead and expired files get purged."""
+        from django.utils import timezone
+        from management.models import FileObject
+        from aqueduct.celery import delete_expired_files
+
+        # Upload a file
+        content = b'{"x": 1}\n'
+        f = SimpleUploadedFile("e.jsonl", content, content_type="application/json")
+        resp = self.client.post(
+            "/files", {"file": f, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        # Expires_at ~ now + 7 days
+        now = timezone.now()
+        expires_ts = data.get("expires_at")
+        expected = int((now + timezone.timedelta(weeks=1)).timestamp())
+        # allow small delta for execution time
+        self.assertTrue(abs(expires_ts - expected) <= 5)
+
+        file_id = data["id"]
+        obj = FileObject.objects.get(id=file_id)
+        file_path = obj.path()
+
+        # Simulate expiration in the past and run cleanup task
+        past = now - timezone.timedelta(days=8)
+        FileObject.objects.filter(id=file_id).update(expires_at=int(past.timestamp()))
+        # ensure file exists before cleanup
+        self.assertTrue(file_path.exists())
+        delete_expired_files()
+        # record removed and file deleted
+        self.assertFalse(FileObject.objects.filter(id=file_id).exists())
+        self.assertFalse(file_path.exists())

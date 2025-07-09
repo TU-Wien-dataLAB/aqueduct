@@ -19,6 +19,7 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 # Load task modules from all registered Django apps.
 app.autodiscover_tasks()
 
+
 @app.task(bind=True, ignore_result=True)
 def delete_old_requests(self):
     """
@@ -46,3 +47,25 @@ def delete_silk_models(self):
     delete_model(silk.models.Response)
     delete_model(silk.models.Request)
     print("Cleared Silk profiling logs.")
+
+
+@app.task(bind=True, ignore_result=True)
+def delete_expired_files(self):
+    """
+    Deletes FileObject records (and their on-disk files) whose expires_at timestamp is past.
+    """
+    from management.models import FileObject
+    from django.utils import timezone
+
+    now_ts = int(timezone.now().timestamp())
+    expired_qs = FileObject.objects.filter(expires_at__isnull=False, expires_at__lt=now_ts)
+    expired_list = list(expired_qs)
+    count = len(expired_list)
+    # Delete one-by-one to invoke model.delete() (removes disk files)
+    for obj in expired_list:
+        try:
+            obj.delete()
+        except Exception:
+            print(f"Failed to delete expired file {obj.id}")
+            pass
+    print(f"Deleted {count} expired files (expires before {now_ts}).")

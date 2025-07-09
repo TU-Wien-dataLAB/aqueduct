@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 from textwrap import dedent
 from typing import Optional, Literal
@@ -119,3 +120,24 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     def setUp(self):
         # Clear Request table before test
         Request.objects.all().delete()
+
+
+TEST_FILES_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "files_root")
+os.makedirs(TEST_FILES_ROOT, exist_ok=True)
+
+
+@override_settings(
+    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
+    AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
+)
+class GatewayFilesTestCase(TransactionTestCase):
+    # Load default fixture (includes test Token) and set test access token
+    fixtures = ["gateway_data.json"]
+    AQUEDUCT_ACCESS_TOKEN = GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN
+
+    def tearDown(self):
+        super().tearDown()
+        # Clean up the file storage directory after each test
+        if os.path.exists(TEST_FILES_ROOT):
+            shutil.rmtree(TEST_FILES_ROOT)
+            os.makedirs(TEST_FILES_ROOT, exist_ok=True)

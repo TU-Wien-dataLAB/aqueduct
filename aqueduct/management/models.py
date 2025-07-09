@@ -1,11 +1,12 @@
 # models.py
 import dataclasses
-import os
 import secrets
 import hashlib
 import uuid
+from pathlib import Path
 from typing import Literal, Optional, Callable
 
+import openai.types
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
@@ -629,6 +630,8 @@ class FileObject(models.Model):
     """
     Mirrors the structure of OpenAI's FileObject type, excluding deprecated fields.
     """
+    FILES_ROOT = Path(settings.AQUEDUCT_FILES_API_ROOT).absolute()
+
     id = models.CharField(
         max_length=100,
         primary_key=True,
@@ -665,6 +668,72 @@ class FileObject(models.Model):
         help_text="The Unix timestamp (in seconds) for when the file will expire."
     )
 
+    token = models.ForeignKey(
+        Token,
+        on_delete=models.CASCADE,  # If Token is deleted, delete its associated Files
+        related_name='files'
+    )
+
     class Meta:
         verbose_name = "File Object"
         verbose_name_plural = "File Objects"
+
+    @property
+    def model(self) -> openai.types.FileObject:
+        return openai.types.FileObject(
+            id=self.id,
+            bytes=self.bytes,
+            created_at=self.created_at,
+            filename=self.filename,
+            purpose=self.purpose,
+            expires_at=self.expires_at,
+            object="file",
+            status="processed",
+        )
+
+    def path(self) -> Path:
+        """Get the file system path for this file."""
+        subdir = (
+            str(self.token.service_account.team.id)
+            if self.token.service_account
+            else str(self.token.user.id)
+        )
+        return self.FILES_ROOT / subdir / self.id
+
+    def read(self) -> bytes:
+        """Read the file contents."""
+        path = self.path()
+        try:
+            with path.open('rb') as f:
+                return f.read()
+        except FileNotFoundError:
+            raise ObjectDoesNotExist(f"File not found at {path}")
+
+    def write(self, data: bytes):
+        """Write the file contents."""
+        path = self.path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('wb') as f:
+            f.write(data)
+        # Update stored size
+        self.bytes = len(data)
+        self.save(update_fields=['bytes'])
+
+    def delete_file(self):
+        """Delete the file."""
+        path = self.path()
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+    def delete(self, using=None, keep_parents=False):
+        """Override ORM delete to also remove the file from disk."""
+        # Remove the physical file first
+        try:
+            self.delete_file()
+        except Exception:
+            # Ignore errors deleting the file
+            pass
+        # Then delete the database record
+        super().delete(using=using, keep_parents=keep_parents)

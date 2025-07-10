@@ -32,4 +32,11 @@ urlpatterns = [
     path('v1/files/<str:file_id>', views.file, name='v1_file'),
     path('files/<str:file_id>/content', views.file_content, name='file_content'),
     path('v1/files/<str:file_id>/content', views.file_content, name='v1_file_content'),
+    # Batches endpoints
+    path('batches', views.batches, name='batches'),
+    path('v1/batches', views.batches, name='v1_batches'),
+    path('batches/<str:batch_id>', views.batch, name='batch'),
+    path('v1/batches/<str:batch_id>', views.batch, name='v1_batch'),
+    path('batches/<str:batch_id>/cancel', views.batch_cancel, name='batch_cancel'),
+    path('v1/batches/<str:batch_id>/cancel', views.batch_cancel, name='v1_batch_cancel'),
 ]

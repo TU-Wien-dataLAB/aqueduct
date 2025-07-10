@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal, Optional, Callable
 
 import openai.types
+import openai.types.batch
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
@@ -736,4 +737,160 @@ class FileObject(models.Model):
             # Ignore errors deleting the file
             pass
         # Then delete the database record
+        super().delete(using=using, keep_parents=keep_parents)
+
+
+class Batch(models.Model):
+    """
+    Mirrors the structure of OpenAI's Batch type.
+    """
+    id = models.CharField(
+        max_length=100,
+        primary_key=True,
+        editable=False,
+        help_text="The batch identifier."
+    )
+    completion_window = models.CharField(
+        max_length=100,
+        help_text="The time frame within which the batch should be processed."
+    )
+    created_at = models.PositiveIntegerField(
+        help_text="The Unix timestamp (in seconds) for when the batch was created."
+    )
+    endpoint = models.CharField(
+        max_length=255,
+        help_text="The OpenAI API endpoint used by the batch."
+    )
+    input_file = models.ForeignKey(
+        FileObject,
+        on_delete=models.CASCADE,
+        related_name="batches",
+        help_text="The input file for the batch."
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("validating", "validating"),
+            ("failed", "failed"),
+            ("in_progress", "in_progress"),
+            ("finalizing", "finalizing"),
+            ("completed", "completed"),
+            ("expired", "expired"),
+            ("cancelling", "cancelling"),
+            ("cancelled", "cancelled"),
+        ],
+        help_text="The current status of the batch."
+    )
+    cancelled_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the batch was cancelled."
+    )
+    cancelling_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the batch started cancelling."
+    )
+    completed_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the batch was completed."
+    )
+    error_file = models.ForeignKey(
+        FileObject,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="batch_error_files",
+        help_text="The file containing the outputs of requests with errors."
+    )
+    errors = JSONField(
+        null=True,
+        blank=True,
+        help_text="List of errors for the batch."
+    )
+    expired_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the batch expired."
+    )
+    expires_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the batch will expire."
+    )
+    failed_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the batch failed."
+    )
+    finalizing_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the batch started finalizing."
+    )
+    in_progress_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the batch started processing."
+    )
+    metadata = JSONField(
+        null=True,
+        blank=True,
+        help_text="Metadata attached to the batch."
+    )
+    output_file = models.ForeignKey(
+        FileObject,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="batch_output_files",
+        help_text="The file containing the outputs of successfully executed requests."
+    )
+    request_counts = JSONField(
+        null=True,
+        blank=True,
+        help_text="The request counts for different statuses within the batch."
+    )
+
+    class Meta:
+        verbose_name = "Batch"
+        verbose_name_plural = "Batches"
+
+    @property
+    def model(self) -> openai.types.batch.Batch:
+        return openai.types.batch.Batch(
+            id=self.id,
+            completion_window=self.completion_window,
+            created_at=self.created_at,
+            endpoint=self.endpoint,
+            input_file_id=self.input_file_id,
+            object="batch",
+            status=self.status,
+            cancelled_at=self.cancelled_at,
+            cancelling_at=self.cancelling_at,
+            completed_at=self.completed_at,
+            error_file_id=self.error_file_id,
+            errors=self.errors,
+            expired_at=self.expired_at,
+            expires_at=self.expires_at,
+            failed_at=self.failed_at,
+            finalizing_at=self.finalizing_at,
+            in_progress_at=self.in_progress_at,
+            metadata=self.metadata,
+            output_file_id=self.output_file_id,
+            request_counts=self.request_counts,
+        )
+
+    def delete(self, using=None, keep_parents=False):
+        """
+        Override delete to also remove associated batch files (input, error, output).
+        """
+        for file_obj in (self.input_file, self.error_file, self.output_file):
+            try:
+                if file_obj:
+                    file_obj.delete()
+            except Exception:
+                # Ignore errors deleting file records and physical files
+                pass
         super().delete(using=using, keep_parents=keep_parents)

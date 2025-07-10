@@ -6,7 +6,7 @@ from django.utils.html import format_html
 from django import forms
 
 from gateway.router import get_router_config
-from .models import Org, Team, UserProfile, ServiceAccount, Token, Request, TeamMembership, FileObject
+from .models import Org, Team, UserProfile, ServiceAccount, Token, Request, TeamMembership, FileObject, Batch
 
 
 def get_model_choices() -> list[str]:
@@ -208,3 +208,14 @@ class FileObjectAdmin(admin.ModelAdmin):
     list_display = ('id', 'filename', 'purpose', 'bytes', 'created_at', 'expires_at')
     list_filter = ('purpose',)
     search_fields = ('id', 'filename')
+
+
+@admin.register(Batch)
+class BatchAdmin(admin.ModelAdmin):
+    """Admin panel registration for Batch model."""
+    list_display = (
+        'id', 'status', 'created_at', 'completion_window', 'endpoint',
+        'input_file', 'error_file', 'output_file'
+    )
+    list_filter = ('status',)
+    search_fields = ('id',)

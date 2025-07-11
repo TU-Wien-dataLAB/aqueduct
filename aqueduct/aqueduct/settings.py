@@ -111,7 +111,7 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
 
 OIDC_DEFAULT_GROUPS = ["default"]
 ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
-ADMIN_GROUP = "default" # all users are admins
+ADMIN_GROUP = "default"  # all users are admins
 
 EXTRA_NAV_LINKS = {
     'Bug Report': 'https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md',
@@ -134,6 +134,10 @@ AQUEDUCT_FILES_API_ROOT = os.environ.get("AQUEDUCT_FILES_API_ROOT", "/tmp")
 AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB", 8))
 AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 1024))
 AQUEDUCT_FILES_API_EXPIRY_DAYS = int(os.environ.get("AQUEDUCT_FILES_API_EXPIRY_DAYS", 7))
+
+AQUEDUCT_BATCH_PROCESSING_SCHEDULE = os.environ.get("AQUEDUCT_BATCH_PROCESSING_SCHEDULE", "0 21 * * *")
+AQUEDUCT_BATCH_PROCESSING_RUNTIME_HOURS = os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_HOURS", 8)
+AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_CONCURRENCY", 16)
 
 # Celery Settings -------------------------------------------------------
 

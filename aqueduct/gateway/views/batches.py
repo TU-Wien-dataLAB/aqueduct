@@ -1,4 +1,5 @@
 import json
+from collections import deque
 
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
@@ -119,3 +120,17 @@ async def batch_cancel(request: ASGIRequest, token, batch_id: str, *args, **kwar
     return JsonResponse(
         openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200
     )
+
+
+def round_robin(*iterables):
+    iterators = deque(iter(it) for it in iterables)
+    while iterators:
+        iterator = iterators.popleft()
+        try:
+            yield next(iterator)
+        except StopIteration:
+            # Discard exhausted iterator
+            pass
+        else:
+            # Re-add active iterator to the end
+            iterators.append(iterator)

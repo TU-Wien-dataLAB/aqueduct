@@ -4,7 +4,8 @@ import secrets
 import hashlib
 import uuid
 from pathlib import Path
-from typing import Literal, Optional, Callable
+from typing import Literal, Optional, Callable, Iterator, Dict, Any
+import json
 
 import openai.types
 import openai.types.batch
@@ -724,6 +725,17 @@ class FileObject(models.Model):
         self.bytes = len(data)
         self.save(update_fields=['bytes'])
 
+    def append(self, data: bytes):
+        """Append content to the file."""
+        # Ensure directory exists and append bytes, creating file if needed
+        path = self.path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('ab') as f:
+            f.write(data)
+        # Update stored size
+        self.bytes = path.stat().st_size
+        self.save(update_fields=['bytes'])
+
     def delete_file(self):
         """Delete the file."""
         path = self.path()
@@ -852,6 +864,7 @@ class Batch(models.Model):
         related_name="batch_output_files",
         help_text="The file containing the outputs of successfully executed requests."
     )
+    # {"total": 0, "completed": 0, "failed": 0 }
     request_counts = JSONField(
         null=True,
         blank=True,
@@ -899,3 +912,68 @@ class Batch(models.Model):
                 # Ignore errors deleting file records and physical files
                 pass
         super().delete(using=using, keep_parents=keep_parents)
+
+    def input_file_iterator(self) -> Iterator[Optional[Dict[str, Any]]]:
+        """
+        Iterate over the input JSONL file, skipping lines already processed.
+        Yields parsed JSON dict or None for invalid lines.
+        """
+        # Read all lines from the input file
+        raw = self.input_file.read().decode('utf-8').splitlines()
+        # Determine how many requests have been counted so far
+        total = (self.request_counts or {}).get('total', 0)
+        # Iterate remaining lines
+        for line in raw[total:]:
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                yield None
+
+    def append_output(self, result: Dict[str, Any]):
+        """
+        Append a result JSON object as a new line to the output file.
+        Creates the output FileObject if not already present.
+        """
+        # Prepare line data
+        line = json.dumps(result, separators=( ',', ':' )).encode('utf-8') + b'\n'
+        # Ensure output_file exists
+        if not self.output_file:
+            now_ts = int(timezone.now().timestamp())
+            filename = f"{self.id}-output.jsonl"
+            file_obj = FileObject(
+                token=self.input_file.token,
+                bytes=0,
+                filename=filename,
+                created_at=now_ts,
+                purpose='batch',
+                expires_at=self.expires_at,
+            )
+            file_obj.save()
+            self.output_file = file_obj
+            self.save(update_fields=['output_file'])
+        # Append to file
+        self.output_file.append(line)
+
+    def append_error(self, error_result: Dict[str, Any]):
+        """
+        Append an error JSON object as a new line to the error file.
+        Creates the error FileObject if not already present.
+        """
+        line = json.dumps(error_result, separators=( ',', ':' )).encode('utf-8') + b'\n'
+        # Ensure error_file exists
+        if not self.error_file:
+            now_ts = int(timezone.now().timestamp())
+            filename = f"{self.id}-error.jsonl"
+            file_obj = FileObject(
+                token=self.input_file.token,
+                bytes=0,
+                filename=filename,
+                created_at=now_ts,
+                purpose='batch',
+                expires_at=self.expires_at,
+            )
+            file_obj.save()
+            self.error_file = file_obj
+            self.save(update_fields=['error_file'])
+        # Append to file
+        self.error_file.append(line)

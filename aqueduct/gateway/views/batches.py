@@ -1,5 +1,4 @@
 import json
-import uuid
 
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
@@ -66,7 +65,6 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
     expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
     expires_at = int((now + timezone.timedelta(days=expiry_days)).timestamp())
     batch_obj = Batch(
-        id=f"batch-{uuid.uuid4().hex}",
         completion_window=params["completion_window"],
         created_at=created_at,
         endpoint=params["endpoint"],

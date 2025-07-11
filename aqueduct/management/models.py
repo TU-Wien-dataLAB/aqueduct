@@ -626,6 +626,10 @@ def generate_file_id() -> str:
     """Generate a new FileObject primary key with a 'file-' prefix."""
     return f"file-{uuid.uuid4().hex}"
 
+def generate_batch_id() -> str:
+    """Generate a new Batch primary key with a 'batch-' prefix."""
+    return f"batch-{uuid.uuid4().hex}"
+
 
 class FileObject(models.Model):
     """
@@ -748,6 +752,7 @@ class Batch(models.Model):
         max_length=100,
         primary_key=True,
         editable=False,
+        default=generate_batch_id,
         help_text="The batch identifier."
     )
     completion_window = models.CharField(

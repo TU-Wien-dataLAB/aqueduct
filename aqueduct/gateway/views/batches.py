@@ -154,6 +154,10 @@ def round_robin(batches: list[Batch]) -> Generator[tuple[Batch, dict[str, Any] |
             yield batch, next(iterator)
         except StopIteration:
             # Discard exhausted batch
+            now_ts = int(timezone.now().timestamp())
+            batch.status = "completed"
+            batch.completed_at = now_ts
+            batch.save()
             pass
         else:
             # Re-add active batch to the end
@@ -209,9 +213,46 @@ class AsyncBoundedParallelQueue:
 
 
 async def process_batch_request(router: Router, batch: Batch, params: dict[str, Any]):
-    # TODO: process batch based on endpoint and call correct router method (acomplete, aembedding, etc.)
-    #  compare with e.g. chat_completions.py or embeddings.py
-    pass
+    # Process a single batch request line and record its output or error
+    # Skip if line parsing yielded None
+    if params is None:
+        # invalid input line
+        batch.append_error({"error": "Invalid JSON line"})
+        counts = batch.request_counts or {}
+        counts['total'] = counts.get('total', 0) + 1
+        counts['failed'] = counts.get('failed', 0) + 1
+        batch.request_counts = counts
+        await sync_to_async(batch.save)(update_fields=['request_counts'])
+        return
+
+    try:
+        # Dispatch based on endpoint
+        endpoint = batch.endpoint
+        if endpoint.endswith('/completions') and 'chat' in endpoint:
+            result = await router.acompletion(**params)
+        elif endpoint.endswith('/completions'):
+            result = await router.atext_completion(**params)
+        elif endpoint.endswith('/embeddings'):
+            result = await router.aembedding(**params)
+        else:
+            raise NotImplementedError(f"Batch endpoint {endpoint} not supported")
+
+        data = result.model_dump(exclude_none=True, exclude_unset=True)
+        batch.append_output(data)
+        counts = batch.request_counts or {}
+        counts['total'] = counts.get('total', 0) + 1
+        counts['completed'] = counts.get('completed', 0) + 1
+        batch.request_counts = counts
+        await sync_to_async(batch.save)(update_fields=['request_counts'])
+    except Exception as e:
+        # Log error and continue
+        err = {'error': str(e)}
+        batch.append_error(err)
+        counts = batch.request_counts or {}
+        counts['total'] = counts.get('total', 0) + 1
+        counts['failed'] = counts.get('failed', 0) + 1
+        batch.request_counts = counts
+        await sync_to_async(batch.save)(update_fields=['request_counts'])
 
 
 async def run_batch_processing():
@@ -224,8 +265,10 @@ async def run_batch_processing():
     queue = AsyncBoundedParallelQueue(max_parallel=max_parallel)
     router = get_router()
 
-    # TODO: query all batches with status "validating" and "in_progress"
-    batches: list[Batch] = []
+    # Fetch batches ready to process
+    batches = await sync_to_async(list)(
+        Batch.objects.filter(status__in=['validating', 'in_progress'])
+    )
 
     for batch, params in round_robin(batches):
         if curr_time() > run_until:
@@ -233,4 +276,3 @@ async def run_batch_processing():
         await queue.process(process_batch_request, router, batch, params)
 
     await queue.join()
-    pass

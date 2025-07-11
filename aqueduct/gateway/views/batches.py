@@ -12,6 +12,7 @@ from pydantic import ValidationError, TypeAdapter
 from openai.types.batch_create_params import BatchCreateParams
 
 from management.models import Batch, FileObject
+from django.conf import settings
 from .decorators import token_authenticated, log_request
 
 
@@ -59,9 +60,11 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
     if file_obj.purpose != "batch":
         return JsonResponse({"error": "File purpose must be 'batch'."}, status=400)
 
-    # Create batch record
+    # Create batch record with expiry
     now = timezone.now()
     created_at = int(now.timestamp())
+    expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
+    expires_at = int((now + timezone.timedelta(days=expiry_days)).timestamp())
     batch_obj = Batch(
         id=f"batch-{uuid.uuid4().hex}",
         completion_window=params["completion_window"],
@@ -70,6 +73,7 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
         input_file=file_obj,
         status="validating",
         metadata=params.get("metadata"),
+        expires_at=expires_at,
     )
     await sync_to_async(batch_obj.save)()
     openai_batch = batch_obj.model

@@ -154,7 +154,6 @@ CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 
-# TODO: if data retention schedule changes, old one is still used
 CELERY_BEAT_SCHEDULE = {
     'delete-old-requests': {
         'task': 'aqueduct.celery.delete_old_requests',
@@ -163,6 +162,10 @@ CELERY_BEAT_SCHEDULE = {
     'delete-expired-files-and-batches': {
         'task': 'aqueduct.celery.delete_expired_files_and_batches',
         'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    },
+    'process-batches': {
+        'task': 'aqueduct.celery.process_batches',
+        'schedule': crontab.from_string(AQUEDUCT_BATCH_PROCESSING_SCHEDULE),
     }
 }
 

@@ -81,3 +81,16 @@ def delete_expired_files_and_batches(self):
             print(f"Failed to delete expired batch {batch_obj.id}")
             pass
     print(f"Deleted {batches_count} expired batches (expires before {now_ts}).")
+
+
+@app.task(bind=True, ignore_result=True)
+def process_batches(self):
+    """
+    Periodic task to process pending batches via run_batch_processing.
+    """
+    # Import here to avoid startup-time issues
+    import asyncio
+    from gateway.views.batches import run_batch_processing
+
+    # Execute the async batch runner
+    asyncio.run(run_batch_processing())

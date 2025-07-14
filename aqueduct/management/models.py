@@ -876,6 +876,7 @@ class Batch(models.Model):
     )
     # {"total": 0, "completed": 0, "failed": 0 }
     request_counts = JSONField(
+        default=dict(total=0, completed=0, failed=0),
         null=True,
         blank=True,
         help_text="The request counts for different statuses within the batch."
@@ -907,7 +908,11 @@ class Batch(models.Model):
             in_progress_at=self.in_progress_at,
             metadata=self.metadata,
             output_file_id=self.output_file_id,
-            request_counts=self.request_counts,
+            request_counts=openai.types.BatchRequestCounts(
+                total=self.request_counts.get("total", 0),
+                completed=self.request_counts.get("completed", 0),
+                failed=self.request_counts.get("failed", 0)
+            ),
         )
 
     def delete(self, using=None, keep_parents=False):

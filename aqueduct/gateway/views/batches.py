@@ -217,8 +217,6 @@ class AsyncBoundedParallelQueue:
     async def join(self):
         """Wait for all tasks to complete"""
         await asyncio.gather(*self.tasks)
-        # while self.tasks:
-        #     await asyncio.sleep(0.1)  # Yield to event loop
 
     def cancel_all(self, cancel_running=False):
         """Cancel pending and optionally running tasks"""

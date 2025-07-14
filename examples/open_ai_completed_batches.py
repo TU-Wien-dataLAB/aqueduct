@@ -27,8 +27,10 @@ for batch in batches:
     if batch.status == 'completed':
         print(f'\t{batch.id}')
         output_content = client.files.content(batch.output_file_id)
+        print(f'\t{batch.output_file_id}')
+        print(f'\t{output_content}')
         if isinstance(output_content, (bytes, bytearray)):
             print(f'\t{output_content.decode('utf-8')}')
         else:
-            print(output_content)
+            print(f'\t{output_content.content}')
         break

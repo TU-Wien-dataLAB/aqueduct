@@ -1,8 +1,10 @@
 # models.py
+import asyncio
 import dataclasses
 import secrets
 import hashlib
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Literal, Optional, Callable, Iterator, Dict, Any
 import json
@@ -627,6 +629,7 @@ def generate_file_id() -> str:
     """Generate a new FileObject primary key with a 'file-' prefix."""
     return f"file-{uuid.uuid4().hex}"
 
+
 def generate_batch_id() -> str:
     """Generate a new Batch primary key with a 'batch-' prefix."""
     return f"batch-{uuid.uuid4().hex}"
@@ -754,6 +757,13 @@ class FileObject(models.Model):
             pass
         # Then delete the database record
         super().delete(using=using, keep_parents=keep_parents)
+
+    def __fspath__(self):
+        return self.path()
+
+    def lines(self) -> list[str]:
+        """Get the number of lines in the file."""
+        return self.read().decode("utf-8").splitlines()
 
 
 class Batch(models.Model):
@@ -913,29 +923,53 @@ class Batch(models.Model):
                 pass
         super().delete(using=using, keep_parents=keep_parents)
 
-    def input_file_iterator(self) -> Iterator[Optional[Dict[str, Any]]]:
+    _num_lines: int | None = None
+
+    def __len__(self):
+        if not self._num_lines:
+            self._num_lines = len(self.input_file.lines())
+        return self._num_lines
+
+    def input_file_lines(self) -> deque[str]:
         """
         Iterate over the input JSONL file, skipping lines already processed.
         Yields parsed JSON dict or None for invalid lines.
         """
         # Read all lines from the input file
-        raw = self.input_file.read().decode('utf-8').splitlines()
+        raw: list[str] = self.input_file.lines()
         # Determine how many requests have been counted so far
         total = (self.request_counts or {}).get('total', 0)
-        # Iterate remaining lines
-        for line in raw[total:]:
-            try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
-                yield None
+        return deque(raw[total:])
 
-    def append_output(self, result: Dict[str, Any]):
+    append_lock = asyncio.Lock()
+
+    def append(self, result: Dict[str, Any], error: bool = False):
+        with self.append_lock:
+            counts = self.request_counts or {}
+            if error:
+                self._append_error(result)
+                counts['total'] = counts.get('total', 0) + 1
+                counts['failed'] = counts.get('failed', 0) + 1
+            else:
+                self._append_output(result)
+                counts['total'] = counts.get('total', 0) + 1
+                counts['completed'] = counts.get('completed', 0) + 1
+
+            if counts['total'] == len(self):
+                now_ts = int(timezone.now().timestamp())
+                self.completed_at = now_ts
+                self.status = "completed"
+
+            self.request_counts = counts
+            self.save(update_fields=['request_counts', 'status'])
+
+    def _append_output(self, result: Dict[str, Any]):
         """
         Append a result JSON object as a new line to the output file.
         Creates the output FileObject if not already present.
         """
         # Prepare line data
-        line = json.dumps(result, separators=( ',', ':' )).encode('utf-8') + b'\n'
+        line = json.dumps(result, separators=(',', ':')).encode('utf-8') + b'\n'
         # Ensure output_file exists
         if not self.output_file:
             now_ts = int(timezone.now().timestamp())
@@ -954,12 +988,12 @@ class Batch(models.Model):
         # Append to file
         self.output_file.append(line)
 
-    def append_error(self, error_result: Dict[str, Any]):
+    def _append_error(self, error_result: Dict[str, Any]):
         """
         Append an error JSON object as a new line to the error file.
         Creates the error FileObject if not already present.
         """
-        line = json.dumps(error_result, separators=( ',', ':' )).encode('utf-8') + b'\n'
+        line = json.dumps(error_result, separators=(',', ':')).encode('utf-8') + b'\n'
         # Ensure error_file exists
         if not self.error_file:
             now_ts = int(timezone.now().timestamp())

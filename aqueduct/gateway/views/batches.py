@@ -1,7 +1,7 @@
 import asyncio
 import json
 from collections import deque
-from typing import Generator, Any
+from typing import AsyncIterator, Any
 
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
@@ -132,36 +132,51 @@ async def batch_cancel(request: ASGIRequest, token, batch_id: str, *args, **kwar
     )
 
 
-def round_robin(batches: list[Batch]) -> Generator[tuple[Batch, dict[str, Any] | None], Any, None]:
-    iterators = deque((b, b.input_file_iterator()) for b in batches)
+async def round_robin(batches: list[Batch]) -> AsyncIterator[tuple[Batch, str]]:
+    """
+    Async round-robin over batches and their input_file_iterator,
+    refreshing status between iterations.
+    """
+    iterators = await sync_to_async(deque)((b, b.input_file_lines()) for b in batches)
+    for batch, lines in iterators:
+        # This should not happen but do it defensively
+        await sync_to_async(batch.refresh_from_db)(fields=["status"])
+        if len(lines) == 0 and batch.status != "completed":
+            now_ts = int(timezone.now().timestamp())
+            batch.status = "completed"
+            batch.completed_at = now_ts
+            await sync_to_async(batch.save)()
+
     while iterators:
-        batch, iterator = iterators.popleft()
+        batch, lines = iterators.popleft()
         try:
-            batch.refresh_from_db(fields=["status"])
+            await sync_to_async(batch.refresh_from_db)(fields=["status"])
             if batch.status == "cancelling":
                 now_ts = int(timezone.now().timestamp())
                 batch.status = "cancelled"
                 batch.cancelled_at = now_ts
-                batch.save()
-                raise StopIteration
+                await sync_to_async(batch.save)()
+                raise StopAsyncIteration
 
             if batch.status == "validating":
                 now_ts = int(timezone.now().timestamp())
                 batch.status = "in_progress"
                 batch.in_progress_at = now_ts
-                batch.save()
+                await sync_to_async(batch.save)()
 
-            yield batch, next(iterator)
-        except StopIteration:
-            # Discard exhausted batch
-            now_ts = int(timezone.now().timestamp())
-            batch.status = "completed"
-            batch.completed_at = now_ts
-            batch.save()
+            if len(lines) == 0:
+                # cannot raise StopIteration in generator due to PEP 479
+                # This
+                raise StopAsyncIteration
+
+            yield batch, lines.popleft()
+
+        except StopAsyncIteration:
+            # End of this batch's iteration or batch has been canceled
             pass
         else:
             # Re-add active batch to the end
-            iterators.append((batch, iterator))
+            iterators.append((batch, lines))
 
 
 class AsyncBoundedParallelQueue:
@@ -201,8 +216,9 @@ class AsyncBoundedParallelQueue:
 
     async def join(self):
         """Wait for all tasks to complete"""
-        while self.tasks:
-            await asyncio.sleep(0)  # Yield to event loop
+        await asyncio.gather(*self.tasks)
+        # while self.tasks:
+        #     await asyncio.sleep(0.1)  # Yield to event loop
 
     def cancel_all(self, cancel_running=False):
         """Cancel pending and optionally running tasks"""
@@ -212,17 +228,14 @@ class AsyncBoundedParallelQueue:
                 task.cancel()
 
 
-async def process_batch_request(router: Router, batch: Batch, params: dict[str, Any]):
+async def process_batch_request(router: Router, batch: Batch, params: str):
     # Process a single batch request line and record its output or error
     # Skip if line parsing yielded None
-    if params is None:
+    try:
+        params = json.loads(params)
+    except json.JSONDecodeError:
         # invalid input line
-        batch.append_error({"error": "Invalid JSON line"})
-        counts = batch.request_counts or {}
-        counts['total'] = counts.get('total', 0) + 1
-        counts['failed'] = counts.get('failed', 0) + 1
-        batch.request_counts = counts
-        await sync_to_async(batch.save)(update_fields=['request_counts'])
+        sync_to_async(batch.append)({"error": "Invalid JSON line"}, error=True)
         return
 
     try:
@@ -238,21 +251,11 @@ async def process_batch_request(router: Router, batch: Batch, params: dict[str, 
             raise NotImplementedError(f"Batch endpoint {endpoint} not supported")
 
         data = result.model_dump(exclude_none=True, exclude_unset=True)
-        batch.append_output(data)
-        counts = batch.request_counts or {}
-        counts['total'] = counts.get('total', 0) + 1
-        counts['completed'] = counts.get('completed', 0) + 1
-        batch.request_counts = counts
-        await sync_to_async(batch.save)(update_fields=['request_counts'])
+        await sync_to_async(batch.append)(data)
     except Exception as e:
         # Log error and continue
         err = {'error': str(e)}
-        batch.append_error(err)
-        counts = batch.request_counts or {}
-        counts['total'] = counts.get('total', 0) + 1
-        counts['failed'] = counts.get('failed', 0) + 1
-        batch.request_counts = counts
-        await sync_to_async(batch.save)(update_fields=['request_counts'])
+        sync_to_async(batch.append)(err, error=True)
 
 
 async def run_batch_processing():
@@ -270,7 +273,7 @@ async def run_batch_processing():
         Batch.objects.filter(status__in=['validating', 'in_progress'])
     )
 
-    for batch, params in round_robin(batches):
+    async for batch, params in round_robin(batches):
         if curr_time() > run_until:
             break
         await queue.process(process_batch_request, router, batch, params)

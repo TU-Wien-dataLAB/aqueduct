@@ -4,6 +4,7 @@ import sys
 from textwrap import dedent
 from typing import Optional, Literal
 
+from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
 
@@ -141,3 +142,23 @@ class GatewayFilesTestCase(TransactionTestCase):
         if os.path.exists(TEST_FILES_ROOT):
             shutil.rmtree(TEST_FILES_ROOT)
             os.makedirs(TEST_FILES_ROOT, exist_ok=True)
+
+
+@override_settings(
+    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
+    AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
+    AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=2,
+    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH
+)
+class GatewayBatchesTestCase(GatewayIntegrationTestCase):
+    def tearDown(self):
+        super().tearDown()
+        # Clean up the file storage directory after each test
+        if os.path.exists(TEST_FILES_ROOT):
+            shutil.rmtree(TEST_FILES_ROOT)
+            os.makedirs(TEST_FILES_ROOT, exist_ok=True)
+
+    @staticmethod
+    def run_batch_processing_loop():
+        from gateway.views.batches import run_batch_processing
+        async_to_sync(run_batch_processing)()

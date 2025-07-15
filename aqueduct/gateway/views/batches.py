@@ -233,7 +233,7 @@ async def process_batch_request(router: Router, batch: Batch, params: str):
         params = json.loads(params)
     except json.JSONDecodeError:
         # invalid input line
-        sync_to_async(batch.append)({"error": "Invalid JSON line"}, error=True)
+        await sync_to_async(batch.append)({"error": "Invalid JSON line"}, error=True)
         return
 
     try:
@@ -253,7 +253,7 @@ async def process_batch_request(router: Router, batch: Batch, params: str):
     except Exception as e:
         # Log error and continue
         err = {'error': str(e)}
-        sync_to_async(batch.append)(err, error=True)
+        await sync_to_async(batch.append)(err, error=True)
 
 
 async def run_batch_processing():

@@ -1,5 +1,6 @@
 # models.py
 import asyncio
+import threading
 import dataclasses
 import secrets
 import hashlib
@@ -876,7 +877,7 @@ class Batch(models.Model):
     )
     # {"total": 0, "completed": 0, "failed": 0 }
     request_counts = JSONField(
-        default=dict(total=0, completed=0, failed=0),
+        default=lambda: dict(total=0, completed=0, failed=0),
         null=True,
         blank=True,
         help_text="The request counts for different statuses within the batch."
@@ -946,7 +947,8 @@ class Batch(models.Model):
         total = (self.request_counts or {}).get('total', 0)
         return deque(raw[total:])
 
-    append_lock = asyncio.Lock()
+    # Use a threading lock to guard append operations in synchronous context
+    append_lock = threading.Lock()
 
     def append(self, result: Dict[str, Any], error: bool = False):
         with self.append_lock:

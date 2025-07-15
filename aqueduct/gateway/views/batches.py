@@ -267,8 +267,9 @@ async def run_batch_processing():
     router = get_router()
 
     # Fetch batches ready to process
+    # Include batches in 'cancelling' state to finalize cancellations
     batches = await sync_to_async(list)(
-        Batch.objects.filter(status__in=['validating', 'in_progress'])
+        Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
     )
 
     async for batch, params in round_robin(batches):

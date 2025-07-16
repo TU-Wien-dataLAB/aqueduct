@@ -239,6 +239,9 @@ async def process_batch_request(router: Router, batch: Batch, params: str):
         return
 
     try:
+        if params.get("stream", False):
+            raise ValueError("Streaming requests are not supported in the /batches API")
+
         # Dispatch based on endpoint
         endpoint = batch.endpoint
         if endpoint.endswith('/completions') and 'chat' in endpoint:

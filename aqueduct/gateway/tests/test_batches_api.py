@@ -277,6 +277,37 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertEqual(counts.get("completed"), 2)
         self.assertEqual(counts.get("failed"), 1)
 
+    def test_streaming_failure_in_batch(self):
+        """If one request in a batch JSONL contains a streaming call, it should count as a failed request."""
+        # Build JSONL: one valid chat, one invalid line, one valid chat
+        chat_line = json.dumps(_build_chat_payload(self.model, [
+            {"role": "system", "content": "X"}, {"role": "user", "content": "Ok"}
+        ])).encode()
+        invalid_line = json.dumps(_build_chat_payload(self.model, [
+            {"role": "system", "content": "X"}, {"role": "user", "content": "Ok"}
+        ], stream=True)).encode()
+        content = chat_line + b"\n" + invalid_line + b"\n" + chat_line + b"\n"
+        upload = SimpleUploadedFile("mixed.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
+        fid = resp.json()["id"]
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps({
+                "input_file_id": fid,
+                "completion_window": "24h",
+                "endpoint": "/v1/chat/completions",
+            }), headers=self.headers, content_type="application/json",
+        )
+        bid = resp.json()["id"]
+        with patch('gateway.views.batches.get_router', return_value=DummyRouter()):
+            self.run_batch_processing_loop()
+
+        info = self.client.get(f"/batches/{bid}", headers=self.headers).json()
+        counts = info.get("request_counts", {})
+        self.assertEqual(counts.get("total"), 3)
+        self.assertEqual(counts.get("completed"), 2)
+        self.assertEqual(counts.get("failed"), 1)
+
     def test_get_nonexistent_batch(self):
         """GET /batches/{id} for a non-existent batch returns 404."""
         resp = self.client.get("/batches/nonexistent", headers=self.headers)

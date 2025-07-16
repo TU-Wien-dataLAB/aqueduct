@@ -94,6 +94,9 @@ LOGIN_URL = '/login/'  # Where to redirect if user is not logged in
 MAX_USER_TOKENS = 3
 MAX_SERVICE_ACCOUNTS_PER_TEAM = 10
 
+MAX_USER_BATCHES = 3
+MAX_TEAM_BATCHES = 10
+
 OIDC_PROVIDER = 'SSO'
 
 

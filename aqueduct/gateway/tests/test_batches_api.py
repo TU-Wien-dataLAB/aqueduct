@@ -410,3 +410,55 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             self.run_batch_processing_loop()
         resp = self.client.get(f"/batches/{b2}", headers=self.headers)
         self.assertEqual(resp.json()["status"], "cancelled")
+
+    def test_expired_batches_marked_expired(self):
+        """Expired batches are marked as expired by the processing loop."""
+        from django.utils import timezone
+        from management.models import Batch
+
+        # Upload a file and create a batch
+        payload = _build_chat_payload(self.model, messages=[
+            {"role": "system", "content": "Hello"},
+            {"role": "user", "content": "Expire"},
+        ])
+        content = json.dumps(payload).encode("utf-8") + b"\n"
+        upload_file = SimpleUploadedFile(
+            "expire.jsonl", content, content_type="application/jsonl"
+        )
+        resp = self.client.post(
+            "/files", {"file": upload_file, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+
+        # Create the batch
+        batch_payload = {
+            "input_file_id": file_id,
+            "completion_window": "24h",
+            "endpoint": "/v1/chat/completions",
+        }
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(batch_payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        batch_data = resp.json()
+        batch_id = batch_data["id"]
+        created_at = batch_data["created_at"]
+
+        # Simulate expiration by setting expires_at to the creation time - 1
+        Batch.objects.filter(id=batch_id).update(expires_at=created_at-1, created_at=created_at-1)
+
+        # Run processing loop to trigger expiry logic
+        with patch('gateway.views.batches.get_router', return_value=DummyRouter()):
+            self.run_batch_processing_loop()
+
+        # Verify batch marked as expired
+        resp = self.client.get(f"/batches/{batch_id}", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["status"], "expired")
+        self.assertIn("expired_at", data)
+        self.assertTrue(data["expired_at"] >= created_at)

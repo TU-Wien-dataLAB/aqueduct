@@ -46,6 +46,8 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
         )
 
     # POST /batches
+    # TODO: limit number of batches user/team can create (for token use user limit, for service account use team limit)
+    #  use the MAX_USER_BATCHES and MAX_TEAM_BATCHES
     try:
         body = request.body.decode('utf-8')
         TypeAdapter(BatchCreateParams).validate_json(body)
@@ -257,7 +259,17 @@ async def process_batch_request(router: Router, batch: Batch, params: str):
 
 
 async def run_batch_processing():
+    # expire batches whose expires_at timestamp has passed
     start_time = timezone.now()
+    now_ts = int(start_time.timestamp())
+    # expire batches whose expires_at timestamp has passed in bulk
+    await sync_to_async(
+        lambda: Batch.objects.filter(
+            expires_at__isnull=False,
+            expires_at__lt=now_ts,
+        ).update(status="expired", expired_at=now_ts)
+    )()
+    # begin processing loop
     runtime_hours = settings.AQUEDUCT_BATCH_PROCESSING_RUNTIME_HOURS
     run_until = int((start_time + timezone.timedelta(hours=runtime_hours)).timestamp())
     curr_time = lambda: timezone.now().timestamp()

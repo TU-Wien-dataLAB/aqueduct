@@ -1,0 +1,43 @@
+{% extends 'management/base.html' %}
+{% load static %}
+
+{% block header %}Files{% endblock %}
+
+{% block content %}
+    <div class="container mx-auto px-4 py-6">
+        <h1 class="text-3xl font-bold mb-6">Files</h1>
+
+        {% if files %}
+            <div class="overflow-x-auto">
+                <table class="table table-sm w-full">
+                    <thead>
+                    <tr class="bg-base-200">
+                        <th>ID</th>
+                        <th>Filename</th>
+                        <th>Purpose</th>
+                        <th>Size (bytes)</th>
+                        <th>Uploaded At</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for file in files %}
+                        <tr>
+                            <td class="font-mono">{{ file.id }}</td>
+                            <td>{{ file.filename }}</td>
+                            <td>{{ file.purpose }}</td>
+                            <td>{{ file.bytes }}</td>
+                            <td>{{ file.created_dt|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="alert alert-info shadow-lg">
+                <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
+                     class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
+                <span>No files found.</span>
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}

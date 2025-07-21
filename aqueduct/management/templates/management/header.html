@@ -44,6 +44,13 @@
                                     Models
                                 </a>
                             </li>
+                            <li>
+                                <a href="{% url 'files' %}" class="flex items-center gap-1 font-semibold">
+                                    <img src="{% static 'icons/file.svg' %}" alt="Files"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    Files
+                                </a>
+                            </li>
                             {% if user.is_superuser %}
                                 {% if settings.SILKY_ENABLED %}
                                     <li>

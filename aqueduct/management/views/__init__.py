@@ -10,3 +10,4 @@ from .service_account import (
 from .tokens import UserTokensView, TokenCreateView, TokenDeleteView, TokenRegenerateView, TokenEditView
 from .models import ModelListView
 from .usage import UsageDashboardView
+from .files import UserFilesView

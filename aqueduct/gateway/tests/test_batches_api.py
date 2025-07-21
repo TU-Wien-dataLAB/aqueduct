@@ -1,5 +1,6 @@
 import asyncio
 import json
+from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from gateway.tests.utils.base import GatewayBatchesTestCase
@@ -209,6 +210,44 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         resp = self.client.get("/batches", headers=headers2)
         ids2 = [b["id"] for b in resp.json().get("data", [])]
         self.assertCountEqual(ids2, [b2])
+
+    def test_max_user_batches_limit(self):
+        """POST /batches should enforce MAX_USER_BATCHES and reject the fourth batch."""
+        # Upload a simple JSONL file for batching
+        payload = _build_chat_payload(self.model, [
+            {"role": "system", "content": "X"},
+            {"role": "user", "content": "Y"},
+        ])
+        content = (json.dumps(payload) + "\n").encode("utf-8")
+        upload = SimpleUploadedFile("limit.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post(
+            "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+
+        batch_payload = {
+            "input_file_id": file_id,
+            "completion_window": "24h",
+            "endpoint": "/v1/chat/completions",
+        }
+
+        # Allowed up to MAX_USER_BATCHES batches
+        for _ in range(settings.MAX_USER_BATCHES):
+            ok = self.client.post(
+                "/batches", data=json.dumps(batch_payload), headers=self.headers,
+                content_type="application/json",
+            )
+            self.assertEqual(ok.status_code, 200)
+
+        # The next (fourth) batch should be rejected with 403
+        over = self.client.post(
+            "/batches", data=json.dumps(batch_payload), headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(over.status_code, 403)
+        err = over.json()
+        self.assertEqual(err.get("error"), f"Batch limit reached ({settings.MAX_USER_BATCHES})")
 
     def test_various_endpoints(self):
         """Test batch creation and processing for chat, simple completions, and embeddings endpoints."""

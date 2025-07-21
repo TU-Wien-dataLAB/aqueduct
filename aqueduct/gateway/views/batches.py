@@ -46,8 +46,23 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
         )
 
     # POST /batches
-    # TODO: limit number of batches user/team can create (for token use user limit, for service account use team limit)
-    #  use the MAX_USER_BATCHES and MAX_TEAM_BATCHES
+    # Enforce batch creation limits: per-user (user tokens) or per-team (service-account tokens)
+    if token.service_account:
+        existing = await sync_to_async(
+            Batch.objects.filter(
+                input_file__token__service_account__team=token.service_account.team
+            ).count
+        )()
+        limit = settings.MAX_TEAM_BATCHES
+    else:
+        existing = await sync_to_async(
+            Batch.objects.filter(
+                input_file__token__user=token.user
+            ).count
+        )()
+        limit = settings.MAX_USER_BATCHES
+    if existing >= limit:
+        return JsonResponse({"error": f"Batch limit reached ({limit})"}, status=403)
     try:
         body = request.body.decode('utf-8')
         TypeAdapter(BatchCreateParams).validate_json(body)

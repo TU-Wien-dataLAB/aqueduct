@@ -148,7 +148,8 @@ class GatewayFilesTestCase(TransactionTestCase):
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
     AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=2,
-    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH
+    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
+    MAX_USER_BATCHES = 3
 )
 class GatewayBatchesTestCase(GatewayIntegrationTestCase):
     def tearDown(self):

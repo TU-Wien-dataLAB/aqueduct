@@ -1,0 +1,82 @@
+{% extends 'management/base.html' %}
+{% load static %}
+
+{% block header %}Batches{% endblock %}
+
+{% block content %}
+    <div class="container mx-auto px-4 py-6">
+        <h1 class="text-3xl font-bold mb-6">Batches</h1>
+
+        {% if batches %}
+            <div class="overflow-x-auto">
+                <table class="table table-sm w-full">
+                    <thead>
+                    <tr class="bg-base-200">
+                        <th>ID</th>
+                        <th>Input File</th>
+                        <th>Status</th>
+                        <th>Requests (Completed/Total/Failed)</th>
+                        <th>Created At</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for batch in batches %}
+                        <tr>
+                            <td class="font-mono">{{ batch.id }}</td>
+                            <td class="font-mono">{{ batch.input_file.id }}</td>
+                            <td>{{ batch.status }}</td>
+                            <td>
+                                    {{ batch.request_counts.completed | default:"-" }}/{{ batch.request_counts.total }}/{{ batch.request_counts.failed | default:"-" }}
+                            </td>
+                            <td>{{ batch.created_dt|date:"Y-m-d H:i" }}</td>
+                            <td class="flex-shrink-0">
+                                {% if batch.status == 'validating' or batch.status == 'in_progress' or batch.status == 'finalizing' %}
+                                <button type="button"
+                                        class="btn btn-sm btn-square btn-warning"
+                                        title="Cancel batch {{ batch.id }}"
+                                        onclick="cancelBatch('{{ batch.id }}')">
+                                    <img src="{% static 'icons/delete.svg' %}" alt="Cancel"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="alert alert-info shadow-lg">
+                <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
+                     class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
+                <span>No batches found.</span>
+            </div>
+        {% endif %}
+    </div>
+    <script>
+    function cancelBatch(batchId) {
+        if (!confirm(`Are you sure you want to cancel batch ${batchId}?`)) {
+            return;
+        }
+        fetch(`/v1/batches/${batchId}/cancel`, {
+            method: 'POST',
+        })
+        .then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                response.json().then(data => {
+                    alert(data.error || 'Failed to cancel batch.');
+                }).catch(() => {
+                    alert('Failed to cancel batch.');
+                });
+            }
+        })
+        .catch(err => {
+            console.error('Error cancelling batch:', err);
+            alert('Error cancelling batch.');
+        });
+    }
+    </script>
+{% endblock %}

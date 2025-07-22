@@ -51,6 +51,13 @@
                                     Files
                                 </a>
                             </li>
+                            <li>
+                                <a href="{% url 'batches' %}" class="flex items-center gap-1 font-semibold">
+                                    <img src="{% static 'icons/batch.svg' %}" alt="Batches"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    Batches
+                                </a>
+                            </li>
                             {% if user.is_superuser %}
                                 {% if settings.SILKY_ENABLED %}
                                     <li>

@@ -36,4 +36,5 @@ urlpatterns = [
     path('models/', views.ModelListView.as_view(), name='models'),
     path('usage/', views.UsageDashboardView.as_view(), name='usage'),
     path('files/', views.UserFilesView.as_view(), name='files'),
+    path('batches/', views.UserBatchesView.as_view(), name='batches'),
 ]

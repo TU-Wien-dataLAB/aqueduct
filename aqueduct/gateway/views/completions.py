@@ -26,7 +26,7 @@ from .utils import _usage_from_bytes, _openai_stream
 
 @csrf_exempt
 @require_POST
-@token_authenticated
+@token_authenticated(token_auth_only=True)
 @check_limits
 @parse_body(model=TypeAdapter(openai.types.CompletionCreateParams))
 @ensure_usage

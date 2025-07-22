@@ -142,7 +142,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         from django.utils import timezone
         from django.conf import settings
         from management.models import FileObject
-        from aqueduct.celery import delete_expired_files
+        from aqueduct.celery import delete_expired_files_and_batches
 
         # Upload a file
         content = b'{"x": 1}\n'
@@ -168,7 +168,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         FileObject.objects.filter(id=file_id).update(expires_at=int(past.timestamp()))
         # ensure file exists before cleanup
         self.assertTrue(file_path.exists())
-        delete_expired_files()
+        delete_expired_files_and_batches()
         # record removed and file deleted
         self.assertFalse(FileObject.objects.filter(id=file_id).exists())
         self.assertFalse(file_path.exists())

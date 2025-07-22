@@ -15,11 +15,11 @@ from .decorators import token_authenticated, log_request
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
-@token_authenticated
+@token_authenticated(token_auth_only=True)
 @log_request
 async def files(request: ASGIRequest, token, *args, **kwargs):
     if request.method == "GET":
-        file_objs = await sync_to_async(list)(FileObject.objects.filter(token=token))
+        file_objs = await sync_to_async(list)(FileObject.objects.filter(token__user=token.user))
         openai_files = [f.model for f in file_objs]
         return JsonResponse(
             data={
@@ -46,7 +46,7 @@ async def files(request: ASGIRequest, token, *args, **kwargs):
             {"error": f"File too large. Individual file must be <= {settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB}MB."},
             status=400,
         )
-    sum_res = await FileObject.objects.filter(token=token).aaggregate(sum_bytes=Sum("bytes"))
+    sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(sum_bytes=Sum("bytes"))
     current_total = sum_res.get("sum_bytes") or 0
     # Enforce per-token total storage limit from settings
     max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB * 1024 * 1024
@@ -77,11 +77,11 @@ async def files(request: ASGIRequest, token, *args, **kwargs):
 
 @csrf_exempt
 @require_http_methods(["GET", "DELETE"])
-@token_authenticated
+@token_authenticated(token_auth_only=False)
 @log_request
-async def file(request: ASGIRequest, token, file_id: str, *args, **kwargs):
+async def file(request: ASGIRequest, file_id: str, *args, **kwargs):
     try:
-        file_obj = await FileObject.objects.aget(id=file_id, token=token)
+        file_obj = await FileObject.objects.aget(id=file_id, token__user=request.user)
     except FileObject.DoesNotExist:
         return JsonResponse({"error": "File not found."}, status=404)
     if request.method == "GET":
@@ -94,7 +94,7 @@ async def file(request: ASGIRequest, token, file_id: str, *args, **kwargs):
 
 @csrf_exempt
 @require_GET
-@token_authenticated
+@token_authenticated(token_auth_only=True)
 @log_request
 async def file_content(request: ASGIRequest, token, file_id: str, *args, **kwargs):
     try:

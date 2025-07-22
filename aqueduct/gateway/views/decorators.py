@@ -21,32 +21,42 @@ from management.models import Request, Token, Usage
 logger = logging.getLogger(__name__)
 
 
-# TODO: check auth only on token backend (import token backend and call authenticate)
-def token_authenticated(view_func):
-    @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
-        # Authentication Check
-        if not (await request.auser()).is_authenticated:
-            user = await auth.aauthenticate(request=request)
-            if user is not None:
-                request.user = user  # Manually assign user
-        else:
-            request.user = await request.auser()
+def token_authenticated(token_auth_only: bool):
+    def decorator(view_func):
+        @wraps(view_func)
+        async def wrapper(request: ASGIRequest, *args, **kwargs):
+            unauthorized_response = JsonResponse({'error': 'Authentication Required'}, status=401)
+            # Authentication Check
+            if not (await request.auser()).is_authenticated:
+                user = await auth.aauthenticate(request=request)
+                if user is not None:
+                    request.user = user  # Manually assign user
+            else:
+                request.user = await request.auser()
 
-        if not getattr(request, "user", None) or not request.user.is_authenticated:
-            logger.warning("Authentication check failed in ai_gateway_view: request.user is not authenticated.")
-            return JsonResponse(
-                {'error': 'Authentication Required', 'detail': 'A valid Bearer token must be provided and valid.'},
-                status=401
-            )
-        logger.debug(f"User {request.user.email} authenticated.")
+            if not getattr(request, "user", None) or not request.user.is_authenticated:
+                logger.warning("Authentication check failed in ai_gateway_view: request.user is not authenticated.")
+                return unauthorized_response
+            logger.debug(f"User {request.user.email} authenticated.")
 
-        token_key = token_from_request(request)
-        token = await sync_to_async(Token.find_by_key)(token_key)
-        kwargs['token'] = token
-        return await view_func(request, *args, **kwargs)
+            token_key = token_from_request(request)
+            if token_auth_only and not token_key:
+                return unauthorized_response
 
-    return wrapper
+            if token_key:
+                token = await sync_to_async(Token.find_by_key)(token_key)
+            else:
+                # user is authenticated but not via token -> take first token via Token.objects to use async ORM
+                token = await Token.objects.filter(user=request.user).afirst()
+
+            if not token:
+                return unauthorized_response
+            kwargs['token'] = token
+            return await view_func(request, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 def parse_body(model: TypeAdapter):

@@ -14,7 +14,7 @@ MODEL_CREATION_TIMESTAMP = int(timezone.now().timestamp())
 
 @csrf_exempt
 @require_GET
-@token_authenticated
+@token_authenticated(token_auth_only=True)
 @log_request
 async def models(
         request: ASGIRequest,

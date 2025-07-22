@@ -17,6 +17,7 @@
                         <th>Purpose</th>
                         <th>Size (bytes)</th>
                         <th>Uploaded At</th>
+                        <th>Actions</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -27,6 +28,15 @@
                             <td>{{ file.purpose }}</td>
                             <td>{{ file.bytes }}</td>
                             <td>{{ file.created_dt|date:"Y-m-d H:i" }}</td>
+                            <td class="flex-shrink-0">
+                                <button type="button"
+                                        class="btn btn-sm btn-square btn-error"
+                                        title="Delete {{ file.filename }}"
+                                        onclick="deleteFile('{{ file.id }}')">
+                                    <img src="{% static 'icons/delete.svg' %}" alt="Delete"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                </button>
+                            </td>
                         </tr>
                     {% endfor %}
                     </tbody>
@@ -40,4 +50,29 @@
             </div>
         {% endif %}
     </div>
+    <script>
+    function deleteFile(fileId) {
+        if (!confirm(`Are you sure you want to delete file ${fileId}?`)) {
+            return;
+        }
+        fetch(`/v1/files/${fileId}`, {
+            method: 'DELETE',
+        })
+        .then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                response.json().then(data => {
+                    alert(data.error || 'Failed to delete file.');
+                }).catch(() => {
+                    alert('Failed to delete file.');
+                });
+            }
+        })
+        .catch(err => {
+            console.error('Error deleting file:', err);
+            alert('Error deleting file.');
+        });
+    }
+    </script>
 {% endblock %}

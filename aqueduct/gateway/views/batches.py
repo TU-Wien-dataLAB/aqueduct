@@ -22,7 +22,7 @@ from ..router import get_router
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
-@token_authenticated
+@token_authenticated(token_auth_only=True)
 @log_request
 async def batches(request: ASGIRequest, token, *args, **kwargs):
     """
@@ -104,7 +104,7 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@token_authenticated
+@token_authenticated(token_auth_only=True)
 @log_request
 async def batch(request: ASGIRequest, token, batch_id: str, *args, **kwargs):
     """GET /batches/{batch_id} - retrieve a batch"""
@@ -122,7 +122,7 @@ async def batch(request: ASGIRequest, token, batch_id: str, *args, **kwargs):
 
 @csrf_exempt
 @require_POST
-@token_authenticated
+@token_authenticated(token_auth_only=True)
 @log_request
 async def batch_cancel(request: ASGIRequest, token, batch_id: str, *args, **kwargs):
     """POST /batches/{batch_id}/cancel - cancel an in-progress batch"""

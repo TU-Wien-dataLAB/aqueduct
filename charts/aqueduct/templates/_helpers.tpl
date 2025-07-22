@@ -77,4 +77,8 @@ Usage:
 {{- else }}
   value: "False"
 {{- end }}
+{{- if .Values.persistence.files.enabled }}
+- name: AQUEDUCT_FILES_API_ROOT
+  value: {{ .Values.persistence.files.mountPath | quote }}
+{{- end }}
 {{- end }}

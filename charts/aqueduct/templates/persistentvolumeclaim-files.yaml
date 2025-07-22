@@ -1,0 +1,15 @@
+{{- if .Values.persistence.files.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-files
+spec:
+  accessModes:
+    - ReadWriteMany
+  {{- if .Values.persistence.files.storageClass }}
+  storageClassName: {{ .Values.persistence.files.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.files.size }}
+{{- end }}

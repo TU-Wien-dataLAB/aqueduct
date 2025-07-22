@@ -32,6 +32,10 @@ spec:
             - name: router-config
               mountPath: /etc/aqueduct/router_config.yaml
               subPath: router_config.yaml
+            {{- if .Values.persistence.files.enabled }}
+            - name: files
+              mountPath: {{ .Values.persistence.files.mountPath }}
+            {{- end }}
       initContainers:
         - name: collectstatic
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -73,3 +77,8 @@ spec:
         - name: router-config
           configMap:
             name: {{ .Release.Name }}-router-config
+        {{- if .Values.persistence.files.enabled }}
+        - name: files
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-files
+        {{- end }}

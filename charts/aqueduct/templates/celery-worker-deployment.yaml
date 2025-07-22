@@ -11,6 +11,9 @@ spec:
       component: celery-worker
   template:
     metadata:
+      annotations:
+        checksum/config: {{ .Values.routerConfig | toString | sha256sum }}
+        checksum/settings: {{ include (print $.Template.BasePath "/configmap-settings.yaml") . | toString | sha256sum }}
       labels:
         app: {{ .Release.Name }}
         component: celery-worker
@@ -24,4 +27,18 @@ spec:
             {{- include "aqueduct.env" . | nindent 12 }}
           resources:
             {{- toYaml .Values.requestRetentionSchedule.celery.workerDeployment.resources | nindent 12 }}
+          volumeMounts:
+            - name: settings-py
+              mountPath: /app/aqueduct/aqueduct/settings.py
+              subPath: settings.py
+            - name: router-config
+              mountPath: /etc/aqueduct/router_config.yaml
+              subPath: router_config.yaml
+      volumes:
+        - name: settings-py
+          configMap:
+            name: {{ .Release.Name }}-settings
+        - name: router-config
+          configMap:
+            name: {{ .Release.Name }}-router-config
 {{- end }}

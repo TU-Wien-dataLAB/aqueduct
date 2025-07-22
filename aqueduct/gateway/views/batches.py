@@ -31,7 +31,7 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
     """
     if request.method == "GET":
         batch_objs = await sync_to_async(list)(
-            Batch.objects.filter(input_file__token=token)
+            Batch.objects.filter(input_file__token__user=token.user)
         )
         openai_batches = [b.model for b in batch_objs]
         return JsonResponse(
@@ -75,7 +75,7 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
     # Validate input file
     input_file_id = params.get("input_file_id")
     try:
-        file_obj = await FileObject.objects.aget(id=input_file_id, token=token)
+        file_obj = await FileObject.objects.aget(id=input_file_id, token__user=token.user)
     except FileObject.DoesNotExist:
         return JsonResponse({"error": "Input file not found."}, status=404)
     if file_obj.purpose != "batch":

@@ -98,7 +98,7 @@ async def file(request: ASGIRequest, file_id: str, *args, **kwargs):
 @log_request
 async def file_content(request: ASGIRequest, token, file_id: str, *args, **kwargs):
     try:
-        file_obj = await FileObject.objects.aget(id=file_id, token=token)
+        file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
     except FileObject.DoesNotExist:
         return JsonResponse({"error": "File not found."}, status=404)
     data = await sync_to_async(file_obj.read)()

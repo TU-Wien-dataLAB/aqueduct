@@ -201,15 +201,15 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         )
         b2 = resp.json()["id"]
 
-        # Token1 should see only its own batch
+        # Token1 should see all batches
         resp = self.client.get("/batches", headers=self.headers)
         ids1 = [b["id"] for b in resp.json().get("data", [])]
-        self.assertCountEqual(ids1, [b1])
+        self.assertCountEqual(ids1, [b1, b2])
 
-        # Token2 should see only its batch2
+        # Token2 should see all batches
         resp = self.client.get("/batches", headers=headers2)
         ids2 = [b["id"] for b in resp.json().get("data", [])]
-        self.assertCountEqual(ids2, [b2])
+        self.assertCountEqual(ids2, [b2, b1])
 
     def test_max_user_batches_limit(self):
         """POST /batches should enforce MAX_USER_BATCHES and reject the fourth batch."""
@@ -233,12 +233,14 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         }
 
         # Allowed up to MAX_USER_BATCHES batches
+        created_ids = []
         for _ in range(settings.MAX_USER_BATCHES):
             ok = self.client.post(
                 "/batches", data=json.dumps(batch_payload), headers=self.headers,
                 content_type="application/json",
             )
             self.assertEqual(ok.status_code, 200)
+            created_ids.append(ok.json()["id"])
 
         # The next (fourth) batch should be rejected with 403
         over = self.client.post(
@@ -248,6 +250,12 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertEqual(over.status_code, 403)
         err = over.json()
         self.assertEqual(err.get("error"), f"Batch limit reached ({settings.MAX_USER_BATCHES})")
+
+        # Verify that only MAX_USER_BATCHES batches exist
+        resp = self.client.get("/batches", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        ids_list = [b["id"] for b in resp.json().get("data", [])]
+        self.assertCountEqual(ids_list, created_ids)
 
     def test_various_endpoints(self):
         """Test batch creation and processing for chat, simple completions, and embeddings endpoints."""

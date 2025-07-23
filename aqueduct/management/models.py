@@ -766,6 +766,17 @@ class FileObject(models.Model):
         """Get the number of lines in the file."""
         return self.read().decode("utf-8").splitlines()
 
+    def num_lines(self) -> int:
+        def _make_gen(reader):
+            while True:
+                b = reader(2 ** 16)
+                if not b: break
+                yield b
+
+        with open(self.path(), "rb") as f:
+            count = sum(buf.count(b"\n") for buf in _make_gen(f.raw.read))
+        return count
+
     def preview(self, num_lines: int = 15) -> str:
         """Get the preview of the file."""
         return "\n".join(self.lines()[:num_lines])
@@ -932,13 +943,6 @@ class Batch(models.Model):
                 # Ignore errors deleting file records and physical files
                 pass
         super().delete(using=using, keep_parents=keep_parents)
-
-    _num_lines: int | None = None
-
-    def __len__(self):
-        if not self._num_lines:
-            self._num_lines = len(self.input_file.lines())
-        return self._num_lines
 
     def input_file_lines(self) -> deque[str]:
         """

@@ -94,6 +94,7 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
         status="validating",
         metadata=params.get("metadata"),
         expires_at=expires_at,
+        request_counts={"input": file_obj.num_lines(), "total": 0, "completed": 0, "failed": 0}
     )
     await sync_to_async(batch_obj.save)()
     openai_batch = batch_obj.model

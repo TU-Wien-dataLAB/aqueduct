@@ -253,27 +253,50 @@ async def process_batch_request(router: Router, batch: Batch, params: str):
         await sync_to_async(batch.append)({"error": "Invalid JSON line"}, error=True)
         return
 
+    data = dict()
+    response_data = dict()
+    custom_id = params.get("custom_id", None)
+
     try:
-        if params.get("stream", False):
+        if not custom_id:
+            raise ValueError("Missing custom_id parameter in batch request")
+        response_data["custom_id"] = custom_id
+
+        method = params.get("method", None)
+        url = params.get("url", None)
+        if url != batch.endpoint:
+            raise RuntimeError(
+                f"Request URL mismatch for Batch endpoint! Request URL is {url} while Batch endpoint is set to {batch.endpoint}")
+        body = params.get("body", {})
+
+        if body.get("stream", False):
             raise ValueError("Streaming requests are not supported in the /batches API")
 
         # Dispatch based on endpoint
         endpoint = batch.endpoint
         if endpoint.endswith('/completions') and 'chat' in endpoint:
-            result = await router.acompletion(**params)
+            result = await router.acompletion(**body)
         elif endpoint.endswith('/completions'):
-            result = await router.atext_completion(**params)
+            result = await router.atext_completion(**body)
         elif endpoint.endswith('/embeddings'):
-            result = await router.aembedding(**params)
+            result = await router.aembedding(**body)
         else:
             raise NotImplementedError(f"Batch endpoint {endpoint} not supported")
 
         data = result.model_dump(exclude_none=True, exclude_unset=True)
-        await sync_to_async(batch.append)(data)
+        request_id = data.get("id", f"batch-{custom_id}")
+        response_data["response"] = dict(status_code=200, request_id=request_id, body=data)
+        response_data["error"] = None
+        response_data["id"] = request_id
+
+        await sync_to_async(batch.append)(response_data)
     except Exception as e:
         # Log error and continue
-        err = {'error': str(e)}
-        await sync_to_async(batch.append)(err, error=True)
+        response_data["error"] = {'error': str(e)}
+        response_data["custom_id"] = custom_id
+        request_id = data.get("id", None)
+        response_data["id"] = request_id
+        await sync_to_async(batch.append)(response_data, error=True)
 
 
 async def run_batch_processing():

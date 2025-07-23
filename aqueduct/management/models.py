@@ -890,7 +890,7 @@ class Batch(models.Model):
         related_name="batch_output_files",
         help_text="The file containing the outputs of successfully executed requests."
     )
-    # {"total": 0, "completed": 0, "failed": 0 }
+    # {"input": 0, "total": 0, "completed": 0, "failed": 0 }
     request_counts = JSONField(
         default=lambda: dict(total=0, completed=0, failed=0),
         null=True,

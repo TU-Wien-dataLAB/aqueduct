@@ -17,7 +17,8 @@
                         <th>Output File</th>
                         <th>Error File</th>
                         <th>Status</th>
-                        <th>Requests (Completed/Total/Failed)</th>
+                        <th>Progress (Total/Input)</th>
+                        <th>Completion &amp; Failure %</th>
                         <th>Created At</th>
                         <th>Actions</th>
                     </tr>
@@ -91,8 +92,17 @@
                                 {% endif %}
                             </td>
                             <td>{{ batch.status }}</td>
-                            <td>
-                                {{ batch.request_counts.completed | default:"-" }}/{{ batch.request_counts.total }}/{{ batch.request_counts.failed | default:"-" }}
+                            {% comment %} Overall progress: total/input % {% endcomment %}
+                            <td class="text-center">
+                                {% widthratio batch.request_counts.total batch.request_counts.input 100 as overall_pct %}
+                                <div class="radial-progress" style="--value:{{ overall_pct | default:0 }}">{{ overall_pct | default:0 }}%</div>
+                            </td>
+                            {% comment %} Completion and failure rates relative to total {% endcomment %}
+                            <td class="flex space-x-4 justify-center">
+                                {% widthratio batch.request_counts.completed batch.request_counts.total 100 as comp_pct %}
+                                <div class="radial-progress text-success" style="--value:{{ comp_pct }}">{{ comp_pct }}%</div>
+                                {% widthratio batch.request_counts.failed batch.request_counts.total 100 as fail_pct %}
+                                <div class="radial-progress text-error" style="--value:{{ fail_pct }}">{{ fail_pct }}%</div>
                             </td>
                             <td>{{ batch.created_dt|date:"Y-m-d H:i" }}</td>
                             <td class="flex-shrink-0">

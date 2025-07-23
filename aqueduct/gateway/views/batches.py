@@ -86,6 +86,7 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
     created_at = int(now.timestamp())
     expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
     expires_at = int((now + timezone.timedelta(days=expiry_days)).timestamp())
+    num_lines = await sync_to_async(file_obj.num_lines)()
     batch_obj = Batch(
         completion_window=params["completion_window"],
         created_at=created_at,
@@ -94,7 +95,7 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
         status="validating",
         metadata=params.get("metadata"),
         expires_at=expires_at,
-        request_counts={"input": file_obj.num_lines(), "total": 0, "completed": 0, "failed": 0}
+        request_counts={"input": num_lines, "total": 0, "completed": 0, "failed": 0}
     )
     await sync_to_async(batch_obj.save)()
     openai_batch = batch_obj.model

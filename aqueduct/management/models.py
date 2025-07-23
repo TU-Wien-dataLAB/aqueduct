@@ -766,6 +766,10 @@ class FileObject(models.Model):
         """Get the number of lines in the file."""
         return self.read().decode("utf-8").splitlines()
 
+    def preview(self, num_lines: int = 15) -> str:
+        """Get the preview of the file."""
+        return "\n".join(self.lines()[:num_lines])
+
 
 class Batch(models.Model):
     """

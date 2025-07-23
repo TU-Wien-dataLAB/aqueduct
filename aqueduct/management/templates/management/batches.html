@@ -24,21 +24,39 @@
                     {% for batch in batches %}
                         <tr>
                             <td class="font-mono">{{ batch.id }}</td>
-                            <td class="font-mono">{{ batch.input_file.id }}</td>
+                            <td class="font-mono">
+                                {{ batch.input_file.id }}
+                                <button class="btn btn-xs ml-2"
+                                        onclick="document.getElementById('preview-modal-{{ batch.id }}').showModal()">
+                                    Preview
+                                </button>
+                                <dialog id="preview-modal-{{ batch.id }}" class="modal">
+                                    <div class="modal-box">
+                                        <form method="dialog">
+                                            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕
+                                            </button>
+                                        </form>
+                                        <h3 class="font-bold">Preview: {{ batch.input_file.id }}</h3>
+                                    <div class="overflow-auto max-h-64">
+                                      <pre class="whitespace-pre py-2">{{ batch.input_file_preview }}</pre>
+                                    </div>
+                                    </div>
+                                </dialog>
+                            </td>
                             <td>{{ batch.status }}</td>
                             <td>
-                                    {{ batch.request_counts.completed | default:"-" }}/{{ batch.request_counts.total }}/{{ batch.request_counts.failed | default:"-" }}
+                                {{ batch.request_counts.completed | default:"-" }}/{{ batch.request_counts.total }}/{{ batch.request_counts.failed | default:"-" }}
                             </td>
                             <td>{{ batch.created_dt|date:"Y-m-d H:i" }}</td>
                             <td class="flex-shrink-0">
                                 {% if batch.status == 'validating' or batch.status == 'in_progress' or batch.status == 'finalizing' %}
-                                <button type="button"
-                                        class="btn btn-sm btn-square btn-warning"
-                                        title="Cancel batch {{ batch.id }}"
-                                        onclick="cancelBatch('{{ batch.id }}')">
-                                    <img src="{% static 'icons/delete.svg' %}" alt="Cancel"
-                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                                </button>
+                                    <button type="button"
+                                            class="btn btn-sm btn-square btn-warning"
+                                            title="Cancel batch {{ batch.id }}"
+                                            onclick="cancelBatch('{{ batch.id }}')">
+                                        <img src="{% static 'icons/delete.svg' %}" alt="Cancel"
+                                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    </button>
                                 {% endif %}
                             </td>
                         </tr>
@@ -55,28 +73,28 @@
         {% endif %}
     </div>
     <script>
-    function cancelBatch(batchId) {
+      function cancelBatch(batchId) {
         if (!confirm(`Are you sure you want to cancel batch ${batchId}?`)) {
-            return;
+          return;
         }
         fetch(`/v1/batches/${batchId}/cancel`, {
-            method: 'POST',
+          method: 'POST',
         })
-        .then(response => {
+          .then(response => {
             if (response.ok) {
-                location.reload();
+              location.reload();
             } else {
-                response.json().then(data => {
-                    alert(data.error || 'Failed to cancel batch.');
-                }).catch(() => {
-                    alert('Failed to cancel batch.');
-                });
+              response.json().then(data => {
+                alert(data.error || 'Failed to cancel batch.');
+              }).catch(() => {
+                alert('Failed to cancel batch.');
+              });
             }
-        })
-        .catch(err => {
+          })
+          .catch(err => {
             console.error('Error cancelling batch:', err);
             alert('Error cancelling batch.');
-        });
-    }
+          });
+      }
     </script>
 {% endblock %}

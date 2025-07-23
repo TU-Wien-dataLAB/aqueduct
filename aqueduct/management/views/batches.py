@@ -26,6 +26,8 @@ class UserBatchesView(BaseAqueductView, TemplateView):
         from datetime import datetime
         for b in batches:
             b.created_dt = datetime.fromtimestamp(b.created_at)
+            # input file preview (first lines)
+            b.input_file_preview = b.input_file.preview()
 
         context['batches'] = batches
         return context

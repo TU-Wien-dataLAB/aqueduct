@@ -37,7 +37,7 @@ records = [
         {'role': 'user', 'content': 'Tell me a joke.'}
     ]}},
 ]
-payload = '\n'.join(json.dumps(r, separators=(',', ':')) for r in records) + '\n'
+payload = '\n'.join(json.dumps(r, separators=(',', ':')) for r in records*10) + '\n'
 stream = io.BytesIO(payload.encode('utf-8'))
 stream.name = 'batch_input.jsonl'
 

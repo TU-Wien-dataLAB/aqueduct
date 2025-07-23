@@ -11,13 +11,13 @@
             <div class="overflow-x-auto">
                 <table class="table table-sm w-full">
                     <thead>
-                        <tr class="bg-base-200">
+                    <tr class="bg-base-200">
                         <th>ID</th>
                         <th>Input File</th>
                         <th>Output File</th>
                         <th>Error File</th>
                         <th>Status</th>
-                        <th>Progress (Total/Input)</th>
+                        <th>Progress</th>
                         <th>Completion &amp; Failure %</th>
                         <th>Created At</th>
                         <th>Actions</th>
@@ -36,73 +36,105 @@
                                          class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                 </button>
                                 <dialog id="preview-input-{{ batch.id }}" class="modal">
-                                  <div class="modal-box">
-                                    <form method="dialog">
-                                        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-                                    </form>
-                                    <h3 class="font-bold">Preview: {{ batch.input_file_id_preview }}</h3>
-                                    <div class="overflow-auto max-h-64">
-                                      <pre class="whitespace-pre py-2">{{ batch.input_file_preview }}</pre>
+                                    <div class="modal-box">
+                                        <form method="dialog">
+                                            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕
+                                            </button>
+                                        </form>
+                                        <h3 class="font-bold">Preview: {{ batch.input_file_id_preview }}</h3>
+                                        <div class="overflow-auto max-h-64">
+                                            <pre class="whitespace-pre py-2">{{ batch.input_file_preview }}</pre>
+                                        </div>
+                                        {% with num_lines=batch.request_counts.input %}
+                                            {% if num_lines > 15 %}
+                                                <p>
+                                                    {{ num_lines | add:"-15" }} more...
+                                                </p>
+                                            {% endif %}
+                                        {% endwith %}
                                     </div>
-                                  </div>
                                 </dialog>
                             </td>
                             <td class="font-mono">
                                 {{ batch.output_file_id_preview }}
                                 {% if batch.output_file %}
-                                <button class="btn btn-xs btn-square ml-2"
-                                        title="Preview"
-                                        onclick="document.getElementById('preview-output-{{ batch.id }}').showModal()">
-                                    <img src="{% static 'icons/preview.svg' %}" alt="Preview"
-                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                                </button>
-                                <dialog id="preview-output-{{ batch.id }}" class="modal">
-                                  <div class="modal-box">
-                                    <form method="dialog">
-                                        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-                                    </form>
-                                    <h3 class="font-bold">Preview: {{ batch.output_file_id_preview }}</h3>
-                                    <div class="overflow-auto max-h-64">
-                                      <pre class="whitespace-pre py-2">{{ batch.output_file_preview }}</pre>
-                                    </div>
-                                  </div>
-                                </dialog>
+                                    <button class="btn btn-xs btn-square ml-2"
+                                            title="Preview"
+                                            onclick="document.getElementById('preview-output-{{ batch.id }}').showModal()">
+                                        <img src="{% static 'icons/preview.svg' %}" alt="Preview"
+                                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    </button>
+                                    <dialog id="preview-output-{{ batch.id }}" class="modal">
+                                        <div class="modal-box">
+                                            <form method="dialog">
+                                                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">
+                                                    ✕
+                                                </button>
+                                            </form>
+                                            <h3 class="font-bold">Preview: {{ batch.output_file_id_preview }}</h3>
+                                            <div class="overflow-auto max-h-64">
+                                                <pre class="whitespace-pre py-2">{{ batch.output_file_preview }}</pre>
+                                            </div>
+                                            {% with num_lines=batch.request_counts.completed %}
+                                                {% if num_lines > 15 %}
+                                                    <p>
+                                                        {{ num_lines | add:"-15" }} more...
+                                                    </p>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </div>
+                                    </dialog>
                                 {% endif %}
                             </td>
                             <td class="font-mono">
                                 {{ batch.error_file_id_preview }}
                                 {% if batch.error_file %}
-                                <button class="btn btn-xs btn-square ml-2"
-                                        title="Preview"
-                                        onclick="document.getElementById('preview-error-{{ batch.id }}').showModal()">
-                                    <img src="{% static 'icons/preview.svg' %}" alt="Preview"
-                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                                </button>
-                                <dialog id="preview-error-{{ batch.id }}" class="modal">
-                                  <div class="modal-box">
-                                    <form method="dialog">
-                                        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-                                    </form>
-                                    <h3 class="font-bold">Preview: {{ batch.error_file_id_preview }}</h3>
-                                    <div class="overflow-auto max-h-64">
-                                      <pre class="whitespace-pre py-2">{{ batch.error_file_preview }}</pre>
-                                    </div>
-                                  </div>
-                                </dialog>
+                                    <button class="btn btn-xs btn-square ml-2"
+                                            title="Preview"
+                                            onclick="document.getElementById('preview-error-{{ batch.id }}').showModal()">
+                                        <img src="{% static 'icons/preview.svg' %}" alt="Preview"
+                                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    </button>
+                                    <dialog id="preview-error-{{ batch.id }}" class="modal">
+                                        <div class="modal-box">
+                                            <form method="dialog">
+                                                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">
+                                                    ✕
+                                                </button>
+                                            </form>
+                                            <h3 class="font-bold">Preview: {{ batch.error_file_id_preview }}</h3>
+                                            <div class="overflow-auto max-h-64">
+                                                <pre class="whitespace-pre py-2">{{ batch.error_file_preview }}</pre>
+                                            </div>
+                                            {% with num_lines=batch.request_counts.failed %}
+                                                {% if num_lines > 15 %}
+                                                    <p>
+                                                        {{ num_lines | add:"-15" }} more...
+                                                    </p>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </div>
+                                    </dialog>
                                 {% endif %}
                             </td>
                             <td>{{ batch.status }}</td>
                             {% comment %} Overall progress: total/input % {% endcomment %}
                             <td class="text-center">
                                 {% widthratio batch.request_counts.total batch.request_counts.input 100 as overall_pct %}
-                                <div class="radial-progress" style="--value:{{ overall_pct | default:0 }}">{{ overall_pct | default:0 }}%</div>
+                                <div class="radial-progress"
+                                     style="--value:{{ overall_pct | default:0 }}; --size:3rem; --thickness: .3rem;">{{ overall_pct | default:0 }}%
+                                </div>
                             </td>
                             {% comment %} Completion and failure rates relative to total {% endcomment %}
                             <td class="flex space-x-4 justify-center">
                                 {% widthratio batch.request_counts.completed batch.request_counts.total 100 as comp_pct %}
-                                <div class="radial-progress text-success" style="--value:{{ comp_pct }}">{{ comp_pct }}%</div>
+                                <div class="radial-progress text-success"
+                                     style="--value:{{ comp_pct }}; --size:3rem; --thickness: .3rem;">{{ comp_pct }}%
+                                </div>
                                 {% widthratio batch.request_counts.failed batch.request_counts.total 100 as fail_pct %}
-                                <div class="radial-progress text-error" style="--value:{{ fail_pct }}">{{ fail_pct }}%</div>
+                                <div class="radial-progress text-error"
+                                     style="--value:{{ fail_pct }}; --size:3rem; --thickness: .3rem;">{{ fail_pct }}%
+                                </div>
                             </td>
                             <td>{{ batch.created_dt|date:"Y-m-d H:i" }}</td>
                             <td class="flex-shrink-0">

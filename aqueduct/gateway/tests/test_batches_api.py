@@ -36,7 +36,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
     def test_batch_lifecycle(self):
         """Test the full batch lifecycle: upload, create, process, and retrieve outputs."""
-        # Prepare a JSONL file with two chat completion requests.
+        # Prepare a JSONL file with two chat completion requests in batch API format.
         messages1 = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Hello!"},
@@ -47,9 +47,11 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         ]
         payload1 = _build_chat_payload(self.model, messages1)
         payload2 = _build_chat_payload(self.model, messages2)
+        wrapped1 = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload1}
+        wrapped2 = {"custom_id": 2, "method": "POST", "url": "/v1/chat/completions", "body": payload2}
         content = (
-                json.dumps(payload1).encode("utf-8") + b"\n" +
-                json.dumps(payload2).encode("utf-8") + b"\n"
+            json.dumps(wrapped1).encode("utf-8") + b"\n" +
+            json.dumps(wrapped2).encode("utf-8") + b"\n"
         )
         upload_file = SimpleUploadedFile("batch.jsonl", content, content_type="application/jsonl")
         response = self.client.post(
@@ -100,9 +102,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertEqual(len(lines), 2)
         for raw in lines:
             result = json.loads(raw)
-            self.assertIn("choices", result)
-            self.assertIsInstance(result["choices"], list)
-            self.assertGreater(len(result["choices"]), 0)
+            self.assertIn("choices", result["response"]["body"])
+            self.assertIsInstance(result["response"]["body"]["choices"], list)
+            self.assertGreater(len(result["response"]["body"]["choices"]), 0)
 
     def test_invalid_json(self):
         """POST /batches with invalid JSON returns 400."""
@@ -150,12 +152,13 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
     def test_list_batches_different_tokens(self):
         """Batches created under one token should not be visible under another."""
-        # Prepare a simple JSONL file
+        # Prepare a simple JSONL file in batch API format
         payload = _build_chat_payload(self.model, messages=[
             {"role": "system", "content": "Hi"},
             {"role": "user", "content": "Token1"},
         ])
-        content = json.dumps(payload).encode() + b"\n"
+        wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
+        content = json.dumps(wrapped).encode() + b"\n"
         f1 = SimpleUploadedFile("t1.jsonl", content, content_type="application/jsonl")
         # Create batch under token1 (self.headers)
         resp = self.client.post(
@@ -213,12 +216,13 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
     def test_max_user_batches_limit(self):
         """POST /batches should enforce MAX_USER_BATCHES and reject the fourth batch."""
-        # Upload a simple JSONL file for batching
+        # Upload a simple JSONL file for batching in batch API format
         payload = _build_chat_payload(self.model, [
             {"role": "system", "content": "X"},
             {"role": "user", "content": "Y"},
         ])
-        content = (json.dumps(payload) + "\n").encode("utf-8")
+        wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
+        content = (json.dumps(wrapped) + "\n").encode("utf-8")
         upload = SimpleUploadedFile("limit.jsonl", content, content_type="application/jsonl")
         resp = self.client.post(
             "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
@@ -267,7 +271,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             ("/v1/embeddings", json.dumps({"model": self.model, "input": ["Hello"]})),
         ]
         for endpoint, line in tests:
-            content = (line + "\n").encode()
+            body = json.loads(line)
+            wrapped = {"custom_id": 1, "method": "POST", "url": endpoint, "body": body}
+            content = (json.dumps(wrapped) + "\n").encode()
             upload = SimpleUploadedFile("e.jsonl", content, content_type="application/jsonl")
             resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
             fid = resp.json()["id"]
@@ -291,16 +297,18 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             self.assertEqual(len(lines), 1)
             result = json.loads(lines[0])
             if endpoint.endswith("/embeddings"):
-                self.assertIn("data", result)
+                self.assertIn("data", result["response"]["body"])
             else:
-                self.assertIn("choices", result)
+                self.assertIn("choices", result["response"]["body"])
 
     def test_partial_failure_in_batch(self):
         """If one request in a batch JSONL is invalid JSON, it should count as a failed request."""
         # Build JSONL: one valid chat, one invalid line, one valid chat
-        chat_line = json.dumps(_build_chat_payload(self.model, [
+        chat_payload = _build_chat_payload(self.model, [
             {"role": "system", "content": "X"}, {"role": "user", "content": "Ok"}
-        ])).encode()
+        ])
+        wrapped_chat = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": chat_payload}
+        chat_line = json.dumps(wrapped_chat).encode()
         invalid_line = b"{not valid json}\n"
         content = chat_line + b"\n" + invalid_line + chat_line + b"\n"
         upload = SimpleUploadedFile("mixed.jsonl", content, content_type="application/jsonl")
@@ -326,13 +334,17 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
     def test_streaming_failure_in_batch(self):
         """If one request in a batch JSONL contains a streaming call, it should count as a failed request."""
-        # Build JSONL: one valid chat, one invalid line, one valid chat
-        chat_line = json.dumps(_build_chat_payload(self.model, [
+        # Build JSONL: one valid chat, one streaming call (invalid), one valid chat
+        chat_payload = _build_chat_payload(self.model, [
             {"role": "system", "content": "X"}, {"role": "user", "content": "Ok"}
-        ])).encode()
-        invalid_line = json.dumps(_build_chat_payload(self.model, [
+        ])
+        wrapped_chat = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": chat_payload}
+        chat_line = json.dumps(wrapped_chat).encode()
+        stream_payload = _build_chat_payload(self.model, [
             {"role": "system", "content": "X"}, {"role": "user", "content": "Ok"}
-        ], stream=True)).encode()
+        ], stream=True)
+        wrapped_stream = {"custom_id": 2, "method": "POST", "url": "/v1/chat/completions", "body": stream_payload}
+        invalid_line = json.dumps(wrapped_stream).encode()
         content = chat_line + b"\n" + invalid_line + b"\n" + chat_line + b"\n"
         upload = SimpleUploadedFile("mixed.jsonl", content, content_type="application/jsonl")
         resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
@@ -376,7 +388,15 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             [{"role": "system", "content": "A"}, {"role": "user", "content": str(i)}]
             for i in range(10)
         ]
-        lines = [json.dumps(_build_chat_payload(self.model, m)).encode() for m in msgs]
+        lines = [
+            json.dumps({
+                "custom_id": idx,
+                "method": "POST",
+                "url": "/v1/chat/completions",
+                "body": _build_chat_payload(self.model, m),
+            }).encode()
+            for idx, m in enumerate(msgs, start=1)
+        ]
         content = b"\n".join(lines) + b"\n"
         upload = SimpleUploadedFile("q.jsonl", content, content_type="application/jsonl")
         resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
@@ -401,7 +421,16 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         # Setup two input files with different numbers of requests
         def make_batch(n):
             msgs = [[{"role": "system", "content": "X"}, {"role": "user", "content": str(i)}] for i in range(n)]
-            content = b"".join(json.dumps(_build_chat_payload(self.model, m)).encode() + b"\n" for m in msgs)
+            lines = [
+                json.dumps({
+                    "custom_id": idx,
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": _build_chat_payload(self.model, m),
+                }).encode() + b"\n"
+                for idx, m in enumerate(msgs, start=1)
+            ]
+            content = b"".join(lines)
             upload = SimpleUploadedFile(f"b{n}.jsonl", content, content_type="application/jsonl")
             resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
             fid = resp.json()["id"]
@@ -424,11 +453,12 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
     def test_cancel_before_processing(self):
         """Test cancelling a batch before processing (status validating)."""
-        # Upload a single-line file
+        # Upload a single-line file in batch API format
         payload = _build_chat_payload(self.model, messages=[
             {"role": "system", "content": "X"}, {"role": "user", "content": "Y"}
         ])
-        content = json.dumps(payload).encode() + b"\n"
+        wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
+        content = json.dumps(wrapped).encode() + b"\n"
         upload = SimpleUploadedFile("c.jsonl", content, content_type="application/jsonl")
         resp = self.client.post(
             "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
@@ -452,11 +482,12 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
     def test_cancel_in_progress(self):
         """Test cancelling a batch in in_progress state transitions through cancelling to cancelled."""
-        # Upload and create a single-line batch
+        # Upload and create a single-line batch in batch API format
         payload = _build_chat_payload(self.model, messages=[
             {"role": "system", "content": "X"}, {"role": "user", "content": "Z"}
         ])
-        content = json.dumps(payload).encode() + b"\n"
+        wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
+        content = json.dumps(wrapped).encode() + b"\n"
         upload = SimpleUploadedFile("c2.jsonl", content, content_type="application/jsonl")
         resp = self.client.post(
             "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
@@ -494,12 +525,13 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         from django.utils import timezone
         from management.models import Batch
 
-        # Upload a file and create a batch
+        # Upload a file and create a batch in batch API format
         payload = _build_chat_payload(self.model, messages=[
             {"role": "system", "content": "Hello"},
             {"role": "user", "content": "Expire"},
         ])
-        content = json.dumps(payload).encode("utf-8") + b"\n"
+        wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
+        content = json.dumps(wrapped).encode("utf-8") + b"\n"
         upload_file = SimpleUploadedFile(
             "expire.jsonl", content, content_type="application/jsonl"
         )

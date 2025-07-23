@@ -11,9 +11,11 @@
             <div class="overflow-x-auto">
                 <table class="table table-sm w-full">
                     <thead>
-                    <tr class="bg-base-200">
+                        <tr class="bg-base-200">
                         <th>ID</th>
                         <th>Input File</th>
+                        <th>Output File</th>
+                        <th>Error File</th>
                         <th>Status</th>
                         <th>Requests (Completed/Total/Failed)</th>
                         <th>Created At</th>
@@ -25,23 +27,68 @@
                         <tr>
                             <td class="font-mono">{{ batch.id }}</td>
                             <td class="font-mono">
-                                {{ batch.input_file.id }}
-                                <button class="btn btn-xs ml-2"
-                                        onclick="document.getElementById('preview-modal-{{ batch.id }}').showModal()">
-                                    Preview
+                                {{ batch.input_file_id_preview }}
+                                <button class="btn btn-xs btn-square ml-2"
+                                        title="Preview"
+                                        onclick="document.getElementById('preview-input-{{ batch.id }}').showModal()">
+                                    <img src="{% static 'icons/preview.svg' %}" alt="Preview"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                 </button>
-                                <dialog id="preview-modal-{{ batch.id }}" class="modal">
-                                    <div class="modal-box">
-                                        <form method="dialog">
-                                            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕
-                                            </button>
-                                        </form>
-                                        <h3 class="font-bold">Preview: {{ batch.input_file.id }}</h3>
+                                <dialog id="preview-input-{{ batch.id }}" class="modal">
+                                  <div class="modal-box">
+                                    <form method="dialog">
+                                        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+                                    </form>
+                                    <h3 class="font-bold">Preview: {{ batch.input_file_id_preview }}</h3>
                                     <div class="overflow-auto max-h-64">
                                       <pre class="whitespace-pre py-2">{{ batch.input_file_preview }}</pre>
                                     </div>
-                                    </div>
+                                  </div>
                                 </dialog>
+                            </td>
+                            <td class="font-mono">
+                                {{ batch.output_file_id_preview }}
+                                {% if batch.output_file %}
+                                <button class="btn btn-xs btn-square ml-2"
+                                        title="Preview"
+                                        onclick="document.getElementById('preview-output-{{ batch.id }}').showModal()">
+                                    <img src="{% static 'icons/preview.svg' %}" alt="Preview"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                </button>
+                                <dialog id="preview-output-{{ batch.id }}" class="modal">
+                                  <div class="modal-box">
+                                    <form method="dialog">
+                                        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+                                    </form>
+                                    <h3 class="font-bold">Preview: {{ batch.output_file_id_preview }}</h3>
+                                    <div class="overflow-auto max-h-64">
+                                      <pre class="whitespace-pre py-2">{{ batch.output_file_preview }}</pre>
+                                    </div>
+                                  </div>
+                                </dialog>
+                                {% endif %}
+                            </td>
+                            <td class="font-mono">
+                                {{ batch.error_file_id_preview }}
+                                {% if batch.error_file %}
+                                <button class="btn btn-xs btn-square ml-2"
+                                        title="Preview"
+                                        onclick="document.getElementById('preview-error-{{ batch.id }}').showModal()">
+                                    <img src="{% static 'icons/preview.svg' %}" alt="Preview"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                </button>
+                                <dialog id="preview-error-{{ batch.id }}" class="modal">
+                                  <div class="modal-box">
+                                    <form method="dialog">
+                                        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+                                    </form>
+                                    <h3 class="font-bold">Preview: {{ batch.error_file_id_preview }}</h3>
+                                    <div class="overflow-auto max-h-64">
+                                      <pre class="whitespace-pre py-2">{{ batch.error_file_preview }}</pre>
+                                    </div>
+                                  </div>
+                                </dialog>
+                                {% endif %}
                             </td>
                             <td>{{ batch.status }}</td>
                             <td>

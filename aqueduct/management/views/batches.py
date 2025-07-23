@@ -28,6 +28,34 @@ class UserBatchesView(BaseAqueductView, TemplateView):
             b.created_dt = datetime.fromtimestamp(b.created_at)
             # input file preview (first lines)
             b.input_file_preview = b.input_file.preview()
+            # short preview of file id for display
+            raw_id = b.input_file.id
+            if len(raw_id) > 12:
+                b.input_file_id_preview = f"{raw_id[:7]}...{raw_id[-5:]}"
+            else:
+                b.input_file_id_preview = raw_id
+            # output file preview and id
+            if b.output_file:
+                b.output_file_preview = b.output_file.preview()
+                raw_out = b.output_file.id
+                if len(raw_out) > 12:
+                    b.output_file_id_preview = f"{raw_out[:7]}...{raw_out[-5:]}"
+                else:
+                    b.output_file_id_preview = raw_out
+            else:
+                b.output_file_preview = ''
+                b.output_file_id_preview = '-'
+            # error file preview and id
+            if b.error_file:
+                b.error_file_preview = b.error_file.preview()
+                raw_err = b.error_file.id
+                if len(raw_err) > 12:
+                    b.error_file_id_preview = f"{raw_err[:7]}...{raw_err[-5:]}"
+                else:
+                    b.error_file_id_preview = raw_err
+            else:
+                b.error_file_preview = ''
+                b.error_file_id_preview = '-'
 
         context['batches'] = batches
         return context

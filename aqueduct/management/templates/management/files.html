@@ -38,9 +38,16 @@
                                             </button>
                                         </form>
                                         <h3 class="font-bold">Preview: {{ file.filename }}</h3>
-                                    <div class="overflow-auto max-h-64">
-                                      <pre class="whitespace-pre py-2">{{ file.preview }}</pre>
-                                    </div>
+                                        <div class="overflow-auto max-h-64">
+                                            <pre class="whitespace-pre py-2">{{ file.preview }}</pre>
+                                        </div>
+                                        {% with num_lines=file.num_lines %}
+                                            {% if num_lines > 15 %}
+                                                <p>
+                                                    {{ num_lines | add:"-15" }} more...
+                                                </p>
+                                            {% endif %}
+                                        {% endwith %}
                                     </div>
                                 </dialog>
                             </td>

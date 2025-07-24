@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
 from pathlib import Path
+from datetime import datetime
 
 from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
@@ -138,9 +139,23 @@ AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX
 AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 1024))
 AQUEDUCT_FILES_API_EXPIRY_DAYS = int(os.environ.get("AQUEDUCT_FILES_API_EXPIRY_DAYS", 7))
 
-AQUEDUCT_BATCH_PROCESSING_SCHEDULE = os.environ.get("AQUEDUCT_BATCH_PROCESSING_SCHEDULE", "0 21 * * *")
-AQUEDUCT_BATCH_PROCESSING_RUNTIME_HOURS = os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_HOURS", 8)
-AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_CONCURRENCY", 16)
+AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES", 15))
+assert AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES > 10
+AQUEDUCT_BATCH_PROCESSING_CRONTAB = crontab(minute=f"*/{AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES}")
+AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS", 5 * 60))
+
+AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", 16)
+AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", 4)
+
+
+def batch_processing_concurrency():
+    dt = datetime.now()
+    min_c = AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY
+    max_c = AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY
+    return max_c if dt.hour > 20 or dt.hour < 5 else min_c
+
+
+AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
 
 # Celery Settings -------------------------------------------------------
 
@@ -168,7 +183,7 @@ CELERY_BEAT_SCHEDULE = {
     },
     'process-batches': {
         'task': 'aqueduct.celery.process_batches',
-        'schedule': crontab.from_string(AQUEDUCT_BATCH_PROCESSING_SCHEDULE),
+        'schedule': AQUEDUCT_BATCH_PROCESSING_CRONTAB,
     }
 }
 

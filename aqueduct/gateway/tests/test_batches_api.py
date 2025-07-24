@@ -261,6 +261,57 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         ids_list = [b["id"] for b in resp.json().get("data", [])]
         self.assertCountEqual(ids_list, created_ids)
 
+    def test_max_user_batches_limit_after_cancel(self):
+        """Cancelling an active batch frees up a slot for a new batch."""
+        # Upload a simple JSONL file for batching
+        payload = _build_chat_payload(self.model, [
+            {"role": "system", "content": "X"},
+            {"role": "user", "content": "Y"},
+        ])
+        wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
+        content = (json.dumps(wrapped) + "\n").encode("utf-8")
+        upload = SimpleUploadedFile("limit2.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post(
+            "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+
+        batch_payload = {
+            "input_file_id": file_id,
+            "completion_window": "24h",
+            "endpoint": "/v1/chat/completions",
+        }
+
+        # Create up to the limit
+        created = []
+        for _ in range(settings.MAX_USER_BATCHES):
+            ok = self.client.post(
+                "/batches", data=json.dumps(batch_payload), headers=self.headers,
+                content_type="application/json",
+            )
+            self.assertEqual(ok.status_code, 200)
+            created.append(ok.json()["id"])
+
+        # Next batch should be blocked
+        blocked = self.client.post(
+            "/batches", data=json.dumps(batch_payload), headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(blocked.status_code, 403)
+
+        # Cancel one of the active batches
+        to_cancel = created[0]
+        cancel_resp = self.client.post(f"/batches/{to_cancel}/cancel", headers=self.headers)
+        self.assertEqual(cancel_resp.status_code, 200)
+
+        # Now a new batch should succeed
+        again = self.client.post(
+            "/batches", data=json.dumps(batch_payload), headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(again.status_code, 200)
+
     def test_various_endpoints(self):
         """Test batch creation and processing for chat, simple completions, and embeddings endpoints."""
         tests = [

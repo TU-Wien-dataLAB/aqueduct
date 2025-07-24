@@ -47,20 +47,21 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
 
     # POST /batches
     # Enforce batch creation limits: per-user (user tokens) or per-team (service-account tokens)
+    # Only batches that are active (validating, in_progress) count toward limits
+    active_statuses = ["validating", "in_progress"]
     if token.service_account:
-        existing = await sync_to_async(
-            Batch.objects.filter(
-                input_file__token__service_account__team=token.service_account.team
-            ).count
-        )()
+        qs = Batch.objects.filter(
+            input_file__token__service_account__team=token.service_account.team,
+            status__in=active_statuses,
+        )
         limit = settings.MAX_TEAM_BATCHES
     else:
-        existing = await sync_to_async(
-            Batch.objects.filter(
-                input_file__token__user=token.user
-            ).count
-        )()
+        qs = Batch.objects.filter(
+            input_file__token__user=token.user,
+            status__in=active_statuses,
+        )
         limit = settings.MAX_USER_BATCHES
+    existing = await sync_to_async(qs.count)()
     if existing >= limit:
         return JsonResponse({"error": f"Batch limit reached ({limit})"}, status=403)
     try:

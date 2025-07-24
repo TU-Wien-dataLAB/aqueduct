@@ -781,6 +781,8 @@ class FileObject(models.Model):
         """Get the preview of the file."""
         return "\n".join(self.lines()[:num_lines])
 
+    def __str__(self):
+        return self.id
 
 class Batch(models.Model):
     """

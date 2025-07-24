@@ -206,9 +206,9 @@ class TokenAdmin(admin.ModelAdmin):
 class FileObjectAdmin(admin.ModelAdmin):
     """Admin panel registration for FileObject model."""
     list_display = ('id', 'filename', 'purpose', 'bytes', 'created_at', 'expires_at')
-    list_filter = ('purpose',)
+    list_filter = ('purpose', 'token__user__email')
     search_fields = ('id', 'filename')
-
+    readonly_fields = ('path',)
 
 @admin.register(Batch)
 class BatchAdmin(admin.ModelAdmin):
@@ -217,5 +217,5 @@ class BatchAdmin(admin.ModelAdmin):
         'id', 'status', 'created_at', 'completion_window', 'endpoint',
         'input_file', 'error_file', 'output_file'
     )
-    list_filter = ('status',)
+    list_filter = ('status', 'input_file__token__user__email')
     search_fields = ('id',)

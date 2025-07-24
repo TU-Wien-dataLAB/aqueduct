@@ -1,6 +1,9 @@
 import json
 import time
 from typing import AsyncGenerator, Any
+from contextlib import contextmanager
+
+from django.core.cache import cache
 
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm import TextCompletionStreamWrapper
@@ -42,3 +45,19 @@ def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper
         yield f"data: [DONE]\n\n"
 
     return stream()
+
+
+@contextmanager
+def cache_lock(lock_id, oid, ttl: int):
+    """
+    Acquire a cache-based lock with key `lock_id`, value `oid`, and expiration `ttl` seconds.
+    Yields True if the lock was acquired (cache.add succeeded), False otherwise.
+    Ensures lock is only released if still within ttl window and owned by us.
+    """
+    timeout_at = time.monotonic() + ttl
+    status = cache.add(lock_id, oid, ttl)
+    try:
+        yield status
+    finally:
+        if status and time.monotonic() < timeout_at:
+            cache.delete(lock_id)

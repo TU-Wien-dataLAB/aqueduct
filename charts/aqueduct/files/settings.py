@@ -243,6 +243,13 @@ elif DATABASE_ENGINE == 'django.db.backends.postgresql':
 else:
     raise ImproperlyConfigured(f"Unsupported database engine: {DATABASE_ENGINE}")
 
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": CELERY_BROKER_URL,
+    }
+}
+
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 

@@ -30,4 +30,3 @@ dependencies:
   - name: redis
     version: 21.1.7
     repository: https://charts.bitnami.com/bitnami
-    condition: requestRetentionSchedule.enabled

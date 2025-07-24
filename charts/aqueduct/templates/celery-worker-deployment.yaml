@@ -1,10 +1,9 @@
-{{- if .Values.requestRetentionSchedule.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .Release.Name }}-celery-worker
 spec:
-  replicas: {{ .Values.requestRetentionSchedule.celery.workerDeployment.replicas | default 1 }}
+  replicas: {{ .Values.celery.workerDeployment.replicas | default 1 }}
   selector:
     matchLabels:
       app: {{ .Release.Name }}
@@ -22,11 +21,11 @@ spec:
         - name: celery-worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
-          command: ["python", "-m", "celery", "-A", "aqueduct", "worker", "--loglevel=info"]
+          command: [ "python", "-m", "celery", "-A", "aqueduct", "worker", "--loglevel=info" ]
           env:
             {{- include "aqueduct.env" . | nindent 12 }}
           resources:
-            {{- toYaml .Values.requestRetentionSchedule.celery.workerDeployment.resources | nindent 12 }}
+            {{- toYaml .Values.celery.workerDeployment.resources | nindent 12 }}
           volumeMounts:
             - name: settings-py
               mountPath: /app/aqueduct/aqueduct/settings.py
@@ -50,4 +49,3 @@ spec:
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-files
         {{- end }}
-{{- end }}

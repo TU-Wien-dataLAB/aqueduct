@@ -55,7 +55,6 @@ spec:
               mountPath: /app/aqueduct/aqueduct/settings.py
               subPath: settings.py
         # sidecar container for celery beat
-        {{- if .Values.requestRetentionSchedule.enabled }}
         - name: celery-beat
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -67,7 +66,6 @@ spec:
             - name: settings-py
               mountPath: /app/aqueduct/aqueduct/settings.py
               subPath: settings.py
-        {{- end }}
       volumes:
         - name: settings-py
           configMap:

@@ -127,6 +127,8 @@ batch = client.batches.cancel(batch.id)
 print(batch.status)
 ```
 
+For more information, visit the [OpenAI user guide](https://platform.openai.com/docs/guides/batch/batch-api) for the Batch API.
+
 ## Error Responses
 
 Same as [Completions](completions.md) endpoint, with the following batch-specific cases:

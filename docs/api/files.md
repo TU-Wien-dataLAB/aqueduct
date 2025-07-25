@@ -56,11 +56,13 @@ The request body must be sent as `multipart/form-data` with the following fields
 | `file`     | file | A newline-delimited JSON (`.jsonl`) file to upload.       |
 | `purpose`  | string | Must be set to `batch`.                                 |
 
+Files are given an expiry date, after which they are deleted. By default, this expiry is 7 days.
+
 See the OpenAI documentation for file uploads: [File Upload API](https://platform.openai.com/docs/api-reference/files/upload).
 
 ## List Files
 
-Retrieve a list of uploaded files for your token.
+Retrieve a list of uploaded files for your user.
 
 ## Retrieve File Metadata
 
@@ -68,11 +70,11 @@ Get metadata for a specific file by its ID.
 
 ## Download File Content
 
-Download the raw contents of a specific file.
+Download the raw contents of a specific file by its ID.
 
 ## Delete a File
 
-Delete a specific file.
+Delete a specific file by its ID.
 
 ## Examples
 

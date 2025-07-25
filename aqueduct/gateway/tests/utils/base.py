@@ -147,9 +147,15 @@ class GatewayFilesTestCase(TransactionTestCase):
 @override_settings(
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
-    AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=2,
+    AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY=2,
+    AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY=2,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-    MAX_USER_BATCHES = 3
+    MAX_USER_BATCHES = 3,
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
+    }
 )
 class GatewayBatchesTestCase(GatewayIntegrationTestCase):
     def tearDown(self):

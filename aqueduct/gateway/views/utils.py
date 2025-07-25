@@ -48,14 +48,14 @@ def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper
 
 
 @contextmanager
-def cache_lock(lock_id, oid, ttl: int):
+def cache_lock(lock_id, ttl: int):
     """
-    Acquire a cache-based lock with key `lock_id`, value `oid`, and expiration `ttl` seconds.
+    Acquire a cache-based lock with key `lock_id`, and expiration `ttl` seconds.
     Yields True if the lock was acquired (cache.add succeeded), False otherwise.
     Ensures lock is only released if still within ttl window and owned by us.
     """
     timeout_at = time.monotonic() + ttl
-    status = cache.add(lock_id, oid, ttl)
+    status = cache.add(lock_id, 0, ttl)
     try:
         yield status
     finally:

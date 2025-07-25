@@ -9,6 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from asgiref.sync import sync_to_async
 from django.utils import timezone
+from datetime import timedelta
 from litellm import Router
 
 from pydantic import ValidationError, TypeAdapter
@@ -17,6 +18,7 @@ from openai.types.batch_create_params import BatchCreateParams
 from management.models import Batch, FileObject
 from django.conf import settings
 from .decorators import token_authenticated, log_request
+from .utils import cache_lock
 from ..router import get_router
 
 
@@ -275,6 +277,8 @@ async def process_batch_request(router: Router, batch: Batch, params: str):
         if body.get("stream", False):
             raise ValueError("Streaming requests are not supported in the /batches API")
 
+        body["timeout"] = settings.AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS
+
         # Dispatch based on endpoint
         endpoint = batch.endpoint
         if endpoint.endswith('/completions') and 'chat' in endpoint:
@@ -302,35 +306,54 @@ async def process_batch_request(router: Router, batch: Batch, params: str):
         await sync_to_async(batch.append)(response_data, error=True)
 
 
+BATCH_LOCK = "batch-processing-lock"
+
+
 async def run_batch_processing():
-    # expire batches whose expires_at timestamp has passed
     start_time = timezone.now()
-    now_ts = int(start_time.timestamp())
+    start_ts = int(start_time.timestamp())
+
+    runtime_minutes = settings.AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES
+    lock_acquire_timeout = settings.AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS + 15
+    curr_time = lambda: timezone.now().timestamp()
+
+    run_until = int((start_time + timedelta(minutes=runtime_minutes)).timestamp())
+    acquire_lock_until = int((start_time + timedelta(seconds=lock_acquire_timeout)).timestamp())
+
     # expire batches whose expires_at timestamp has passed in bulk
     await sync_to_async(
         lambda: Batch.objects.filter(
             expires_at__isnull=False,
-            expires_at__lt=now_ts,
-        ).update(status="expired", expired_at=now_ts)
+            expires_at__lt=start_ts,
+        ).update(status="expired", expired_at=start_ts)
     )()
     # begin processing loop
-    runtime_hours = settings.AQUEDUCT_BATCH_PROCESSING_RUNTIME_HOURS
-    run_until = int((start_time + timezone.timedelta(hours=runtime_hours)).timestamp())
-    curr_time = lambda: timezone.now().timestamp()
 
-    max_parallel = settings.AQUEDUCT_BATCH_PROCESSING_CONCURRENCY
-    queue = AsyncBoundedParallelQueue(max_parallel=max_parallel)
-    router = get_router()
+    while curr_time() < acquire_lock_until:
+        lock_ttl = (runtime_minutes * 60) - (start_ts - curr_time())
+        with cache_lock(BATCH_LOCK, lock_ttl) as acquired:
+            if acquired:
+                print("Lock acquired! Starting batch processing.")
+                max_parallel: int = settings.AQUEDUCT_BATCH_PROCESSING_CONCURRENCY()
 
-    # Fetch batches ready to process
-    # Include batches in 'cancelling' state to finalize cancellations
-    batches = await sync_to_async(list)(
-        Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
-    )
+                queue = AsyncBoundedParallelQueue(max_parallel=max_parallel)
+                router = get_router()
 
-    async for batch, params in round_robin(batches):
-        if curr_time() > run_until:
-            break
-        await queue.process(process_batch_request, router, batch, params)
+                # Fetch batches ready to process
+                # Include batches in 'cancelling' state to finalize cancellations
+                batches = await sync_to_async(list)(
+                    Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
+                )
+                print(f"Processing {len(batches)} batches...")
 
-    await queue.join()
+                async for batch, params in round_robin(batches):
+                    if curr_time() > run_until:
+                        break
+                    await queue.process(process_batch_request, router, batch, params)
+
+                await queue.join()
+                print("Batch processing loop complete.")
+                break
+            else:
+                await asyncio.sleep(1)
+                continue

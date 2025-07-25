@@ -1,5 +1,8 @@
 import asyncio
 import json
+import time
+
+from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 
@@ -623,3 +626,55 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertEqual(data["status"], "expired")
         self.assertIn("expired_at", data)
         self.assertTrue(data["expired_at"] >= created_at)
+
+    def test_cache_lock(self):
+        """Test that the cache lock works as expected."""
+        from gateway.views.utils import cache_lock
+        with cache_lock("test", 60) as acquired:
+            self.assertTrue(acquired)
+            with cache_lock("test", 60) as inner_acquired:
+                self.assertFalse(inner_acquired)
+            self.assertTrue(acquired)
+            with cache_lock("other_test", 60) as other_acquired:
+                self.assertTrue(other_acquired)
+
+        with cache_lock("test", 60) as acquired:
+            self.assertTrue(acquired)
+
+
+    def test_batch_lock(self):
+        """Ensure more requests than concurrency limit still all get processed."""
+        msgs = [
+            [{"role": "system", "content": "A"}, {"role": "user", "content": str(i)}]
+            for i in range(2)
+        ]
+        lines = [
+            json.dumps({
+                "custom_id": idx,
+                "method": "POST",
+                "url": "/v1/chat/completions",
+                "body": _build_chat_payload(self.model, m),
+            }).encode()
+            for idx, m in enumerate(msgs, start=1)
+        ]
+        content = b"\n".join(lines) + b"\n"
+        upload = SimpleUploadedFile("q.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
+
+        file_id = resp.json()["id"]
+        batch_payload = {"input_file_id": file_id, "completion_window": "24h", "endpoint": "/v1/chat/completions"}
+        resp = self.client.post("/batches", data=json.dumps(batch_payload), headers=self.headers,
+                                content_type="application/json")
+        batch_id = resp.json()["id"]
+
+        with patch('gateway.views.batches.get_router', return_value=DummyRouter()):
+            from gateway.views.batches import run_batch_processing
+            async def run_batch_processing_loop_concurrently():
+                print("Running two batch processing loops concurrently.")
+                await asyncio.gather(run_batch_processing(), run_batch_processing())
+            async_to_sync(run_batch_processing_loop_concurrently)()
+
+        resp = self.client.get(f"/batches/{batch_id}", headers=self.headers)
+        counts = resp.json()["request_counts"]
+        self.assertEqual(counts["total"], 2)
+

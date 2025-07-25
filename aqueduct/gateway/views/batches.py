@@ -327,8 +327,8 @@ async def run_batch_processing():
             expires_at__lt=start_ts,
         ).update(status="expired", expired_at=start_ts)
     )()
-    # begin processing loop
 
+    # begin processing loop
     while curr_time() < acquire_lock_until:
         lock_ttl = (runtime_minutes * 60) - (start_ts - curr_time())
         with cache_lock(BATCH_LOCK, lock_ttl) as acquired:

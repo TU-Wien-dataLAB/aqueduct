@@ -6,6 +6,14 @@
 {% block content %}
     <div class="container mx-auto px-4 py-6">
         <h1 class="text-3xl font-bold mb-6">Batches</h1>
+        {% if next_run_in_seconds is not None %}
+            <p class="mb-6 text-lg">Next run in
+                <span class="countdown font-mono text-xl" id="batch-countdown" aria-live="polite">
+                    <span aria-live="polite">0</span>m
+                    <span aria-live="polite">0</span>s
+                </span>
+            </p>
+        {% endif %}
 
         {% if batches %}
             <div class="overflow-x-auto">
@@ -185,5 +193,33 @@
             alert('Error cancelling batch.');
           });
       }
+    </script>
+
+    <script>
+      // Simplified countdown using total seconds; update every second
+      document.addEventListener('DOMContentLoaded', function () {
+        var container = document.getElementById('batch-countdown');
+        if (!container) return;
+        var spans = container.querySelectorAll('span');
+        if (spans.length < 2) return;
+        var minSpan = spans[0], secSpan = spans[1];
+        var total = {{ next_run_in_seconds }};
+
+        function updateDisplay(sec) {
+          var m = Math.floor(sec / 60);
+          var s = sec % 60;
+          minSpan.textContent = m;
+          minSpan.style.setProperty('--value', m);
+          secSpan.textContent = s;
+          secSpan.style.setProperty('--value', s);
+        }
+
+        updateDisplay(total);
+        setInterval(function () {
+          total -= 1;
+          if (total < 0) location.reload();
+          else updateDisplay(total);
+        }, 1000);
+      });
     </script>
 {% endblock %}

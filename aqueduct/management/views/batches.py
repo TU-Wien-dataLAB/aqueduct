@@ -1,5 +1,7 @@
+from django.conf import settings
 from django.db.models import Q
 from django.views.generic import TemplateView
+from datetime import datetime, timedelta
 
 from .base import BaseAqueductView
 from ..models import Batch
@@ -58,4 +60,9 @@ class UserBatchesView(BaseAqueductView, TemplateView):
                 b.error_file_id_preview = '-'
 
         context['batches'] = batches
+        crontab = settings.AQUEDUCT_BATCH_PROCESSING_CRONTAB
+        # Total seconds until the next batch run
+        context['next_run_in_seconds'] = crontab.remaining_estimate(
+            datetime.now() - timedelta(seconds=1)
+        ).seconds
         return context

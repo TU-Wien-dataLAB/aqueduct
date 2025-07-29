@@ -1,7 +1,7 @@
 ---
 title: Admin
 parent: User Guide
-nav_order: 5
+nav_order: 7
 ---
 
 # Admin
@@ -59,5 +59,3 @@ The `merge_exclusion_lists` field determines how exclusion lists are built acros
 Suppose a User has an exclusion list `["A", "B"]` and `merge_exclusion_lists=True`; their Org has `["C"]` with `merge_exclusion_lists=False`; and the global exclusion list is `["D"]`. The effective exclusion list for the User would be `["A", "B", "C"]`—the Org’s `merge_exclusion_lists=False` means the global settings are ignored.
 
 This system provides fine-grained control over how and where model exclusions are inherited.
-
-

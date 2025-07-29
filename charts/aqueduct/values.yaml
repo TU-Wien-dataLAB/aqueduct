@@ -40,16 +40,14 @@ oidc:
   #   clientSecretKey: ""
 
 
-requestRetentionSchedule:
-  enabled: false
-  celery:
-    brokerUrl: "redis://redis-master:6379/0"
-    workerConcurrency: 1
-    requestRetentionDays: 7
-    schedule: "0 4 * * *"
-    workerDeployment:
-      replicas: 1
-      resources: {}
+celery:
+  brokerUrl: "redis://redis-master:6379/0"
+  workerConcurrency: 1
+  requestRetentionDays: 7
+  schedule: "0 4 * * *"
+  workerDeployment:
+    replicas: 1
+    resources: {}
 
 silk:
   enabled: true
@@ -106,3 +104,11 @@ redis:
   master:
     persistence:
       enabled: false
+
+# PVC for files API root
+persistence:
+  files:
+    enabled: true
+    mountPath: /var/lib/aqueduct/files
+    size: 10Gi
+    storageClass: null

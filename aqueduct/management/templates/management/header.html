@@ -27,40 +27,58 @@
                     </a>
                 </li>
                 <li>
-                    <a href="{% url 'models' %}" tabindex="3" class="btn btn-sm btn-ghost flex items-center gap-1">
-                        <img src="{% static 'icons/model.svg' %}" alt="Models"
-                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                        Models
-                    </a>
-                </li>
-                <li>
                     <a href="{% url 'usage' %}" tabindex="4" class="btn btn-sm btn-ghost flex items-center gap-1">
                         <img src="{% static 'icons/dashboard.svg' %}" alt="Usage"
                              class="w-4 h-4 [[data-theme=dark]_&]:invert">
                         Usage
                     </a>
                 </li>
-                {% if user.is_superuser %}
-                    {% if settings.SILKY_ENABLED %}
-                        <li>
-                            <a href="{% url 'silk:summary' %}" class="btn btn-sm btn-ghost flex items-center gap-1">
-                                <img src="{% static 'icons/profiling.svg' %}" alt="Profiling"
-                                     class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                                Profiling
-                            </a>
-                        </li>
-                    {% endif %}
-
-
-                    <li>
-                        <a href="{% url 'admin:index' %}" tabindex="5"
-                           class="btn btn-sm btn-ghost flex items-center gap-1">
-                            <img src="{% static 'icons/wrench.svg' %}" alt="Admin Panel"
-                                 class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                            Admin Panel
-                        </a>
-                    </li>
-                {% endif %}
+                <li>
+                    <details class="dropdown">
+                        <summary class="btn btn-sm btn-ghost flex items-center gap-1 font-semibold">More</summary>
+                        <ul class="dropdown-content menu p-2 shadow bg-base-100 rounded-box min-w-[12rem] text-sm">
+                            <li>
+                                <a href="{% url 'models' %}" class="flex items-center gap-1 font-semibold">
+                                    <img src="{% static 'icons/model.svg' %}" alt="Models"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    Models
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{% url 'files' %}" class="flex items-center gap-1 font-semibold">
+                                    <img src="{% static 'icons/file.svg' %}" alt="Files"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    Files
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{% url 'batches' %}" class="flex items-center gap-1 font-semibold">
+                                    <img src="{% static 'icons/batch.svg' %}" alt="Batches"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    Batches
+                                </a>
+                            </li>
+                            {% if user.is_superuser %}
+                                {% if settings.SILKY_ENABLED %}
+                                    <li>
+                                        <a href="{% url 'silk:summary' %}" class="flex items-center gap-1 font-semibold">
+                                            <img src="{% static 'icons/profiling.svg' %}" alt="Profiling"
+                                                 class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                            Profiling
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                <li>
+                                    <a href="{% url 'admin:index' %}" class="flex items-center gap-1 font-semibold">
+                                        <img src="{% static 'icons/wrench.svg' %}" alt="Admin Panel"
+                                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                        Admin Panel
+                                    </a>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </details>
+                </li>
             </ul>
         {% endif %}
     </div>

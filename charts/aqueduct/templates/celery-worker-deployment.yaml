@@ -1,16 +1,18 @@
-{{- if .Values.requestRetentionSchedule.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .Release.Name }}-celery-worker
 spec:
-  replicas: {{ .Values.requestRetentionSchedule.celery.workerDeployment.replicas | default 1 }}
+  replicas: {{ .Values.celery.workerDeployment.replicas | default 1 }}
   selector:
     matchLabels:
       app: {{ .Release.Name }}
       component: celery-worker
   template:
     metadata:
+      annotations:
+        checksum/config: {{ .Values.routerConfig | toString | sha256sum }}
+        checksum/settings: {{ include (print $.Template.BasePath "/configmap-settings.yaml") . | toString | sha256sum }}
       labels:
         app: {{ .Release.Name }}
         component: celery-worker
@@ -19,9 +21,31 @@ spec:
         - name: celery-worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
-          command: ["python", "-m", "celery", "-A", "aqueduct", "worker", "--loglevel=info"]
+          command: [ "python", "-m", "celery", "-A", "aqueduct", "worker", "--loglevel=info" ]
           env:
             {{- include "aqueduct.env" . | nindent 12 }}
           resources:
-            {{- toYaml .Values.requestRetentionSchedule.celery.workerDeployment.resources | nindent 12 }}
-{{- end }}
+            {{- toYaml .Values.celery.workerDeployment.resources | nindent 12 }}
+          volumeMounts:
+            - name: settings-py
+              mountPath: /app/aqueduct/aqueduct/settings.py
+              subPath: settings.py
+            - name: router-config
+              mountPath: /etc/aqueduct/router_config.yaml
+              subPath: router_config.yaml
+            {{- if .Values.persistence.files.enabled }}
+            - name: files
+              mountPath: {{ .Values.persistence.files.mountPath }}
+            {{- end }}
+      volumes:
+        - name: settings-py
+          configMap:
+            name: {{ .Release.Name }}-settings
+        - name: router-config
+          configMap:
+            name: {{ .Release.Name }}-router-config
+        {{- if .Values.persistence.files.enabled }}
+        - name: files
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-files
+        {{- end }}

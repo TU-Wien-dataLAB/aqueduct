@@ -1,0 +1,225 @@
+{% extends 'management/base.html' %}
+{% load static %}
+
+{% block header %}Batches{% endblock %}
+
+{% block content %}
+    <div class="container mx-auto px-4 py-6">
+        <h1 class="text-3xl font-bold mb-6">Batches</h1>
+        {% if next_run_in_seconds is not None %}
+            <p class="mb-6 text-lg">Next run in
+                <span class="countdown font-mono text-xl" id="batch-countdown" aria-live="polite">
+                    <span aria-live="polite">0</span>m
+                    <span aria-live="polite">0</span>s
+                </span>
+            </p>
+        {% endif %}
+
+        {% if batches %}
+            <div class="overflow-x-auto">
+                <table class="table table-sm w-full">
+                    <thead>
+                    <tr class="bg-base-200">
+                        <th>ID</th>
+                        <th>Input File</th>
+                        <th>Output File</th>
+                        <th>Error File</th>
+                        <th>Status</th>
+                        <th>Progress</th>
+                        <th>Completion &amp; Failure %</th>
+                        <th>Created At</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for batch in batches %}
+                        <tr>
+                            <td class="font-mono">{{ batch.id }}</td>
+                            <td class="font-mono">
+                                {{ batch.input_file_id_preview }}
+                                <button class="btn btn-xs btn-square ml-2"
+                                        title="Preview"
+                                        onclick="document.getElementById('preview-input-{{ batch.id }}').showModal()">
+                                    <img src="{% static 'icons/preview.svg' %}" alt="Preview"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                </button>
+                                <dialog id="preview-input-{{ batch.id }}" class="modal">
+                                    <div class="modal-box">
+                                        <form method="dialog">
+                                            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕
+                                            </button>
+                                        </form>
+                                        <h3 class="font-bold">Preview: {{ batch.input_file_id_preview }}</h3>
+                                        <div class="overflow-auto max-h-64">
+                                            <pre class="whitespace-pre py-2">{{ batch.input_file_preview }}</pre>
+                                        </div>
+                                        {% with num_lines=batch.request_counts.input %}
+                                            {% if num_lines > 15 %}
+                                                <p>
+                                                    {{ num_lines | add:"-15" }} more...
+                                                </p>
+                                            {% endif %}
+                                        {% endwith %}
+                                    </div>
+                                </dialog>
+                            </td>
+                            <td class="font-mono">
+                                {{ batch.output_file_id_preview }}
+                                {% if batch.output_file %}
+                                    <button class="btn btn-xs btn-square ml-2"
+                                            title="Preview"
+                                            onclick="document.getElementById('preview-output-{{ batch.id }}').showModal()">
+                                        <img src="{% static 'icons/preview.svg' %}" alt="Preview"
+                                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    </button>
+                                    <dialog id="preview-output-{{ batch.id }}" class="modal">
+                                        <div class="modal-box">
+                                            <form method="dialog">
+                                                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">
+                                                    ✕
+                                                </button>
+                                            </form>
+                                            <h3 class="font-bold">Preview: {{ batch.output_file_id_preview }}</h3>
+                                            <div class="overflow-auto max-h-64">
+                                                <pre class="whitespace-pre py-2">{{ batch.output_file_preview }}</pre>
+                                            </div>
+                                            {% with num_lines=batch.request_counts.completed %}
+                                                {% if num_lines > 15 %}
+                                                    <p>
+                                                        {{ num_lines | add:"-15" }} more...
+                                                    </p>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </div>
+                                    </dialog>
+                                {% endif %}
+                            </td>
+                            <td class="font-mono">
+                                {{ batch.error_file_id_preview }}
+                                {% if batch.error_file %}
+                                    <button class="btn btn-xs btn-square ml-2"
+                                            title="Preview"
+                                            onclick="document.getElementById('preview-error-{{ batch.id }}').showModal()">
+                                        <img src="{% static 'icons/preview.svg' %}" alt="Preview"
+                                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    </button>
+                                    <dialog id="preview-error-{{ batch.id }}" class="modal">
+                                        <div class="modal-box">
+                                            <form method="dialog">
+                                                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">
+                                                    ✕
+                                                </button>
+                                            </form>
+                                            <h3 class="font-bold">Preview: {{ batch.error_file_id_preview }}</h3>
+                                            <div class="overflow-auto max-h-64">
+                                                <pre class="whitespace-pre py-2">{{ batch.error_file_preview }}</pre>
+                                            </div>
+                                            {% with num_lines=batch.request_counts.failed %}
+                                                {% if num_lines > 15 %}
+                                                    <p>
+                                                        {{ num_lines | add:"-15" }} more...
+                                                    </p>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </div>
+                                    </dialog>
+                                {% endif %}
+                            </td>
+                            <td>{{ batch.status }}</td>
+                            {% comment %} Overall progress: total/input % {% endcomment %}
+                            <td class="text-center">
+                                {% widthratio batch.request_counts.total batch.request_counts.input 100 as overall_pct %}
+                                <div class="radial-progress"
+                                     style="--value:{{ overall_pct | default:0 }}; --size:3rem; --thickness: .3rem;">{{ overall_pct | default:0 }}%
+                                </div>
+                            </td>
+                            {% comment %} Completion and failure rates relative to total {% endcomment %}
+                            <td class="flex space-x-4 justify-center">
+                                {% widthratio batch.request_counts.completed batch.request_counts.total 100 as comp_pct %}
+                                <div class="radial-progress text-success"
+                                     style="--value:{{ comp_pct }}; --size:3rem; --thickness: .3rem;">{{ comp_pct }}%
+                                </div>
+                                {% widthratio batch.request_counts.failed batch.request_counts.total 100 as fail_pct %}
+                                <div class="radial-progress text-error"
+                                     style="--value:{{ fail_pct }}; --size:3rem; --thickness: .3rem;">{{ fail_pct }}%
+                                </div>
+                            </td>
+                            <td>{{ batch.created_dt|date:"Y-m-d H:i" }}</td>
+                            <td class="flex-shrink-0">
+                                {% if batch.status == 'validating' or batch.status == 'in_progress' or batch.status == 'finalizing' %}
+                                    <button type="button"
+                                            class="btn btn-sm btn-square btn-warning"
+                                            title="Cancel batch {{ batch.id }}"
+                                            onclick="cancelBatch('{{ batch.id }}')">
+                                        <img src="{% static 'icons/delete.svg' %}" alt="Cancel"
+                                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="alert alert-info shadow-lg">
+                <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
+                     class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
+                <span>No batches found.</span>
+            </div>
+        {% endif %}
+    </div>
+    <script>
+      function cancelBatch(batchId) {
+        if (!confirm(`Are you sure you want to cancel batch ${batchId}?`)) {
+          return;
+        }
+        fetch(`/v1/batches/${batchId}/cancel`, {
+          method: 'POST',
+        })
+          .then(response => {
+            if (response.ok) {
+              location.reload();
+            } else {
+              response.json().then(data => {
+                alert(data.error || 'Failed to cancel batch.');
+              }).catch(() => {
+                alert('Failed to cancel batch.');
+              });
+            }
+          })
+          .catch(err => {
+            console.error('Error cancelling batch:', err);
+            alert('Error cancelling batch.');
+          });
+      }
+    </script>
+
+    <script>
+      // Simplified countdown using total seconds; update every second
+      document.addEventListener('DOMContentLoaded', function () {
+        var container = document.getElementById('batch-countdown');
+        if (!container) return;
+        var spans = container.querySelectorAll('span');
+        if (spans.length < 2) return;
+        var minSpan = spans[0], secSpan = spans[1];
+        var total = {{ next_run_in_seconds }};
+
+        function updateDisplay(sec) {
+          var m = Math.floor(sec / 60);
+          var s = sec % 60;
+          minSpan.textContent = m;
+          minSpan.style.setProperty('--value', m);
+          secSpan.textContent = s;
+          secSpan.style.setProperty('--value', s);
+        }
+
+        updateDisplay(total);
+        setInterval(function () {
+          total -= 1;
+          if (total < 0) location.reload();
+          else updateDisplay(total);
+        }, 1000);
+      });
+    </script>
+{% endblock %}

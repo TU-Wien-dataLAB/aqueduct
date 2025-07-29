@@ -63,18 +63,22 @@ Usage:
 {{- end }}
 {{- if .Values.oidc.existingSecret }}
 - name: CELERY_BROKER_URL
-  value: {{ .Values.requestRetentionSchedule.celery.brokerUrl | quote }}
+  value: {{ .Values.celery.brokerUrl | quote }}
 - name: CELERY_WORKER_CONCURRENCY
-  value: {{ .Values.requestRetentionSchedule.celery.workerConcurrency | quote }}
+  value: {{ .Values.celery.workerConcurrency | quote }}
 - name: REQUEST_RETENTION_DAYS
-  value: {{ .Values.requestRetentionSchedule.celery.requestRetentionDays | quote }}
+  value: {{ .Values.celery.requestRetentionDays | quote }}
 - name: REQUEST_RETENTION_SCHEDULE
-  value: {{ .Values.requestRetentionSchedule.celery.schedule | quote }}
+  value: {{ .Values.celery.schedule | quote }}
 {{- end }}
 - name: SILKY_ENABLED
 {{- if .Values.silk.enabled }}
   value: "True"
 {{- else }}
   value: "False"
+{{- end }}
+{{- if .Values.persistence.files.enabled }}
+- name: AQUEDUCT_FILES_API_ROOT
+  value: {{ .Values.persistence.files.mountPath | quote }}
 {{- end }}
 {{- end }}

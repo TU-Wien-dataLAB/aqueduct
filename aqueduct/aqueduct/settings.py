@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
 from pathlib import Path
+from datetime import datetime
 
 from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
@@ -30,7 +31,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "insecure-secret-key")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS = ["localhost"]
+ALLOWED_HOSTS = []
 
 # Application definition
 
@@ -94,6 +95,9 @@ LOGIN_URL = '/login/'  # Where to redirect if user is not logged in
 MAX_USER_TOKENS = 3
 MAX_SERVICE_ACCOUNTS_PER_TEAM = 10
 
+MAX_USER_BATCHES = 3
+MAX_TEAM_BATCHES = 10
+
 OIDC_PROVIDER = 'SSO'
 
 
@@ -111,7 +115,7 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
 
 OIDC_DEFAULT_GROUPS = ["default"]
 ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
-ADMIN_GROUP = "aqueduct-admin"  # all users are admins
+ADMIN_GROUP = "default"  # all users are admins
 
 EXTRA_NAV_LINKS = {
     'Bug Report': 'https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md',
@@ -130,6 +134,29 @@ LITELLM_ROUTER_CONFIG_FILE_PATH = os.environ.get("LITELLM_ROUTER_CONFIG_FILE_PAT
 
 AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST: list[str] = []
 
+AQUEDUCT_FILES_API_ROOT = os.environ.get("AQUEDUCT_FILES_API_ROOT", "/tmp")
+AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB", 8))
+AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 1024))
+AQUEDUCT_FILES_API_EXPIRY_DAYS = int(os.environ.get("AQUEDUCT_FILES_API_EXPIRY_DAYS", 7))
+
+AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES", 15))
+assert AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES > 10
+AQUEDUCT_BATCH_PROCESSING_CRONTAB = crontab(minute=f"*/{AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES}")
+AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS", 5 * 60))
+
+AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", 16)
+AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", 4)
+
+
+def batch_processing_concurrency():
+    dt = datetime.now()
+    min_c = AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY
+    max_c = AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY
+    return max_c if dt.hour > 20 or dt.hour < 5 else min_c
+
+
+AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
+
 # Celery Settings -------------------------------------------------------
 
 CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == "true"
@@ -145,11 +172,18 @@ CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 
-# TODO: if data retention schedule changes, old one is still used
 CELERY_BEAT_SCHEDULE = {
     'delete-old-requests': {
         'task': 'aqueduct.celery.delete_old_requests',
         'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    },
+    'delete-expired-files-and-batches': {
+        'task': 'aqueduct.celery.delete_expired_files_and_batches',
+        'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    },
+    'process-batches': {
+        'task': 'aqueduct.celery.process_batches',
+        'schedule': AQUEDUCT_BATCH_PROCESSING_CRONTAB,
     }
 }
 
@@ -223,6 +257,13 @@ elif DATABASE_ENGINE == 'django.db.backends.postgresql':
     })
 else:
     raise ImproperlyConfigured(f"Unsupported database engine: {DATABASE_ENGINE}")
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": CELERY_BROKER_URL,
+    }
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

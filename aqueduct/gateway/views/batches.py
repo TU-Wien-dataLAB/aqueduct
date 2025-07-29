@@ -341,6 +341,7 @@ async def run_batch_processing():
 
                 # Fetch batches ready to process
                 # Include batches in 'cancelling' state to finalize cancellations
+                # TODO: sort batches by ratio of total over input to at least get batches running (heapq instead of deque!)
                 batches = await sync_to_async(list)(
                     Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
                 )

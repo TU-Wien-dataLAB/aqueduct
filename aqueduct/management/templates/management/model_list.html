@@ -28,6 +28,7 @@
                     <thead>
                     <tr class="bg-base-200">
                         <th>Model Name</th>
+                        <th>Supports Vision</th>
                         <th>Default TPM</th>
                         <th>Default RPM</th>
                         <th>litellm_params</th>
@@ -37,6 +38,7 @@
                     {% for model in model_list %}
                         <tr>
                             <td class="font-mono">{{ model.model_name }}</td>
+                            <td>{% if model.model_info.supports_vision %} Yes {% endif %}</td>
                             <td>{{ model.litellm_params.tpm }}</td>
                             <td>{{ model.litellm_params.rpm }}</td>
                             <td>

@@ -1,4 +1,6 @@
 global:
+  security:
+    allowInsecureImages: true # allow legacy containers until a new solution is found
   postgresql:
     fullnameOverride: "postgresql"
     auth:
@@ -84,6 +86,8 @@ ingress:
 
 postgresql:
   enabled: true
+  image:
+    repository: bitnamilegacy/postgresql
   primary:
     persistence:
       enabled: true
@@ -99,6 +103,8 @@ postgresql:
 redis:
   fullnameOverride: "redis"
   architecture: standalone
+  image:
+    repository: bitnamilegacy/redis
   auth:
     enabled: false
   master:

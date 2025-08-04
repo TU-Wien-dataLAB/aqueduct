@@ -31,6 +31,7 @@
                         <th>Supports Vision</th>
                         <th>Default TPM</th>
                         <th>Default RPM</th>
+                        <th>Timeout</th>
                         <th>litellm_params</th>
                     </tr>
                     </thead>
@@ -41,6 +42,7 @@
                             <td>{% if model.model_info.supports_vision %} Yes {% endif %}</td>
                             <td>{{ model.litellm_params.tpm }}</td>
                             <td>{{ model.litellm_params.rpm }}</td>
+                            <td>{% if model.litellm_params.timeout %}{{ model.litellm_params.timeout }} second{{ model.litellm_params.timeout | pluralize }}{% endif %}</td>
                             <td>
                                 <pre class="bg-base-200 rounded px-2 py-1 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
 {{ model.litellm_params | pprint }}

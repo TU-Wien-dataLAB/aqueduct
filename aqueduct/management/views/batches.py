@@ -60,9 +60,4 @@ class UserBatchesView(BaseAqueductView, TemplateView):
                 b.error_file_id_preview = '-'
 
         context['batches'] = batches
-        crontab = settings.AQUEDUCT_BATCH_PROCESSING_CRONTAB
-        # Total seconds until the next batch run
-        context['next_run_in_seconds'] = crontab.remaining_estimate(
-            datetime.now() - timedelta(seconds=1)
-        ).seconds
         return context

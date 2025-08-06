@@ -6,14 +6,6 @@
 {% block content %}
     <div class="container mx-auto px-4 py-6">
         <h1 class="text-3xl font-bold mb-6">Batches</h1>
-        {% if next_run_in_seconds is not None %}
-            <p class="mb-6 text-lg">Next run in
-                <span class="countdown font-mono text-xl" id="batch-countdown" aria-live="polite">
-                    <span aria-live="polite">0</span>m
-                    <span aria-live="polite">0</span>s
-                </span>
-            </p>
-        {% endif %}
 
         {% if batches %}
             <div class="overflow-x-auto">
@@ -133,13 +125,13 @@
                                      style="--value:{{ overall_pct | default:0 }}; --size:3rem; --thickness: .3rem;">{{ overall_pct | default:0 }}%
                                 </div>
                             </td>
-                            {% comment %} Completion and failure rates relative to total {% endcomment %}
+                            {% comment %} Completion and failure rates relative to input {% endcomment %}
                             <td class="flex space-x-4 justify-center">
-                                {% widthratio batch.request_counts.completed batch.request_counts.total 100 as comp_pct %}
+                                {% widthratio batch.request_counts.completed batch.request_counts.input 100 as comp_pct %}
                                 <div class="radial-progress text-success"
                                      style="--value:{{ comp_pct }}; --size:3rem; --thickness: .3rem;">{{ comp_pct }}%
                                 </div>
-                                {% widthratio batch.request_counts.failed batch.request_counts.total 100 as fail_pct %}
+                                {% widthratio batch.request_counts.failed batch.request_counts.input 100 as fail_pct %}
                                 <div class="radial-progress text-error"
                                      style="--value:{{ fail_pct }}; --size:3rem; --thickness: .3rem;">{{ fail_pct }}%
                                 </div>
@@ -193,33 +185,5 @@
             alert('Error cancelling batch.');
           });
       }
-    </script>
-
-    <script>
-      // Simplified countdown using total seconds; update every second
-      document.addEventListener('DOMContentLoaded', function () {
-        var container = document.getElementById('batch-countdown');
-        if (!container) return;
-        var spans = container.querySelectorAll('span');
-        if (spans.length < 2) return;
-        var minSpan = spans[0], secSpan = spans[1];
-        var total = {{ next_run_in_seconds }};
-
-        function updateDisplay(sec) {
-          var m = Math.floor(sec / 60);
-          var s = sec % 60;
-          minSpan.textContent = m;
-          minSpan.style.setProperty('--value', m);
-          secSpan.textContent = s;
-          secSpan.style.setProperty('--value', s);
-        }
-
-        updateDisplay(total);
-        setInterval(function () {
-          total -= 1;
-          if (total < 0) location.reload();
-          else updateDisplay(total);
-        }, 1000);
-      });
     </script>
 {% endblock %}

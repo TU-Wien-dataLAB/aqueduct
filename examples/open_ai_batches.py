@@ -26,18 +26,15 @@ import io
 import json
 
 print('Preparing batch input JSONL payload...')
-# Two example chat-completion entries
+# Example chat-completion entries
 records = [
-    {"custom_id": "request-1", "method": "POST", "url": "/v1/chat/completions", "body": {'model': MODEL, 'messages': [
+    {"custom_id": f"request-{i}", "method": "POST", "url": "/v1/chat/completions", "body": {'model': MODEL, 'messages': [
         {'role': 'system', 'content': 'You are a helpful assistant.'},
         {'role': 'user', 'content': 'What is the capital of France?'}
-    ]}},
-    {"custom_id": "request-2", "method": "POST", "url": "/v1/chat/completions", "body": {'model': MODEL, 'messages': [
-        {'role': 'system', 'content': 'You are a helpful assistant.'},
-        {'role': 'user', 'content': 'Tell me a joke.'}
-    ]}},
+    ]}}
+    for i in range(20)
 ]
-payload = '\n'.join(json.dumps(r, separators=(',', ':')) for r in records*10) + '\n'
+payload = '\n'.join(json.dumps(r, separators=(',', ':')) for r in records) + '\n'
 stream = io.BytesIO(payload.encode('utf-8'))
 stream.name = 'batch_input.jsonl'
 

@@ -248,7 +248,7 @@ class AsyncBoundedParallelQueue:
                 task.cancel()
 
 
-async def process_batch_request(router: Router, batch: Batch, params: str):
+async def process_batch_request(router: Router, batch: Batch, params: str, processed_ids: set):
     # Process a single batch request line and record its output or error
     # Skip if line parsing yielded None
     try:
@@ -265,6 +265,11 @@ async def process_batch_request(router: Router, batch: Batch, params: str):
     try:
         if not custom_id:
             raise ValueError("Missing custom_id parameter in batch request")
+        processing_id = f"{batch.id}-{custom_id}"
+        if processing_id in processed_ids:
+            return
+        else:
+            processed_ids.add(processing_id)
         response_data["custom_id"] = custom_id
 
         method = params.get("method", None)
@@ -341,11 +346,12 @@ async def run_batch_processing():
                 queue = AsyncBoundedParallelQueue(max_parallel=max_parallel)
                 router = get_router()
 
-                update_batches_next = curr_time() + 20
+                update_batches_next = curr_time() + 30
                 batches, rr = None, None
+                processed_ids = set() # keep track of processed ids as requests might be running when we reload batches
                 while curr_time() < run_until:
                     if batches is None or rr is None or curr_time() > update_batches_next:
-                        update_batches_next = curr_time() + 20
+                        update_batches_next = curr_time() + 30
                         batches = await sync_to_async(list)(
                             Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
                         )
@@ -359,7 +365,7 @@ async def run_batch_processing():
 
                     try:
                         batch, params = await anext(rr)
-                        await queue.process(process_batch_request, router, batch, params)
+                        await queue.process(process_batch_request, router, batch, params, processed_ids)
                     except StopAsyncIteration:
                         pass
 

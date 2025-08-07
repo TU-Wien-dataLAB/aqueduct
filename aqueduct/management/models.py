@@ -962,6 +962,7 @@ class Batch(models.Model):
 
     def append(self, result: Dict[str, Any], error: bool = False):
         with self.append_lock:
+            self.refresh_from_db(fields=['request_counts', 'status'])
             counts = self.request_counts or {}
             if error:
                 self._append_error(result)
@@ -972,7 +973,7 @@ class Batch(models.Model):
                 counts['total'] = counts.get('total', 0) + 1
                 counts['completed'] = counts.get('completed', 0) + 1
 
-            if counts['total'] == self.request_counts.get('input', 0):
+            if counts['total'] == counts.get('input', 0):
                 now_ts = int(timezone.now().timestamp())
                 self.completed_at = now_ts
                 self.status = "completed"

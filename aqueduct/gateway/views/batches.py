@@ -248,7 +248,7 @@ class AsyncBoundedParallelQueue:
                 task.cancel()
 
 
-async def process_batch_request(router: Router, batch: Batch, params: str):
+async def process_batch_request(router: Router, batch: Batch, params: str, processed_ids: set):
     # Process a single batch request line and record its output or error
     # Skip if line parsing yielded None
     try:
@@ -265,6 +265,11 @@ async def process_batch_request(router: Router, batch: Batch, params: str):
     try:
         if not custom_id:
             raise ValueError("Missing custom_id parameter in batch request")
+        processing_id = f"{batch.id}-{custom_id}"
+        if processing_id in processed_ids:
+            return
+        else:
+            processed_ids.add(processing_id)
         response_data["custom_id"] = custom_id
 
         method = params.get("method", None)
@@ -329,32 +334,43 @@ async def run_batch_processing():
     )()
 
     # begin processing loop
-    while curr_time() < acquire_lock_until:
+    lock_acquired = False
+    while not lock_acquired and curr_time() < acquire_lock_until:
         lock_ttl = (runtime_minutes * 60) - (start_ts - curr_time())
         with cache_lock(BATCH_LOCK, lock_ttl) as acquired:
             if acquired:
+                lock_acquired = True
                 print("Lock acquired! Starting batch processing.")
                 max_parallel: int = settings.AQUEDUCT_BATCH_PROCESSING_CONCURRENCY()
 
                 queue = AsyncBoundedParallelQueue(max_parallel=max_parallel)
                 router = get_router()
 
-                # Fetch batches ready to process
-                # Include batches in 'cancelling' state to finalize cancellations
-                # TODO: sort batches by ratio of total over input to at least get batches running (heapq instead of deque!)
-                batches = await sync_to_async(list)(
-                    Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
-                )
-                print(f"Processing {len(batches)} batches...")
+                update_batches_next = curr_time() + 30
+                batches, rr = None, None
+                processed_ids = set() # keep track of processed ids as requests might be running when we reload batches
+                while curr_time() < run_until:
+                    if batches is None or rr is None or curr_time() > update_batches_next:
+                        update_batches_next = curr_time() + 30
+                        batches = await sync_to_async(list)(
+                            Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
+                        )
+                        if batches:
+                            print(f"Updated batches! Processing {len(batches)} batches...")
+                            rr = round_robin(batches)
 
-                async for batch, params in round_robin(batches):
-                    if curr_time() > run_until:
-                        break
-                    await queue.process(process_batch_request, router, batch, params)
+                    if not batches:
+                        await asyncio.sleep(2)
+                        continue
+
+                    try:
+                        batch, params = await anext(rr)
+                        await queue.process(process_batch_request, router, batch, params, processed_ids)
+                    except StopAsyncIteration:
+                        pass
 
                 await queue.join()
                 print("Batch processing loop complete.")
-                break
             else:
                 await asyncio.sleep(1)
                 continue

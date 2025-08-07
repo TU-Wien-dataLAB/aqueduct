@@ -15,7 +15,7 @@ class TestFilesAPI(GatewayFilesTestCase):
 
     def test_file_lifecycle(self):
         """Test uploading, listing, retrieving, downloading, and deleting a file."""
-        content = b'{"foo": "bar"}\n{"baz": 123}\n{"foo": "bar"}\n{"baz": 123}\n'
+        content = b'{"custom_id": "bar"}\n{"custom_id": "123"}\n{"custom_id": "baz"}\n{"custom_id": "1234"}\n'
         upload_file = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
         # Upload file
         response = self.client.post(
@@ -117,7 +117,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         # Upload several files
         ids = []
         for name in ("a.jsonl", "b.jsonl", "c.jsonl"):
-            f = SimpleUploadedFile(name, b"{}\n", content_type="application/json")
+            f = SimpleUploadedFile(name, b'{"custom_id": "bar"}\n', content_type="application/json")
             resp = self.client.post(
                 "/files", {"file": f, "purpose": "batch"}, headers=self.headers
             )
@@ -145,7 +145,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         from aqueduct.celery import delete_expired_files_and_batches
 
         # Upload a file
-        content = b'{"x": 1}\n'
+        content = b'{"custom_id": 1}\n'
         f = SimpleUploadedFile("e.jsonl", content, content_type="application/json")
         resp = self.client.post(
             "/files", {"file": f, "purpose": "batch"}, headers=self.headers
@@ -172,3 +172,29 @@ class TestFilesAPI(GatewayFilesTestCase):
         # record removed and file deleted
         self.assertFalse(FileObject.objects.filter(id=file_id).exists())
         self.assertFalse(file_path.exists())
+
+    def test_batch_duplicate_custom_ids(self):
+        bad = SimpleUploadedFile("bad.jsonl", b'{"custom_id": "bar"}\n{"custom_id": "bar"}\n',
+                                  content_type="application/json")
+        # unsupported purpose
+        resp = self.client.post(
+            "/files", {"file": bad, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_batch_no_custom_ids(self):
+        bad = SimpleUploadedFile("bad.jsonl", b'{"custom_id": "bar"}\n{"something_id": "bar"}\n',
+                                  content_type="application/json")
+        # unsupported purpose
+        resp = self.client.post(
+            "/files", {"file": bad, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_batch_invalid_json(self):
+        bad = SimpleUploadedFile("bad.jsonl", b'{"custom_id": "bar"}\nnot json\n', content_type="application/json")
+        # unsupported purpose
+        resp = self.client.post(
+            "/files", {"file": bad, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 400)

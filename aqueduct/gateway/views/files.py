@@ -1,3 +1,5 @@
+import json
+
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -11,6 +13,23 @@ from openai.types.file_object import FileObject as OpenAIFileObject
 from management.models import FileObject
 from openai.types import FileCreateParams
 from .decorators import token_authenticated, log_request
+
+
+def validate_batch_file(data: bytes):
+    lines = data.decode().splitlines()
+    custom_ids = set()
+    for i, line in enumerate(lines):
+        try:
+            d = json.loads(line)
+            custom_id = d.get("custom_id")
+            if not custom_id:
+                raise ValueError(f"No custom_id found at line {i + 1}")
+            elif custom_id in custom_ids:
+                raise ValueError(f"Duplicate custom_id found at line {i + 1}")
+            else:
+                custom_ids.add(custom_id)
+        except json.decoder.JSONDecodeError:
+            raise ValueError(f"Invalid JSON at line {i + 1}")
 
 
 @csrf_exempt
@@ -55,6 +74,13 @@ async def files(request: ASGIRequest, token, *args, **kwargs):
             {"error": f"Total files size exceeds {settings.AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB}MB limit."},
             status=400,
         )
+
+    if purpose == "batch":
+        try:
+            validate_batch_file(data)
+        except ValueError as e:
+            return JsonResponse({"error": f"Batch file validation failed: {str(e)}"}, status=400)
+
     now = timezone.now()
     created_at = int(now.timestamp())
     # Expire file after 1 week

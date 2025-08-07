@@ -764,7 +764,10 @@ class FileObject(models.Model):
 
     def lines(self) -> list[str]:
         """Get the number of lines in the file."""
-        return self.read().decode("utf-8").splitlines()
+        try:
+            return self.read().decode("utf-8").splitlines()
+        except ObjectDoesNotExist:
+            return ["File not found..."]
 
     def num_lines(self) -> int:
         def _make_gen(reader):
@@ -772,10 +775,12 @@ class FileObject(models.Model):
                 b = reader(2 ** 16)
                 if not b: break
                 yield b
-
-        with open(self.path(), "rb") as f:
-            count = sum(buf.count(b"\n") for buf in _make_gen(f.raw.read))
-        return count
+        try:
+            with open(self.path(), "rb") as f:
+                count = sum(buf.count(b"\n") for buf in _make_gen(f.raw.read))
+            return count
+        except FileNotFoundError:
+            return 0
 
     def preview(self, num_lines: int = 15) -> str:
         """Get the preview of the file."""

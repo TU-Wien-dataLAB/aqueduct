@@ -20,6 +20,7 @@ from .decorators import (
     log_request,
     check_model_availability,
     catch_router_exceptions,
+    process_file_content
 )
 from .utils import _usage_from_bytes, _openai_stream
 
@@ -29,6 +30,7 @@ from .utils import _usage_from_bytes, _openai_stream
 @token_authenticated(token_auth_only=True)
 @check_limits
 @parse_body(model=TypeAdapter(openai.types.chat.CompletionCreateParams))
+@process_file_content
 @ensure_usage
 @log_request
 @check_model_availability

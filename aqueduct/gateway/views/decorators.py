@@ -1,10 +1,14 @@
+import base64
 import json
 import logging
+import mimetypes
+import os
 import time
 from datetime import timedelta
 from functools import wraps
 import re
 
+import httpx
 import litellm
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -15,9 +19,10 @@ from django.http import JsonResponse, HttpResponse, StreamingHttpResponse
 from django.utils import timezone
 from pydantic import ValidationError, TypeAdapter
 from openai.types.chat import ChatCompletionStreamOptionsParam
+from openai.types.chat.chat_completion_content_part_param import FileFile
 
 from gateway.authentication import token_from_request
-from management.models import Request, Token, Usage
+from management.models import Request, Token, Usage, FileObject
 
 logger = logging.getLogger(__name__)
 
@@ -213,11 +218,107 @@ def check_model_availability(view_func):
     return wrapper
 
 
+async def extract_text_with_tika(file_bytes: bytes) -> str:
+    """Extract text from file bytes using Tika API."""
+    tika_url = f"{getattr(settings, 'TIKA_SERVER_URL', 'http://localhost:9998')}/tika"
+
+    async with httpx.AsyncClient() as client:
+        response = await client.put(
+            tika_url,
+            content=file_bytes,
+            headers={},
+            timeout=30.0
+        )
+        response.raise_for_status()
+        return response.text
+
+
+async def file_to_bytes(request: ASGIRequest, file: FileFile) -> bytes:
+    """Convert file description to bytes and content type."""
+    file_id = file.get('file_id', None)
+    file_data = file.get('file_data', None)
+    filename = file.get('filename', 'unknown')
+
+    if file_data:
+        # file data contains b64 encoded files -> decode as bytes
+        try:
+            header, file_b64 = file_data.split(",", maxsplit=1) # removes data uri (data:application/pdf;base64,<b64>)
+            if not header.startswith("data:"):
+                raise ValueError("Incorrect data URI for base64 encoded file.")
+            file_bytes = base64.b64decode(file_b64)
+            return file_bytes
+        except Exception as e:
+            raise ValueError(f"Failed to decode base64 file data: {e}")
+
+    elif file_id:
+        # file is given as an id of a file object
+        try:
+            # query the FileObject (management.models) using the file_id
+            file_obj = await FileObject.objects.filter(id=file_id).afirst()
+            if not file_obj:
+                raise ValueError(f"File with id {file_id} not found")
+
+            # check if the user actually has access to the file object 
+            # (the django user for the token matches the django user for the request)
+            token = getattr(request, 'token', None)
+            if token and token.user != file_obj.user:
+                raise ValueError("User does not have access to this file")
+
+            # read file using the FileObject.read function
+            file_bytes = await sync_to_async(file_obj.read)()
+            return file_bytes
+        except Exception as e:
+            raise ValueError(f"Failed to read file with id {file_id}: {e}")
+    else:
+        raise RuntimeError("Neither 'file_data' nor 'file_id' are given.")
+
+
+def process_file_content(view_func):
+    """Decorator to process file content in chat completions using Tika."""
+
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        pydantic_model: dict | None = kwargs.get('pydantic_model', None)
+        if not pydantic_model:
+            return JsonResponse({'error': 'Invalid request: missing request body'}, status=400)
+
+        messages = pydantic_model.get('messages', [])
+        if not messages:
+            return await view_func(request, *args, **kwargs)
+
+        # Process messages to extract text from file content
+        for message in messages:
+            content = message.get('content', [])
+            if not isinstance(content, list):
+                continue
+
+            for content_item in content:
+                if isinstance(content_item, dict) and content_item.get('type') == 'file':
+                    try:
+                        file_bytes = await file_to_bytes(request, FileFile(**content_item.get('file', {})))
+
+                        # Extract text using Tika
+                        extracted_text = await extract_text_with_tika(file_bytes)
+
+                        # Replace file content with extracted text
+                        content_item['type'] = 'text'
+                        content_item['text'] = extracted_text
+                        del content_item['file']
+
+                    except Exception as e:
+                        # return json response here if there was an error
+                        logger.info(f"Error processing file content: {e}")
+                        return JsonResponse({'error': f'Error processing file: {str(e)}'}, status=400)
+
+        return await view_func(request, *args, **kwargs)
+    return wrapper
+
+
 def catch_router_exceptions(view_func):
     def _r(e: Exception) -> str:
         s = str(e)
-        s = re.sub(r"Lite-?[lL][lL][mM]", "Aqueduct", s) # uppercase
-        return re.sub(r"lite-?[lL][lL][mM]", "aqueduct", s) # lowercase
+        s = re.sub(r"Lite-?[lL][lL][mM]", "Aqueduct", s)  # uppercase
+        return re.sub(r"lite-?[lL][lL][mM]", "aqueduct", s)  # lowercase
 
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):

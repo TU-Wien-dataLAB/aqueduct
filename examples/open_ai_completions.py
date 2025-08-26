@@ -31,7 +31,50 @@ client = OpenAI(
     api_key=endpoint_access_token,
 )
 
-# response = client.models.retrieve(MODEL)
+# File input example using 2024ltr.pdf
+print("--- File Input Example ---")
+try:
+    # Read the PDF file and encode it as base64
+    pdf_path = os.path.join(os.path.dirname(__file__), "2024ltr.pdf")
+    with open(pdf_path, "rb") as pdf_file:
+        import base64
+
+        pdf_base64 = base64.b64encode(pdf_file.read()).decode('utf-8')
+
+    # Create a chat completion request with file content
+    file_response = client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Analyze the letter and provide a summary of the key points.",
+                    },
+                    {
+                        "type": "file",
+                        "file": {
+                            "filename": "2024ltr.pdf",
+                            "file_data": f"data:application/pdf;base64,{pdf_base64}"
+                            # "file_data": pdf_base64
+                        }
+                    },
+                ],
+            }
+        ],
+        max_tokens=500,
+        stream=False,
+    )
+
+    if file_response.choices:
+        file_content = file_response.choices[0].message.content
+        print(f"File analysis result: {file_content}")
+    print("--- End of File Input Example ---")
+
+except Exception as e:
+    print(f"An error occurred in file input example: {e}")
+    print("--- End of File Input Example ---")
 
 # Send the request to the API with streaming enabled
 print(f"Sending request to {BASE_URL} with model {MODEL}...")
@@ -45,7 +88,6 @@ if embedding_response.data:
     embedding_vector = embedding_response.data[0].embedding
     print(f"Embedding vector (first 10 values): {embedding_vector[:10]}")
 print("--- End of Embedding Example ---")
-
 
 print("--- Streaming Chat Response ---")
 

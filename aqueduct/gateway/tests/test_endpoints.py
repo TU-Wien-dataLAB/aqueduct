@@ -274,6 +274,40 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for file_id input")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for file_id input")
 
+    def test_chat_completion_file_id_not_found(self):
+        """
+        Sends a chat completion request with a non-existent file_id.
+        Should raise a 404 error.
+        """
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What's in this file?"},
+                     {"type": "file",
+                      "file": {
+                          "file_id": "non-existent-file-id"
+                      }
+                      }]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+
+        endpoint = "/chat/completions"
+        response = self.client.post(
+            endpoint,
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 404,
+                         f"Expected 404 Not Found, got {response.status_code}: {response.content}")
+
     @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     def test_chat_completion_timeout(self):
         """

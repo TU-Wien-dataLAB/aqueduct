@@ -254,14 +254,13 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
         # file is given as an id of a file object
         try:
             file_obj = await FileObject.objects.select_related("token__user").aget(id=file_id)
-            if not file_obj:
-                raise ValueError(f"File with id {file_id} not found")
-
             if token and token.user != file_obj.token.user:
                 raise FileObject.DoesNotExist
 
             file_bytes = await sync_to_async(file_obj.read)()
             return file_bytes
+        except FileObject.DoesNotExist as e:
+            raise e
         except Exception as e:
             raise ValueError(f"Failed to read file with id {file_id}: {e}")
     else:

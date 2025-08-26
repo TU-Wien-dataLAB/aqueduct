@@ -233,7 +233,7 @@ async def extract_text_with_tika(file_bytes: bytes) -> str:
         return response.text
 
 
-async def file_to_bytes(request: ASGIRequest, file: FileFile) -> bytes:
+async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
     """Convert file description to bytes and content type."""
     file_id = file.get('file_id', None)
     file_data = file.get('file_data', None)
@@ -253,18 +253,13 @@ async def file_to_bytes(request: ASGIRequest, file: FileFile) -> bytes:
     elif file_id:
         # file is given as an id of a file object
         try:
-            # query the FileObject (management.models) using the file_id
-            file_obj = await FileObject.objects.filter(id=file_id).afirst()
+            file_obj = await FileObject.objects.select_related("token__user").aget(id=file_id)
             if not file_obj:
                 raise ValueError(f"File with id {file_id} not found")
 
-            # check if the user actually has access to the file object 
-            # (the django user for the token matches the django user for the request)
-            token = getattr(request, 'token', None)
-            if token and token.user != file_obj.user:
-                raise ValueError("User does not have access to this file")
+            if token and token.user != file_obj.token.user:
+                raise FileObject.DoesNotExist
 
-            # read file using the FileObject.read function
             file_bytes = await sync_to_async(file_obj.read)()
             return file_bytes
         except Exception as e:
@@ -278,6 +273,7 @@ def process_file_content(view_func):
 
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
+        token: Token | None = kwargs.get('token', None)
         pydantic_model: dict | None = kwargs.get('pydantic_model', None)
         if not pydantic_model:
             return JsonResponse({'error': 'Invalid request: missing request body'}, status=400)
@@ -295,7 +291,7 @@ def process_file_content(view_func):
             for content_item in content:
                 if isinstance(content_item, dict) and content_item.get('type') == 'file':
                     try:
-                        file_bytes = await file_to_bytes(request, FileFile(**content_item.get('file', {})))
+                        file_bytes = await file_to_bytes(token, FileFile(**content_item.get('file', {})))
 
                         # Extract text using Tika
                         extracted_text = await extract_text_with_tika(file_bytes)
@@ -305,6 +301,8 @@ def process_file_content(view_func):
                         content_item['text'] = extracted_text
                         del content_item['file']
 
+                    except FileObject.DoesNotExist:
+                        return JsonResponse({'error': "File not found"}, status=404)
                     except Exception as e:
                         # return json response here if there was an error
                         logger.info(f"Error processing file content: {e}")

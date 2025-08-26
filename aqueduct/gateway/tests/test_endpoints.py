@@ -308,6 +308,64 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 404,
                          f"Expected 404 Not Found, got {response.status_code}: {response.content}")
 
+    def test_chat_completion_file_id_different_user(self):
+        """
+        Sends a chat completion request with a file_id that was created by a different user.
+        Should raise a 404 error.
+        """
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from management.models import Token
+
+        # First, upload a file using the files API with the default user
+        file_content = b'{"custom_id": "test_file_id_input"}\n'
+        upload_file = SimpleUploadedFile("test_file_id.jsonl", file_content, content_type="application/jsonl")
+
+        # Prepare headers for file upload (remove Content-Type for multipart)
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        headers.pop("Content-Type", None)
+
+        # Upload the file
+        upload_response = self.client.post(
+            "/files",
+            {"file": upload_file, "purpose": "batch"},
+            headers=headers,
+        )
+        self.assertEqual(upload_response.status_code, 200, f"File upload failed: {upload_response.json()}")
+        upload_data = upload_response.json()
+        file_id = upload_data["id"]
+
+        UPDATED_ACCESS_TOKEN = self.create_new_user()
+        headers = _build_chat_headers(UPDATED_ACCESS_TOKEN)
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What's in this file?"},
+                     {"type": "file",
+                      "file": {
+                          "file_id": file_id
+                      }
+                      }]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+
+        endpoint = "/chat/completions"
+        with patch('gateway.views.decorators.extract_text_with_tika',
+                   return_value="This is a test file content for base64 encoding."):
+            response = self.client.post(
+                endpoint,
+                data=json.dumps(payload),
+                headers=headers,
+                content_type="application/json"
+            )
+
+        self.assertEqual(response.status_code, 404,
+                         f"Expected 404 Not Found, got {response.status_code}: {response.content}")
+
     @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     def test_chat_completion_timeout(self):
         """

@@ -54,7 +54,7 @@ if START_VLLM_SERVER:
         _VLLM_IMPORT_ERROR = e
 
 # Import Org, Team, UserProfile for direct DB manipulation
-from management.models import Request
+from management.models import Request, Org, UserProfile, Token
 
 User = get_user_model()
 
@@ -125,6 +125,20 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     def setUp(self):
         # Clear Request table before test
         Request.objects.all().delete()
+
+    @staticmethod
+    def create_new_user() -> str:
+        # Create a new user and a new token for that user
+        new_user = User.objects.create_user(username='OtherUser', email="other@example.com")
+        org = Org.objects.get(name="E060")
+        profile = UserProfile.objects.create(user=new_user, org=org)
+        new_user.profile = profile
+
+        # Create a new token for the different user
+        new_token = Token(name="TestToken", user=new_user)
+        token_value = new_token._set_new_key()
+        new_token.save()
+        return token_value
 
 
 @override_settings(

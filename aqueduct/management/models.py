@@ -157,13 +157,13 @@ class UserProfile(LimitMixin, ModelExclusionMixin, models.Model):
     org = models.ForeignKey(
         Org,
         on_delete=models.PROTECT,  # Keep PROTECT if you don't want to delete Org if profiles exist
-        related_name='user_profiles'  # Changed related_name
+        related_name='user_profiles'
     )
 
     teams = models.ManyToManyField(
         Team,
         through='TeamMembership',
-        related_name='member_profiles',  # Changed related_name for clarity
+        related_name='member_profiles',
         blank=True
     )
 
@@ -390,9 +390,8 @@ class Token(models.Model):
             return f"'{self.name}'"
 
     @staticmethod
-    def _generate_secret_key(prefix="sk-") -> str:  # Renamed for clarity
+    def _generate_secret_key(prefix="sk-") -> str:
         """Generates a unique secret token key."""
-        # Consider prefixing keys, e.g., "aqt_" for Aqueduct Token
         return prefix + secrets.token_urlsafe(nbytes=32)
 
     @staticmethod

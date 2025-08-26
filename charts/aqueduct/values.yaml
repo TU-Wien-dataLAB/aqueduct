@@ -111,6 +111,10 @@ redis:
     persistence:
       enabled: false
 
+tika:
+  enabled: true
+
+
 # PVC for files API root
 persistence:
   files:

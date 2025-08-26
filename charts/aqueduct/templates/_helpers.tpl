@@ -81,4 +81,8 @@ Usage:
 - name: AQUEDUCT_FILES_API_ROOT
   value: {{ .Values.persistence.files.mountPath | quote }}
 {{- end }}
+{{- if .Values.tika.enabled }}
+- name: TIKA_SERVER_URL
+  value: http://{{ .Release.Name }}-tika:9998
+{{- end }}
 {{- end }}

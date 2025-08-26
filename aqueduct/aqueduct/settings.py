@@ -157,6 +157,8 @@ def batch_processing_concurrency():
 
 AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
 
+TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", None)
+
 # Celery Settings -------------------------------------------------------
 
 CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == "true"

@@ -660,7 +660,9 @@ class FileObject(models.Model):
     )
     PURPOSE_CHOICES = [
         ("assistants", "assistants"),
+        ("assistants_output", "assistants_output"),
         ("batch", "batch"),
+        ("batch_output", "batch_output"),
         ("fine-tune", "fine-tune"),
         ("vision", "vision"),
         ("user_data", "user_data"),
@@ -774,6 +776,7 @@ class FileObject(models.Model):
                 b = reader(2 ** 16)
                 if not b: break
                 yield b
+
         try:
             with open(self.path(), "rb") as f:
                 count = sum(buf.count(b"\n") for buf in _make_gen(f.raw.read))
@@ -787,6 +790,11 @@ class FileObject(models.Model):
 
     def __str__(self):
         return self.id
+
+
+def default_request_counts() -> dict[str, int]:
+    return dict(total=0, completed=0, failed=0)
+
 
 class Batch(models.Model):
     """
@@ -898,7 +906,7 @@ class Batch(models.Model):
     )
     # {"input": 0, "total": 0, "completed": 0, "failed": 0 }
     request_counts = JSONField(
-        default=lambda: dict(total=0, completed=0, failed=0),
+        default=default_request_counts,
         null=True,
         blank=True,
         help_text="The request counts for different statuses within the batch."
@@ -1001,7 +1009,7 @@ class Batch(models.Model):
                 bytes=0,
                 filename=filename,
                 created_at=now_ts,
-                purpose='batch',
+                purpose='batch_output',
                 expires_at=self.expires_at,
             )
             file_obj.save()
@@ -1025,7 +1033,7 @@ class Batch(models.Model):
                 bytes=0,
                 filename=filename,
                 created_at=now_ts,
-                purpose='batch',
+                purpose='batch_output',
                 expires_at=self.expires_at,
             )
             file_obj.save()

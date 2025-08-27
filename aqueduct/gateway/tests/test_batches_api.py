@@ -96,6 +96,13 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         # Download and inspect the output file content.
         output_file_id = completed.get("output_file_id")
         self.assertIsNotNone(output_file_id, "Missing output_file_id in batch.")
+
+        # Retrieve file metadata
+        response = self.client.get(f"/files/{output_file_id}", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        meta_data = response.json()
+        self.assertEqual(meta_data["purpose"], "batch_output")
+
         response = self.client.get(f"/files/{output_file_id}/content", headers=self.headers)
         self.assertEqual(response.status_code, 200)
         lines = response.content.splitlines()

@@ -217,7 +217,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         # Upload the file
         upload_response = self.client.post(
             "/files",
-            {"file": upload_file, "purpose": "batch"},
+            {"file": upload_file, "purpose": "user_data"},
             headers=headers,
         )
         self.assertEqual(upload_response.status_code, 200, f"File upload failed: {upload_response.json()}")
@@ -327,7 +327,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         # Upload the file
         upload_response = self.client.post(
             "/files",
-            {"file": upload_file, "purpose": "batch"},
+            {"file": upload_file, "purpose": "user_data"},
             headers=headers,
         )
         self.assertEqual(upload_response.status_code, 200, f"File upload failed: {upload_response.json()}")

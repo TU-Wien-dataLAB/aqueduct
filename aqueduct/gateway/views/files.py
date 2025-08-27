@@ -52,7 +52,7 @@ async def files(request: ASGIRequest, token, *args, **kwargs):
     purpose = request.POST.get("purpose")
     if not uploaded or not purpose:
         return JsonResponse({"error": "Both 'file' and 'purpose' are required."}, status=400)
-    if purpose != "batch":
+    if purpose not in ["batch", "user_data"]:
         return JsonResponse({"error": f"Purpose '{purpose}' is currently not supported."}, status=400)
     filename = uploaded.name
     if not filename.endswith(".jsonl"):

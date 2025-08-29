@@ -168,6 +168,15 @@ For more information about file inputs, see the [OpenAI documentation on PDF fil
 
 You can include files in your chat completions using either file IDs (for previously uploaded files) or base64-encoded data.
 
+#### File Size Limits
+
+When uploading files via base64 encoding, the following size limits apply:
+
+- **Individual file limit**: Each file must be smaller than 10MB
+- **Total request limit**: The combined size of all files in a single request must not exceed 32MB
+
+If these limits are exceeded, the API will return a 400 Bad Request error with details about the size violation.
+
 #### Using File IDs
 
 First upload a file using the files API:

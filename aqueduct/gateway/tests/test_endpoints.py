@@ -366,6 +366,99 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 404,
                          f"Expected 404 Not Found, got {response.status_code}: {response.content}")
 
+    def test_chat_completion_base64_file_size_limit_individual(self):
+        """
+        Tests that individual files uploaded via base64 are rejected if they exceed 10MB.
+        """
+        import base64
+
+        # Create a file content that exceeds 10MB (10MB + 1 byte)
+        file_size = 10 * 1024 * 1024 + 1  # 10MB + 1 byte
+        file_content = b"x" * file_size
+        file_base64 = base64.b64encode(file_content).decode('utf-8')
+
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What's in this file?"},
+                     {"type": "file",
+                      "file": {
+                          "filename": "large_file.txt",
+                          "file_data": f"data:text/plain;base64,{file_base64}"
+                      }
+                      }]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+
+        endpoint = "/chat/completions"
+        response = self.client.post(
+            endpoint,
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 400,
+                         f"Expected 400 Bad Request for file size > 10MB, got {response.status_code}: {response.content}")
+
+    def test_chat_completion_base64_file_size_limit_total(self):
+        """
+        Tests that total files uploaded via base64 are rejected if they exceed 32MB in total.
+        """
+        import base64
+
+        # Create multiple files that together exceed 32MB
+        # Each file is 11MB, so 3 files = 33MB total
+        individual_file_size = 11 * 1024 * 1024  # 11MB each
+        file_content = b"x" * individual_file_size
+        file_base64 = base64.b64encode(file_content).decode('utf-8')
+
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What's in these files?"},
+                     {"type": "file",
+                      "file": {
+                          "filename": "large_file_1.txt",
+                          "file_data": f"data:text/plain;base64,{file_base64}"
+                      }},
+                     {"type": "file",
+                      "file": {
+                          "filename": "large_file_2.txt",
+                          "file_data": f"data:text/plain;base64,{file_base64}"
+                      }},
+                     {"type": "file",
+                      "file": {
+                          "filename": "large_file_3.txt",
+                          "file_data": f"data:text/plain;base64,{file_base64}"
+                      }}
+                 ]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+
+        endpoint = "/chat/completions"
+        response = self.client.post(
+            endpoint,
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 400,
+                         f"Expected 400 Bad Request for total file size > 32MB, got {response.status_code}: {response.content}")
+
     @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     def test_chat_completion_timeout(self):
         """

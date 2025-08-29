@@ -282,6 +282,7 @@ def process_file_content(view_func):
             return await view_func(request, *args, **kwargs)
 
         # Process messages to extract text from file content
+        total_file_size_bytes = 0
         for message in messages:
             content = message.get('content', [])
             if not isinstance(content, list):
@@ -290,10 +291,18 @@ def process_file_content(view_func):
             for content_item in content:
                 if isinstance(content_item, dict) and content_item.get('type') == 'file':
                     try:
-                        file_bytes = await file_to_bytes(token, FileFile(**content_item.get('file', {})))
+                        file = FileFile(**content_item.get('file', {}))
+                        file_bytes = await file_to_bytes(token, file)
+                        if len(file_bytes) > 10 * 1024 * 1024:
+                            return JsonResponse({'error': 'Error processing file content: File too large. Individual file must be <= 10MB.'}, status=400)
+
+                        total_file_size_bytes += len(file_bytes)
+                        if total_file_size_bytes > 32 * 1024 * 1024:
+                            return JsonResponse({'error': 'Error processing file content: Files too large in total. All files must be <= 32MB.'}, status=400)
 
                         # Extract text using Tika
                         extracted_text = await extract_text_with_tika(file_bytes)
+                        extracted_text = f"Content of user-uploaded file '{file.get('filename', 'unknown filename')}':\n---\n{extracted_text}\n---"
 
                         # Replace file content with extracted text
                         content_item['type'] = 'text'

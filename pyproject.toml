@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 postgresql = [
-    "psycopg[binary]>=3.2.9",
+    "psycopg2-binary>=2.9.10",
 ]
 vllm = [
     "vllm==0.8.4",

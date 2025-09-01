@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
@@ -136,6 +137,327 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
+
+    @override_settings(TIKA_SERVER_URL=None)
+    def test_chat_completion_base64_file_input(self):
+        """
+        Sends a chat completion request with base64 encoded file input.
+        Tests the file upload functionality using base64 encoding.
+        """
+        import base64
+
+        # Create a simple text file content and encode it as base64
+        file_content = b"This is a test file content for base64 encoding."
+        file_base64 = base64.b64encode(file_content).decode('utf-8')
+
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What's in this file?"},
+                     {"type": "file",
+                      "file": {
+                          "filename": "test.txt",
+                          "file_data": f"data:text/plain;base64,{file_base64}"
+                      }
+                      }]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+
+        endpoint = "/chat/completions"
+        with patch('gateway.views.decorators.extract_text_with_tika',
+                   return_value="This is a test file content for base64 encoding."):
+            response = self.client.post(
+                endpoint,
+                data=json.dumps(payload),
+                headers=headers,
+                content_type="application/json"
+            )
+
+        self.assertEqual(response.status_code, 200,
+                         f"Expected 200 OK, got {response.status_code}: {response.content}")
+        response_json = response.json()
+        chat_completion = ChatCompletion.model_validate(response_json)
+        content = chat_completion.choices[0].message.content
+        if content is not None:
+            content = content.strip()
+        self.assertIsNotNone(content)
+        self.assertGreater(len(content), 0)
+
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after base64 file input.")
+        req = requests[0]
+        self.assertIn("chat/completions", req.path,
+                      "Request endpoint should be chat completion for base64 file input.")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for base64 file input")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for base64 file input")
+
+    def test_chat_completion_file_id_input(self):
+        """
+        Sends a chat completion request with file_id input.
+        Tests the file upload functionality using a file ID from the files API.
+        """
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        # First, upload a file using the files API
+        file_content = b'{"custom_id": "test_file_id_input"}\n'
+        upload_file = SimpleUploadedFile("test_file_id.jsonl", file_content, content_type="application/jsonl")
+
+        # Prepare headers for file upload (remove Content-Type for multipart)
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        headers.pop("Content-Type", None)
+
+        # Upload the file
+        upload_response = self.client.post(
+            "/files",
+            {"file": upload_file, "purpose": "user_data"},
+            headers=headers,
+        )
+        self.assertEqual(upload_response.status_code, 200, f"File upload failed: {upload_response.json()}")
+        upload_data = upload_response.json()
+        file_id = upload_data["id"]
+
+        # Now use the file_id in a chat completion request
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What's in this file?"},
+                     {"type": "file",
+                      "file": {
+                          "file_id": file_id
+                      }
+                      }]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+
+        endpoint = "/chat/completions"
+        with patch('gateway.views.decorators.extract_text_with_tika',
+                   return_value="This is a test file content for base64 encoding."):
+            response = self.client.post(
+                endpoint,
+                data=json.dumps(payload),
+                headers=headers,
+                content_type="application/json"
+            )
+
+        self.assertEqual(response.status_code, 200,
+                         f"Expected 200 OK, got {response.status_code}: {response.content}")
+        response_json = response.json()
+        chat_completion = ChatCompletion.model_validate(response_json)
+        content = chat_completion.choices[0].message.content.strip()
+        self.assertGreater(len(content), 0)
+
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 2,
+                         "There should be exactly two requests after file_id input (file upload + chat completion).")
+
+        # Get the chat completion request (should be the one with /chat/completions path)
+        chat_request = next(r for r in requests if "chat/completions" in r.path)
+        req = chat_request
+        self.assertIn("chat/completions", req.path,
+                      "Request endpoint should be chat completion for file_id input.")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for file_id input")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for file_id input")
+
+    def test_chat_completion_file_id_not_found(self):
+        """
+        Sends a chat completion request with a non-existent file_id.
+        Should raise a 404 error.
+        """
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What's in this file?"},
+                     {"type": "file",
+                      "file": {
+                          "file_id": "non-existent-file-id"
+                      }
+                      }]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+
+        endpoint = "/chat/completions"
+        response = self.client.post(
+            endpoint,
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 404,
+                         f"Expected 404 Not Found, got {response.status_code}: {response.content}")
+
+    def test_chat_completion_file_id_different_user(self):
+        """
+        Sends a chat completion request with a file_id that was created by a different user.
+        Should raise a 404 error.
+        """
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from management.models import Token
+
+        # First, upload a file using the files API with the default user
+        file_content = b'{"custom_id": "test_file_id_input"}\n'
+        upload_file = SimpleUploadedFile("test_file_id.jsonl", file_content, content_type="application/jsonl")
+
+        # Prepare headers for file upload (remove Content-Type for multipart)
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        headers.pop("Content-Type", None)
+
+        # Upload the file
+        upload_response = self.client.post(
+            "/files",
+            {"file": upload_file, "purpose": "user_data"},
+            headers=headers,
+        )
+        self.assertEqual(upload_response.status_code, 200, f"File upload failed: {upload_response.json()}")
+        upload_data = upload_response.json()
+        file_id = upload_data["id"]
+
+        UPDATED_ACCESS_TOKEN = self.create_new_user()
+        headers = _build_chat_headers(UPDATED_ACCESS_TOKEN)
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What's in this file?"},
+                     {"type": "file",
+                      "file": {
+                          "file_id": file_id
+                      }
+                      }]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+
+        endpoint = "/chat/completions"
+        with patch('gateway.views.decorators.extract_text_with_tika',
+                   return_value="This is a test file content for base64 encoding."):
+            response = self.client.post(
+                endpoint,
+                data=json.dumps(payload),
+                headers=headers,
+                content_type="application/json"
+            )
+
+        self.assertEqual(response.status_code, 404,
+                         f"Expected 404 Not Found, got {response.status_code}: {response.content}")
+
+    def test_chat_completion_base64_file_size_limit_individual(self):
+        """
+        Tests that individual files uploaded via base64 are rejected if they exceed 10MB.
+        """
+        import base64
+
+        # Create a file content that exceeds 10MB (10MB + 1 byte)
+        file_size = 10 * 1024 * 1024 + 1  # 10MB + 1 byte
+        file_content = b"x" * file_size
+        file_base64 = base64.b64encode(file_content).decode('utf-8')
+
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What's in this file?"},
+                     {"type": "file",
+                      "file": {
+                          "filename": "large_file.txt",
+                          "file_data": f"data:text/plain;base64,{file_base64}"
+                      }
+                      }]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+
+        endpoint = "/chat/completions"
+        response = self.client.post(
+            endpoint,
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 400,
+                         f"Expected 400 Bad Request for file size > 10MB, got {response.status_code}: {response.content}")
+
+    def test_chat_completion_base64_file_size_limit_total(self):
+        """
+        Tests that total files uploaded via base64 are rejected if they exceed 32MB in total.
+        """
+        import base64
+
+        # Create multiple files that together exceed 32MB
+        # Each file is 11MB, so 3 files = 33MB total
+        individual_file_size = 11 * 1024 * 1024  # 11MB each
+        file_content = b"x" * individual_file_size
+        file_base64 = base64.b64encode(file_content).decode('utf-8')
+
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "user",
+                 "content": [
+                     {"type": "text", "text": "What's in these files?"},
+                     {"type": "file",
+                      "file": {
+                          "filename": "large_file_1.txt",
+                          "file_data": f"data:text/plain;base64,{file_base64}"
+                      }},
+                     {"type": "file",
+                      "file": {
+                          "filename": "large_file_2.txt",
+                          "file_data": f"data:text/plain;base64,{file_base64}"
+                      }},
+                     {"type": "file",
+                      "file": {
+                          "filename": "large_file_3.txt",
+                          "file_data": f"data:text/plain;base64,{file_base64}"
+                      }}
+                 ]}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.0
+        }
+
+        endpoint = "/chat/completions"
+        response = self.client.post(
+            endpoint,
+            data=json.dumps(payload),
+            headers=headers,
+            content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 400,
+                         f"Expected 400 Bad Request for total file size > 32MB, got {response.status_code}: {response.content}")
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     def test_chat_completion_timeout(self):

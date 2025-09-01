@@ -54,13 +54,17 @@ if START_VLLM_SERVER:
         _VLLM_IMPORT_ERROR = e
 
 # Import Org, Team, UserProfile for direct DB manipulation
-from management.models import Request
+from management.models import Request, Org, UserProfile, Token
 
 User = get_user_model()
+
+TEST_FILES_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "files_root")
+os.makedirs(TEST_FILES_ROOT, exist_ok=True)
 
 
 # --- Django Test Class ---
 @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
+                   AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
                    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
 class GatewayIntegrationTestCase(TransactionTestCase):
     """
@@ -122,9 +126,19 @@ class GatewayIntegrationTestCase(TransactionTestCase):
         # Clear Request table before test
         Request.objects.all().delete()
 
+    @staticmethod
+    def create_new_user() -> str:
+        # Create a new user and a new token for that user
+        new_user = User.objects.create_user(username='OtherUser', email="other@example.com")
+        org = Org.objects.get(name="E060")
+        profile = UserProfile.objects.create(user=new_user, org=org)
+        new_user.profile = profile
 
-TEST_FILES_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "files_root")
-os.makedirs(TEST_FILES_ROOT, exist_ok=True)
+        # Create a new token for the different user
+        new_token = Token(name="TestToken", user=new_user)
+        token_value = new_token._set_new_key()
+        new_token.save()
+        return token_value
 
 
 @override_settings(
@@ -150,9 +164,9 @@ class GatewayFilesTestCase(TransactionTestCase):
     AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY=2,
     AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY=2,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-    MAX_USER_BATCHES = 3,
-    AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=1/60,
-    CACHES = {
+    MAX_USER_BATCHES=3,
+    AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=1 / 60,
+    CACHES={
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         }

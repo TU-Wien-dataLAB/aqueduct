@@ -86,6 +86,15 @@ class TestFilesAPI(GatewayFilesTestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
+    def test_user_data_purpose(self):
+        """File with purpose user_data should return 200."""
+        good = SimpleUploadedFile("ok.jsonl", b"{}\n", content_type="application/json")
+        # unsupported purpose
+        resp = self.client.post(
+            "/files", {"file": good, "purpose": "user_data"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 200)
+
     def test_oversize_file(self):
         """File >8MB should be rejected."""
         from django.conf import settings

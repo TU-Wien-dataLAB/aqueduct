@@ -52,11 +52,11 @@ async def files(request: ASGIRequest, token, *args, **kwargs):
     purpose = request.POST.get("purpose")
     if not uploaded or not purpose:
         return JsonResponse({"error": "Both 'file' and 'purpose' are required."}, status=400)
-    if purpose != "batch":
+    if purpose not in ["batch", "user_data"]:
         return JsonResponse({"error": f"Purpose '{purpose}' is currently not supported."}, status=400)
     filename = uploaded.name
-    if not filename.endswith(".jsonl"):
-        return JsonResponse({"error": "Only .jsonl files are currently supported."}, status=400)
+    if purpose == "batch" and not filename.endswith(".jsonl"):
+        return JsonResponse({"error": "Only .jsonl files are currently supported for purpose 'batch'."}, status=400)
     data = uploaded.read()
     # Enforce per-file size limit from settings
     max_file_bytes = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024

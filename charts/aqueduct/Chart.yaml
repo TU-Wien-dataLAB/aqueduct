@@ -30,3 +30,7 @@ dependencies:
   - name: redis
     version: 21.1.7
     repository: https://charts.bitnami.com/bitnami
+  - name: tika
+    version: 3.2.2
+    repository: https://apache.jfrog.io/artifactory/tika
+    condition: tika.enabled

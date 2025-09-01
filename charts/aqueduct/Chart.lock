@@ -5,5 +5,8 @@ dependencies:
 - name: redis
   repository: https://charts.bitnami.com/bitnami
   version: 21.1.7
-digest: sha256:f8100d1e54b9982aaba20ebc46c62e6c4a21da94227cd398b17d730ffd50603f
-generated: "2025-05-26T19:32:14.115426+02:00"
+- name: tika
+  repository: https://apache.jfrog.io/artifactory/tika
+  version: 3.2.2
+digest: sha256:08333565105eacdec82d1f86226b433554e171e25dab81420cc005075cb37b02
+generated: "2025-08-26T13:13:48.962055+02:00"

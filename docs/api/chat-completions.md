@@ -162,6 +162,101 @@ curl https://your-aqueduct-domain.com/chat/completions \
   }'
 ```
 
+### File Input
+
+For more information about file inputs, see the [OpenAI documentation on PDF files](https://platform.openai.com/docs/guides/pdf-files?api-mode=chat&lang=python).
+
+You can include files in your chat completions using either file IDs (for previously uploaded files) or base64-encoded data.
+
+#### File Size Limits
+
+When uploading files via base64 encoding, the following size limits apply:
+
+- **Individual file limit**: Each file must be smaller than 10MB
+- **Total request limit**: The combined size of all files in a single request must not exceed 32MB
+
+If these limits are exceeded, the API will return a 400 Bad Request error with details about the size violation.
+
+#### Using File IDs
+
+First upload a file using the files API:
+
+```bash
+curl https://your-aqueduct-domain.com/files \
+    -H "Authorization: Bearer YOUR_AQUEDUCT_TOKEN" \
+    -F purpose="user_data" \
+    -F file="@sample.pdf"
+```
+
+Then reference the file in your chat completion:
+
+```bash
+curl "https://your-aqueduct-domain.com/chat/completions" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer YOUR_AQUEDUCT_TOKEN" \
+    -d '{
+        "model": "your-model-name",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "file",
+                        "file": {
+                            "file_id": "file-6F2ksmvXxt4VdoqmHRw6kL"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": "What is the main topic of this document?"
+                    }
+                ]
+            }
+        ]
+    }'
+```
+
+#### Using Base64-Encoded Files
+
+```python
+import base64
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://your-aqueduct-domain.com",
+    api_key="YOUR_AQUEDUCT_TOKEN",
+)
+
+with open("sample.pdf", "rb") as f:
+    data = f.read()
+
+base64_string = base64.b64encode(data).decode("utf-8")
+
+completion = client.chat.completions.create(
+    model="your-model-name",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "sample.pdf",
+                        "file_data": f"data:application/pdf;base64,{base64_string}",
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": "What is the main topic of this document?",
+                }
+            ],
+        },
+    ],
+)
+
+print(completion.choices[0].message.content)
+```
+
 ## Error Responses
 
 Same as [Completions](completions.md) endpoint.

@@ -23,6 +23,7 @@ or plain HTTP clients (e.g., `curl`) to make requests.
 | `/batches`             | GET, POST | List or create batch jobs |
 | `/batches/{batch_id}`  | GET    | Retrieve batch status and metadata |
 | `/batches/{batch_id}/cancel` | POST | Cancel a batch job |
+| `/audio/speech`        | POST   | Generate audio from text |
 
 Click an endpoint below to learn more:
 
@@ -32,3 +33,4 @@ Click an endpoint below to learn more:
 - [List Models](models.md)
 - [Files](files.md)
 - [Batches](batches.md)
+- [Audio Speech](speech.md)

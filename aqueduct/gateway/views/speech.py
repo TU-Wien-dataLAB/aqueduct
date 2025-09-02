@@ -24,7 +24,7 @@ def validate_tts(pydantic_model: dict):
     model_list: list[dict] = router_config["model_list"]
     model_params = filter(lambda m: m["model_name"] == pydantic_model["model"], model_list)
     for model in model_params:
-        if model.get("model_info", {}).get("mode", None) != "text_to_speech":
+        if model.get("model_info", {}).get("mode", None) != "audio_speech":
             raise litellm.BadRequestError(f"{model['model_name']} does not support text-to-speech.",
                                           model['model_name'], llm_provider=None)
 

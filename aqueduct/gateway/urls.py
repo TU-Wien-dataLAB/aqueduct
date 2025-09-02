@@ -25,6 +25,10 @@ urlpatterns = [
     path('models', views.models, name='models'),
     path('v1/models', views.models, name='v1_models'),
 
+    # Speech endpoint
+    path('audio/speech', views.speech, name='speech'),
+    path('v1/audio/speech', views.speech, name='v1_speech'),
+
     # Files endpoints
     path('files', views.files, name='files'),
     path('v1/files', views.files, name='v1_files'),

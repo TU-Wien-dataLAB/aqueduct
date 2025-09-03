@@ -70,9 +70,39 @@ def parse_body(model: TypeAdapter):
         @wraps(view_func)
         async def wrapper(request: ASGIRequest, *args, **kwargs):
             try:
-                body = request.body.decode('utf-8')
-                model.validate_json(body)
-                kwargs['pydantic_model'] = json.loads(body)
+                content_type = request.headers.get("content-type", "")
+
+                if content_type.startswith("application/json"):
+                    body = request.body.decode("utf-8")
+                    parsed = model.validate_json(body)
+
+                elif content_type.startswith("multipart/form-data"):
+                    data = {}
+                    for key, value in request.POST.items():
+                        try:
+                            data[key] = json.loads(value)
+                        except (TypeError, json.JSONDecodeError):
+                            data[key] = value
+
+                    max_file_bytes = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024
+                    total_file_size_bytes = 0
+                    for key, file in request.FILES.items():
+                        data[key] = file.read()
+                        if len(data[key]) > max_file_bytes:
+                            return JsonResponse({'error': 'File too large'}, status=413)
+                        total_file_size_bytes += len(data[key])
+                        if total_file_size_bytes > 32 * 1024 * 1024:
+                            return JsonResponse({'error': 'Files too large'}, status=413)
+
+                    parsed = model.validate_python(data)
+                else:
+                    return JsonResponse(
+                        {"error": f"Unsupported Content-Type: {content_type}"},
+                        status=415
+                    )
+
+                model_dict = parsed if isinstance(parsed, dict) else parsed.model_dump()
+                kwargs['pydantic_model'] = model_dict
                 kwargs['pydantic_model']['timeout'] = settings.RELAY_REQUEST_TIMEOUT
                 return await view_func(request, *args, **kwargs)
             except ValidationError as e:
@@ -242,7 +272,7 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
     if file_data:
         # file data contains b64 encoded files -> decode as bytes
         try:
-            header, file_b64 = file_data.split(",", maxsplit=1) # removes data uri (data:application/pdf;base64,<b64>)
+            header, file_b64 = file_data.split(",", maxsplit=1)  # removes data uri (data:application/pdf;base64,<b64>)
             if not header.startswith("data:"):
                 raise ValueError("Incorrect data URI for base64 encoded file.")
             file_bytes = base64.b64decode(file_b64)
@@ -294,11 +324,15 @@ def process_file_content(view_func):
                         file = FileFile(**content_item.get('file', {}))
                         file_bytes = await file_to_bytes(token, file)
                         if len(file_bytes) > 10 * 1024 * 1024:
-                            return JsonResponse({'error': 'Error processing file content: File too large. Individual file must be <= 10MB.'}, status=400)
+                            return JsonResponse({
+                                                    'error': 'Error processing file content: File too large. Individual file must be <= 10MB.'},
+                                                status=400)
 
                         total_file_size_bytes += len(file_bytes)
                         if total_file_size_bytes > 32 * 1024 * 1024:
-                            return JsonResponse({'error': 'Error processing file content: Files too large in total. All files must be <= 32MB.'}, status=400)
+                            return JsonResponse({
+                                                    'error': 'Error processing file content: Files too large in total. All files must be <= 32MB.'},
+                                                status=400)
 
                         # Extract text using Tika
                         extracted_text = await extract_text_with_tika(file_bytes)
@@ -317,6 +351,7 @@ def process_file_content(view_func):
                         return JsonResponse({'error': f'Error processing file: {str(e)}'}, status=400)
 
         return await view_func(request, *args, **kwargs)
+
     return wrapper
 
 

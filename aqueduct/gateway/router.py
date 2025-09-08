@@ -30,7 +30,7 @@ def get_openai_client(model: str) -> openai.AsyncClient:
     router = get_router()
     deployment = router.get_deployment(model_id=model)
     if deployment is None:
-        raise RuntimeError(f"Deployment for model '{model}' not found!")
+        raise ValueError(f"Deployment for model '{model}' not found!")
     litellm_params = deployment.litellm_params
 
     return openai.AsyncClient(api_key=litellm_params.api_key, base_url=litellm_params.api_base, timeout=litellm_params.timeout)

@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 import logging
 import mimetypes
@@ -10,6 +11,7 @@ import re
 
 import httpx
 import litellm
+import openai
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib import auth
@@ -74,7 +76,8 @@ def parse_body(model: TypeAdapter):
 
                 if content_type.startswith("application/json"):
                     body = request.body.decode("utf-8")
-                    parsed = model.validate_json(body)
+                    data = json.loads(body)
+                    model.validate_python(data)
 
                 elif content_type.startswith("multipart/form-data"):
                     data = {}
@@ -94,15 +97,22 @@ def parse_body(model: TypeAdapter):
                         if total_file_size_bytes > 32 * 1024 * 1024:
                             return JsonResponse({'error': 'Files too large'}, status=413)
 
-                    parsed = model.validate_python(data)
+                    model.validate_python(data)
+
+                    # Update bytes to BytesIO because pydantic TypeAdapter has problems with BytesIO.
+                    # OpenAI usually expects a name for the file object (not just bytes).
+                    # This only works if the field is also typed as bytes.
+                    for key, file in request.FILES.items():
+                        buffer: io.BytesIO = io.BytesIO(data[key])
+                        buffer.name = file.name
+                        data[key] = buffer
                 else:
                     return JsonResponse(
                         {"error": f"Unsupported Content-Type: {content_type}"},
                         status=415
                     )
 
-                model_dict = parsed if isinstance(parsed, dict) else parsed.model_dump()
-                kwargs['pydantic_model'] = model_dict
+                kwargs['pydantic_model'] = data
                 kwargs['pydantic_model']['timeout'] = settings.RELAY_REQUEST_TIMEOUT
                 return await view_func(request, *args, **kwargs)
             except ValidationError as e:
@@ -364,27 +374,28 @@ def catch_router_exceptions(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         # https://docs.litellm.ai/docs/exception_mapping#litellm-exceptions
+        # also except equivalent openai exceptions
         try:
             return await view_func(request, *args, **kwargs)
-        except litellm.BadRequestError as e:
+        except (litellm.BadRequestError, openai.BadRequestError) as e:
             return JsonResponse({"error": _r(e)}, status=400)
-        except litellm.AuthenticationError as e:
+        except (litellm.AuthenticationError, openai.AuthenticationError) as e:
             return JsonResponse({"error": _r(e)}, status=401)
-        except litellm.exceptions.PermissionDeniedError as e:
+        except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
             return JsonResponse({"error": _r(e)}, status=403)
-        except litellm.NotFoundError as e:
+        except (litellm.NotFoundError, openai.NotFoundError) as e:
             return JsonResponse({"error": _r(e)}, status=404)
-        except litellm.UnprocessableEntityError as e:
+        except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
             return JsonResponse({"error": _r(e)}, status=422)
-        except litellm.RateLimitError as e:
+        except (litellm.RateLimitError, openai.RateLimitError) as e:
             return JsonResponse({"error": _r(e)}, status=429)
-        except (litellm.APIConnectionError, litellm.APIError) as e:
-            return JsonResponse({"error": _r(e)}, status=500)
-        except litellm.Timeout as e:
+        except (litellm.Timeout, openai.APITimeoutError) as e:
             return JsonResponse({"error": _r(e)}, status=504)
         except litellm.ServiceUnavailableError as e:
             return JsonResponse({"error": _r(e)}, status=503)
-        except litellm.InternalServerError as e:
+        except (litellm.InternalServerError, openai.InternalServerError) as e:
+            return JsonResponse({"error": _r(e)}, status=500)
+        except (litellm.APIConnectionError, litellm.APIError, openai.APIConnectionError, openai.APIError) as e:
             return JsonResponse({"error": _r(e)}, status=500)
         except Exception as e:
             return JsonResponse({"error": _r(e)}, status=500)

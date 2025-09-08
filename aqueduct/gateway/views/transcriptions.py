@@ -56,7 +56,7 @@ async def transcriptions(
     try:
         client: openai.AsyncClient = get_openai_client(model)
     except ValueError:
-        return JsonResponse(f"Incompatible model '{model}'", status=400)
+        return JsonResponse({"error": f"Incompatible model '{model}'!"}, status=400)
 
     router = get_router()
     deployment: litellm.Deployment = router.get_deployment(model_id=model)

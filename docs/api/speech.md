@@ -7,6 +7,7 @@ nav_order: 7
 # Audio Speech
 
 The `/audio/speech` endpoint generates audio from text using text-to-speech models.
+See the OpenAI documentation for a more comprehensive [guide](https://platform.openai.com/docs/guides/text-to-speech).
 
 ## HTTP Request
 

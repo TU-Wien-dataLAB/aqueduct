@@ -1,5 +1,6 @@
 {% extends 'management/base.html' %}
 {% load static %}
+{% load humanize %}
 
 {% block header %}{{ title }}{% endblock %}
 
@@ -60,35 +61,35 @@
     <div class="stats stats-vertical md:stats-horizontal shadow bg-base-100 rounded-box mb-4 w-full">
         <div class="stat">
             <div class="stat-title">Total Requests</div>
-            <div class="stat-value text-primary">{{ total_requests }}</div>
+            <div class="stat-value text-primary">{{ total_requests|intcomma }}</div>
         </div>
         <div class="stat">
             <div class="stat-title">Failed Requests</div>
-            <div class="stat-value text-primary">{{ failed_requests }}</div>
+            <div class="stat-value text-primary">{{ failed_requests|intcomma }}</div>
         </div>
         <div class="stat">
             <div class="stat-title">Avg Resp Time (Completion)</div>
             <div class="stat-value text-primary">
-                {{ avg_time_completion|floatformat:1 }} ms
+                {{ avg_time_completion|floatformat:1|intcomma }} ms
             </div>
         </div>
         <div class="stat">
             <div class="stat-title">Avg Resp Time (Embedding)</div>
             <div class="stat-value text-primary">
-                {{ avg_time_embedding|floatformat:1 }} ms
+                {{ avg_time_embedding|floatformat:1|intcomma }} ms
             </div>
         </div>
         <div class="stat">
             <div class="stat-title">Input Tokens</div>
-            <div class="stat-value text-primary">{{ input_tokens }}</div>
+            <div class="stat-value text-primary">{{ input_tokens|intcomma }}</div>
         </div>
         <div class="stat">
             <div class="stat-title">Output Tokens</div>
-            <div class="stat-value text-primary">{{ output_tokens }}</div>
+            <div class="stat-value text-primary">{{ output_tokens|intcomma }}</div>
         </div>
         <div class="stat">
             <div class="stat-title">Total Tokens</div>
-            <div class="stat-value text-primary">{{ total_tokens }}</div>
+            <div class="stat-value text-primary">{{ total_tokens|intcomma }}</div>
         </div>
     </div>
 
@@ -145,7 +146,7 @@
                                     {% endif %}
                                 </td>
                                 <td class="font-bold text-primary">
-                                    {{ item.count }}
+                                    {{ item.count|intcomma }}
                                 </td>
                                 {% if selected_org %}
                                     <td>

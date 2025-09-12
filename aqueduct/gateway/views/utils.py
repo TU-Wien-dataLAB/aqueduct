@@ -7,6 +7,8 @@ from django.core.cache import cache
 
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm import TextCompletionStreamWrapper
+from openai import AsyncStream
+
 from management.models import Request, Usage
 
 
@@ -24,13 +26,13 @@ def _usage_from_bytes(content: bytes) -> Usage:
         return Usage(input_tokens=0, output_tokens=0)
 
 
-def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper, request_log: Request) -> \
+def _openai_stream(stream: CustomStreamWrapper | TextCompletionStreamWrapper | AsyncStream, request_log: Request) -> \
         AsyncGenerator[str, Any]:
     start_time = time.monotonic()
 
-    async def stream():
+    async def _stream():
         token_usage = Usage(0, 0)
-        async for chunk in completion:
+        async for chunk in stream:
             chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
             token_usage += _usage_from_bytes(chunk_str.encode('utf-8'))
             try:
@@ -44,7 +46,7 @@ def _openai_stream(completion: CustomStreamWrapper | TextCompletionStreamWrapper
         # Streaming is done, yield the [DONE] chunk
         yield f"data: [DONE]\n\n"
 
-    return stream()
+    return _stream()
 
 
 @contextmanager

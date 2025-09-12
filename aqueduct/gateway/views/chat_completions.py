@@ -48,7 +48,7 @@ async def chat_completions(
     )
     if isinstance(chat_completion, CustomStreamWrapper):
         return StreamingHttpResponse(
-            streaming_content=_openai_stream(completion=chat_completion, request_log=request_log),
+            streaming_content=_openai_stream(stream=chat_completion, request_log=request_log),
             content_type='text/event-stream',
         )
     elif isinstance(chat_completion, ModelResponse):

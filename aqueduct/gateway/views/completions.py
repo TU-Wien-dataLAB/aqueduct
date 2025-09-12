@@ -46,7 +46,7 @@ async def completions(
     )
     if isinstance(completion, TextCompletionStreamWrapper):
         return StreamingHttpResponse(
-            streaming_content=_openai_stream(completion=completion, request_log=request_log),
+            streaming_content=_openai_stream(stream=completion, request_log=request_log),
             headers={'Content-Type': 'text/event-stream'},
         )
     elif isinstance(completion, TextCompletionResponse):

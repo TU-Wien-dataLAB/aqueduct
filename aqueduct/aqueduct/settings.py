@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
+    'django.contrib.humanize',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
@@ -107,11 +108,6 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
     for group in filter(lambda g: g.startswith("E"), groups):
         return group.split("-")[0]
     return None
-
-
-# OIDC_DEFAULT_GROUPS = []
-# ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = my_org_name_extractor
-# ADMIN_GROUP = "ds-ray-cluster"  # the admin group name
 
 OIDC_DEFAULT_GROUPS = ["default"]
 ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"

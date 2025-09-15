@@ -1,6 +1,7 @@
 import os
 import shutil
 import sys
+from pathlib import Path
 from textwrap import dedent
 from typing import Optional, Literal
 
@@ -36,6 +37,21 @@ model_list:
     api_key: "os.environ/OPENAI_API_KEY"
   model_info:
     mode: embedding
+- model_name: gpt-4o-mini-tts
+  litellm_params:
+    model: openai/gpt-4o-mini-tts
+    api_key: "os.environ/OPENAI_API_KEY"
+  model_info:
+    mode: audio_speech
+
+- model_name: whisper-1
+  litellm_params:
+    model: openai/whisper-1
+    api_key: "os.environ/OPENAI_API_KEY"
+  model_info:
+    id: whisper-1
+    mode: audio_transcriptions
+
 """)
 ROUTER_CONFIG = ROUTER_CONFIG_VLLM if INTEGRATION_TEST_BACKEND == "vllm" else ROUTER_CONFIG_OPENAI
 
@@ -184,3 +200,12 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
     def run_batch_processing_loop():
         from gateway.views.batches import run_batch_processing
         async_to_sync(run_batch_processing)()
+
+
+@override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
+                   AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
+                   LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
+class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
+    fixtures = ["gateway_data.json"]
+    tts_model = "gpt-4o-mini-tts"
+    stt_model = "whisper-1"

@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 import logging
 import mimetypes
@@ -10,6 +11,7 @@ import re
 
 import httpx
 import litellm
+import openai
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib import auth
@@ -70,9 +72,47 @@ def parse_body(model: TypeAdapter):
         @wraps(view_func)
         async def wrapper(request: ASGIRequest, *args, **kwargs):
             try:
-                body = request.body.decode('utf-8')
-                model.validate_json(body)
-                kwargs['pydantic_model'] = json.loads(body)
+                content_type = request.headers.get("content-type", "")
+
+                if content_type.startswith("application/json"):
+                    body = request.body.decode("utf-8")
+                    data = json.loads(body)
+                    model.validate_python(data)
+
+                elif content_type.startswith("multipart/form-data"):
+                    data = {}
+                    for key, value in request.POST.items():
+                        try:
+                            data[key] = json.loads(value)
+                        except (TypeError, json.JSONDecodeError):
+                            data[key] = value
+
+                    max_file_bytes = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024
+                    total_file_size_bytes = 0
+                    for key, file in request.FILES.items():
+                        data[key] = file.read()
+                        if len(data[key]) > max_file_bytes:
+                            return JsonResponse({'error': 'File too large'}, status=413)
+                        total_file_size_bytes += len(data[key])
+                        if total_file_size_bytes > 32 * 1024 * 1024:
+                            return JsonResponse({'error': 'Files too large'}, status=413)
+
+                    model.validate_python(data)
+
+                    # Update bytes to BytesIO because pydantic TypeAdapter has problems with BytesIO.
+                    # OpenAI usually expects a name for the file object (not just bytes).
+                    # This only works if the field is also typed as bytes.
+                    for key, file in request.FILES.items():
+                        buffer: io.BytesIO = io.BytesIO(data[key])
+                        buffer.name = file.name
+                        data[key] = buffer
+                else:
+                    return JsonResponse(
+                        {"error": f"Unsupported Content-Type: {content_type}"},
+                        status=415
+                    )
+
+                kwargs['pydantic_model'] = data
                 kwargs['pydantic_model']['timeout'] = settings.RELAY_REQUEST_TIMEOUT
                 return await view_func(request, *args, **kwargs)
             except ValidationError as e:
@@ -242,7 +282,7 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
     if file_data:
         # file data contains b64 encoded files -> decode as bytes
         try:
-            header, file_b64 = file_data.split(",", maxsplit=1) # removes data uri (data:application/pdf;base64,<b64>)
+            header, file_b64 = file_data.split(",", maxsplit=1)  # removes data uri (data:application/pdf;base64,<b64>)
             if not header.startswith("data:"):
                 raise ValueError("Incorrect data URI for base64 encoded file.")
             file_bytes = base64.b64decode(file_b64)
@@ -294,11 +334,15 @@ def process_file_content(view_func):
                         file = FileFile(**content_item.get('file', {}))
                         file_bytes = await file_to_bytes(token, file)
                         if len(file_bytes) > 10 * 1024 * 1024:
-                            return JsonResponse({'error': 'Error processing file content: File too large. Individual file must be <= 10MB.'}, status=400)
+                            return JsonResponse({
+                                                    'error': 'Error processing file content: File too large. Individual file must be <= 10MB.'},
+                                                status=400)
 
                         total_file_size_bytes += len(file_bytes)
                         if total_file_size_bytes > 32 * 1024 * 1024:
-                            return JsonResponse({'error': 'Error processing file content: Files too large in total. All files must be <= 32MB.'}, status=400)
+                            return JsonResponse({
+                                                    'error': 'Error processing file content: Files too large in total. All files must be <= 32MB.'},
+                                                status=400)
 
                         # Extract text using Tika
                         extracted_text = await extract_text_with_tika(file_bytes)
@@ -317,6 +361,7 @@ def process_file_content(view_func):
                         return JsonResponse({'error': f'Error processing file: {str(e)}'}, status=400)
 
         return await view_func(request, *args, **kwargs)
+
     return wrapper
 
 
@@ -329,27 +374,28 @@ def catch_router_exceptions(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         # https://docs.litellm.ai/docs/exception_mapping#litellm-exceptions
+        # also except equivalent openai exceptions
         try:
             return await view_func(request, *args, **kwargs)
-        except litellm.BadRequestError as e:
+        except (litellm.BadRequestError, openai.BadRequestError) as e:
             return JsonResponse({"error": _r(e)}, status=400)
-        except litellm.AuthenticationError as e:
+        except (litellm.AuthenticationError, openai.AuthenticationError) as e:
             return JsonResponse({"error": _r(e)}, status=401)
-        except litellm.exceptions.PermissionDeniedError as e:
+        except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
             return JsonResponse({"error": _r(e)}, status=403)
-        except litellm.NotFoundError as e:
+        except (litellm.NotFoundError, openai.NotFoundError) as e:
             return JsonResponse({"error": _r(e)}, status=404)
-        except litellm.UnprocessableEntityError as e:
+        except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
             return JsonResponse({"error": _r(e)}, status=422)
-        except litellm.RateLimitError as e:
+        except (litellm.RateLimitError, openai.RateLimitError) as e:
             return JsonResponse({"error": _r(e)}, status=429)
-        except (litellm.APIConnectionError, litellm.APIError) as e:
-            return JsonResponse({"error": _r(e)}, status=500)
-        except litellm.Timeout as e:
+        except (litellm.Timeout, openai.APITimeoutError) as e:
             return JsonResponse({"error": _r(e)}, status=504)
         except litellm.ServiceUnavailableError as e:
             return JsonResponse({"error": _r(e)}, status=503)
-        except litellm.InternalServerError as e:
+        except (litellm.InternalServerError, openai.InternalServerError) as e:
+            return JsonResponse({"error": _r(e)}, status=500)
+        except (litellm.APIConnectionError, litellm.APIError, openai.APIConnectionError, openai.APIError) as e:
             return JsonResponse({"error": _r(e)}, status=500)
         except Exception as e:
             return JsonResponse({"error": _r(e)}, status=500)

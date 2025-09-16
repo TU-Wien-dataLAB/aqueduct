@@ -58,10 +58,10 @@ For more information, follow the [Quickstart](https://docs.vllm.ai/en/stable/get
 
 Then follow the [User Guide](user-guide/models.md) to create an Endpoint with the (internal URL `http://host.docker.internal:8001/v1` and add the model with the name `Qwen/Qwen2.5-0.5B-Instruct` and a display name of your choosing.
 
-You can then create a token and run the examples in the [User Guide](user-guide/examples.md), for example:
+You can then create a token and run the examples in the [User Guide](user-guide/index.md), for example:
 
 ```bash
-curl http://localhost:8000/vllm/models \
+curl http://localhost:8000/models \
   -H "Authorization: Bearer YOUR_AQUEDUCT_TOKEN"
 ```
 

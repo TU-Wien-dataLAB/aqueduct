@@ -34,3 +34,27 @@ Click an endpoint below to learn more:
 - [Files](files.md)
 - [Batches](batches.md)
 - [Audio Speech](speech.md)
+
+---
+
+## Troubleshooting
+
+Here are some common errors and how to resolve them:
+
+- **401 Unauthorized**
+  - **Cause:** Invalid or missing API token.
+  - **Solution:** Ensure you are using a valid Aqueduct token in the `Authorization` header.
+
+- **404 Not Found**
+  - **Cause:** Incorrect endpoint URL or model name.
+  - **Solution:** Double-check the endpoint URL and model name. Use the `/models` endpoint to list available models.
+
+- **429 Too Many Requests**
+  - **Cause:** Rate limit exceeded.
+  - **Solution:** Wait before making more requests, or contact your administrator to increase your rate limit.
+
+- **Other Errors**
+  - Check your request payload for correct formatting.
+  - Ensure your Aqueduct endpoint is reachable and you have network access.
+
+If you continue to experience issues, consult the Aqueduct documentation or contact support.

@@ -154,7 +154,7 @@
                                     </td>
                                     <td>
                                         {% if item.object.service_account %}
-                                            item.object.service_account.name
+                                            {{ item.object.service_account.name }}
                                         {% else %}
                                             -
                                         {% endif %}

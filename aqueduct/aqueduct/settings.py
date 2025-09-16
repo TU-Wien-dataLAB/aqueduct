@@ -153,12 +153,13 @@ def batch_processing_concurrency():
 
 AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
 
-TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")
+TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")  # TODO: use container name in .example.env
 
 # Celery Settings -------------------------------------------------------
 
 CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == "true"
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_WORKER_CONCURRENCY = os.environ.get('CELERY_WORKER_CONCURRENCY', 1)
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 CELERY_TIMEZONE = TIME_ZONE

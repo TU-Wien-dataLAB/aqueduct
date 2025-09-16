@@ -34,7 +34,11 @@ If you don’t need user self-service, take a look at [Envoy AI Gateway](https:/
 
 ## 🚀 Getting Started
 
-The recommended way to get Aqueduct running locally is with Docker Compose. This will start the Django app, a PostgreSQL database, and a local mock OIDC provider (Dex) for authentication.
+The recommended way to get Aqueduct running locally is with Docker Compose. This will start the Django app, a PostgreSQL
+database, and a local mock OIDC provider (Dex) for authentication.
+
+> **NOTE:**
+> This example setup should work out-of-the-box; it is however not suitable for production.
 
 1. **Clone the repository**
    ```bash
@@ -42,13 +46,23 @@ The recommended way to get Aqueduct running locally is with Docker Compose. This
    cd aqueduct
    ```
 
-2. **Start the services**
+2. **Set the necessary environment variables**
+Most of the necessary environment variables are provided in the `.example.env` file.
+You only need to set the `OPENAI_API_KEY`:
+   ```bash
+   export OPENAI_API_KEY="your-openai-api-key"
+   ```
+   This variable is used by the sample router configuration, provided in the
+`example_router_config.yaml` file. Adjust it if you want to use other models.
+
+3. **Start the services**
    ```bash
    docker compose up --build
    ```
-   This will build and start all required services using the provided `.example.env` file for environment variables.
+   This will build and start all required services using the provided `.example.env` and
+`example_router_config.yaml` files for environment variables and the router configuration.
 
-3. **Access the application**
+4. **Access the application**
 
     - The web UI will be available at [http://localhost:8000](http://localhost:8000)
     - The local OIDC provider (Dex) will be running at [http://localhost:5556/dex](http://localhost:5556/dex)

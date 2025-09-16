@@ -37,9 +37,6 @@ If you don’t need user self-service, take a look at [Envoy AI Gateway](https:/
 The recommended way to get Aqueduct running locally is with Docker Compose. This will start the Django app, a PostgreSQL
 database, and a local mock OIDC provider (Dex) for authentication.
 
-> **NOTE:**
-> This example setup should work out-of-the-box; it is however not suitable for production.
-
 1. **Clone the repository**
    ```bash
    git clone https://github.com/tu-wien-datalab/aqueduct.git
@@ -71,6 +68,11 @@ You only need to set the `OPENAI_API_KEY`:
         - **Password:** `1234`
 
 You can now access the admin UI and start exploring the gateway features.
+
+> **NOTE:**
+> This starts Django in debug mode and is not suitable for production deployments. Change the
+> [necessary settings](https://docs.djangoproject.com/en/5.2/topics/settings/#the-basics) for a production deployment.
+
 
 For other installation methods, check out the [Getting Started Guide](https://tu-wien-datalab.github.io/aqueduct/getting-started/).
 

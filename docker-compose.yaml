@@ -35,12 +35,38 @@ services:
     depends_on:
       - migrate
       - dex
+      - redis
     healthcheck:
       test: ["CMD", "python", "-c", "import sys, httpx; httpx.get('http://localhost:8000/health', timeout=4).raise_for_status()"]
       interval: 5s
       timeout: 5s
       retries: 5
       start_period: 2s
+
+  redis:
+    image: redis:8.2.1
+
+  celery:
+    build: .
+    volumes:
+      - .:/app
+    env_file:
+      - .example.env
+    depends_on:
+      - redis
+      - migrate
+    command: celery -A aqueduct worker -l INFO
+
+  celery-beat:
+    build: .
+    volumes:
+      - .:/app
+    env_file:
+      - .example.env
+    depends_on:
+      - redis
+      - migrate
+    command: celery -A aqueduct beat -l INFO
 
   db:
     image: postgres:15

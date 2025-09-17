@@ -32,6 +32,7 @@ services:
       - .example.env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+    user: "${UID:-1000}:${GID:-1000}"  # For development, run processes as current user
     depends_on:
       - migrate
       - dex

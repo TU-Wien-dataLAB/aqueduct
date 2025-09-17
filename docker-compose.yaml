@@ -36,7 +36,7 @@ services:
       - redis
     healthcheck:
       test: ["CMD", "python", "-c", "import sys, httpx; httpx.get('http://localhost:8000/health', timeout=4).raise_for_status()"]
-      interval: 5s
+      interval: 60s
       timeout: 5s
       retries: 5
       start_period: 2s

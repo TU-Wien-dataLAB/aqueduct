@@ -20,7 +20,7 @@ fi
 # --- Configuration ---
 # Set the base URL of your OpenAI-compatible server
 # Assumes it supports /v1/batches endpoint
-BASE_URL="http://localhost:8000/vllm"
+BASE_URL="http://localhost:8000"
 
 # --- List Batch Jobs ---
 echo "Listing models..."

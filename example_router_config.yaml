@@ -1,0 +1,21 @@
+model_list:
+  - model_name: gpt-5-mini
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: "os.environ/OPENAI_API_KEY"
+  - model_name: text-embedding-3-small
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: "os.environ/OPENAI_API_KEY"
+  - model_name: tts-1
+    litellm_params:
+      model: openai/tts-1
+      api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      mode: "audio_speech"
+  - model_name: whisper-1
+    litellm_params:
+      model: openai/whisper-1
+      api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      mode: "audio_transcriptions"

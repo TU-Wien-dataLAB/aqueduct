@@ -46,8 +46,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'mozilla_django_oidc',
     'django_celery_beat',
+    'django.contrib.sites',
+    'tos',
     'management.apps.AqueductManagementConfig',
-    "gateway.apps.GatewayConfig"
+    'gateway.apps.GatewayConfig'
 ]
 
 MIDDLEWARE = [
@@ -154,6 +156,16 @@ def batch_processing_concurrency():
 AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
 
 TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")
+
+# TOS Settings
+
+TOS_ENABLED = os.getenv("TOS_ENABLED", "False").lower() == "true"
+if TOS_ENABLED:
+    TOS_CACHE_NAME = 'default' # set explicitly
+    idx = MIDDLEWARE.index("django.contrib.sessions.middleware.SessionMiddleware")
+    # has to come after session middleware
+    MIDDLEWARE.insert(idx + 1, 'management.middleware.UserAgreementMiddleware')
+
 
 # Celery Settings -------------------------------------------------------
 

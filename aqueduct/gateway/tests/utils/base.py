@@ -209,3 +209,30 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
     tts_model = "gpt-4o-mini-tts"
     stt_model = "whisper-1"
+
+
+@override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
+                   AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
+                   LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
+                   TOS_ENABLED=True)
+class TOSGatewayTestCase(GatewayIntegrationTestCase):
+    fixtures = ["gateway_data.json"]
+
+    def accept_tos(self):
+        from tos.models import TermsOfService, UserAgreement
+        from django.contrib.auth import get_user_model
+        
+        User = get_user_model()
+        
+        # Create an active Terms of Service
+        tos = TermsOfService.objects.create(
+            active=True,
+            content="Test Terms of Service content"
+        )
+        
+        # Get the user with pk=1 and create a UserAgreement
+        user = User.objects.get(pk=1)
+        UserAgreement.objects.create(
+            terms_of_service=tos,
+            user=user
+        )

@@ -407,7 +407,7 @@ def catch_router_exceptions(view_func):
 def tos_accepted(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        if settings.TOS_ENABLED and not has_user_agreed_latest_tos(request.user):
+        if settings.TOS_ENABLED and not await sync_to_async(has_user_agreed_latest_tos)(request.user):
             return JsonResponse({"error": "In order to use the API you have to agree to the terms of service!"},
                                 status=403)
 

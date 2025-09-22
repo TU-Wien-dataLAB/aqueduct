@@ -11,11 +11,14 @@
 </head>
 <body class="h-screen">
 
-<div class="card bg-base-100 shadow-lg">
+<div class="card bg-base-100 shadow-lg max-w-4xl mx-auto">
     <div class="card-body">
-        <h2 class="card-title text-2xl font-bold mb-4">
-            {% blocktrans %}Terms of Service as of {{ tos.created|date:"SHORT_DATE_FORMAT" }}{% endblocktrans %}
-        </h2>
+        <h2 class="card-title text-2xl font-bold mb-2">Terms of Service</h2>
+        <p class="text-sm text-gray-500 mb-4">
+            {% blocktrans with tos_created=tos.created|date:"SHORT_DATE_FORMAT" %}
+                as of {{ tos_created }}
+            {% endblocktrans %}
+        </p>
         <div class="prose max-w-none">
             {{ tos.content|safe }}
         </div>

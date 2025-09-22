@@ -13,15 +13,16 @@
 
 <div class="card bg-base-100 shadow-lg max-w-4xl mx-auto">
     <div class="card-body">
-        <h2 class="card-title text-2xl font-bold mb-4">
+        <h2 class="card-title text-2xl font-bold mb-2">Terms of Service</h2>
+        <p class="text-sm text-gray-500 mb-4">
             {% if note %}
                 {{ note }}
             {% else %}
                 {% blocktrans with tos_created=tos.created|date:"SHORT_DATE_FORMAT" %}
-                Terms of Service as of {{ tos_created }}
+                as of {{ tos_created }}
                 {% endblocktrans %}
             {% endif %}
-        </h2>
+        </p>
         <div class="prose max-w-none mb-8 max-h-96 overflow-y-auto">
             {{ tos.content|safe }}
         </div>

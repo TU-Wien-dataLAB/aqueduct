@@ -6,23 +6,31 @@ uploads
 venv
 .idea
 .vscode
-**/fixtures/.*.json
+
 .git
 .github
 .gitignore
-docs
-Dockerfile
-README.md
-mock-dex-config.yaml
-examples
-docker-compose.yaml
-.example.env
+
 **/__pycache__/
 **/*.sqlite3
-aqueduct/staticfiles
-dump.rdb
 *.db
-router_config.yaml
+dump.rdb
+aqueduct/staticfiles
+**/fixtures/.*.json
+charts
+docs
+examples
+
+.example.env
+.pre-commit-config.yaml
+.python-version
+docker-compose.yaml
+Dockerfile
+example_router_config.yaml
+mock-dex-config.yaml
+README.md
+tbump.toml
+uv.lock
 
 # Created by https://www.toptal.com/developers/gitignore/api/django
 # Edit at https://www.toptal.com/developers/gitignore?templates=django

@@ -72,5 +72,10 @@ services:
     env_file:
       - .example.env
 
+  tika:
+    image: apache/tika:3.2.3.0
+    ports:
+      - "9998:9998"
+
 volumes:
   postgres_data:

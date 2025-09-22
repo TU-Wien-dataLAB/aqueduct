@@ -153,7 +153,7 @@ def batch_processing_concurrency():
 
 AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
 
-TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")  # TODO: use container name in .example.env
+TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")
 
 # Celery Settings -------------------------------------------------------
 

@@ -15,7 +15,7 @@ from .decorators import (
     ensure_usage,
     log_request,
     check_model_availability,
-    catch_router_exceptions,
+    catch_router_exceptions, tos_accepted,
 )
 
 
@@ -32,6 +32,7 @@ def validate_tts(pydantic_model: dict):
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
+@tos_accepted
 @check_limits
 @parse_body(model=TypeAdapter(openai.types.audio.SpeechCreateParams))
 @ensure_usage

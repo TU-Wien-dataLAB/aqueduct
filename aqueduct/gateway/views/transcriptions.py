@@ -15,7 +15,7 @@ from .decorators import (
     parse_body,
     log_request,
     check_model_availability,
-    catch_router_exceptions,
+    catch_router_exceptions, tos_accepted,
 )
 from gateway.router import get_openai_client, get_router, get_router_config
 from .utils import _usage_from_bytes, _openai_stream
@@ -40,6 +40,7 @@ class TranscriptionCreateParams(RootModel):
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
+@tos_accepted
 @check_limits
 @parse_body(model=TypeAdapter(TranscriptionCreateParams))
 @log_request

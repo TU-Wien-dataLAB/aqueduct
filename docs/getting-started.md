@@ -19,7 +19,8 @@ Welcome! This guide will help you get up and running with the Aqueduct AI Gatewa
 ## Quick Start (with Docker Compose)
 
 The recommended way to get Aqueduct running locally is with Docker Compose. This will start the Django app, a PostgreSQL
-database, and a local mock OIDC provider (Dex) for authentication.
+database, Celery with Redis as the broker, Tika for text extraction from files, and a local mock OIDC provider (Dex)
+for authentication.
 
 1. **Clone the repository**
    ```bash

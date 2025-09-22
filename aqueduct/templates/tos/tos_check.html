@@ -1,0 +1,23 @@
+{% load i18n %}
+{% if note %}
+    <h2>{{ note }}</h2>
+{% else %}
+    <h2>
+    {% blocktrans with tos_created=tos.created|date:"SHORT_DATE_FORMAT" %}
+    Terms of Service as of {{ tos_created }}
+    {% endblocktrans %}
+    </h2>
+{% endif %}
+
+{{ tos.content|safe }}
+
+<h2>{% trans "Accept Terms of Service?" %}</h2>
+
+<form method="post" action="{% url "tos_check_tos" %}">
+    {% csrf_token %}
+    {% if next %}
+        <input type="hidden" name="{{ redirect_field_name }}" value="{{ next }}">
+    {% endif %}
+    <button type="submit" name="reject" value="reject">{% trans "Reject" %}</button>
+    <button type="submit" name="accept" value="accept">{% trans "Accept" %}</button>
+</form>

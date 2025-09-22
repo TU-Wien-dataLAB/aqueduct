@@ -1,5 +1,25 @@
 {% load i18n %}
+{% load static %}
 
-<h2>{% blocktrans %}Terms of Service as of {{ tos.created|date:"SHORT_DATE_FORMAT" }}{% endblocktrans %}</h2>
+<!DOCTYPE html>
+<html lang="en" class="bg-base-200">
+<head>
+    <meta charset="UTF-8">
+    <title>Aqueduct AI Gateway</title>
+    <link rel="shortcut icon" type="image/png" href="{% static 'images/Aqueduct_Icon_80x80.png' %}">
+    {% include "management/_cdn.html" %}
+</head>
+<body class="h-screen">
 
-{{ tos.content|safe }}
+<div class="card bg-base-100 shadow-lg">
+    <div class="card-body">
+        <h2 class="card-title text-2xl font-bold mb-4">
+            {% blocktrans %}Terms of Service as of {{ tos.created|date:"SHORT_DATE_FORMAT" }}{% endblocktrans %}
+        </h2>
+        <div class="prose max-w-none">
+            {{ tos.content|safe }}
+        </div>
+    </div>
+</div>
+</body>
+</html>

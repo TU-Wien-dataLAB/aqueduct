@@ -1,23 +1,80 @@
 {% load i18n %}
-{% if note %}
-    <h2>{{ note }}</h2>
-{% else %}
-    <h2>
-    {% blocktrans with tos_created=tos.created|date:"SHORT_DATE_FORMAT" %}
-    Terms of Service as of {{ tos_created }}
-    {% endblocktrans %}
-    </h2>
-{% endif %}
+{% load static %}
 
-{{ tos.content|safe }}
+<!DOCTYPE html>
+<html lang="en" class="bg-base-200">
+<head>
+    <meta charset="UTF-8">
+    <title>Aqueduct AI Gateway</title>
+    <link rel="shortcut icon" type="image/png" href="{% static 'images/Aqueduct_Icon_80x80.png' %}">
+    {% include "management/_cdn.html" %}
+</head>
+<body class="h-screen">
 
-<h2>{% trans "Accept Terms of Service?" %}</h2>
+<div class="card bg-base-100 shadow-lg max-w-4xl mx-auto">
+    <div class="card-body">
+        <h2 class="card-title text-2xl font-bold mb-4">
+            {% if note %}
+                {{ note }}
+            {% else %}
+                {% blocktrans with tos_created=tos.created|date:"SHORT_DATE_FORMAT" %}
+                Terms of Service as of {{ tos_created }}
+                {% endblocktrans %}
+            {% endif %}
+        </h2>
+        <div class="prose max-w-none mb-8 max-h-96 overflow-y-auto">
+            {{ tos.content|safe }}
+        </div>
+        <div class="divider"></div>
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <h3 class="text-lg font-semibold">{% trans "Accept Terms of Service?" %}</h3>
+            <form method="post" action="{% url "tos_check_tos" %}" class="flex gap-4">
+                {% csrf_token %}
+                {% if next %}
+                    <input type="hidden" name="{{ redirect_field_name }}" value="{{ next }}">
+                {% endif %}
+                <button type="submit" name="reject" value="reject" class="btn btn-error btn-outline">
+                    {% trans "Reject" %}
+                </button>
+                <button type="submit" name="accept" value="accept" class="btn btn-primary">
+                    {% trans "Accept" %}
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
 
-<form method="post" action="{% url "tos_check_tos" %}">
-    {% csrf_token %}
-    {% if next %}
-        <input type="hidden" name="{{ redirect_field_name }}" value="{{ next }}">
-    {% endif %}
-    <button type="submit" name="reject" value="reject">{% trans "Reject" %}</button>
-    <button type="submit" name="accept" value="accept">{% trans "Accept" %}</button>
-</form>
+
+<div class="fixed bottom-4 right-4 w-auto max-w-xl z-50">
+        {% if messages %}
+            <div class="space-y-2">
+                {% for message in messages %}
+                    <div role="alert"
+                         class="alert
+            {% if message.tags == 'success' %}alert-success
+            {% elif message.tags == 'error' %}alert-error
+            {% else %}alert-info
+            {% endif %}
+            shadow-lg">
+                        {# Icon Section: Use appropriate SVG or img tag. Added shrink-0 and explicit size #}
+                        {% if message.tags == 'success' %}
+                            <img src="{% static 'icons/check.svg' %}" alt="Success Icon" class="h-6 w-6 shrink-0">
+
+                        {% elif message.tags == 'error' %}
+                            <img src="{% static 'icons/error.svg' %}" alt="Error Icon" class="h-6 w-6 shrink-0">
+
+                        {% else %} {# Info or default icon #}
+                            <img src="{% static 'icons/info.svg' %}" alt="Info Icon" class="h-6 w-6 shrink-0">
+                        {% endif %}
+
+                        <span>{{ message }}</span>
+
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+
+
+</body>
+</html>

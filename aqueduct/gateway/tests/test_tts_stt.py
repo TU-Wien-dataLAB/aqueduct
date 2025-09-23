@@ -102,7 +102,7 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
 
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         payload = {
-            "model": "gpt-4.1-nano",  # This is a chat model, not TTS
+            "model": self.model,  # This is a chat model, not TTS
             "input": "Hello, this is a test.",
             "voice": "alloy"
         }
@@ -222,7 +222,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
         response = self.client.post(
             "/audio/transcriptions",
-            {"file": self.test_audio_file, "model": "gpt-4.1-nano"},  # This is a chat model, not STT
+            {"file": self.test_audio_file, "model": self.model},  # This is a chat model, not STT
             headers=headers
         )
 

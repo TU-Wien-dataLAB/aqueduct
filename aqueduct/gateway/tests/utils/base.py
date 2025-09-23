@@ -9,7 +9,7 @@ from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
 
-INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get("INTEGRATION_TEST_BACKEND", "vllm")
+INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get("INTEGRATION_TEST_BACKEND", "openai")
 if INTEGRATION_TEST_BACKEND not in ["vllm", "openai"]:
     raise ValueError("Integration test backend must be one of 'vllm' or 'openai‘.")
 
@@ -25,34 +25,11 @@ model_list:
   rpm: 100
 """)
 
-ROUTER_CONFIG_OPENAI = dedent("""
-model_list:
-- model_name: gpt-4.1-nano
-  litellm_params:
-    model: openai/gpt-4.1-nano
-    api_key: "os.environ/OPENAI_API_KEY"
-- model_name: text-embedding-ada-002
-  litellm_params:
-    model: openai/text-embedding-ada-002
-    api_key: "os.environ/OPENAI_API_KEY"
-  model_info:
-    mode: embedding
-- model_name: gpt-4o-mini-tts
-  litellm_params:
-    model: openai/gpt-4o-mini-tts
-    api_key: "os.environ/OPENAI_API_KEY"
-  model_info:
-    mode: audio_speech
+ROOT = Path(__file__).parent.parent.parent.parent.parent
 
-- model_name: whisper-1
-  litellm_params:
-    model: openai/whisper-1
-    api_key: "os.environ/OPENAI_API_KEY"
-  model_info:
-    id: whisper-1
-    mode: audio_transcriptions
+with open(ROOT / "example_router_config.yaml") as f:
+    ROUTER_CONFIG_OPENAI = f.read()
 
-""")
 ROUTER_CONFIG = ROUTER_CONFIG_VLLM if INTEGRATION_TEST_BACKEND == "vllm" else ROUTER_CONFIG_OPENAI
 
 START_VLLM_SERVER = INTEGRATION_TEST_BACKEND == "vllm" and os.environ.get("START_VLLM_SERVER", "true") == "true"
@@ -181,7 +158,7 @@ class GatewayFilesTestCase(TransactionTestCase):
     AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY=2,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     MAX_USER_BATCHES=3,
-    AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=1 / 60,
+    AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=3 / 60,
     CACHES={
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",

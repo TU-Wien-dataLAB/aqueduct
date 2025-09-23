@@ -19,7 +19,8 @@ Welcome! This guide will help you get up and running with the Aqueduct AI Gatewa
 ## Quick Start (with Docker Compose)
 
 The recommended way to get Aqueduct running locally is with Docker Compose. This will start the Django app, a PostgreSQL
-database, and a local mock OIDC provider (Dex) for authentication.
+database, Celery with Redis as the broker, Tika for text extraction from files, and a local mock OIDC provider (Dex)
+for authentication.
 
 1. **Clone the repository**
    ```bash
@@ -27,13 +28,24 @@ database, and a local mock OIDC provider (Dex) for authentication.
    cd aqueduct
    ```
 
-2. **Start the services**
+2. **Set the necessary environment variables**
+Most of the necessary environment variables are provided in the `.example.env` file.
+You only need to set the `OPENAI_API_KEY`:
+   ```bash
+   export OPENAI_API_KEY="your-openai-api-key"
+   ```
+   This variable is used by the sample router configuration, provided in the
+`example_router_config.yaml` file. Adjust it if you want to use other models.
+
+3. **Start the services**
    ```bash
    docker compose up --build
    ```
-   This will build and start all required services using the provided `.example.env` file for environment variables.
+   This will build and start all required services using the provided `.example.env` and
+`example_router_config.yaml` files for environment variables and the router configuration.
+For example, you could use vLLM to run a model locally.
 
-3. **Access the application**
+4. **Access the application**
 
     - The web UI will be available at [http://localhost:8000](http://localhost:8000)
     - The local OIDC provider (Dex) will be running at [http://localhost:5556/dex](http://localhost:5556/dex)
@@ -43,27 +55,9 @@ database, and a local mock OIDC provider (Dex) for authentication.
 
 You can now access the admin UI and start exploring the gateway features.
 
-> [!NOTE]
-> This starts Django in debug mode and is not suitable for production deployments. Change the [necessary settings](https://docs.djangoproject.com/en/5.2/topics/settings/#the-basics) for a production deployment.
-
-### Starting vLLM (Optional)
-
-To use an actual provider, you can run vLLM locally on your machine, e.g. with:
-
-```bash
-vllm serve Qwen/Qwen2.5-0.5B-Instruct -p 8001
-```
-
-For more information, follow the [Quickstart](https://docs.vllm.ai/en/stable/getting_started/quickstart.html) guide on vLLM.
-
-Then follow the [User Guide](user-guide/models.md) to create an Endpoint with the (internal URL `http://host.docker.internal:8001/v1` and add the model with the name `Qwen/Qwen2.5-0.5B-Instruct` and a display name of your choosing.
-
-You can then create a token and run the examples in the [User Guide](user-guide/examples.md), for example:
-
-```bash
-curl http://localhost:8000/vllm/models \
-  -H "Authorization: Bearer YOUR_AQUEDUCT_TOKEN"
-```
+> **NOTE:**
+> This starts Django in debug mode and is not suitable for production deployments. Change the
+> [necessary settings](https://docs.djangoproject.com/en/5.2/topics/settings/#the-basics) for a production deployment.
 
 ---
 

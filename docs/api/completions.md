@@ -27,7 +27,7 @@ The request body should be a JSON object compatible with the OpenAI [CompletionC
 | `model`             | string             | The name of the model to use.                         |
 | `prompt`            | string or [string] | The prompt(s) to generate completions for.            |
 | `suffix`            | string             | Optional text to append after the prompt.             |
-| `max_tokens`        | integer            | Maximum number of tokens to generate.                 |
+| `max_completion_tokens` | integer            | Maximum number of tokens to generate.                 |
 | `temperature`       | number             | Sampling temperature to use.                          |
 | `top_p`             | number             | Nucleus sampling probability.                         |
 | `n`                 | integer            | Number of completions to generate for each prompt.     |
@@ -50,7 +50,7 @@ curl https://your-aqueduct-domain.com/completions \
   -d '{
     "model": "your-model-name",
     "prompt": "Once upon a time",
-    "max_tokens": 50,
+    "max_completion_tokens": 50,
     "temperature": 0.7
   }'
 ```
@@ -85,7 +85,7 @@ curl https://your-aqueduct-domain.com/completions \
   -d '{
     "model": "your-model-name",
     "prompt": "Once upon a time",
-    "max_tokens": 50,
+    "max_completion_tokens": 50,
     "stream": true
   }'
 ```

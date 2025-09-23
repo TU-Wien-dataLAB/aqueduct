@@ -12,8 +12,6 @@ services:
     build: .
     container_name: django_migrate
     command: python manage.py migrate
-    volumes:
-      - .:/app
     env_file:
       - .example.env
     depends_on:
@@ -25,20 +23,50 @@ services:
     command: |
       sh -c "python manage.py collectstatic --no-input && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
     volumes:
-      - .:/app
+      - ./example_router_config.yaml:/app/example_router_config.yaml
     ports:
       - "8000:8000"
     env_file:
       - .example.env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
-      - migrate
-      - dex
+      redis:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+      dex:
+        condition: service_started
     healthcheck:
       test: ["CMD", "python", "-c", "import sys, httpx; httpx.get('http://localhost:8000/health', timeout=4).raise_for_status()"]
-      interval: 5s
+      interval: 60s
       timeout: 5s
       retries: 5
       start_period: 2s
+
+  redis:
+    image: redis:8.2.1
+
+  celery:
+    build: .
+    volumes:
+      - ./example_router_config.yaml:/app/example_router_config.yaml
+    env_file:
+      - .example.env
+    depends_on:
+      - redis
+    command: celery -A aqueduct worker -l INFO
+
+  celery-beat:
+    build: .
+    env_file:
+      - .example.env
+    depends_on:
+      redis:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    command: celery -A aqueduct beat -l INFO
 
   db:
     image: postgres:15
@@ -47,6 +75,11 @@ services:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
       - .example.env
+
+  tika:
+    image: apache/tika:3.2.3.0
+    ports:
+      - "9998:9998"
 
 volumes:
   postgres_data:

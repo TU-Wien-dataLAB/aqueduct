@@ -15,12 +15,11 @@ def _build_chat_headers(access_token):
     }
 
 
-def _build_chat_payload(model, messages, max_tokens=50, temperature=0.0, stream=False):
+def _build_chat_payload(model, messages, max_completion_tokens=50, stream=False):
     payload = {
         "model": model,
         "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
+        "max_completion_tokens": max_completion_tokens,
     }
     if stream:
         payload["stream"] = True

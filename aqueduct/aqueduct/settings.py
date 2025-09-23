@@ -29,9 +29,9 @@ USE_TZ = True
 SECRET_KEY = os.getenv("SECRET_KEY", "insecure-secret-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
+DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split()
 
 # Application definition
 
@@ -159,6 +159,7 @@ TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")
 
 CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == "true"
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_WORKER_CONCURRENCY = os.environ.get('CELERY_WORKER_CONCURRENCY', 1)
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 CELERY_TIMEZONE = TIME_ZONE

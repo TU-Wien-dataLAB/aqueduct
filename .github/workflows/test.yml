@@ -39,6 +39,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Run docker compose
         uses: hoverkraft-tech/compose-action@v2.2.0
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
           compose-file: "./docker-compose.yaml"
           up-flags: "--build --wait" # the wait flag checks for health status

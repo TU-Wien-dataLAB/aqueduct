@@ -30,15 +30,17 @@ class UserAgreementMiddleware(TOSUserAgreementMiddleware):
     async_capable = False
 
     def __call__(self, request):
-        if request.path_info.rstrip("/") == "/oidc/callback":
-            return self.get_response(request)
-
-
         response = self.process_request(request)
         if response is None:
             return self.get_response(request)
         else:
             return response
+
+    def should_fast_skip(self, request: ASGIRequest):
+        if request.path_info.rstrip("/") == "/oidc/callback":
+            return True
+
+        return super().should_fast_skip(request)
 
 
 class HealthCheckMiddleware:

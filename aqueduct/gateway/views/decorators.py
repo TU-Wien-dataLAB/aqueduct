@@ -22,6 +22,7 @@ from django.utils import timezone
 from pydantic import ValidationError, TypeAdapter
 from openai.types.chat import ChatCompletionStreamOptionsParam
 from openai.types.chat.chat_completion_content_part_param import FileFile
+from tos.middleware import cache
 from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
@@ -407,9 +408,20 @@ def catch_router_exceptions(view_func):
 def tos_accepted(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        if settings.TOS_ENABLED and settings.TOS_GATEWAY_VALIDATION and not await sync_to_async(has_user_agreed_latest_tos)(request.user):
-            return JsonResponse({"error": "In order to use the API you have to agree to the terms of service!"},
-                                status=403)
+        token: Token = kwargs.get('token')
+        key_version = cache.get('django:tos:key_version')
+        user_id = token.user.id
+
+        skip: bool = cache.get(f'django:tos:skip_tos_check:{user_id}', False, version=key_version)
+
+        if settings.TOS_ENABLED and settings.TOS_GATEWAY_VALIDATION and not skip:
+            user_agreed = cache.get(f'django:tos:agreed:{user_id}', None, version=key_version)
+            if user_agreed is None:
+                user_agreed = await sync_to_async(has_user_agreed_latest_tos)(request.user)
+
+            if not user_agreed:
+                return JsonResponse({"error": "In order to use the API you have to agree to the terms of service!"},
+                                    status=403)
 
         return await view_func(request, *args, **kwargs)
 

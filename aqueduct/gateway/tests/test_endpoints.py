@@ -331,7 +331,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         upload_data = upload_response.json()
         file_id = upload_data["id"]
 
-        UPDATED_ACCESS_TOKEN = self.create_new_user()
+        UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
         headers = _build_chat_headers(UPDATED_ACCESS_TOKEN)
 
         payload = {

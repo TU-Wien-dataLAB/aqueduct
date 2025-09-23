@@ -120,7 +120,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
         Request.objects.all().delete()
 
     @staticmethod
-    def create_new_user() -> str:
+    def create_new_user() -> tuple[str, int]:
         # Create a new user and a new token for that user
         new_user = User.objects.create_user(username='OtherUser', email="other@example.com")
         org = Org.objects.get(name="E060")
@@ -131,7 +131,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
         new_token = Token(name="TestToken", user=new_user)
         token_value = new_token._set_new_key()
         new_token.save()
-        return token_value
+        return token_value, new_user.id
 
 
 @override_settings(
@@ -195,7 +195,7 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
 class TOSGatewayTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
 
-    def accept_tos(self):
+    def accept_tos(self, user_id: int = 1):
         from tos.models import TermsOfService, UserAgreement
         from django.contrib.auth import get_user_model
         
@@ -207,8 +207,8 @@ class TOSGatewayTestCase(GatewayIntegrationTestCase):
             content="Test Terms of Service content"
         )
         
-        # Get the user with pk=1 and create a UserAgreement
-        user = User.objects.get(pk=1)
+        # Get the user with pk=user_id and create a UserAgreement
+        user = User.objects.get(pk=user_id)
         UserAgreement.objects.create(
             terms_of_service=tos,
             user=user

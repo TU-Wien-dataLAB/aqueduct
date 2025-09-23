@@ -6,7 +6,6 @@ from django.db.models import Q
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
-
 class AqueductManagementConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'management'
@@ -25,8 +24,9 @@ class AqueductManagementConfig(AppConfig):
                 # Get the cache prefix
                 key_version = cache.get('django:tos:key_version')
 
-                # If the user is staff allow them to skip the TOS agreement check
-                if instance.is_staff or instance.is_superuser:
+                # If the user is admin allow them to skip the TOS agreement check
+                group = instance.profile.group
+                if group == "admin":
                     cache.set('django:tos:skip_tos_check:{}'.format(instance.id), True, version=key_version)
 
                 # But if they aren't make sure we invalidate them from the cache
@@ -44,9 +44,9 @@ class AqueductManagementConfig(AppConfig):
                 # Efficiently cache all of the users who are allowed to skip the TOS
                 # agreement check
                 cache.set_many({
-                    'django:tos:skip_tos_check:{}'.format(staff_user.id): True
-                    for staff_user in get_user_model().objects.filter(
-                        Q(is_staff=True) | Q(is_superuser=True))
+                    'django:tos:skip_tos_check:{}'.format(user.id): True
+                    for user in get_user_model().objects.filter(
+                        groups__name='admin')
                 }, version=key_version)
 
             # Immediately add staff users to the cache

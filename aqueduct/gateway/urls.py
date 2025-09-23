@@ -33,6 +33,10 @@ urlpatterns = [
     path('audio/transcriptions', views.transcriptions, name='transcriptions'),
     path('v1/audio/transcriptions', views.transcriptions, name='v1_transcriptions'),
 
+    # Image generation endpoint
+    path("images/generations", views.image_generation, name="image_generation"),
+    path("v1/images/generations", views.image_generation, name="v1_image_generation"),
+
     # Files endpoints
     path('files', views.files, name='files'),
     path('v1/files', views.files, name='v1_files'),

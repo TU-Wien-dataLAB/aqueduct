@@ -11,7 +11,7 @@ class AqueductManagementConfig(AppConfig):
     name = 'management'
 
     def ready(self):
-        if 'tos' in settings.INSTALLED_APPS:
+        if settings.TOS_ENABLED:
             cache = caches[getattr(settings, 'TOS_CACHE_NAME', 'default')]
             tos_app = apps.get_app_config('tos')
             TermsOfService = tos_app.get_model('TermsOfService')

@@ -26,7 +26,7 @@ The request body should be a JSON object compatible with the OpenAI [ChatComplet
 | --------------------| ------------------ | ---------------------------------------------------------------- |
 | `model`             | string             | The name of the model to use.                                    |
 | `messages`          | array              | List of messages with roles (`system`, `user`, `assistant`).      |
-| `max_tokens`        | integer            | Maximum number of tokens to generate.                            |
+| `max_completion_tokens` | integer            | Maximum number of tokens to generate.                            |
 | `temperature`       | number             | Sampling temperature to use.                                     |
 | `top_p`             | number             | Nucleus sampling probability.                                    |
 | `n`                 | integer            | Number of chat completion choices to generate.                   |
@@ -114,7 +114,7 @@ curl https://your-aqueduct-domain.com/chat/completions \
               ]
           }
       ],
-      "max_tokens": 50,
+      "max_completion_tokens": 50,
       "temperature": 0.0
   }'
 ```
@@ -140,7 +140,7 @@ response = client.chat.completions.create(
             ],
         }
     ],
-    max_tokens=50,
+    max_completion_tokens=50,
     temperature=0.0,
 )
 print(response.choices[0].message.content)

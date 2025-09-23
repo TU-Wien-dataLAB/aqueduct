@@ -165,6 +165,7 @@ if TOS_ENABLED:
     idx = MIDDLEWARE.index("django.contrib.sessions.middleware.SessionMiddleware")
     # has to come after session middleware
     MIDDLEWARE.insert(idx + 1, 'management.middleware.UserAgreementMiddleware')
+TOS_GATEWAY_VALIDATION = os.getenv("TOS_GATEWAY_VALIDATION", "True").lower() == "true"
 
 
 # Celery Settings -------------------------------------------------------

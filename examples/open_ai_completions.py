@@ -63,7 +63,7 @@ try:
                 ],
             }
         ],
-        max_tokens=500,
+        max_completion_tokens=500,
         stream=False,
     )
 
@@ -94,7 +94,7 @@ print("--- Streaming Chat Response ---")
 response = client.chat.completions.create(
     model=MODEL,
     messages=[{"role": "user", "content": PROMPT}],
-    max_tokens=MAX_TOKENS,
+    max_completion_tokens=MAX_TOKENS,
     stream=True,  # Streaming is enabled
 )
 
@@ -117,7 +117,7 @@ try:
     non_stream_response = client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": PROMPT}],
-        max_tokens=MAX_TOKENS,
+        max_completion_tokens=MAX_TOKENS,
         stream=False,  # Streaming is disabled
     )
     if non_stream_response.choices:
@@ -133,7 +133,7 @@ try:
     completion_response = client.completions.create(
         model=MODEL,
         prompt=PROMPT,
-        max_tokens=MAX_TOKENS,
+        max_completion_tokens=MAX_TOKENS,
         stream=False,
     )
     if completion_response.choices:
@@ -148,7 +148,7 @@ try:
     stream_response = client.completions.create(
         model=MODEL,
         prompt=PROMPT,
-        max_tokens=MAX_TOKENS,
+        max_completion_tokens=MAX_TOKENS,
         stream=True,
     )
     for chunk in stream_response:

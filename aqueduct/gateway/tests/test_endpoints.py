@@ -165,8 +165,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                       }
                       }]}
             ],
-            "max_tokens": 50,
-            "temperature": 0.0
+            "max_completion_tokens": 50,
         }
 
         endpoint = "/chat/completions"
@@ -239,8 +238,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                       }
                       }]}
             ],
-            "max_tokens": 50,
-            "temperature": 0.0
+            "max_completion_tokens": 50,
         }
 
         endpoint = "/chat/completions"
@@ -293,8 +291,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                       }
                       }]}
             ],
-            "max_tokens": 50,
-            "temperature": 0.0
+            "max_completion_tokens": 50,
         }
 
         endpoint = "/chat/completions"
@@ -349,8 +346,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                       }
                       }]}
             ],
-            "max_tokens": 50,
-            "temperature": 0.0
+            "max_completion_tokens": 50,
         }
 
         endpoint = "/chat/completions"
@@ -392,8 +388,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                       }
                       }]}
             ],
-            "max_tokens": 50,
-            "temperature": 0.0
+            "max_completion_tokens": 50,
         }
 
         endpoint = "/chat/completions"
@@ -444,8 +439,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                       }}
                  ]}
             ],
-            "max_tokens": 50,
-            "temperature": 0.0
+            "max_completion_tokens": 50,
         }
 
         endpoint = "/chat/completions"
@@ -582,8 +576,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                 "type": "json_schema",
                 "json_schema": {"name": "schema", "schema": json_schema}
             },
-            "max_tokens": 50,
-            "temperature": 0.0
+            "max_completion_tokens": 50,
         }
         endpoint = "/chat/completions"
         response = self.client.post(
@@ -631,8 +624,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                      {"type": "image_url", "image_url": {"url": image_url}},
                  ]}
             ],
-            "max_tokens": 50,
-            "temperature": 0.0
+            "max_completion_tokens": 50,
         }
         endpoint = "/chat/completions"
         response = self.client.post(
@@ -687,8 +679,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                 "type": "json_schema",
                 "json_schema": {"name": "schema", "schema": json_schema}
             },
-            "max_tokens": 50,
-            "temperature": 0.0,
+            "max_completion_tokens": 50,
             "stream": True
         }
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
@@ -869,7 +860,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
         else:
             raise ValueError(f"Unknown kind: {kind}")
 
-    def _rate_limit_test_template(self, kind: str, field: str, value: int, messages, max_tokens, limit_desc):
+    def _rate_limit_test_template(self, kind: str, field: str, value: int, messages, max_completion_tokens, limit_desc):
         """
         Generic template for rate limit tests for org, team, or user.
         Uses the Django test client to POST to the chat completion endpoint.
@@ -877,7 +868,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
         # Set the limit
         obj = self.setup_limits(kind, field, value)
 
-        response1 = self._send_chat_completion(messages, max_tokens=max_tokens, temperature=0.0)
+        response1 = self._send_chat_completion(messages, max_completion_tokens=max_completion_tokens)
         self.assertEqual(
             response1.status_code, 200,
             f"Expected 200 OK, got {response1.status_code}: {response1.content}"
@@ -900,7 +891,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
         # Second request should fail with 429
-        response2 = self._send_chat_completion(messages, max_tokens=max_tokens, temperature=0.0)
+        response2 = self._send_chat_completion(messages, max_completion_tokens=max_completion_tokens)
         self.assertEqual(
             response2.status_code, 429,
             f"Expected 429 Too Many Requests, got {response2.status_code}: {response2.content}"
@@ -929,7 +920,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             field="requests_per_minute",
             value=1,
             messages=self.MESSAGES,
-            max_tokens=5,
+            max_completion_tokens=5,
             limit_desc="org requests_per_minute"
         )
 
@@ -943,7 +934,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             field="requests_per_minute",
             value=1,
             messages=self.MESSAGES,
-            max_tokens=5,
+            max_completion_tokens=5,
             limit_desc="team requests_per_minute"
         )
 
@@ -957,7 +948,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             field="requests_per_minute",
             value=1,
             messages=self.MESSAGES,
-            max_tokens=5,
+            max_completion_tokens=5,
             limit_desc="user requests_per_minute"
         )
 
@@ -971,7 +962,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             field="input_tokens_per_minute",
             value=5,
             messages=self.MESSAGES,
-            max_tokens=1,
+            max_completion_tokens=1,
             limit_desc="org input_tokens_per_minute"
         )
 
@@ -985,7 +976,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             field="input_tokens_per_minute",
             value=5,
             messages=self.MESSAGES,
-            max_tokens=1,
+            max_completion_tokens=1,
             limit_desc="team input_tokens_per_minute"
         )
 
@@ -999,7 +990,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             field="input_tokens_per_minute",
             value=5,
             messages=self.MESSAGES,
-            max_tokens=1,
+            max_completion_tokens=1,
             limit_desc="user input_tokens_per_minute"
         )
 
@@ -1013,7 +1004,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             field="output_tokens_per_minute",
             value=5,
             messages=self.MESSAGES,
-            max_tokens=10,
+            max_completion_tokens=10,
             limit_desc="org output_tokens_per_minute"
         )
 
@@ -1027,7 +1018,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             field="output_tokens_per_minute",
             value=5,
             messages=self.MESSAGES,
-            max_tokens=10,
+            max_completion_tokens=10,
             limit_desc="team output_tokens_per_minute"
         )
 
@@ -1041,6 +1032,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             field="output_tokens_per_minute",
             value=5,
             messages=self.MESSAGES,
-            max_tokens=10,
+            max_completion_tokens=10,
             limit_desc="user output_tokens_per_minute"
         )

@@ -325,7 +325,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             ("/v1/chat/completions", json.dumps(_build_chat_payload(self.model, [
                 {"role": "system", "content": "X"}, {"role": "user", "content": "Y"}
             ]))),
-            ("/v1/completions", json.dumps({"model": self.model, "prompt": "Hello", "max_tokens": 2})),
+            ("/v1/completions", json.dumps({"model": self.model, "prompt": "Hello", "max_completion_tokens": 2})),
             ("/v1/embeddings", json.dumps({"model": self.model, "input": ["Hello"]})),
         ]
         for endpoint, line in tests:

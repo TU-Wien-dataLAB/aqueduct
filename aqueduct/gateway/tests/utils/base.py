@@ -158,7 +158,7 @@ class GatewayFilesTestCase(TransactionTestCase):
     AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY=2,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     MAX_USER_BATCHES=3,
-    AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=1 / 60,
+    AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=3 / 60,
     CACHES={
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",

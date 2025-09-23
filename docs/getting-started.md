@@ -43,6 +43,7 @@ You only need to set the `OPENAI_API_KEY`:
    ```
    This will build and start all required services using the provided `.example.env` and
 `example_router_config.yaml` files for environment variables and the router configuration.
+For example, you could use vLLM to run a model locally.
 
 4. **Access the application**
 
@@ -57,25 +58,6 @@ You can now access the admin UI and start exploring the gateway features.
 > **NOTE:**
 > This starts Django in debug mode and is not suitable for production deployments. Change the
 > [necessary settings](https://docs.djangoproject.com/en/5.2/topics/settings/#the-basics) for a production deployment.
-
-### Starting vLLM (Optional)
-
-To use an actual provider, you can run vLLM locally on your machine, e.g. with:
-
-```bash
-vllm serve Qwen/Qwen2.5-0.5B-Instruct -p 8001
-```
-
-For more information, follow the [Quickstart](https://docs.vllm.ai/en/stable/getting_started/quickstart.html) guide on vLLM.
-
-Then follow the [User Guide](user-guide/models.md) to create an Endpoint with the (internal URL `http://host.docker.internal:8001/v1` and add the model with the name `Qwen/Qwen2.5-0.5B-Instruct` and a display name of your choosing.
-
-You can then create a token and run the examples in the [User Guide](user-guide/index.md), for example:
-
-```bash
-curl http://localhost:8000/models \
-  -H "Authorization: Bearer YOUR_AQUEDUCT_TOKEN"
-```
 
 ---
 

@@ -16,9 +16,11 @@ def _usage_from_bytes(content: bytes) -> Usage:
     try:
         usage_dict = json.loads(content).get('usage', None)
         if isinstance(usage_dict, dict):
+            input_tokens = usage_dict.get('prompt_tokens') or usage_dict.get('input_tokens', 0)
+            output_tokens = usage_dict.get('completion_tokens') or usage_dict.get('output_tokens', 0)
             return Usage(
-                input_tokens=usage_dict.get('prompt_tokens', 0),
-                output_tokens=usage_dict.get('completion_tokens', 0)
+                input_tokens=input_tokens,
+                output_tokens=output_tokens
             )
         else:
             return Usage(input_tokens=0, output_tokens=0)

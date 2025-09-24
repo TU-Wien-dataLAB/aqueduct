@@ -1,24 +1,9 @@
-import asyncio
-from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.handlers.asgi import ASGIRequest
-from django.http import HttpResponse, JsonResponse
-
-from management.models import UserProfile
+from django.http import HttpResponse
 
 User = get_user_model()
 
-from django import VERSION as DJANGO_VERSION
-from django.conf import settings
-from django.contrib.auth import SESSION_KEY as session_key
-from django.contrib.auth import REDIRECT_FIELD_NAME
-from django.core.cache import caches
-from django.http import HttpResponseRedirect
-from django.urls import reverse_lazy
-from django.utils.cache import add_never_cache_headers
-from django.utils.deprecation import MiddlewareMixin
-
-from tos.models import UserAgreement
 from tos.middleware import UserAgreementMiddleware as TOSUserAgreementMiddleware
 
 

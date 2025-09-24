@@ -2,8 +2,6 @@ import base64
 import io
 import json
 import logging
-import mimetypes
-import os
 import time
 from datetime import timedelta
 from functools import wraps
@@ -26,7 +24,7 @@ from tos.middleware import cache
 from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
-from management.models import Request, Token, Usage, FileObject
+from management.models import Request, Token, FileObject
 
 logger = logging.getLogger(__name__)
 

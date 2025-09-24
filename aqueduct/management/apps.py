@@ -2,8 +2,7 @@ from django.apps import AppConfig, apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import caches
-from django.db.models import Q
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 class AqueductManagementConfig(AppConfig):
@@ -18,6 +17,7 @@ class AqueductManagementConfig(AppConfig):
 
             @receiver(post_save, sender=get_user_model(), dispatch_uid='set_staff_in_cache_for_tos')
             def set_staff_in_cache_for_tos(instance, **kwargs):
+                """ Skips TOS check for admin users. Is called after login (because of user.save()) so that cache is updated at each login."""
                 if kwargs.get('raw', False):
                     return
 
@@ -48,6 +48,3 @@ class AqueductManagementConfig(AppConfig):
                     for user in get_user_model().objects.filter(
                         groups__name='admin')
                 }, version=key_version)
-
-            # Immediately add staff users to the cache
-            add_staff_users_to_tos_cache()

@@ -2,6 +2,8 @@ import json
 from unittest.mock import patch
 
 from django.apps import apps
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core.cache import caches
 from django.test import override_settings
 
@@ -70,7 +72,9 @@ class TOSTestCase(TOSGatewayTestCase):
 
     def test_tos_user_skip(self):
         """ Tests that admin users are skipped in the decorator check. """
-        apps.get_app_config("management").ready()
+        cache = caches['default']
+        # set cache for user with id 1
+        cache.set('django:tos:skip_tos_check:{}'.format(1), True)
 
         from tos.models import TermsOfService
 

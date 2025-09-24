@@ -18,13 +18,14 @@ class TOSTestCase(TOSGatewayTestCase):
         UPDATED_ACCESS_TOKEN, user_id = self.create_new_user()
         self.accept_tos(user_id=user_id)
 
-        # Call the /models endpoint
-        response = self.client.get(
-            "/models",
-            data='',
-            content_type="application/json",
-            headers=_build_chat_headers(UPDATED_ACCESS_TOKEN)
-        )
+        with patch('gateway.views.decorators.cache', caches['default']):
+            # Call the /models endpoint
+            response = self.client.get(
+                "/models",
+                data='',
+                content_type="application/json",
+                headers=_build_chat_headers(UPDATED_ACCESS_TOKEN)
+            )
 
         # Should return 200 OK
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
@@ -49,13 +50,14 @@ class TOSTestCase(TOSGatewayTestCase):
             content="Test Terms of Service content"
         )
 
-        # Call the /models endpoint - user should be blocked because they haven't accepted TOS
-        response = self.client.get(
-            "/models",
-            data='',
-            content_type="application/json",
-            headers=_build_chat_headers(UPDATED_ACCESS_TOKEN)
-        )
+        with patch('gateway.views.decorators.cache', caches['default']):
+            # Call the /models endpoint - user should be blocked because they haven't accepted TOS
+            response = self.client.get(
+                "/models",
+                data='',
+                content_type="application/json",
+                headers=_build_chat_headers(UPDATED_ACCESS_TOKEN)
+            )
 
         # Should return 403 Forbidden
         self.assertEqual(response.status_code, 403,

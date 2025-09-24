@@ -2,8 +2,10 @@ from django.apps import AppConfig, apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import caches
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+
 
 class AqueductManagementConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
@@ -25,7 +27,11 @@ class AqueductManagementConfig(AppConfig):
                 key_version = cache.get('django:tos:key_version')
 
                 # If the user is admin allow them to skip the TOS agreement check
-                group = instance.profile.group
+                try:
+                    group = instance.profile.group
+                except ObjectDoesNotExist:
+                    return
+
                 if group == "admin":
                     cache.set('django:tos:skip_tos_check:{}'.format(instance.id), True, version=key_version)
 

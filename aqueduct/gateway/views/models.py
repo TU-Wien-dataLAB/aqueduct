@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
-from .decorators import token_authenticated, log_request
+from .decorators import token_authenticated, log_request, tos_accepted
 from gateway.router import get_router_config
 from management.models import Token
 
@@ -15,6 +15,7 @@ MODEL_CREATION_TIMESTAMP = int(timezone.now().timestamp())
 @csrf_exempt
 @require_GET
 @token_authenticated(token_auth_only=True)
+@tos_accepted
 @log_request
 async def models(
         request: ASGIRequest,

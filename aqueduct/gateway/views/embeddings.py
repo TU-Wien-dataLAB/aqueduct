@@ -18,7 +18,7 @@ from .decorators import (
     ensure_usage,
     log_request,
     check_model_availability,
-    catch_router_exceptions,
+    catch_router_exceptions, tos_accepted,
 )
 from .utils import _usage_from_bytes
 
@@ -26,6 +26,7 @@ from .utils import _usage_from_bytes
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
+@tos_accepted
 @check_limits
 @parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
 @ensure_usage

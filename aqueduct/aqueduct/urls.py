@@ -38,3 +38,9 @@ if getattr(settings, "SILKY_ENABLED", False):
         len(urlpatterns) - 1,
         path("silk/", include("silk.urls", namespace="silk")),
     )
+
+if getattr(settings, "TOS_ENABLED", False):
+    urlpatterns.insert(
+        len(urlpatterns) - 1,
+        path('terms-of-service/', include('tos.urls'))
+    )

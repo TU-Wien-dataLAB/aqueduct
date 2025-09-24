@@ -7,6 +7,10 @@ Usage:
 {{ toYaml .Values.env | nindent 0 }}
 - name: DJANGO_DEBUG
   value: "False"
+{{- if .Values.ingress.enabled }}
+- name: ALLOWED_HOSTS
+  value: {{ .Values.ingress.host | quote }}
+{{- end }}
 - name: SECRET_KEY
   {{- if .Values.djangoSecretKey.value }}
   value: {{ .Values.djangoSecretKey.value }}
@@ -84,5 +88,17 @@ Usage:
 {{- if .Values.tika.enabled }}
 - name: TIKA_SERVER_URL
   value: http://{{ .Release.Name }}-tika:9998
+{{- end }}
+- name: TOS_ENABLED
+{{- if .Values.tos.enabled }}
+  value: "True"
+{{- else }}
+  value: "False"
+{{- end }}
+- name: TOS_GATEWAY_VALIDATION
+{{- if .Values.tos.gatewayValidation }}
+  value: "True"
+{{- else }}
+  value: "False"
 {{- end }}
 {{- end }}

@@ -12,7 +12,7 @@ from django.conf import settings
 from openai.types.file_object import FileObject as OpenAIFileObject
 from management.models import FileObject
 from openai.types import FileCreateParams
-from .decorators import token_authenticated, log_request
+from .decorators import token_authenticated, log_request, tos_accepted
 
 
 def validate_batch_file(data: bytes):
@@ -35,6 +35,7 @@ def validate_batch_file(data: bytes):
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 @token_authenticated(token_auth_only=True)
+@tos_accepted
 @log_request
 async def files(request: ASGIRequest, token, *args, **kwargs):
     if request.method == "GET":

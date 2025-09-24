@@ -61,7 +61,8 @@
                             {% if user.is_superuser %}
                                 {% if settings.SILKY_ENABLED %}
                                     <li>
-                                        <a href="{% url 'silk:summary' %}" class="flex items-center gap-1 font-semibold">
+                                        <a href="{% url 'silk:summary' %}"
+                                           class="flex items-center gap-1 font-semibold">
                                             <img src="{% static 'icons/profiling.svg' %}" alt="Profiling"
                                                  class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                             Profiling
@@ -73,6 +74,15 @@
                                         <img src="{% static 'icons/wrench.svg' %}" alt="Admin Panel"
                                              class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                         Admin Panel
+                                    </a>
+                                </li>
+                            {% endif %}
+                            {% if settings.TOS_ENABLED %}
+                                <li>
+                                    <a href="{% url 'tos' %}" class="flex items-center gap-1 font-semibold">
+                                        <img src="{% static 'icons/tos.svg' %}" alt="Terms of Service"
+                                             class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                        Terms of Service
                                     </a>
                                 </li>
                             {% endif %}

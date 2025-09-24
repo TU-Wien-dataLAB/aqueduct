@@ -65,9 +65,13 @@ class OIDCBackend(OIDCAuthenticationBackend):
         groups = self._groups(claims)
         org = self._org(groups)
 
-        if user.profile.org != org:
-            user.profile.org = org
-            user.profile.save()
+        try:
+            profile = UserProfile.objects.get(user=user)
+            if profile.org != org:
+                profile.org = org
+                profile.save()
+        except UserProfile.DoesNotExist:
+            profile = UserProfile.objects.create(user=user, org=org)
 
         # Check if user is admin
         if hasattr(settings, 'ADMIN_GROUP'):
@@ -76,14 +80,14 @@ class OIDCBackend(OIDCAuthenticationBackend):
             is_admin = False
 
         if is_admin:
-            user.profile.group = "admin"
+            profile.group = "admin"
         elif user.is_superuser:
             # If user was admin make them "user"
-            user.profile.group = "user"
+            profile.group = "user"
 
         user.is_staff = is_admin
         user.is_superuser = is_admin
         user.save()
-        user.profile.save()
+        profile.save()
 
         return user

@@ -17,7 +17,7 @@ from openai.types.batch_create_params import BatchCreateParams
 
 from management.models import Batch, FileObject
 from django.conf import settings
-from .decorators import token_authenticated, log_request
+from .decorators import token_authenticated, log_request, tos_accepted
 from .utils import cache_lock
 from ..router import get_router
 
@@ -25,6 +25,7 @@ from ..router import get_router
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 @token_authenticated(token_auth_only=True)
+@tos_accepted
 @log_request
 async def batches(request: ASGIRequest, token, *args, **kwargs):
     """

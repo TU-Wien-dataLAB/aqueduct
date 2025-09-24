@@ -191,22 +191,28 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
 @override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
                    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
                    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-                   TOS_ENABLED=True)
+                   TOS_ENABLED=True,
+                   CACHES={
+                       "default": {
+                           "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                       }
+                   }
+                   )
 class TOSGatewayTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
 
     def accept_tos(self, user_id: int = 1):
         from tos.models import TermsOfService, UserAgreement
         from django.contrib.auth import get_user_model
-        
+
         User = get_user_model()
-        
+
         # Create an active Terms of Service
         tos = TermsOfService.objects.create(
             active=True,
             content="Test Terms of Service content"
         )
-        
+
         # Get the user with pk=user_id and create a UserAgreement
         user = User.objects.get(pk=user_id)
         UserAgreement.objects.create(

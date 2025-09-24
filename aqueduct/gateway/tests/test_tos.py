@@ -1,5 +1,8 @@
 import json
+from unittest.mock import patch
 
+from django.apps import apps
+from django.core.cache import caches
 from django.test import override_settings
 
 from gateway.tests.utils.base import TOSGatewayTestCase
@@ -20,7 +23,7 @@ class TOSTestCase(TOSGatewayTestCase):
             "/models",
             data='',
             content_type="application/json",
-            headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+            headers=_build_chat_headers(UPDATED_ACCESS_TOKEN)
         )
 
         # Should return 200 OK
@@ -65,6 +68,8 @@ class TOSTestCase(TOSGatewayTestCase):
 
     def test_tos_user_skip(self):
         """ Tests that admin users are skipped in the decorator check. """
+        apps.get_app_config("management").ready()
+
         from tos.models import TermsOfService
 
         TermsOfService.objects.create(
@@ -72,13 +77,14 @@ class TOSTestCase(TOSGatewayTestCase):
             content="Test Terms of Service content"
         )
 
-        # Call the /models endpoint
-        response = self.client.get(
-            "/models",
-            data='',
-            content_type="application/json",
-            headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        )
+        with patch('gateway.views.decorators.cache', caches['default']):
+            # Call the /models endpoint
+            response = self.client.get(
+                "/models",
+                data='',
+                content_type="application/json",
+                headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+            )
 
         # Should return 200 OK
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")

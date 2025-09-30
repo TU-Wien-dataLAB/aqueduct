@@ -23,14 +23,14 @@ Content-Type: application/json
 
 The request body should be a JSON object compatible with the OpenAI [SpeechCreateParams](https://platform.openai.com/docs/api-reference/audio/createSpeech) schema.
 
-| Parameter      | Type   | Description                                                      |
-| -------------- | ------ | ---------------------------------------------------------------- |
-| `model`        | string | The name of the text-to-speech model to use.                     |
-| `voice`        | string | The voice to use for generation.                                 |
-| `input`        | string | The text to generate audio for.                                  |
-| `instructions` | string | (Optional) Instructions for how to generate the audio.           |
-| `response_format` | string | (Optional) The format to return the audio in. Default: `mp3`.   |
-| `speed`        | number | (Optional) The speed of the generated audio. Default: `1.0`.     |
+| Parameter         | Type   | Description                                                   |
+|-------------------| ------ |---------------------------------------------------------------|
+| `model`           | string | The name of the text-to-speech model to use.                  |
+| `voice`           | string | The voice to use for generation.                              |
+| `input`           | string | The text to generate audio for.                               |
+| `instructions`    | string | (Optional) Instructions for how to generate the audio.        |
+| `response_format` | string | (Optional) The format to return the audio in. Default: `mp3`. |
+| `speed`           | number | (Optional) The speed of the generated audio. Default: `1.0`.  |
 
 See the OpenAI documentation for a full list of parameters.
 

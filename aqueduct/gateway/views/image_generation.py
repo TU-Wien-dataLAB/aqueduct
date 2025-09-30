@@ -1,21 +1,17 @@
-import json
-
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from litellm.types.utils import ImageResponse
 from pydantic import TypeAdapter
 import openai
 
 from gateway.router import get_router
-from litellm.types.utils import EmbeddingResponse
-
 from management.models import Request
 from .decorators import (
     token_authenticated,
     check_limits,
     parse_body,
-    ensure_usage,
     log_request,
     check_model_availability,
     catch_router_exceptions,
@@ -27,20 +23,20 @@ from .utils import _get_token_usage
 @require_POST
 @token_authenticated(token_auth_only=True)
 @check_limits
-@parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
-@ensure_usage
+@parse_body(model=TypeAdapter(openai.types.ImageGenerateParams))
 @log_request
 @check_model_availability
 @catch_router_exceptions
-async def embeddings(
+async def image_generation(
         request: ASGIRequest,
-        pydantic_model: openai.types.EmbeddingCreateParams,
+        pydantic_model: openai.types.ImageGenerateParams,
         request_log: Request,
         *args,
         **kwargs,
 ):
     router = get_router()
-    embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
-    data = embedding.model_dump(exclude_none=True, exclude_unset=True)
+    resp: ImageResponse = router.image_generation(**pydantic_model)
+    data = resp.model_dump(exclude_unset=True)
     request_log.token_usage = _get_token_usage(data)
-    return JsonResponse(data=data, status=200)
+
+    return JsonResponse(data)

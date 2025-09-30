@@ -18,7 +18,7 @@ from .decorators import (
     catch_router_exceptions,
 )
 from gateway.router import get_openai_client, get_router, get_router_config
-from .utils import _usage_from_bytes, _openai_stream
+from .utils import _get_token_usage, _openai_stream
 
 
 def validate_stt(pydantic_model: dict):
@@ -70,7 +70,7 @@ async def transcriptions(
     if (isinstance(transcription, openai.types.audio.transcription.Transcription) or
             isinstance(transcription, openai.types.audio.transcription_verbose.TranscriptionVerbose)):
         data = transcription.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
+        request_log.token_usage = _get_token_usage(data)
         return JsonResponse(data=data, status=200)
     elif isinstance(transcription, openai.AsyncStream):
         return StreamingHttpResponse(

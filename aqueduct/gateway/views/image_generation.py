@@ -1,5 +1,3 @@
-import json
-
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt

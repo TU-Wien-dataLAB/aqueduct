@@ -77,6 +77,13 @@ You can now access the admin UI and start exploring the gateway features.
 
 For other installation methods, check out the [Getting Started Guide](https://tu-wien-datalab.github.io/aqueduct/getting-started/).
 
+## Running tests
+
+```shell
+cd aqueduct  # The directory containing the `manage.py` file
+python manage.py test
+```
+
 ---
 
 

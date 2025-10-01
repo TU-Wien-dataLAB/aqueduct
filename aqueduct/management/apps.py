@@ -22,7 +22,7 @@ class AqueductManagementConfig(AppConfig):
             tos_app = apps.get_app_config('tos')
             TermsOfService = tos_app.get_model('TermsOfService')
 
-            @receiver(post_save, sender=get_user_model(), dispatch_uid='set_staff_in_cache_for_tos')
+            @receiver(post_save, sender=get_user_model(), dispatch_uid='set_staff_in_cache_for_tos', weak=False)
             def set_staff_in_cache_for_tos(instance, **kwargs):
                 """ Skips TOS check for admin users. Is called after login (because of user.save()) so that cache is updated at each login."""
                 if kwargs.get('raw', False):
@@ -45,7 +45,7 @@ class AqueductManagementConfig(AppConfig):
                 elif cache.get('django:tos:skip_tos_check:{}'.format(instance.id), False):
                     cache.delete('django:tos:skip_tos_check:{}'.format(instance.id), version=key_version)
 
-            @receiver(post_save, sender=TermsOfService, dispatch_uid='add_staff_users_to_tos_cache')
+            @receiver(post_save, sender=TermsOfService, dispatch_uid='add_staff_users_to_tos_cache', weak=False)
             def add_staff_users_to_tos_cache(*args, **kwargs):
                 if kwargs.get('raw', False):
                     return
@@ -61,5 +61,3 @@ class AqueductManagementConfig(AppConfig):
                         groups__name='admin')
                 }, version=key_version)
                 log.info("Added admin users to TOS cache")
-
-        log.info(f"Active post_save receivers: {[name for (name, _), _, _ in post_save.receivers if isinstance(name, str)]}")

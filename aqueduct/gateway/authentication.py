@@ -4,7 +4,7 @@ from django.utils import timezone
 from management.models import Token
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("aqueduct")
 User = get_user_model()
 
 

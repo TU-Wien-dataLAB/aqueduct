@@ -1,7 +1,10 @@
+import logging
+
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 from django.conf import settings
 from .models import Org, UserProfile
 
+log = logging.getLogger('aqueduct')
 
 def default_org_name_from_groups(groups: list[str]) -> str | None:
     """
@@ -58,6 +61,8 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
         user.save()
         profile.save()
+
+        log.info(f"Created user '{user.email}'")
         return user
 
     def update_user(self, user, claims):
@@ -90,4 +95,5 @@ class OIDCBackend(OIDCAuthenticationBackend):
         user.save()
         profile.save()
 
+        log.info(f"Updated user '{user.email}'")
         return user

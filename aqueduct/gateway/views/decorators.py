@@ -26,7 +26,7 @@ from tos.models import has_user_agreed_latest_tos
 from gateway.authentication import token_from_request
 from management.models import Request, Token, FileObject
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("aqueduct")
 
 
 def token_authenticated(token_auth_only: bool):

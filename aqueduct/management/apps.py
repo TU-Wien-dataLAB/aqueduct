@@ -1,3 +1,5 @@
+import logging
+
 from django.apps import AppConfig, apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -5,6 +7,8 @@ from django.core.cache import caches
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+
+log = logging.getLogger('aqueduct')
 
 
 class AqueductManagementConfig(AppConfig):
@@ -34,6 +38,7 @@ class AqueductManagementConfig(AppConfig):
 
                 if group == "admin":
                     cache.set('django:tos:skip_tos_check:{}'.format(instance.id), True, version=key_version)
+                    log.info(f"Added admin user '{instance.email}' to TOS cache")
 
                 # But if they aren't make sure we invalidate them from the cache
                 elif cache.get('django:tos:skip_tos_check:{}'.format(instance.id), False):
@@ -54,3 +59,4 @@ class AqueductManagementConfig(AppConfig):
                     for user in get_user_model().objects.filter(
                         groups__name='admin')
                 }, version=key_version)
+                log.info("Added admin users to TOS cache")

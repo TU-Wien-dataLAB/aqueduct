@@ -17,6 +17,7 @@ class AqueductManagementConfig(AppConfig):
 
     def ready(self):
         if settings.TOS_ENABLED:
+            log.info('Setting up TOS dispatch functions...')
             cache = caches[getattr(settings, 'TOS_CACHE_NAME', 'default')]
             tos_app = apps.get_app_config('tos')
             TermsOfService = tos_app.get_model('TermsOfService')

@@ -58,6 +58,8 @@ tos:
   enabled: false
   gatewayValidation: true
 
+logLevel: "WARNING"
+
 env:
   - name: DATABASE_ENGINE
     value: "django.db.backends.postgresql"

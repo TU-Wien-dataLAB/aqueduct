@@ -101,4 +101,6 @@ Usage:
 {{- else }}
   value: "False"
 {{- end }}
+- name: DJANGO_LOG_LEVEL
+  value: {{ .Values.logLevel }}
 {{- end }}

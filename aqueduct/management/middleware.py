@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.handlers.asgi import ASGIRequest
 from django.http import HttpResponse
+from django.urls import reverse
 
 User = get_user_model()
 
@@ -23,6 +24,12 @@ class UserAgreementMiddleware(TOSUserAgreementMiddleware):
 
     def should_fast_skip(self, request: ASGIRequest):
         if request.path_info.rstrip("/") == "/oidc/callback":
+            return True
+
+        if request.path_info.rstrip("/") == reverse("sso").rstrip("/"):
+            return True
+
+        if request.path_info.rstrip("/") == reverse("admin_sso").rstrip("/"):
             return True
 
         return super().should_fast_skip(request)

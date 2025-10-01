@@ -61,3 +61,5 @@ class AqueductManagementConfig(AppConfig):
                         groups__name='admin')
                 }, version=key_version)
                 log.info("Added admin users to TOS cache")
+
+        log.info(f"Active post_save receivers: {[name for (name, _), _, _ in post_save.receivers if isinstance(name, str)]}")

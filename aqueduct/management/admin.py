@@ -85,12 +85,22 @@ def make_user(modeladmin, request, queryset):
     set_user_group(queryset, "user")
 
 
+@admin.action(description="Delete Terms of Service cache")
+def delete_tos_cache(modeladmin, request, queryset):
+    from tos.middleware import cache
+    key_version = cache.get('django:tos:key_version')
+
+    for user in queryset:
+        cache.delete(f'django:tos:skip_tos_check:{user.id}', version=key_version)
+        cache.delete(f'django:tos:agreed:{user.id}', version=key_version)
+
+
 # Define a new User admin
 class UserAdmin(BaseUserAdmin):
     inlines = (ProfileInline,)
     list_display = ('email', 'is_staff', 'get_groups', 'request_limit', 'input_limit', 'output_limit')
     list_select_related = ['profile']
-    actions = [make_admin, make_org_admin, make_user]
+    actions = [make_admin, make_org_admin, make_user, delete_tos_cache]
 
     def get_groups(self, obj):
         return ", ".join([g.name for g in obj.groups.all()])
@@ -209,6 +219,7 @@ class FileObjectAdmin(admin.ModelAdmin):
     list_filter = ('purpose', 'token__user__email')
     search_fields = ('id', 'filename')
     readonly_fields = ('path',)
+
 
 @admin.register(Batch)
 class BatchAdmin(admin.ModelAdmin):

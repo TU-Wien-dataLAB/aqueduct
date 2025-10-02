@@ -2,8 +2,6 @@ import base64
 import io
 import json
 import logging
-import mimetypes
-import os
 import time
 from datetime import timedelta
 from functools import wraps
@@ -22,11 +20,13 @@ from django.utils import timezone
 from pydantic import ValidationError, TypeAdapter
 from openai.types.chat import ChatCompletionStreamOptionsParam
 from openai.types.chat.chat_completion_content_part_param import FileFile
+from tos.middleware import cache
+from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
-from management.models import Request, Token, Usage, FileObject
+from management.models import Request, Token, FileObject
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("aqueduct")
 
 
 def token_authenticated(token_auth_only: bool):
@@ -335,14 +335,14 @@ def process_file_content(view_func):
                         file_bytes = await file_to_bytes(token, file)
                         if len(file_bytes) > 10 * 1024 * 1024:
                             return JsonResponse({
-                                                    'error': 'Error processing file content: File too large. Individual file must be <= 10MB.'},
-                                                status=400)
+                                'error': 'Error processing file content: File too large. Individual file must be <= 10MB.'},
+                                status=400)
 
                         total_file_size_bytes += len(file_bytes)
                         if total_file_size_bytes > 32 * 1024 * 1024:
                             return JsonResponse({
-                                                    'error': 'Error processing file content: Files too large in total. All files must be <= 32MB.'},
-                                                status=400)
+                                'error': 'Error processing file content: Files too large in total. All files must be <= 32MB.'},
+                                status=400)
 
                         # Extract text using Tika
                         extracted_text = await extract_text_with_tika(file_bytes)
@@ -399,5 +399,29 @@ def catch_router_exceptions(view_func):
             return JsonResponse({"error": _r(e)}, status=500)
         except Exception as e:
             return JsonResponse({"error": _r(e)}, status=500)
+
+    return wrapper
+
+
+def tos_accepted(view_func):
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        if settings.TOS_ENABLED and settings.TOS_GATEWAY_VALIDATION:
+            token: Token = kwargs.get('token')
+            key_version = cache.get('django:tos:key_version')
+            user_id = token.user.id
+
+            skip: bool = cache.get(f'django:tos:skip_tos_check:{user_id}', False, version=key_version)
+
+            if not skip:
+                user_agreed = cache.get(f'django:tos:agreed:{user_id}', None, version=key_version)
+                if user_agreed is None:
+                    user_agreed = await sync_to_async(has_user_agreed_latest_tos)(request.user)
+
+                if not user_agreed:
+                    return JsonResponse({"error": "In order to use the API you have to agree to the terms of service!"},
+                                        status=403)
+
+        return await view_func(request, *args, **kwargs)
 
     return wrapper

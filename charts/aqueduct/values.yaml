@@ -22,11 +22,11 @@ image:
   pullPolicy: IfNotPresent
 
 djangoSecretKey:
-    value: ""
-    valueFrom:
-      secretKeyRef:
-        name: ""
-        key: ""
+  value: ""
+  valueFrom:
+    secretKeyRef:
+      name: ""
+      key: ""
 
 oidc:
   signAlgo: "RS256"
@@ -49,10 +49,16 @@ celery:
   schedule: "0 4 * * *"
   workerDeployment:
     replicas: 1
-    resources: {}
+    resources: { }
 
 silk:
   enabled: true
+
+tos:
+  enabled: false
+  gatewayValidation: true
+
+logLevel: "WARNING"
 
 env:
   - name: DATABASE_ENGINE
@@ -68,7 +74,7 @@ settingsPy:
     # ADMIN_GROUP = "default"
 
 # Router configuration for litellm router
-routerConfig: {}
+routerConfig: { }
 
 service:
   type: ClusterIP

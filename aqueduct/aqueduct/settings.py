@@ -46,8 +46,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'mozilla_django_oidc',
     'django_celery_beat',
+    'django.contrib.sites',
+    'tos',
     'management.apps.AqueductManagementConfig',
-    "gateway.apps.GatewayConfig"
+    'gateway.apps.GatewayConfig'
 ]
 
 MIDDLEWARE = [
@@ -109,6 +111,7 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
         return group.split("-")[0]
     return None
 
+
 OIDC_DEFAULT_GROUPS = ["default"]
 ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
 ADMIN_GROUP = "default"  # all users are admins
@@ -154,6 +157,15 @@ def batch_processing_concurrency():
 AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
 
 TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")
+
+# TOS Settings
+
+TOS_ENABLED = os.getenv("TOS_ENABLED", "False").lower() == "true"
+if TOS_ENABLED:
+    TOS_CACHE_NAME = 'default'  # set explicitly
+    # has to come after session middleware
+    MIDDLEWARE.append('management.middleware.UserAgreementMiddleware')
+TOS_GATEWAY_VALIDATION = os.getenv("TOS_GATEWAY_VALIDATION", "True").lower() == "true"
 
 # Celery Settings -------------------------------------------------------
 
@@ -306,3 +318,24 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'aqueduct': {  # Replace with your app name
+            'handlers': ['console'],
+            'level': os.getenv("DJANGO_LOG_LEVEL", "WARNING"),
+            'propagate': False,
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.getenv("DJANGO_LOG_LEVEL", "WARNING"),
+    },
+}

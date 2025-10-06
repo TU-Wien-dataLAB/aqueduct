@@ -30,5 +30,25 @@ vllm = [
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
+    "ruff>=0.13.3",
     "tbump>=6.11.0",
 ]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = [
+    "**/migrations/*.py",
+    "aqueduct/aqueduct/settings.py",
+    "charts/**/*",
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["aqueduct", "management"]
+
+[tool.ruff.lint.per-file-ignores]
+# Ignore `F401` (imported but unused) in all `__init__.py` files
+"__init__.py" = ["F401"]

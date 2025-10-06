@@ -1,3 +1,6 @@
+import os
+from copy import deepcopy
+
 from django.views.generic import ListView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 
@@ -12,7 +15,15 @@ class ModelListView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        config = get_router_config()
+        try:
+            model_list = deepcopy(get_router_config())["model_list"]
+            for model in model_list:
+                litellm_params: dict = model.get("litellm_params", {})
+                if not litellm_params.get("api_key", "").startswith("os.environ/"):
+                    litellm_params["api_key"] = "*********"
+        except KeyError:
+            model_list = []
+
         context['title'] = "Models"
-        context['model_list'] = config["model_list"]
+        context['model_list'] = model_list
         return context

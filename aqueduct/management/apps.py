@@ -12,8 +12,8 @@ log = logging.getLogger('aqueduct')
 
 
 class AqueductManagementConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'management'
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "management"
 
     def ready(self):
         if settings.TOS_ENABLED:

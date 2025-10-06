@@ -2,9 +2,10 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from contextlib import closing
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
 
 import httpx
 from vllm import AsyncEngineArgs
@@ -29,15 +30,17 @@ class RemoteOpenAIServer:
     Uses httpx for health checks.
     (Code adapted from vLLM test utilities).
     """
-    def __init__(self,
-                 model: str,
-                 vllm_serve_args: List[str],
-                 *,
-                 env_dict: Optional[Dict[str, str]] = None,
-                 seed: Optional[int] = 0,
-                 auto_port: bool = True,
-                 max_wait_seconds: Optional[float] = None) -> None:
 
+    def __init__(
+        self,
+        model: str,
+        vllm_serve_args: List[str],
+        *,
+        env_dict: Optional[Dict[str, str]] = None,
+        seed: Optional[int] = 0,
+        auto_port: bool = True,
+        max_wait_seconds: Optional[float] = None,
+    ) -> None:
         self.model = model
         if auto_port:
             if any(arg.startswith("--port") or arg == "-p" for arg in vllm_serve_args):
@@ -71,16 +74,19 @@ class RemoteOpenAIServer:
         parser = make_arg_parser(parser)
         all_cli_args = ["--model", model] + vllm_serve_args
         args = parser.parse_args(all_cli_args)
-        self.host = str(args.host or 'localhost')
+        self.host = str(args.host or "localhost")
         # self.port is set above
 
-        self.show_hidden_metrics = \
-            getattr(args, 'show_hidden_metrics_for_version', None) is not None
+        self.show_hidden_metrics = (
+            getattr(args, "show_hidden_metrics_for_version", None) is not None
+        )
 
         # download the model before starting the server to avoid timeout
         is_local = os.path.isdir(model)
         if not is_local:
-            assert os.getenv('HF_TOKEN', None) is not None, "loading model config requires HF_TOKEN to be set"
+            assert os.getenv("HF_TOKEN", None) is not None, (
+                "loading model config requires HF_TOKEN to be set"
+            )
             engine_args = AsyncEngineArgs.from_cli_args(args)
             model_config = engine_args.create_model_config()
             load_config = engine_args.create_load_config()
@@ -89,16 +95,14 @@ class RemoteOpenAIServer:
             model_loader.download_model(model_config)
 
         env = os.environ.copy()
-        env['VLLM_WORKER_MULTIPROC_METHOD'] = 'spawn'
+        env["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
         if env_dict is not None:
             env.update(env_dict)
 
         command = ["vllm", "serve", model] + vllm_serve_args
         print(f"Starting server with command: {' '.join(command)}")
 
-        self.proc = subprocess.Popen(
-            command, env=env, stdout=sys.stdout, stderr=sys.stderr,
-        )
+        self.proc = subprocess.Popen(command, env=env, stdout=sys.stdout, stderr=sys.stderr)
 
         max_wait_seconds = max_wait_seconds or 240
         self._wait_for_server(url=self.url_for("health"), timeout=max_wait_seconds)
@@ -108,7 +112,7 @@ class RemoteOpenAIServer:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if hasattr(self, 'proc') and self.proc:
+        if hasattr(self, "proc") and self.proc:
             self.proc.terminate()
             try:
                 self.proc.wait(10)
@@ -127,7 +131,7 @@ class RemoteOpenAIServer:
         last_error = None
         while True:
             # Check if the process exited
-            if hasattr(self, 'proc') and self.proc:
+            if hasattr(self, "proc") and self.proc:
                 result = self.proc.poll()
                 if result is not None:
                     time.sleep(0.5)  # Allow potential final messages
@@ -147,7 +151,6 @@ class RemoteOpenAIServer:
                     last_error = f"Server responded with status {response.status_code}"
                     print(f"WARN: Health check received status {response.status_code}")
 
-
             # Handle httpx-specific exceptions
             except httpx.TimeoutException:
                 last_error = "Timeout during health check"
@@ -157,7 +160,10 @@ class RemoteOpenAIServer:
                 # Expected initially (e.g., ConnectionRefusedError), continue waiting
             except Exception as e:
                 last_error = e
-                print(f"WARNING: Unexpected error during health check: {type(e).__name__}: {e}", file=sys.stderr)
+                print(
+                    f"WARNING: Unexpected error during health check: {type(e).__name__}: {e}",
+                    file=sys.stderr,
+                )
                 # Continue waiting, might be temporary
 
             # Timeout check
@@ -165,7 +171,7 @@ class RemoteOpenAIServer:
                 error_msg = f"Server failed to start and respond at {url} within {timeout} seconds."
                 if last_error:
                     error_msg += f" Last error: {last_error}"
-                if hasattr(self, 'proc') and self.proc:
+                if hasattr(self, "proc") and self.proc:
                     # Attempt cleanup
                     self.proc.terminate()
                     try:
@@ -185,10 +191,9 @@ class RemoteOpenAIServer:
         return f"{self.url_root}/{path}"
 
 
-import threading
-
 _server_instance = None
 _server_lock = threading.Lock()
+
 
 def get_openai_server(model_name, vllm_serve_args, seed, auto_port=False, max_wait_seconds=300):
     global _server_instance
@@ -199,9 +204,10 @@ def get_openai_server(model_name, vllm_serve_args, seed, auto_port=False, max_wa
                 vllm_serve_args=vllm_serve_args,
                 seed=seed,
                 auto_port=auto_port,
-                max_wait_seconds=max_wait_seconds
+                max_wait_seconds=max_wait_seconds,
             )
         return _server_instance
+
 
 def stop_openai_server():
     global _server_instance

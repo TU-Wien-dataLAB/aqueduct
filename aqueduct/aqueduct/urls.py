@@ -14,30 +14,27 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
-from django.conf import settings
 
 import management.views as views
 
 urlpatterns = [
     # SSO view from management app
-    path(r'login/', views.SSOTemplateView.as_view(), name='sso'),
-    path(r'aqueduct/admin/login/', views.SSOTemplateView.as_view(), name='admin_sso'),
-
-    path('oidc/', include('mozilla_django_oidc.urls')),
+    path(r"login/", views.SSOTemplateView.as_view(), name="sso"),
+    path(r"aqueduct/admin/login/", views.SSOTemplateView.as_view(), name="admin_sso"),
+    path("oidc/", include("mozilla_django_oidc.urls")),
     path("aqueduct/management/", include("management.urls")),
     path("aqueduct/admin/", admin.site.urls),
     # contains catch all path so has to come last
-    path('', include('gateway.urls'))
+    path("", include("gateway.urls")),
 ]
 
 # Silk profiling URLs must be added before the gateway catch-all
 if getattr(settings, "SILKY_ENABLED", False):
-    urlpatterns.insert(
-        len(urlpatterns) - 1,
-        path("silk/", include("silk.urls", namespace="silk")),
-    )
+    urlpatterns.insert(len(urlpatterns) - 1, path("silk/", include("silk.urls", namespace="silk")))
 
 if getattr(settings, "TOS_ENABLED", False):
     urlpatterns.insert(

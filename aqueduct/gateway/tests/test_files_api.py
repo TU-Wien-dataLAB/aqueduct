@@ -1,7 +1,7 @@
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-from gateway.tests.utils.base import GatewayFilesTestCase
 from gateway.tests.utils import _build_chat_headers
+from gateway.tests.utils.base import GatewayFilesTestCase
 
 
 class TestFilesAPI(GatewayFilesTestCase):
@@ -19,9 +19,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         upload_file = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
         # Upload file
         response = self.client.post(
-            "/files",
-            {"file": upload_file, "purpose": "batch"},
-            headers=self.headers,
+            "/files", {"file": upload_file, "purpose": "batch"}, headers=self.headers
         )
         self.assertEqual(response.status_code, 200, f"Upload failed: {response.json()}")
         upload_data = response.json()
@@ -81,9 +79,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         self.assertEqual(resp.status_code, 400)
         # wrong extension
         bad = SimpleUploadedFile("nope.txt", b"{}\n", content_type="text/plain")
-        resp = self.client.post(
-            "/files", {"file": bad, "purpose": "batch"}, headers=self.headers
-        )
+        resp = self.client.post("/files", {"file": bad, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
 
     def test_user_data_purpose(self):
@@ -98,20 +94,17 @@ class TestFilesAPI(GatewayFilesTestCase):
     def test_oversize_file(self):
         """File >8MB should be rejected."""
         from django.conf import settings
+
         max_mb = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB
         big = b"a" * (max_mb * 1024 * 1024 + 1)
         f = SimpleUploadedFile("big.jsonl", big, content_type="application/json")
-        resp = self.client.post(
-            "/files", {"file": f, "purpose": "batch"}, headers=self.headers
-        )
+        resp = self.client.post("/files", {"file": f, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
 
     def test_not_found_cases(self):
         """GET/DELETE on nonexistent file returns 404."""
         for method in ("get", "delete"):
-            resp = getattr(self.client, method)(
-                "/files/nonexistent", headers=self.headers
-            )
+            resp = getattr(self.client, method)("/files/nonexistent", headers=self.headers)
             self.assertEqual(resp.status_code, 404)
         resp = self.client.get("/files/nonexistent/content", headers=self.headers)
         self.assertEqual(resp.status_code, 404)
@@ -127,9 +120,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         ids = []
         for name in ("a.jsonl", "b.jsonl", "c.jsonl"):
             f = SimpleUploadedFile(name, b'{"custom_id": "bar"}\n', content_type="application/json")
-            resp = self.client.post(
-                "/files", {"file": f, "purpose": "batch"}, headers=self.headers
-            )
+            resp = self.client.post("/files", {"file": f, "purpose": "batch"}, headers=self.headers)
             self.assertEqual(resp.status_code, 200)
             ids.append(resp.json()["id"])
 
@@ -148,23 +139,24 @@ class TestFilesAPI(GatewayFilesTestCase):
 
     def test_expires_at_and_cleanup_task(self):
         """Verify expires_at is set 1 week ahead and expired files get purged."""
-        from django.utils import timezone
         from django.conf import settings
-        from management.models import FileObject
+        from django.utils import timezone
+
         from aqueduct.celery import delete_expired_files_and_batches
+        from management.models import FileObject
 
         # Upload a file
         content = b'{"custom_id": 1}\n'
         f = SimpleUploadedFile("e.jsonl", content, content_type="application/json")
-        resp = self.client.post(
-            "/files", {"file": f, "purpose": "batch"}, headers=self.headers
-        )
+        resp = self.client.post("/files", {"file": f, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         # Expires_at ~ now + 7 days
         now = timezone.now()
         expires_ts = data.get("expires_at")
-        expected = int((now + timezone.timedelta(days=settings.AQUEDUCT_FILES_API_EXPIRY_DAYS)).timestamp())
+        expected = int(
+            (now + timezone.timedelta(days=settings.AQUEDUCT_FILES_API_EXPIRY_DAYS)).timestamp()
+        )
         # allow small delta for execution time
         self.assertTrue(abs(expires_ts - expected) <= 5)
 
@@ -183,27 +175,29 @@ class TestFilesAPI(GatewayFilesTestCase):
         self.assertFalse(file_path.exists())
 
     def test_batch_duplicate_custom_ids(self):
-        bad = SimpleUploadedFile("bad.jsonl", b'{"custom_id": "bar"}\n{"custom_id": "bar"}\n',
-                                  content_type="application/json")
-        # unsupported purpose
-        resp = self.client.post(
-            "/files", {"file": bad, "purpose": "batch"}, headers=self.headers
+        bad = SimpleUploadedFile(
+            "bad.jsonl",
+            b'{"custom_id": "bar"}\n{"custom_id": "bar"}\n',
+            content_type="application/json",
         )
+        # unsupported purpose
+        resp = self.client.post("/files", {"file": bad, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
 
     def test_batch_no_custom_ids(self):
-        bad = SimpleUploadedFile("bad.jsonl", b'{"custom_id": "bar"}\n{"something_id": "bar"}\n',
-                                  content_type="application/json")
-        # unsupported purpose
-        resp = self.client.post(
-            "/files", {"file": bad, "purpose": "batch"}, headers=self.headers
+        bad = SimpleUploadedFile(
+            "bad.jsonl",
+            b'{"custom_id": "bar"}\n{"something_id": "bar"}\n',
+            content_type="application/json",
         )
+        # unsupported purpose
+        resp = self.client.post("/files", {"file": bad, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
 
     def test_batch_invalid_json(self):
-        bad = SimpleUploadedFile("bad.jsonl", b'{"custom_id": "bar"}\nnot json\n', content_type="application/json")
-        # unsupported purpose
-        resp = self.client.post(
-            "/files", {"file": bad, "purpose": "batch"}, headers=self.headers
+        bad = SimpleUploadedFile(
+            "bad.jsonl", b'{"custom_id": "bar"}\nnot json\n', content_type="application/json"
         )
+        # unsupported purpose
+        resp = self.client.post("/files", {"file": bad, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)

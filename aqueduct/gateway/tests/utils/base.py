@@ -3,14 +3,18 @@ import shutil
 import sys
 from pathlib import Path
 from textwrap import dedent
-from typing import Optional, Literal
+from typing import Literal, Optional
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TransactionTestCase, override_settings
 
-INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get("INTEGRATION_TEST_BACKEND", "openai")
+from management.models import Org, Token, UserProfile
+
+INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
+    "INTEGRATION_TEST_BACKEND", "openai"
+)
 if INTEGRATION_TEST_BACKEND not in ["vllm", "openai"]:
     raise ValueError("Integration test backend must be one of 'vllm' or 'openai‘.")
 
@@ -33,7 +37,9 @@ with open(ROOT / "example_router_config.yaml") as f:
 
 ROUTER_CONFIG = ROUTER_CONFIG_VLLM if INTEGRATION_TEST_BACKEND == "vllm" else ROUTER_CONFIG_OPENAI
 
-START_VLLM_SERVER = INTEGRATION_TEST_BACKEND == "vllm" and os.environ.get("START_VLLM_SERVER", "true") == "true"
+START_VLLM_SERVER = (
+    INTEGRATION_TEST_BACKEND == "vllm" and os.environ.get("START_VLLM_SERVER", "true") == "true"
+)
 
 # --- vLLM Internal Imports ---
 RemoteOpenAIServer = None
@@ -47,8 +53,6 @@ if START_VLLM_SERVER:
         get_openai_server, stop_openai_server = None, None
         _VLLM_IMPORT_ERROR = e
 
-# Import Org, Team, UserProfile for direct DB manipulation
-from management.models import Org, UserProfile, Token
 
 User = get_user_model()
 
@@ -57,13 +61,16 @@ os.makedirs(TEST_FILES_ROOT, exist_ok=True)
 
 
 # --- Django Test Class ---
-@override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
-                   AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
-                   LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
+@override_settings(
+    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
+    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
+    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
+)
 class GatewayIntegrationTestCase(TransactionTestCase):
     """
     Integration tests using the embedded RemoteOpenAIServer (with httpx).
     """
+
     vllm_server: Optional["RemoteOpenAIServer"] = None
     model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "gpt-4.1-nano"
 
@@ -99,23 +106,26 @@ class GatewayIntegrationTestCase(TransactionTestCase):
                     vllm_serve_args=vllm_args,
                     seed=cls.VLLM_SEED,
                     auto_port=False,
-                    max_wait_seconds=300
+                    max_wait_seconds=300,
                 )
                 print(f"vLLM server started on: {cls.vllm_server.url_root}")
             except Exception as e:
                 import traceback
+
                 traceback.print_exc()
                 print(f"ERROR starting vLLM server: {e}", file=sys.stderr)
                 cls.vllm_server = None
                 raise AssertionError(f"Failed to set up vLLM server: {e}") from e
         elif INTEGRATION_TEST_BACKEND == "openai":
             if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError("OPENAI_API_KEY environment variable has to be set for OpenAI integration.")
+                raise RuntimeError(
+                    "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
+                )
 
     @staticmethod
     def create_new_user() -> tuple[str, int]:
         # Create a new user and a new token for that user
-        new_user = User.objects.create_user(username='OtherUser', email="other@example.com")
+        new_user = User.objects.create_user(username="OtherUser", email="other@example.com")
         new_user.groups.add(Group.objects.get(name="user"))
         org = Org.objects.get(name="E060")
         profile = UserProfile.objects.create(user=new_user, org=org)
@@ -130,7 +140,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
 
 @override_settings(
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
-    AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
+    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
 )
 class GatewayFilesTestCase(TransactionTestCase):
     # Load default fixture (includes test Token) and set test access token
@@ -147,7 +157,7 @@ class GatewayFilesTestCase(TransactionTestCase):
 
 @override_settings(
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
-    AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
+    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=lambda: 2,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     MAX_USER_BATCHES=3,
@@ -170,12 +180,15 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
     @staticmethod
     def run_batch_processing_loop():
         from gateway.views.batches import run_batch_processing
+
         async_to_sync(run_batch_processing)()
 
 
-@override_settings(AUTHENTICATION_BACKENDS=['gateway.authentication.TokenAuthenticationBackend'],
-                   AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
-                   LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
+@override_settings(
+    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
+    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
+    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
+)
 class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
     tts_model = "gpt-4o-mini-tts"

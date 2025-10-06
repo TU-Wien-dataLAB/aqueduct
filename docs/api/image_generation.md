@@ -39,6 +39,8 @@ by specific models.
 
 See the OpenAI documentation for a full list of parameters.
 
+> **Note**: Aqueduct does not support image streaming at the moment.
+
 ## Examples
 
 ### cURL Example

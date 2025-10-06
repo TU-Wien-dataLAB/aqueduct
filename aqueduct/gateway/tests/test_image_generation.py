@@ -43,7 +43,9 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         img_data = response_json["data"][0]
         self.assertIn("url", img_data, "Image data should contain 'url' field")
         self.assertIn("https://", img_data["url"], "Image data should contain a valid url")
-        self.assertIn("revised_prompt", img_data, "Image data should contain 'revised_prompt' field")
+        self.assertIn(
+            "revised_prompt", img_data, "Image data should contain 'revised_prompt' field"
+        )
 
         # Check that the database contains one request
         requests = list(Request.objects.all())
@@ -192,3 +194,18 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_image_generation_endpoint_stream(self):
+        """Test image generation endpoint with `stream=True`."""
+
+        payload = {"model": self.model, "prompt": "A test image", "stream": True}
+
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Aqueduct does not support image streaming.", response.json()["error"])

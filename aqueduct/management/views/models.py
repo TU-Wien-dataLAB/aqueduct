@@ -17,12 +17,13 @@ class ModelListView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         try:
             model_list = deepcopy(get_router_config())["model_list"]
+        except KeyError:
+            model_list = []
+        else:
             for model in model_list:
                 litellm_params: dict = model.get("litellm_params", {})
                 if not litellm_params.get("api_key", "").startswith("os.environ/"):
                     litellm_params["api_key"] = "*********"
-        except KeyError:
-            model_list = []
 
         context['title'] = "Models"
         context['model_list'] = model_list

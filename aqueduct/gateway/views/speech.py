@@ -7,7 +7,7 @@ from openai import HttpxBinaryResponseContent
 from pydantic import TypeAdapter
 import openai
 
-from gateway.router import get_router, get_router_config
+from gateway.config import get_router, get_router_config
 from .decorators import (
     token_authenticated,
     check_limits,

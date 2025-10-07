@@ -19,7 +19,7 @@ from management.models import Batch, FileObject
 from django.conf import settings
 from .decorators import token_authenticated, log_request, tos_accepted
 from .utils import cache_lock
-from ..router import get_router
+from gateway.config import get_router
 
 
 @csrf_exempt

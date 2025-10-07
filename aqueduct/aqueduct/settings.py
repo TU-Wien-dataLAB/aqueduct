@@ -158,6 +158,8 @@ AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
 
 TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")
 
+MCP_CONFIG_FILE_PATH = os.environ.get("MCP_CONFIG_FILE_PATH", "mcp.json")
+
 # TOS Settings
 
 TOS_ENABLED = os.getenv("TOS_ENABLED", "False").lower() == "true"

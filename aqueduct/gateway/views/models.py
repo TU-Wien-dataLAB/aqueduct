@@ -6,7 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
 from .decorators import token_authenticated, log_request, tos_accepted
-from gateway.router import get_router_config
+from gateway.config import get_router_config
 from management.models import Token
 
 MODEL_CREATION_TIMESTAMP = int(timezone.now().timestamp())

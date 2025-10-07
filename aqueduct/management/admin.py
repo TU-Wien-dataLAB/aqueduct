@@ -5,7 +5,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django import forms
 
-from gateway.router import get_router_config
+from gateway.config import get_router_config
 from .models import Org, Team, UserProfile, ServiceAccount, Token, Request, TeamMembership, FileObject, Batch
 
 

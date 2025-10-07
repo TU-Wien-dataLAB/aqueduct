@@ -1,7 +1,7 @@
 from django.views.generic import ListView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 
-from gateway.router import get_router_config
+from gateway.config import get_router_config
 
 
 class ModelListView(LoginRequiredMixin, TemplateView):

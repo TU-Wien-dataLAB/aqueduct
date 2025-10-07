@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.test import override_settings
 from openai.types.chat import ChatCompletion
 
-from gateway.router import get_router_config
+from gateway.config import get_router_config
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload, \
     _read_streaming_response_lines, _parse_streamed_content_pieces
 from gateway.tests.utils.base import GatewayIntegrationTestCase, INTEGRATION_TEST_BACKEND, ROUTER_CONFIG

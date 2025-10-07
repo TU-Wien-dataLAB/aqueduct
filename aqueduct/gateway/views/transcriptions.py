@@ -17,7 +17,7 @@ from .decorators import (
     check_model_availability,
     catch_router_exceptions, tos_accepted,
 )
-from gateway.router import get_openai_client, get_router, get_router_config
+from gateway.config import get_openai_client, get_router, get_router_config
 from .utils import _usage_from_bytes, _openai_stream
 
 

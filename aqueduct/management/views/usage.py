@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 
-from gateway.router import get_router_config
+from gateway.config import get_router_config
 from .base import BaseAqueductView
 from ..models import Request, Token, Org
 

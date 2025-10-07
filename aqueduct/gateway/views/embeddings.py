@@ -7,7 +7,7 @@ from django.views.decorators.http import require_POST
 from pydantic import TypeAdapter
 import openai
 
-from gateway.router import get_router
+from gateway.config import get_router
 from litellm.types.utils import EmbeddingResponse
 
 from management.models import Request

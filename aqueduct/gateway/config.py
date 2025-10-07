@@ -1,4 +1,6 @@
+import json
 from functools import lru_cache
+from typing import TypedDict, Literal
 
 import openai
 import yaml
@@ -33,4 +35,21 @@ def get_openai_client(model: str) -> openai.AsyncClient:
         raise ValueError(f"Deployment for model '{model}' not found!")
     litellm_params = deployment.litellm_params
 
-    return openai.AsyncClient(api_key=litellm_params.api_key, base_url=litellm_params.api_base, timeout=litellm_params.timeout)
+    return openai.AsyncClient(api_key=litellm_params.api_key, base_url=litellm_params.api_base,
+                              timeout=litellm_params.timeout)
+
+
+class MCPServerConfig(TypedDict):
+    type: Literal["streamable-http"]  # only support "streamable-http"
+    url: str
+
+
+@lru_cache(maxsize=1)
+def get_mcp_config() -> dict[str, MCPServerConfig]:
+    path = settings.MCP_CONFIG_FILE_PATH
+    try:
+        with open(path) as f:
+            data = json.load(f)["mcpServers"]
+            return {server: MCPServerConfig(**config) for server, config in data.items()}
+    except (FileNotFoundError, TypeError, json.JSONDecodeError, KeyError):
+        raise RuntimeError(f'Unable to load MCP config from {path}')

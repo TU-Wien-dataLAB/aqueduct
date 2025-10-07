@@ -1,7 +1,7 @@
 [project]
 name = "aqueduct"
 version = "0.1.6"
-description = "Add your description here"
+description = "A simple yet fully-featured AI gateway built on top of the LiteLLM Router SDK."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

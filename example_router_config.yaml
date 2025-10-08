@@ -26,3 +26,6 @@ model_list:
   litellm_params:
     model: openai/dall-e-2
     api_key: "os.environ/OPENAI_API_KEY"
+  model_info:
+    id: dall-e-2
+    mode: image_generations

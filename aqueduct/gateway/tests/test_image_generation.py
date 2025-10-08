@@ -150,6 +150,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid value: \'gpt-4.1-nano\'", response.json()["error"])
 
     def test_image_generation_endpoint_with_multiple_images(self):
         """Test image generation endpoint with multiple images (n parameter)."""

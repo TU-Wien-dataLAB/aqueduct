@@ -974,7 +974,7 @@ class Batch(models.Model):
 
     def append(self, result: Dict[str, Any], error: bool = False):
         with self.append_lock:
-            self.refresh_from_db(fields=['request_counts', 'status'])
+            self.refresh_from_db(fields=['request_counts', 'status', 'output_file', 'error_file'])
             counts = self.request_counts or {}
             if error:
                 self._append_error(result)

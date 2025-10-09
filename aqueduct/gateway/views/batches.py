@@ -347,12 +347,13 @@ async def run_batch_processing():
                 queue = AsyncBoundedParallelQueue(max_parallel=max_parallel)
                 router = get_router()
 
-                update_batches_next = curr_time() + 30
+                reload_interval = settings.AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS
+                update_batches_next = curr_time() + reload_interval
                 batches, rr = None, None
                 processed_ids = set() # keep track of processed ids as requests might be running when we reload batches
                 while curr_time() < run_until:
                     if batches is None or rr is None or curr_time() > update_batches_next:
-                        update_batches_next = curr_time() + 30
+                        update_batches_next = curr_time() + reload_interval
                         batches = await sync_to_async(list)(
                             Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
                         )

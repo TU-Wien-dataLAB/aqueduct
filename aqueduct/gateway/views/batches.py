@@ -155,50 +155,66 @@ async def batch_cancel(request: ASGIRequest, token, batch_id: str, *args, **kwar
     )
 
 
+async def _mark_batch_in_progress(batch: Batch):
+    """Transition batch from validating to in_progress."""
+    now_ts = int(timezone.now().timestamp())
+    batch.status = "in_progress"
+    batch.in_progress_at = now_ts
+    await sync_to_async(batch.save)()
+
+
+async def _mark_batch_cancelled(batch: Batch):
+    """Mark batch as cancelled."""
+    now_ts = int(timezone.now().timestamp())
+    batch.status = "cancelled"
+    batch.cancelled_at = now_ts
+    await sync_to_async(batch.save)()
+
+
+async def _mark_batch_completed(batch: Batch):
+    """Mark batch as completed."""
+    if batch.status != "completed":
+        now_ts = int(timezone.now().timestamp())
+        batch.status = "completed"
+        batch.completed_at = now_ts
+        await sync_to_async(batch.save)()
+
+
 async def round_robin(batches: list[Batch]) -> AsyncIterator[tuple[Batch, str]]:
     """
-    Async round-robin over batches and their input_file_iterator,
-    refreshing status between iterations.
+    Round-robin iterator over batch requests.
+    
+    Yields (batch, request_line) tuples, automatically handling:
+    - Status transitions (validating -> in_progress)
+    - Cancellations
+    - Completion detection
     """
-    iterators = await sync_to_async(deque)((b, b.input_file_lines()) for b in batches)
-    for batch, lines in iterators:
-        # This should not happen but do it defensively
-        await sync_to_async(batch.refresh_from_db)(fields=["status"])
-        if len(lines) == 0 and batch.status != "completed":
-            now_ts = int(timezone.now().timestamp())
-            batch.status = "completed"
-            batch.completed_at = now_ts
-            await sync_to_async(batch.save)()
+    iterators = deque()
+    for batch in batches:
+        lines = await sync_to_async(batch.input_file_lines)()
+        if lines:
+            iterators.append((batch, lines))
+        else:
+            await _mark_batch_completed(batch)
 
     while iterators:
         batch, lines = iterators.popleft()
-        try:
-            await sync_to_async(batch.refresh_from_db)(fields=["status"])
-            if batch.status == "cancelling":
-                now_ts = int(timezone.now().timestamp())
-                batch.status = "cancelled"
-                batch.cancelled_at = now_ts
-                await sync_to_async(batch.save)()
-                raise StopAsyncIteration
-
-            if batch.status == "validating":
-                now_ts = int(timezone.now().timestamp())
-                batch.status = "in_progress"
-                batch.in_progress_at = now_ts
-                await sync_to_async(batch.save)()
-
-            if len(lines) == 0:
-                # cannot raise StopIteration in generator due to PEP 479
-                # This
-                raise StopAsyncIteration
-
-            yield batch, lines.popleft()
-
-        except StopAsyncIteration:
-            # End of this batch's iteration or batch has been canceled
-            pass
-        else:
-            # Re-add active batch to the end
+        
+        await sync_to_async(batch.refresh_from_db)(fields=["status"])
+        
+        if batch.status == "cancelling":
+            await _mark_batch_cancelled(batch)
+            continue
+        
+        if batch.status == "validating":
+            await _mark_batch_in_progress(batch)
+        
+        if not lines:
+            continue
+        
+        yield batch, lines.popleft()
+        
+        if lines:
             iterators.append((batch, lines))
 
 
@@ -315,64 +331,124 @@ async def process_batch_request(router: Router, batch: Batch, params: str, proce
 BATCH_LOCK = "batch-processing-lock"
 
 
-async def run_batch_processing():
-    start_time = timezone.now()
-    start_ts = int(start_time.timestamp())
+class BatchProcessingSession:
+    """Manages a single batch processing session with timing and state."""
+    
+    def __init__(self):
+        self.start_time = timezone.now()
+        self.runtime_minutes = settings.AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES
+        self.reload_interval = settings.AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS
+        self.next_reload_time = self.current_timestamp() + self.reload_interval
+        self.processed_ids = set()
+        
+    def current_timestamp(self) -> float:
+        """Get current timestamp as float."""
+        return timezone.now().timestamp()
+    
+    def current_timestamp_int(self) -> int:
+        """Get current timestamp as int."""
+        return int(self.current_timestamp())
+    
+    def should_stop(self) -> bool:
+        """Check if session should stop based on runtime limit."""
+        end_time = self.start_time + timedelta(minutes=self.runtime_minutes)
+        return timezone.now() >= end_time
+    
+    def should_reload_batches(self) -> bool:
+        """Check if it's time to reload batches from database."""
+        return self.current_timestamp() > self.next_reload_time
+    
+    def schedule_next_reload(self):
+        """Schedule the next batch reload."""
+        self.next_reload_time = self.current_timestamp() + self.reload_interval
 
-    runtime_minutes = settings.AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES
-    lock_acquire_timeout = settings.AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS + 15
-    curr_time = lambda: timezone.now().timestamp()
 
-    run_until = int((start_time + timedelta(minutes=runtime_minutes)).timestamp())
-    acquire_lock_until = int((start_time + timedelta(seconds=lock_acquire_timeout)).timestamp())
+class BatchLoader:
+    """Handles loading and reloading batches from database."""
+    
+    @staticmethod
+    async def load_active_batches() -> list[Batch]:
+        """Load all active batches from database."""
+        return await sync_to_async(list)(
+            Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
+        )
+    
+    @staticmethod
+    async def expire_old_batches(before_timestamp: int):
+        """Mark expired batches as expired."""
+        await sync_to_async(
+            lambda: Batch.objects.filter(
+                expires_at__isnull=False,
+                expires_at__lt=before_timestamp,
+            ).update(status="expired", expired_at=before_timestamp)
+        )()
 
-    # expire batches whose expires_at timestamp has passed in bulk
-    await sync_to_async(
-        lambda: Batch.objects.filter(
-            expires_at__isnull=False,
-            expires_at__lt=start_ts,
-        ).update(status="expired", expired_at=start_ts)
-    )()
 
-    # begin processing loop
-    lock_acquired = False
-    while not lock_acquired and curr_time() < acquire_lock_until:
-        lock_ttl = (runtime_minutes * 60) - (start_ts - curr_time())
-        with cache_lock(BATCH_LOCK, lock_ttl) as acquired:
+async def _try_acquire_lock_and_process(session: BatchProcessingSession) -> bool:
+    """Attempt to acquire lock and run processing loop."""
+    lock_timeout_seconds = settings.AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS + 15
+    lock_ttl_seconds = session.runtime_minutes * 60
+    
+    acquire_deadline = session.start_time + timedelta(seconds=lock_timeout_seconds)
+    
+    while timezone.now() < acquire_deadline:
+        with cache_lock(BATCH_LOCK, lock_ttl_seconds) as acquired:
             if acquired:
-                lock_acquired = True
                 print("Lock acquired! Starting batch processing.")
-                max_parallel: int = settings.AQUEDUCT_BATCH_PROCESSING_CONCURRENCY()
-
-                queue = AsyncBoundedParallelQueue(max_parallel=max_parallel)
-                router = get_router()
-
-                reload_interval = settings.AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS
-                update_batches_next = curr_time() + reload_interval
-                batches, rr = None, None
-                processed_ids = set() # keep track of processed ids as requests might be running when we reload batches
-                while curr_time() < run_until:
-                    if batches is None or rr is None or curr_time() > update_batches_next:
-                        update_batches_next = curr_time() + reload_interval
-                        batches = await sync_to_async(list)(
-                            Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
-                        )
-                        if batches:
-                            print(f"Updated batches! Processing {len(batches)} batches...")
-                            rr = round_robin(batches)
-
-                    if not batches:
-                        await asyncio.sleep(2)
-                        continue
-
-                    try:
-                        batch, params = await anext(rr)
-                        await queue.process(process_batch_request, router, batch, params, processed_ids)
-                    except StopAsyncIteration:
-                        pass
-
-                await queue.join()
+                await _process_batches(session)
                 print("Batch processing loop complete.")
+                return True
             else:
                 await asyncio.sleep(1)
-                continue
+    
+    return False
+
+
+async def _process_batches(session: BatchProcessingSession):
+    """Core processing loop - load batches and process them."""
+    max_parallel = settings.AQUEDUCT_BATCH_PROCESSING_CONCURRENCY()
+    queue = AsyncBoundedParallelQueue(max_parallel=max_parallel)
+    router = get_router()
+    
+    batches = None
+    rr = None
+    
+    while not session.should_stop():
+        if batches is None or session.should_reload_batches():
+            batches = await BatchLoader.load_active_batches()
+            if batches:
+                print(f"Loaded {len(batches)} active batches")
+                rr = round_robin(batches)
+                session.schedule_next_reload()
+        
+        if not batches:
+            await asyncio.sleep(2)
+            continue
+        
+        try:
+            batch, params = await anext(rr)
+            await queue.process(
+                process_batch_request, 
+                router, 
+                batch, 
+                params, 
+                session.processed_ids
+            )
+        except StopAsyncIteration:
+            batches = None
+            rr = None
+    
+    await queue.join()
+
+
+async def run_batch_processing():
+    """
+    Main batch processing loop. Runs for configured duration, processing
+    all active batches concurrently with periodic reloads.
+    """
+    session = BatchProcessingSession()
+    
+    await BatchLoader.expire_old_batches(session.current_timestamp_int())
+    
+    if not await _try_acquire_lock_and_process(session):
+        print("Could not acquire batch processing lock")

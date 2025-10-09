@@ -1,5 +1,6 @@
 # models.py
 import asyncio
+import logging
 import threading
 import dataclasses
 import secrets
@@ -18,6 +19,8 @@ from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.contrib.auth.models import Group
 from django.db.models import JSONField, BooleanField
 from django.utils import timezone
+
+log = logging.getLogger("aqueduct")
 
 
 @dataclasses.dataclass(frozen=True)  # frozen=True makes instances immutable
@@ -974,6 +977,7 @@ class Batch(models.Model):
 
     def append(self, result: Dict[str, Any], error: bool = False):
         with self.append_lock:
+            log.info(f"Appending result to batch: {self.id}")
             self.refresh_from_db(fields=['request_counts', 'status', 'output_file', 'error_file'])
             counts = self.request_counts or {}
             if error:

@@ -696,11 +696,11 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertEqual(counts["total"], 2)
 
     @override_settings(
+        AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=lambda: 200,
         AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=10 / 60,
-        AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=1,
+        AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=0.5,
     )
-    def test_batch_reload_race_condition(self):
-        """Test that batch reload doesn't cause missing output lines (bug reproduction)."""
+    def test_batch_heavy_load(self):
 
         class SlowMockRouter:
             """Mock router that delays responses to trigger batch reload during processing."""
@@ -716,7 +716,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
                 await asyncio.sleep(0.5)
                 return self
 
-        num_requests = 20
+        num_requests = 1000
         msgs = [
             [{"role": "system", "content": "Test"}, {"role": "user", "content": f"Request {i}"}]
             for i in range(num_requests)

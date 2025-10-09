@@ -691,6 +691,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
     @override_settings(
         AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=10 / 60,
+        AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=2,
     )
     def test_batch_reload_race_condition(self):
         """Test that batch reload doesn't cause missing output lines (bug reproduction)."""

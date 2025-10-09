@@ -14,6 +14,7 @@ dependencies = [
     "django-tos>=1.1.0",
     "httpx>=0.28.1, <1",
     "litellm==1.72.0",
+    "mcp>=1.16.0",
     "mozilla-django-oidc>=4.0.1",
     "openai>=1.95.0",
     "whitenoise>=6.9.0",

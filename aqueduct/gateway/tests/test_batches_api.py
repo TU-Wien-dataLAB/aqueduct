@@ -11,6 +11,12 @@ from gateway.tests.utils.base import GatewayBatchesTestCase
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from unittest.mock import patch, MagicMock, AsyncMock
 
+import logging
+
+logger = logging.getLogger("aqueduct")
+logging.disable(logging.NOTSET)
+logger.setLevel(logging.DEBUG)
+
 
 def mock_router():
     class DummyResult:
@@ -691,24 +697,25 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
     @override_settings(
         AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=10 / 60,
-        AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=2,
+        AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=1,
     )
     def test_batch_reload_race_condition(self):
         """Test that batch reload doesn't cause missing output lines (bug reproduction)."""
-        
+
         class SlowMockRouter:
             """Mock router that delays responses to trigger batch reload during processing."""
+
             def __init__(self):
                 self.call_count = 0
-                
+
             def model_dump(self, **kwargs):
                 return {"choices": [{"message": {"content": f"response-{self.call_count}"}}]}
-            
+
             async def acompletion(self, **kwargs):
                 self.call_count += 1
                 await asyncio.sleep(0.5)
                 return self
-        
+
         num_requests = 20
         msgs = [
             [{"role": "system", "content": "Test"}, {"role": "user", "content": f"Request {i}"}]
@@ -727,7 +734,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         upload = SimpleUploadedFile("race.jsonl", content, content_type="application/jsonl")
         resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
-        
+
         file_id = resp.json()["id"]
         batch_payload = {
             "input_file_id": file_id,
@@ -742,31 +749,32 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         )
         self.assertEqual(resp.status_code, 200)
         batch_id = resp.json()["id"]
-        
+
         slow_router = SlowMockRouter()
-        
+
         with patch('gateway.views.batches.get_router', return_value=slow_router):
             self.run_batch_processing_loop()
-        
+
         resp = self.client.get(f"/batches/{batch_id}", headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         batch_data = resp.json()
-        
+
         counts = batch_data["request_counts"]
         print(f"Request counts: {counts}")
         self.assertEqual(counts["total"], num_requests, f"Total count should be {num_requests}, got {counts['total']}")
-        self.assertEqual(counts["completed"], num_requests, f"Completed count should be {num_requests}, got {counts['completed']}")
+        self.assertEqual(counts["completed"], num_requests,
+                         f"Completed count should be {num_requests}, got {counts['completed']}")
         self.assertEqual(counts["failed"], 0, f"Failed count should be 0, got {counts['failed']}")
-        
+
         output_file_id = batch_data.get("output_file_id")
         self.assertIsNotNone(output_file_id, "Output file should exist")
-        
+
         resp = self.client.get(f"/files/{output_file_id}/content", headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         output_lines = resp.content.splitlines()
-        
+
         print(f"Output file has {len(output_lines)} lines (expected {num_requests})")
-        
+
         self.assertEqual(
             len(output_lines),
             num_requests,

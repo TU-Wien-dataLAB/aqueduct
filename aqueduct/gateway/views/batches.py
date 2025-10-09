@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from collections import deque
 from typing import AsyncIterator, Any
 
@@ -20,6 +21,8 @@ from django.conf import settings
 from .decorators import token_authenticated, log_request, tos_accepted
 from .utils import cache_lock
 from ..router import get_router
+
+log = logging.getLogger("aqueduct")
 
 
 class BatchService:
@@ -258,27 +261,44 @@ async def round_robin(batches: list[Batch]) -> AsyncIterator[tuple[Batch, str]]:
 
 
 class AsyncBoundedParallelQueue:
-    """Simple bounded async task queue using asyncio primitives."""
-
-    def __init__(self, max_parallel: int):
+    def __init__(self, max_parallel):
         self.semaphore = asyncio.Semaphore(max_parallel)
-        self.tasks = []
+        self.tasks = set()
+        self.cancelled = False
 
     async def process(self, coro, *args, **kwargs):
-        """Submit a coroutine to the queue."""
+        """Add task to queue, blocking if full"""
+        if self.cancelled:
+            raise RuntimeError("Queue processing cancelled")
 
-        async def worker():
-            async with self.semaphore:
-                return await coro(*args, **kwargs)
+        await self.semaphore.acquire()
+        if self.cancelled:
+            self.semaphore.release()
+            raise RuntimeError("Queue processing cancelled")
 
-        task = asyncio.create_task(worker())
-        self.tasks.append(task)
+        task = asyncio.create_task(self._worker(coro, *args, **kwargs))
+        self.tasks.add(task)
+        log.debug(f"Added task to {self.__class__.__name__} (Running {len(self.tasks)} tasks)")
+        task.add_done_callback(self._remove_task)
         return task
 
+    async def _worker(self, coro, *args, **kwargs):
+        """Execute task and release semaphore"""
+        try:
+            return await coro(*args, **kwargs)
+        finally:
+            self.semaphore.release()
+
+    def _remove_task(self, task):
+        """Cleanup completed task"""
+        try:
+            self.tasks.remove(task)
+        except KeyError:
+            pass
+
     async def join(self):
-        """Wait for all submitted tasks to complete."""
-        if self.tasks:
-            await asyncio.gather(*self.tasks, return_exceptions=True)
+        """Wait for all tasks to complete"""
+        await asyncio.gather(*self.tasks)
 
 
 class EndpointDispatcher:
@@ -321,6 +341,7 @@ class BatchRequestProcessor:
             if self._is_duplicate(batch, params):
                 return
 
+            log.info(f"Processing request {batch.id}-{params.get('custom_id')}")
             result = await self._execute_request(batch, params)
             await self._record_success(batch, params, result)
 
@@ -438,7 +459,7 @@ class BatchProcessingSession:
     def should_reload_batches(self) -> bool:
         """Check if it's time to reload batches from database."""
         return self.current_timestamp() > self.next_reload_time
-    
+
     def schedule_next_reload(self):
         """Schedule the next batch reload."""
         self.next_reload_time = self.current_timestamp() + self.reload_interval
@@ -475,9 +496,9 @@ async def _try_acquire_lock_and_process(session: BatchProcessingSession) -> bool
     while timezone.now() < acquire_deadline:
         with cache_lock(BATCH_LOCK, lock_ttl_seconds) as acquired:
             if acquired:
-                print("Lock acquired! Starting batch processing.")
+                log.info("Lock acquired! Starting batch processing.")
                 await _process_batches(session)
-                print("Batch processing loop complete.")
+                log.info("Batch processing loop complete.")
                 return True
             else:
                 await asyncio.sleep(1)
@@ -496,14 +517,14 @@ async def _process_batches(session: BatchProcessingSession):
 
     while not session.should_stop():
         if batches is None or session.should_reload_batches():
-            print("Reloading batches...")
+            log.debug("Reloading batches...")
             batches = await BatchLoader.load_active_batches()
             if batches:
                 rr = round_robin(batches)
-            print(f"Loaded {len(batches)} active batches")
+            log.info(f"Loaded {len(batches)} active batches")
             session.schedule_next_reload()
             assert not session.should_reload_batches()
-        
+
         if not batches:
             await asyncio.sleep(2)
             continue
@@ -533,4 +554,4 @@ async def run_batch_processing():
     await BatchLoader.expire_old_batches(session.current_timestamp_int())
 
     if not await _try_acquire_lock_and_process(session):
-        print("Could not acquire batch processing lock")
+        log.warning("Could not acquire batch processing lock")

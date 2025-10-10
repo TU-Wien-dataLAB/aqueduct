@@ -781,3 +781,84 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             f"BUG REPRODUCED: Output file has {len(output_lines)} lines but should have {num_requests}. "
             f"Missing {num_requests - len(output_lines)} responses!"
         )
+
+    @override_settings(
+        AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=lambda: 5,
+        AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=4 / 60,
+        AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=0.5,
+    )
+    def test_batch_large_responses(self):
+        """Test batch processing with large responses (1MB each) and 5 requests."""
+
+        class LargeResponseMockRouter:
+            """Mock router that returns large responses (~1MB each)."""
+
+            def __init__(self):
+                self.call_count = 0
+
+            def model_dump(self, **kwargs):
+                # Generate ~1MB of content
+                large_content = "x" * (1024 * 1024)
+                return {"choices": [{"message": {"content": large_content}}]}
+
+            async def acompletion(self, **kwargs):
+                self.call_count += 1
+                return self
+
+        num_requests = 20
+        msgs = [
+            [{"role": "system", "content": "Test"}, {"role": "user", "content": f"Request {i}"}]
+            for i in range(num_requests)
+        ]
+        lines = [
+            json.dumps({
+                "custom_id": idx,
+                "method": "POST",
+                "url": "/v1/chat/completions",
+                "body": _build_chat_payload(self.model, m),
+            }).encode()
+            for idx, m in enumerate(msgs, start=1)
+        ]
+        content = b"\n".join(lines) + b"\n"
+        upload = SimpleUploadedFile("large.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+
+        file_id = resp.json()["id"]
+        batch_payload = {
+            "input_file_id": file_id,
+            "completion_window": "24h",
+            "endpoint": "/v1/chat/completions"
+        }
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(batch_payload),
+            headers=self.headers,
+            content_type="application/json"
+        )
+        self.assertEqual(resp.status_code, 200)
+        batch_id = resp.json()["id"]
+
+        large_router = LargeResponseMockRouter()
+
+        with patch('gateway.views.batches.get_router', return_value=large_router):
+            self.run_batch_processing_loop()
+
+        resp = self.client.get(f"/batches/{batch_id}", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        batch_data = resp.json()
+
+        counts = batch_data["request_counts"]
+        self.assertEqual(counts["total"], num_requests)
+        self.assertEqual(counts["completed"], num_requests)
+        self.assertEqual(counts["failed"], 0)
+
+        output_file_id = batch_data.get("output_file_id")
+        self.assertIsNotNone(output_file_id)
+
+        resp = self.client.get(f"/files/{output_file_id}/content", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        self.assertGreater(len(resp.content), num_requests * 1024 * 1024)
+        output_lines = resp.content.splitlines()
+
+        self.assertEqual(len(output_lines), num_requests)

@@ -1,11 +1,10 @@
 # models.py
-import asyncio
-import logging
-import threading
 import dataclasses
 import hashlib
 import json
+import logging
 import secrets
+import threading
 import uuid
 from collections import deque
 from pathlib import Path
@@ -839,9 +838,7 @@ class Batch(models.Model):
         help_text="The input file for the batch.",
     )
     status = models.CharField(
-        max_length=20,
-        choices=BatchStatus.choices,
-        help_text="The current status of the batch."
+        max_length=20, choices=BatchStatus.choices, help_text="The current status of the batch."
     )
     cancelled_at = models.PositiveIntegerField(
         null=True,
@@ -972,7 +969,7 @@ class Batch(models.Model):
     def append(self, result: Dict[str, Any], error: bool = False):
         with self.append_lock:
             log.info(f"Appending result to batch: {self.id}")
-            self.refresh_from_db(fields=['request_counts', 'status', 'output_file', 'error_file'])
+            self.refresh_from_db(fields=["request_counts", "status", "output_file", "error_file"])
             counts = self.request_counts or {}
             if error:
                 self._append_error(result)

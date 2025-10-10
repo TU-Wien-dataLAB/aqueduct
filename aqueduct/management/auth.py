@@ -5,7 +5,8 @@ from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 from .models import Org, UserProfile
 
-log = logging.getLogger('aqueduct')
+log = logging.getLogger("aqueduct")
+
 
 def default_org_name_from_groups(groups: list[str]) -> str | None:
     """

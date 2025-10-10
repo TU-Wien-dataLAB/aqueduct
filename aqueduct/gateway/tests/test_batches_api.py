@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from asgiref.sync import async_to_sync
@@ -9,8 +10,6 @@ from django.test import override_settings
 
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.base import GatewayBatchesTestCase
-
-import logging
 
 logger = logging.getLogger("aqueduct")
 logging.disable(logging.NOTSET)
@@ -801,7 +800,6 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=0.5,
     )
     def test_batch_heavy_load(self):
-
         class SlowMockRouter:
             """Mock router that delays responses to trigger batch reload during processing."""
 
@@ -822,37 +820,41 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             for i in range(num_requests)
         ]
         lines = [
-            json.dumps({
-                "custom_id": idx,
-                "method": "POST",
-                "url": "/v1/chat/completions",
-                "body": _build_chat_payload(self.model, m),
-            }).encode()
+            json.dumps(
+                {
+                    "custom_id": idx,
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": _build_chat_payload(self.model, m),
+                }
+            ).encode()
             for idx, m in enumerate(msgs, start=1)
         ]
         content = b"\n".join(lines) + b"\n"
         upload = SimpleUploadedFile("race.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 200)
 
         file_id = resp.json()["id"]
         batch_payload = {
             "input_file_id": file_id,
             "completion_window": "24h",
-            "endpoint": "/v1/chat/completions"
+            "endpoint": "/v1/chat/completions",
         }
         resp = self.client.post(
             "/batches",
             data=json.dumps(batch_payload),
             headers=self.headers,
-            content_type="application/json"
+            content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
         batch_id = resp.json()["id"]
 
         slow_router = SlowMockRouter()
 
-        with patch('gateway.views.batches.get_router', return_value=slow_router):
+        with patch("gateway.views.batches.get_router", return_value=slow_router):
             self.run_batch_processing_loop()
 
         resp = self.client.get(f"/batches/{batch_id}", headers=self.headers)
@@ -861,9 +863,16 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         counts = batch_data["request_counts"]
         print(f"Request counts: {counts}")
-        self.assertEqual(counts["total"], num_requests, f"Total count should be {num_requests}, got {counts['total']}")
-        self.assertEqual(counts["completed"], num_requests,
-                         f"Completed count should be {num_requests}, got {counts['completed']}")
+        self.assertEqual(
+            counts["total"],
+            num_requests,
+            f"Total count should be {num_requests}, got {counts['total']}",
+        )
+        self.assertEqual(
+            counts["completed"],
+            num_requests,
+            f"Completed count should be {num_requests}, got {counts['completed']}",
+        )
         self.assertEqual(counts["failed"], 0, f"Failed count should be 0, got {counts['failed']}")
 
         output_file_id = batch_data.get("output_file_id")
@@ -879,7 +888,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             len(output_lines),
             num_requests,
             f"BUG REPRODUCED: Output file has {len(output_lines)} lines but should have {num_requests}. "
-            f"Missing {num_requests - len(output_lines)} responses!"
+            f"Missing {num_requests - len(output_lines)} responses!",
         )
 
     @override_settings(
@@ -911,37 +920,41 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             for i in range(num_requests)
         ]
         lines = [
-            json.dumps({
-                "custom_id": idx,
-                "method": "POST",
-                "url": "/v1/chat/completions",
-                "body": _build_chat_payload(self.model, m),
-            }).encode()
+            json.dumps(
+                {
+                    "custom_id": idx,
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": _build_chat_payload(self.model, m),
+                }
+            ).encode()
             for idx, m in enumerate(msgs, start=1)
         ]
         content = b"\n".join(lines) + b"\n"
         upload = SimpleUploadedFile("large.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 200)
 
         file_id = resp.json()["id"]
         batch_payload = {
             "input_file_id": file_id,
             "completion_window": "24h",
-            "endpoint": "/v1/chat/completions"
+            "endpoint": "/v1/chat/completions",
         }
         resp = self.client.post(
             "/batches",
             data=json.dumps(batch_payload),
             headers=self.headers,
-            content_type="application/json"
+            content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
         batch_id = resp.json()["id"]
 
         large_router = LargeResponseMockRouter()
 
-        with patch('gateway.views.batches.get_router', return_value=large_router):
+        with patch("gateway.views.batches.get_router", return_value=large_router):
             self.run_batch_processing_loop()
 
         resp = self.client.get(f"/batches/{batch_id}", headers=self.headers)

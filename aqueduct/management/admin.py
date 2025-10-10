@@ -100,11 +100,12 @@ def make_user(modeladmin, request, queryset):
 @admin.action(description="Delete Terms of Service cache")
 def delete_tos_cache(modeladmin, request, queryset):
     from tos.middleware import cache
-    key_version = cache.get('django:tos:key_version')
+
+    key_version = cache.get("django:tos:key_version")
 
     for user in queryset:
-        cache.delete(f'django:tos:skip_tos_check:{user.id}', version=key_version)
-        cache.delete(f'django:tos:agreed:{user.id}', version=key_version)
+        cache.delete(f"django:tos:skip_tos_check:{user.id}", version=key_version)
+        cache.delete(f"django:tos:agreed:{user.id}", version=key_version)
 
 
 # Define a new User admin
@@ -261,7 +262,6 @@ class FileObjectAdmin(admin.ModelAdmin):
     list_filter = ("purpose", "token__user__email")
     search_fields = ("id", "filename")
     readonly_fields = ("path",)
-
 
 
 @admin.register(Batch)

@@ -24,6 +24,6 @@ class ModelListView(LoginRequiredMixin, TemplateView):
                 if not litellm_params.get("api_key", "").startswith("os.environ/"):
                     litellm_params["api_key"] = "*********"
 
-        context['title'] = "Models"
-        context['model_list'] = model_list
+        context["title"] = "Models"
+        context["model_list"] = model_list
         return context

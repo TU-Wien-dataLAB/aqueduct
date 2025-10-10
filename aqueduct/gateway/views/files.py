@@ -8,7 +8,6 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
-from openai.types import FileCreateParams
 
 from management.models import FileObject
 

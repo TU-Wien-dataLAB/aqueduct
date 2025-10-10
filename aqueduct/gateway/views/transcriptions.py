@@ -1,13 +1,12 @@
-import json
-
 import litellm
+import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from pydantic import TypeAdapter, ConfigDict, RootModel
-import openai
 
+from gateway.router import get_openai_client, get_router
 from management.models import Request
 from .decorators import (
     token_authenticated,
@@ -17,18 +16,7 @@ from .decorators import (
     check_model_availability,
     catch_router_exceptions, tos_accepted,
 )
-from gateway.router import get_openai_client, get_router, get_router_config
-from .utils import _usage_from_bytes, _openai_stream
-
-
-def validate_stt(pydantic_model: dict):
-    router_config = get_router_config()
-    model_list: list[dict] = router_config["model_list"]
-    model_params = filter(lambda m: m["model_name"] == pydantic_model["model"], model_list)
-    for model in model_params:
-        if model.get("model_info", {}).get("mode", None) != "audio_transcriptions":
-            raise litellm.BadRequestError(f"{model['model_name']} does not support speech-to-text.",
-                                          model['model_name'], llm_provider=None)
+from .utils import _get_token_usage, _openai_stream
 
 
 class TranscriptionCreateParams(RootModel):
@@ -71,7 +59,7 @@ async def transcriptions(
     if (isinstance(transcription, openai.types.audio.transcription.Transcription) or
             isinstance(transcription, openai.types.audio.transcription_verbose.TranscriptionVerbose)):
         data = transcription.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
+        request_log.token_usage = _get_token_usage(data)
         return JsonResponse(data=data, status=200)
     elif isinstance(transcription, openai.AsyncStream):
         return StreamingHttpResponse(

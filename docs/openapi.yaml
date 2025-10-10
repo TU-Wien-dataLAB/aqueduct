@@ -2538,6 +2538,90 @@ paths:
                 "batch_description": "Nightly eval job",
               }
             }
+  /images/generations:
+    post:
+      operationId: createImage
+      tags:
+        - Images
+      summary: |
+        Creates an image given a prompt. [Learn more](/docs/guides/images).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml#/components/schemas/CreateImageRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "https://raw.githubusercontent.com/openai/openai-openapi/refs/heads/manual_spec/openapi.yaml#/components/schemas/ImagesResponse"
+      x-oaiMeta:
+        name: Create image
+        group: images
+        returns: Returns a list of [image](/docs/api-reference/images/object) objects.
+        examples:
+          request:
+            curl: |
+              curl https://api.openai.com/v1/images/generations \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $OPENAI_API_KEY" \
+                -d '{
+                  "model": "gpt-image-1",
+                  "prompt": "A cute baby sea otter",
+                  "n": 1,
+                  "size": "1024x1024"
+                }'
+            python: |
+              import base64
+              from openai import OpenAI
+              client = OpenAI()
+              
+              img = client.images.generate(
+                  model="gpt-image-1",
+                  prompt="A cute baby sea otter",
+                  n=1,
+                  size="1024x1024"
+              )
+              
+              image_bytes = base64.b64decode(img.data[0].b64_json)
+              with open("output.png", "wb") as f:
+                  f.write(image_bytes)
+            node.js: |
+              import OpenAI from "openai";
+              import { writeFile } from "fs/promises";
+              
+              const client = new OpenAI();
+              
+              const img = await client.images.generate({
+                model: "gpt-image-1",
+                prompt: "A cute baby sea otter",
+                n: 1,
+                size: "1024x1024"
+              });
+              
+              const imageBuffer = Buffer.from(img.data[0].b64_json, "base64");
+              await writeFile("output.png", imageBuffer);
+          response: |
+            {
+              "created": 1713833628,
+              "data": [
+                {
+                  "b64_json": "..."
+                }
+              ],
+              "usage": {
+                "total_tokens": 100,
+                "input_tokens": 50,
+                "output_tokens": 50,
+                "input_tokens_details": {
+                  "text_tokens": 10,
+                  "image_tokens": 40
+                }
+              }
+            }
 components:
   schemas: {}
   securitySchemes:

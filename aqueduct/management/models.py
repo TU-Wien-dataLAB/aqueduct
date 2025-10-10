@@ -3,20 +3,19 @@ import asyncio
 import logging
 import threading
 import dataclasses
-import secrets
 import hashlib
+import json
+import secrets
 import uuid
 from collections import deque
 from pathlib import Path
-from typing import Literal, Optional, Callable, Iterator, Dict, Any
-import json
+from typing import Any, Callable, Dict, Literal, Optional
 
 import openai.types
-import openai.types.batch
-from django.db import models
 from django.conf import settings
-from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError, ObjectDoesNotExist
+from django.db import models
 from django.db.models import JSONField, BooleanField
 from django.utils import timezone
 
@@ -496,7 +495,7 @@ class Token(models.Model):
 
     def model_exclusion_list(self) -> list[str]:
         """
-        Determines if a model is excluded for this token, returning a either True or False.
+        Determines if a model is excluded for this token, returning either True or False.
         Assumes database integrity for related objects.
 
         Hierarchy Rules:
@@ -565,9 +564,9 @@ class Request(models.Model):
 
     @token_usage.setter
     def token_usage(self, usage: Usage):
-        """Set input_tokens and output_tokens from a TokenUsage dataclass instance."""
+        """Set input_tokens and output_tokens from a Usage dataclass instance."""
         if not isinstance(usage, Usage):
-            raise ValueError("token_usage must be a TokenUsage instance")
+            raise ValueError("token_usage must be a Usage dataclass instance")
         self.input_tokens = usage.input_tokens
         self.output_tokens = usage.output_tokens
 

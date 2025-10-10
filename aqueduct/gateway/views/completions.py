@@ -21,7 +21,7 @@ from .decorators import (
     check_model_availability,
     catch_router_exceptions, tos_accepted,
 )
-from .utils import _usage_from_bytes, _openai_stream
+from .utils import _get_token_usage, _openai_stream
 
 
 @csrf_exempt
@@ -52,7 +52,7 @@ async def completions(
         )
     elif isinstance(completion, TextCompletionResponse):
         data = completion.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
+        request_log.token_usage = _get_token_usage(data)
         return JsonResponse(data=data, status=200)
     else:
         raise NotImplementedError(

@@ -1,28 +1,45 @@
 import json
 import time
-from typing import AsyncGenerator, Any
 from contextlib import contextmanager
+from typing import AsyncGenerator, Any
 
 from django.core.cache import cache
-
-from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm import TextCompletionStreamWrapper
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from openai import AsyncStream
 
 from management.models import Request, Usage
 
 
-def _usage_from_bytes(content: bytes) -> Usage:
-    try:
-        usage_dict = json.loads(content).get('usage', None)
-        if isinstance(usage_dict, dict):
-            return Usage(
-                input_tokens=usage_dict.get('prompt_tokens', 0),
-                output_tokens=usage_dict.get('completion_tokens', 0)
-            )
-        else:
+def _get_token_usage(content: bytes | dict) -> Usage:
+    """Retrieves token usage information from the response content.
+
+    Note that if the response data does not match the expected format, or does
+    not contain the usage information, the returned token usage will be wrong,
+    i.e. set to 0.
+
+    Args:
+        content: The response content, either as a dict or as bytes.
+    Returns:
+        The :class:`Usage` object with the used input and output token counts.
+    """
+
+    if isinstance(content, dict):
+        usage_dict = content.get('usage', None)
+    else:
+        try:
+            usage_dict = json.loads(content).get('usage', None)
+        except json.JSONDecodeError:
             return Usage(input_tokens=0, output_tokens=0)
-    except json.JSONDecodeError:
+
+    if isinstance(usage_dict, dict):
+        input_tokens = usage_dict.get('prompt_tokens') or usage_dict.get('input_tokens', 0)
+        output_tokens = usage_dict.get('completion_tokens') or usage_dict.get('output_tokens', 0)
+        return Usage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens
+        )
+    else:
         return Usage(input_tokens=0, output_tokens=0)
 
 
@@ -34,7 +51,7 @@ def _openai_stream(stream: CustomStreamWrapper | TextCompletionStreamWrapper | A
         token_usage = Usage(0, 0)
         async for chunk in stream:
             chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
-            token_usage += _usage_from_bytes(chunk_str.encode('utf-8'))
+            token_usage += _get_token_usage(chunk_str.encode('utf-8'))
             try:
                 yield f"data: {chunk_str}\n\n"
             except Exception as e:

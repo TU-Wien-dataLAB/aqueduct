@@ -20,7 +20,7 @@ from .decorators import (
     check_model_availability,
     catch_router_exceptions, tos_accepted,
 )
-from .utils import _usage_from_bytes
+from .utils import _get_token_usage
 
 
 @csrf_exempt
@@ -43,5 +43,5 @@ async def embeddings(
     router = get_router()
     embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
     data = embedding.model_dump(exclude_none=True, exclude_unset=True)
-    request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
+    request_log.token_usage = _get_token_usage(data)
     return JsonResponse(data=data, status=200)

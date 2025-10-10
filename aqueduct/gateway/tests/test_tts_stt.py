@@ -195,6 +195,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         )
 
         self.assertEqual(response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}")
+        self.assertIn("Incompatible model", response.json()["error"])
 
     def test_transcriptions_endpoint_missing_file(self):
         """Test transcriptions endpoint with missing file."""

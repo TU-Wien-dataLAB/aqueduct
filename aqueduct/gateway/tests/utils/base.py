@@ -48,7 +48,7 @@ if START_VLLM_SERVER:
         _VLLM_IMPORT_ERROR = e
 
 # Import Org, Team, UserProfile for direct DB manipulation
-from management.models import Request, Org, UserProfile, Token
+from management.models import Org, UserProfile, Token
 
 User = get_user_model()
 
@@ -111,14 +111,6 @@ class GatewayIntegrationTestCase(TransactionTestCase):
         elif INTEGRATION_TEST_BACKEND == "openai":
             if not os.environ.get("OPENAI_API_KEY"):
                 raise RuntimeError("OPENAI_API_KEY environment variable has to be set for OpenAI integration.")
-
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-
-    def setUp(self):
-        # Clear Request table before test
-        Request.objects.all().delete()
 
     @staticmethod
     def create_new_user() -> tuple[str, int]:

@@ -22,20 +22,20 @@ Content-Type: application/json
 
 The request body should be a JSON object compatible with the OpenAI [ChatCompletionCreateParams](https://platform.openai.com/docs/api-reference/chat/completions/create) schema.
 
-| Parameter           | Type               | Description                                                      |
-| --------------------| ------------------ | ---------------------------------------------------------------- |
-| `model`             | string             | The name of the model to use.                                    |
-| `messages`          | array              | List of messages with roles (`system`, `user`, `assistant`).      |
-| `max_completion_tokens` | integer            | Maximum number of tokens to generate.                            |
-| `temperature`       | number             | Sampling temperature to use.                                     |
-| `top_p`             | number             | Nucleus sampling probability.                                    |
-| `n`                 | integer            | Number of chat completion choices to generate.                   |
-| `stream`            | boolean            | If true, stream back partial progress as events.                 |
-| `stop`              | string or [string] | Up to 4 sequences where the API will stop generating.            |
-| `presence_penalty`  | number             | Penalize new tokens based on existing presence.                  |
-| `frequency_penalty` | number             | Penalize new tokens based on existing frequency.                 |
-| `user`              | string             | A unique identifier for the end-user.                            |
-| `response_format`   | object             | (Optional) Define a JSON schema for structured responses.        |
+| Parameter               | Type               | Description                                                  |
+|-------------------------| ------------------ | ------------------------------------------------------------ |
+| `model`                 | string             | The name of the model to use.                                |
+| `messages`              | array              | List of messages with roles (`system`, `user`, `assistant`). |
+| `max_completion_tokens` | integer            | Maximum number of tokens to generate.                        |
+| `temperature`           | number             | Sampling temperature to use.                                 |
+| `top_p`                 | number             | Nucleus sampling probability.                                |
+| `n`                     | integer            | Number of chat completion choices to generate.               |
+| `stream`                | boolean            | If true, stream back partial progress as events.             |
+| `stop`                  | string or [string] | Up to 4 sequences where the API will stop generating.        |
+| `presence_penalty`      | number             | Penalize new tokens based on existing presence.              |
+| `frequency_penalty`     | number             | Penalize new tokens based on existing frequency.             |
+| `user`                  | string             | A unique identifier for the end-user.                        |
+| `response_format`       | object             | (Optional) Define a JSON schema for structured responses.    |
 
 See the OpenAI documentation for a full list of parameters.
 

@@ -2,6 +2,7 @@ from copy import deepcopy
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import TemplateView
+
 from gateway.router import get_router_config
 
 

@@ -5,6 +5,7 @@ from django.db.models import Avg, Count, F, Q, Sum
 from django.db.models.functions import Coalesce, TruncDay, TruncHour, TruncMinute
 from django.utils import timezone
 from django.views.generic import TemplateView
+
 from gateway.router import get_router_config
 
 from ..models import Org, Request, Token

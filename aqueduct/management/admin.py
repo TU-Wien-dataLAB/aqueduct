@@ -4,6 +4,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
 from django.urls import reverse
 from django.utils.html import format_html
+
 from gateway.router import get_router_config
 
 from .models import (

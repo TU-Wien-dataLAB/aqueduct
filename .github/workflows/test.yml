@@ -24,6 +24,15 @@ jobs:
         with:
           python-version-file: ".python-version"
 
+      - name: Set up ruff and run `ruff check`
+        uses: astral-sh/ruff-action@v3
+
+      - name: Ruff - check imports
+        run: ruff check --select I
+
+      - name: Ruff - check formatting
+        run: ruff format --check
+
       - name: Gateway Tests
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

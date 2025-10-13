@@ -798,6 +798,17 @@ def default_request_counts() -> dict[str, int]:
     return dict(total=0, completed=0, failed=0)
 
 
+class BatchStatus(models.TextChoices):
+    VALIDATING = "validating", "validating"
+    FAILED = "failed", "failed"
+    IN_PROGRESS = "in_progress", "in_progress"
+    FINALIZING = "finalizing", "finalizing"
+    COMPLETED = "completed", "completed"
+    EXPIRED = "expired", "expired"
+    CANCELLING = "cancelling", "cancelling"
+    CANCELLED = "cancelled", "cancelled"
+
+
 class Batch(models.Model):
     """
     Mirrors the structure of OpenAI's Batch type.
@@ -828,16 +839,7 @@ class Batch(models.Model):
     )
     status = models.CharField(
         max_length=20,
-        choices=[
-            ("validating", "validating"),
-            ("failed", "failed"),
-            ("in_progress", "in_progress"),
-            ("finalizing", "finalizing"),
-            ("completed", "completed"),
-            ("expired", "expired"),
-            ("cancelling", "cancelling"),
-            ("cancelled", "cancelled"),
-        ],
+        choices=BatchStatus.choices,
         help_text="The current status of the batch."
     )
     cancelled_at = models.PositiveIntegerField(
@@ -991,7 +993,7 @@ class Batch(models.Model):
             if counts['total'] == counts.get('input', 0):
                 now_ts = int(timezone.now().timestamp())
                 self.completed_at = now_ts
-                self.status = "completed"
+                self.status = BatchStatus.COMPLETED
 
             self.request_counts = counts
             self.save(update_fields=['request_counts', 'status'])

@@ -16,7 +16,7 @@ from litellm import Router
 from pydantic import ValidationError, TypeAdapter
 from openai.types.batch_create_params import BatchCreateParams
 
-from management.models import Batch, FileObject
+from management.models import Batch, FileObject, BatchStatus
 from django.conf import settings
 from .decorators import token_authenticated, log_request, tos_accepted
 from .utils import cache_lock
@@ -47,7 +47,7 @@ class BatchService:
             created_at=int(now.timestamp()),
             endpoint=params["endpoint"],
             input_file=file_obj,
-            status="validating",
+            status=BatchStatus.VALIDATING,
             metadata=params.get("metadata"),
             expires_at=int((now + timedelta(
                 days=settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
@@ -68,7 +68,7 @@ class BatchService:
         Check if user/team has reached batch creation limit.
         Returns (can_create, limit).
         """
-        active_statuses = ["validating", "in_progress"]
+        active_statuses = [BatchStatus.VALIDATING, BatchStatus.IN_PROGRESS]
 
         if token.service_account:
             count = await sync_to_async(
@@ -182,13 +182,13 @@ async def batch_cancel(request: ASGIRequest, token, batch_id: str, *args, **kwar
         return JsonResponse({"error": "Batch not found."}, status=404)
 
     now_ts = int(timezone.now().timestamp())
-    if batch_obj.status == "in_progress":
+    if batch_obj.status == BatchStatus.IN_PROGRESS:
         batch_obj.cancelling_at = now_ts
-        batch_obj.status = "cancelling"
-    elif batch_obj.status == "validating" or batch_obj.status == "finalizing":
+        batch_obj.status = BatchStatus.CANCELLING
+    elif batch_obj.status == BatchStatus.VALIDATING or batch_obj.status == BatchStatus.FINALIZING:
         batch_obj.cancelling_at = now_ts
         batch_obj.cancelled_at = now_ts
-        batch_obj.status = "cancelled"
+        batch_obj.status = BatchStatus.CANCELLED
 
     await sync_to_async(batch_obj.save)()
     openai_batch = batch_obj.model
@@ -200,7 +200,7 @@ async def batch_cancel(request: ASGIRequest, token, batch_id: str, *args, **kwar
 async def _mark_batch_in_progress(batch: Batch):
     """Transition batch from validating to in_progress."""
     now_ts = int(timezone.now().timestamp())
-    batch.status = "in_progress"
+    batch.status = BatchStatus.IN_PROGRESS
     batch.in_progress_at = now_ts
     await sync_to_async(batch.save)()
 
@@ -208,16 +208,16 @@ async def _mark_batch_in_progress(batch: Batch):
 async def _mark_batch_cancelled(batch: Batch):
     """Mark batch as cancelled."""
     now_ts = int(timezone.now().timestamp())
-    batch.status = "cancelled"
+    batch.status = BatchStatus.CANCELLED
     batch.cancelled_at = now_ts
     await sync_to_async(batch.save)()
 
 
 async def _mark_batch_completed(batch: Batch):
     """Mark batch as completed."""
-    if batch.status != "completed":
+    if batch.status != BatchStatus.COMPLETED:
         now_ts = int(timezone.now().timestamp())
-        batch.status = "completed"
+        batch.status = BatchStatus.COMPLETED
         batch.completed_at = now_ts
         await sync_to_async(batch.save)()
 
@@ -244,11 +244,11 @@ async def round_robin(batches: list[Batch]) -> AsyncIterator[tuple[Batch, str]]:
 
         await sync_to_async(batch.refresh_from_db)(fields=["status"])
 
-        if batch.status == "cancelling":
+        if batch.status == BatchStatus.CANCELLING:
             await _mark_batch_cancelled(batch)
             continue
 
-        if batch.status == "validating":
+        if batch.status == BatchStatus.VALIDATING:
             await _mark_batch_in_progress(batch)
 
         if not lines:
@@ -476,7 +476,7 @@ class BatchLoader:
     async def load_active_batches() -> list[Batch]:
         """Load all active batches from database."""
         return await sync_to_async(list)(
-            Batch.objects.filter(status__in=['validating', 'in_progress', 'cancelling'])
+            Batch.objects.filter(status__in=[BatchStatus.VALIDATING, BatchStatus.IN_PROGRESS, BatchStatus.CANCELLING])
         )
 
     @staticmethod
@@ -486,7 +486,7 @@ class BatchLoader:
             lambda: Batch.objects.filter(
                 expires_at__isnull=False,
                 expires_at__lt=before_timestamp,
-            ).update(status="expired", expired_at=before_timestamp)
+            ).update(status=BatchStatus.EXPIRED, expired_at=before_timestamp)
         )()
 
 

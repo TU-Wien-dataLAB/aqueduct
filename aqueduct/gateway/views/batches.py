@@ -323,7 +323,7 @@ class EndpointDispatcher:
                 method = getattr(self.router, method_name)
                 return await method(**body)
 
-        raise NotImplementedError(f"Endpoint {endpoint} not supported")
+        raise ValueError(f"Endpoint {endpoint} not supported")
 
 
 class BatchRequestProcessor:
@@ -338,8 +338,11 @@ class BatchRequestProcessor:
         """Process a single batch request and record result."""
         try:
             params = self._parse_params(params_str)
-            if self._is_duplicate(batch, params):
+            processing_id = self._get_processing_id(batch, params)
+            if processing_id in self.processed_ids:
                 return
+            else:
+                self.processed_ids.add(processing_id)
 
             log.info(f"Processing request {batch.id}-{params.get('custom_id')}")
             result = await self._execute_request(batch, params)
@@ -348,27 +351,25 @@ class BatchRequestProcessor:
         except Exception as e:
             await self._record_error(batch, params_str, e)
 
-    def _parse_params(self, params_str: str) -> dict:
+    @staticmethod
+    def _parse_params(params_str: str) -> dict:
         """Parse and validate request parameters."""
         try:
             return json.loads(params_str)
         except json.JSONDecodeError:
             raise ValueError("Invalid JSON line")
 
-    def _is_duplicate(self, batch: Batch, params: dict) -> bool:
+    @staticmethod
+    def _get_processing_id(batch: Batch, params: dict) -> str:
         """Check if request was already processed."""
         custom_id = params.get("custom_id")
         if not custom_id:
             raise ValueError("Missing custom_id parameter")
 
-        processing_id = f"{batch.id}-{custom_id}"
-        if processing_id in self.processed_ids:
-            return True
+        return f"{batch.id}-{custom_id}"
 
-        self.processed_ids.add(processing_id)
-        return False
-
-    def _validate_request(self, batch: Batch, params: dict):
+    @staticmethod
+    def _validate_request(batch: Batch, params: dict):
         """Validate request parameters."""
         url = params.get("url")
         if url != batch.endpoint:
@@ -389,7 +390,8 @@ class BatchRequestProcessor:
 
         return await self.dispatcher.dispatch(batch.endpoint, body)
 
-    async def _record_success(self, batch: Batch, params: dict, result):
+    @staticmethod
+    async def _record_success(batch: Batch, params: dict, result):
         """Record successful request result."""
         data = result.model_dump(exclude_none=True, exclude_unset=True)
         custom_id = params.get("custom_id")
@@ -407,7 +409,8 @@ class BatchRequestProcessor:
 
         await sync_to_async(batch.append)(response_data)
 
-    async def _record_error(self, batch: Batch, params_str: str, error: Exception):
+    @staticmethod
+    async def _record_error(batch: Batch, params_str: str, error: Exception):
         """Record request error."""
         try:
             params = json.loads(params_str)
@@ -443,7 +446,8 @@ class BatchProcessingSession:
         self.next_reload_time = self.current_timestamp() + self.reload_interval
         self.processed_ids = set()
 
-    def current_timestamp(self) -> float:
+    @staticmethod
+    def current_timestamp() -> float:
         """Get current timestamp as float."""
         return timezone.now().timestamp()
 

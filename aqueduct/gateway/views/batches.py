@@ -119,7 +119,7 @@ async def _create_batch(request: ASGIRequest, token):
         params = json.loads(body)
     except ValidationError as e:
         return JsonResponse({"error": str(e)}, status=400)
-    except Exception:
+    except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON."}, status=400)
 
     try:
@@ -185,12 +185,13 @@ async def batch_cancel(request: ASGIRequest, token, batch_id: str, *args, **kwar
     if batch_obj.status == BatchStatus.IN_PROGRESS:
         batch_obj.cancelling_at = now_ts
         batch_obj.status = BatchStatus.CANCELLING
+        await sync_to_async(batch_obj.save)()
     elif batch_obj.status == BatchStatus.VALIDATING or batch_obj.status == BatchStatus.FINALIZING:
         batch_obj.cancelling_at = now_ts
         batch_obj.cancelled_at = now_ts
         batch_obj.status = BatchStatus.CANCELLED
+        await sync_to_async(batch_obj.save)()
 
-    await sync_to_async(batch_obj.save)()
     openai_batch = batch_obj.model
     return JsonResponse(
         openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200
@@ -262,19 +263,12 @@ async def round_robin(batches: list[Batch]) -> AsyncIterator[tuple[Batch, str]]:
 
 class AsyncBoundedParallelQueue:
     def __init__(self, max_parallel):
-        self.semaphore = asyncio.Semaphore(max_parallel)
+        self.semaphore = asyncio.BoundedSemaphore(max_parallel)
         self.tasks = set()
-        self.cancelled = False
 
     async def process(self, coro, *args, **kwargs):
         """Add task to queue, blocking if full"""
-        if self.cancelled:
-            raise RuntimeError("Queue processing cancelled")
-
         await self.semaphore.acquire()
-        if self.cancelled:
-            self.semaphore.release()
-            raise RuntimeError("Queue processing cancelled")
 
         task = asyncio.create_task(self._worker(coro, *args, **kwargs))
         self.tasks.add(task)
@@ -415,7 +409,7 @@ class BatchRequestProcessor:
         try:
             params = json.loads(params_str)
             custom_id = params.get("custom_id")
-        except:
+        except Exception:
             custom_id = None
 
         error_data = {

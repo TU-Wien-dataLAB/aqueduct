@@ -5,6 +5,7 @@ from django.db.models import Avg, Count, F, Q, Sum
 from django.db.models.functions import Coalesce, TruncDay, TruncHour, TruncMinute
 from django.utils import timezone
 from django.views.generic import TemplateView
+
 from gateway.config import get_router_config
 
 from ..models import Org, Request, Token
@@ -49,11 +50,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         is_global_admin = profile.is_admin() if profile else False
 
         # Organization selection: 'all' for global, or org id
-        orgs = (
-            Org.objects.all()
-            if is_global_admin
-            else Org.objects.filter(pk=profile.org_id)
-        )
+        orgs = Org.objects.all() if is_global_admin else Org.objects.filter(pk=profile.org_id)
         sel = self.request.GET.get("org")
         if sel == "all" and is_global_admin:
             selected_org = None
@@ -88,9 +85,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 )
 
         # Only include requests for models configured in the router
-        allowed_models = [
-            m["model_name"] for m in get_router_config().get("model_list", [])
-        ]
+        allowed_models = [m["model_name"] for m in get_router_config().get("model_list", [])]
         reqs = reqs.filter(model__in=allowed_models)
 
         # Optional token selection: filter to a single token if provided
@@ -102,9 +97,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 # Ensure the token belongs to the selected_org if scoped
                 if selected_org is not None:
                     tok_org_id = tok.user.profile.org_id if tok.user else None
-                    sa_org_id = (
-                        tok.service_account.team.org_id if tok.service_account else None
-                    )
+                    sa_org_id = tok.service_account.team.org_id if tok.service_account else None
                     if tok_org_id != selected_org.id and sa_org_id != selected_org.id:
                         raise Token.DoesNotExist
                 selected_token = tok
@@ -135,9 +128,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             .annotate(count=Count("id"))
             .order_by("period")
         )
-        period_to_count = {
-            int(item["period"].timestamp() * 1000): item["count"] for item in qs
-        }
+        period_to_count = {int(item["period"].timestamp() * 1000): item["count"] for item in qs}
         buckets = get_all_buckets(start_time, now, selected_span)
         timeseries = [[b, period_to_count.get(b, 0)] for b in buckets]
 
@@ -147,8 +138,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             agg = (
                 reqs_span.annotate(
                     org_id=Coalesce(
-                        F("token__user__profile__org_id"),
-                        F("token__service_account__team__org_id"),
+                        F("token__user__profile__org_id"), F("token__service_account__team__org_id")
                     )
                 )
                 .values("org_id")
@@ -164,11 +154,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             ]
         else:
             # Top tokens by request count
-            agg = (
-                reqs_span.values("token__id")
-                .annotate(count=Count("id"))
-                .order_by("-count")[:100]
-            )
+            agg = reqs_span.values("token__id").annotate(count=Count("id")).order_by("-count")[:100]
             token_ids = [t["token__id"] for t in agg if t["token__id"] is not None]
             token_objs = {
                 tok.id: tok
@@ -186,9 +172,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         total_requests = reqs_span.count()
         failed_requests = reqs_span.filter(status_code__gte=400).count()
 
-        per_model = list(
-            reqs_span.values("model").annotate(count=Count("id")).order_by("-count")
-        )
+        per_model = list(reqs_span.values("model").annotate(count=Count("id")).order_by("-count"))
         present_models = {m["model"] for m in per_model}
         missing_models = [
             {"model": m["model_name"], "count": 0}

@@ -1,14 +1,19 @@
 import asyncio
 import json
-import time
+import logging
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 
-from gateway.tests.utils.base import GatewayBatchesTestCase
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
-from unittest.mock import patch, MagicMock, AsyncMock
+from gateway.tests.utils.base import GatewayBatchesTestCase
+
+logger = logging.getLogger("aqueduct")
+logging.disable(logging.NOTSET)
+logger.setLevel(logging.DEBUG)
 
 
 def mock_router():
@@ -47,17 +52,27 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         ]
         payload1 = _build_chat_payload(self.model, messages1)
         payload2 = _build_chat_payload(self.model, messages2)
-        wrapped1 = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload1}
-        wrapped2 = {"custom_id": 2, "method": "POST", "url": "/v1/chat/completions", "body": payload2}
+        wrapped1 = {
+            "custom_id": 1,
+            "method": "POST",
+            "url": "/v1/chat/completions",
+            "body": payload1,
+        }
+        wrapped2 = {
+            "custom_id": 2,
+            "method": "POST",
+            "url": "/v1/chat/completions",
+            "body": payload2,
+        }
         content = (
-                json.dumps(wrapped1).encode("utf-8") + b"\n" +
-                json.dumps(wrapped2).encode("utf-8") + b"\n"
+            json.dumps(wrapped1).encode("utf-8")
+            + b"\n"
+            + json.dumps(wrapped2).encode("utf-8")
+            + b"\n"
         )
         upload_file = SimpleUploadedFile("batch.jsonl", content, content_type="application/jsonl")
         response = self.client.post(
-            "/files",
-            {"file": upload_file, "purpose": "batch"},
-            headers=self.headers,
+            "/files", {"file": upload_file, "purpose": "batch"}, headers=self.headers
         )
         self.assertEqual(response.status_code, 200, f"File upload failed: {response.json()}")
         file_id = response.json()["id"]
@@ -81,7 +96,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         batch_id = batch_data["id"]
         self.assertEqual(batch_data["status"], "validating")
 
-        with patch('gateway.views.batches.get_router', return_value=mock_router()):
+        with patch("gateway.views.batches.get_router", return_value=mock_router()):
             self.run_batch_processing_loop()
 
         # Retrieve the completed batch metadata.
@@ -117,10 +132,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         """POST /batches with invalid JSON returns 400."""
         # Send malformed JSON in the body
         resp = self.client.post(
-            "/batches",
-            data="{not: 'json'}",
-            headers=self.headers,
-            content_type="application/json",
+            "/batches", data="{not: 'json'}", headers=self.headers, content_type="application/json"
         )
         self.assertEqual(resp.status_code, 400)
         body = resp.json()
@@ -128,7 +140,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         # Should indicate invalid JSON
         self.assertTrue(
             "Invalid JSON" in body.get("error", ""),
-            f"Unexpected error message: {body.get('error')}"
+            f"Unexpected error message: {body.get('error')}",
         )
 
     def test_nonexistent_input_file(self):
@@ -160,25 +172,25 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def test_list_batches_different_tokens(self):
         """Batches created under one token should not be visible under another."""
         # Prepare a simple JSONL file in batch API format
-        payload = _build_chat_payload(self.model, messages=[
-            {"role": "system", "content": "Hi"},
-            {"role": "user", "content": "Token1"},
-        ])
+        payload = _build_chat_payload(
+            self.model,
+            messages=[{"role": "system", "content": "Hi"}, {"role": "user", "content": "Token1"}],
+        )
         wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
         content = json.dumps(wrapped).encode() + b"\n"
         f1 = SimpleUploadedFile("t1.jsonl", content, content_type="application/jsonl")
         # Create batch under token1 (self.headers)
-        resp = self.client.post(
-            "/files", {"file": f1, "purpose": "batch"}, headers=self.headers
-        )
+        resp = self.client.post("/files", {"file": f1, "purpose": "batch"}, headers=self.headers)
         fid1 = resp.json()["id"]
         resp = self.client.post(
             "/batches",
-            data=json.dumps({
-                "input_file_id": fid1,
-                "completion_window": "24h",
-                "endpoint": "/v1/chat/completions",
-            }),
+            data=json.dumps(
+                {
+                    "input_file_id": fid1,
+                    "completion_window": "24h",
+                    "endpoint": "/v1/chat/completions",
+                }
+            ),
             headers=self.headers,
             content_type="application/json",
         )
@@ -186,26 +198,27 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         # Build headers for a second token (from fixture pk=2)
         from management.models import Token
+
         token2 = Token.objects.get(pk=2)
         # Generate a fresh secret for token2 (update key_hash/preview) and authenticate with raw key
         secret2 = token2._set_new_key()
-        token2.save(update_fields=['key_hash', 'key_preview'])
+        token2.save(update_fields=["key_hash", "key_preview"])
         headers2 = _build_chat_headers(secret2)
         headers2.pop("Content-Type", None)
 
         # Create batch under token2
         f2 = SimpleUploadedFile("t2.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post(
-            "/files", {"file": f2, "purpose": "batch"}, headers=headers2
-        )
+        resp = self.client.post("/files", {"file": f2, "purpose": "batch"}, headers=headers2)
         fid2 = resp.json()["id"]
         resp = self.client.post(
             "/batches",
-            data=json.dumps({
-                "input_file_id": fid2,
-                "completion_window": "24h",
-                "endpoint": "/v1/chat/completions",
-            }),
+            data=json.dumps(
+                {
+                    "input_file_id": fid2,
+                    "completion_window": "24h",
+                    "endpoint": "/v1/chat/completions",
+                }
+            ),
             headers=headers2,
             content_type="application/json",
         )
@@ -224,10 +237,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def test_max_user_batches_limit(self):
         """POST /batches should enforce MAX_USER_BATCHES and reject the fourth batch."""
         # Upload a simple JSONL file for batching in batch API format
-        payload = _build_chat_payload(self.model, [
-            {"role": "system", "content": "X"},
-            {"role": "user", "content": "Y"},
-        ])
+        payload = _build_chat_payload(
+            self.model, [{"role": "system", "content": "X"}, {"role": "user", "content": "Y"}]
+        )
         wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
         content = (json.dumps(wrapped) + "\n").encode("utf-8")
         upload = SimpleUploadedFile("limit.jsonl", content, content_type="application/jsonl")
@@ -247,7 +259,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         created_ids = []
         for _ in range(settings.MAX_USER_BATCHES):
             ok = self.client.post(
-                "/batches", data=json.dumps(batch_payload), headers=self.headers,
+                "/batches",
+                data=json.dumps(batch_payload),
+                headers=self.headers,
                 content_type="application/json",
             )
             self.assertEqual(ok.status_code, 200)
@@ -255,7 +269,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         # The next (fourth) batch should be rejected with 403
         over = self.client.post(
-            "/batches", data=json.dumps(batch_payload), headers=self.headers,
+            "/batches",
+            data=json.dumps(batch_payload),
+            headers=self.headers,
             content_type="application/json",
         )
         self.assertEqual(over.status_code, 403)
@@ -271,10 +287,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def test_max_user_batches_limit_after_cancel(self):
         """Cancelling an active batch frees up a slot for a new batch."""
         # Upload a simple JSONL file for batching
-        payload = _build_chat_payload(self.model, [
-            {"role": "system", "content": "X"},
-            {"role": "user", "content": "Y"},
-        ])
+        payload = _build_chat_payload(
+            self.model, [{"role": "system", "content": "X"}, {"role": "user", "content": "Y"}]
+        )
         wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
         content = (json.dumps(wrapped) + "\n").encode("utf-8")
         upload = SimpleUploadedFile("limit2.jsonl", content, content_type="application/jsonl")
@@ -294,7 +309,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         created = []
         for _ in range(settings.MAX_USER_BATCHES):
             ok = self.client.post(
-                "/batches", data=json.dumps(batch_payload), headers=self.headers,
+                "/batches",
+                data=json.dumps(batch_payload),
+                headers=self.headers,
                 content_type="application/json",
             )
             self.assertEqual(ok.status_code, 200)
@@ -302,7 +319,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         # Next batch should be blocked
         blocked = self.client.post(
-            "/batches", data=json.dumps(batch_payload), headers=self.headers,
+            "/batches",
+            data=json.dumps(batch_payload),
+            headers=self.headers,
             content_type="application/json",
         )
         self.assertEqual(blocked.status_code, 403)
@@ -314,7 +333,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         # Now a new batch should succeed
         again = self.client.post(
-            "/batches", data=json.dumps(batch_payload), headers=self.headers,
+            "/batches",
+            data=json.dumps(batch_payload),
+            headers=self.headers,
             content_type="application/json",
         )
         self.assertEqual(again.status_code, 200)
@@ -322,10 +343,19 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def test_various_endpoints(self):
         """Test batch creation and processing for chat, simple completions, and embeddings endpoints."""
         tests = [
-            ("/v1/chat/completions", json.dumps(_build_chat_payload(self.model, [
-                {"role": "system", "content": "X"}, {"role": "user", "content": "Y"}
-            ]))),
-            ("/v1/completions", json.dumps({"model": self.model, "prompt": "Hello", "max_completion_tokens": 2})),
+            (
+                "/v1/chat/completions",
+                json.dumps(
+                    _build_chat_payload(
+                        self.model,
+                        [{"role": "system", "content": "X"}, {"role": "user", "content": "Y"}],
+                    )
+                ),
+            ),
+            (
+                "/v1/completions",
+                json.dumps({"model": self.model, "prompt": "Hello", "max_completion_tokens": 2}),
+            ),
             ("/v1/embeddings", json.dumps({"model": self.model, "input": ["Hello"]})),
         ]
         for endpoint, line in tests:
@@ -333,25 +363,29 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             wrapped = {"custom_id": 1, "method": "POST", "url": endpoint, "body": body}
             content = (json.dumps(wrapped) + "\n").encode()
             upload = SimpleUploadedFile("e.jsonl", content, content_type="application/jsonl")
-            resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
+            resp = self.client.post(
+                "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+            )
             fid = resp.json()["id"]
             resp = self.client.post(
                 "/batches",
-                data=json.dumps({
-                    "input_file_id": fid,
-                    "completion_window": "24h",
-                    "endpoint": endpoint,
-                }), headers=self.headers, content_type="application/json",
+                data=json.dumps(
+                    {"input_file_id": fid, "completion_window": "24h", "endpoint": endpoint}
+                ),
+                headers=self.headers,
+                content_type="application/json",
             )
             bid = resp.json()["id"]
 
-            with patch('gateway.views.batches.get_router', return_value=mock_router()):
+            with patch("gateway.views.batches.get_router", return_value=mock_router()):
                 self.run_batch_processing_loop()
 
             info = self.client.get(f"/batches/{bid}", headers=self.headers).json()
             out_id = info.get("output_file_id")
             self.assertIsNotNone(out_id)
-            lines = self.client.get(f"/files/{out_id}/content", headers=self.headers).content.splitlines()
+            lines = self.client.get(
+                f"/files/{out_id}/content", headers=self.headers
+            ).content.splitlines()
             self.assertEqual(len(lines), 1)
             result = json.loads(lines[0])
             if endpoint.endswith("/embeddings"):
@@ -394,31 +428,49 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def test_streaming_failure_in_batch(self):
         """If one request in a batch JSONL contains a streaming call, it should count as a failed request."""
         # Build JSONL: one valid chat, one streaming call (invalid), one valid chat
-        chat_payload = _build_chat_payload(self.model, [
-            {"role": "system", "content": "X"}, {"role": "user", "content": "Ok"}
-        ])
-        wrapped_chat = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": chat_payload}
+        chat_payload = _build_chat_payload(
+            self.model, [{"role": "system", "content": "X"}, {"role": "user", "content": "Ok"}]
+        )
+        wrapped_chat = {
+            "custom_id": 1,
+            "method": "POST",
+            "url": "/v1/chat/completions",
+            "body": chat_payload,
+        }
         chat_line = json.dumps(wrapped_chat).encode()
-        stream_payload = _build_chat_payload(self.model, [
-            {"role": "system", "content": "X"}, {"role": "user", "content": "Ok"}
-        ], stream=True)
-        wrapped_stream = {"custom_id": 2, "method": "POST", "url": "/v1/chat/completions", "body": stream_payload}
+        stream_payload = _build_chat_payload(
+            self.model,
+            [{"role": "system", "content": "X"}, {"role": "user", "content": "Ok"}],
+            stream=True,
+        )
+        wrapped_stream = {
+            "custom_id": 2,
+            "method": "POST",
+            "url": "/v1/chat/completions",
+            "body": stream_payload,
+        }
         invalid_line = json.dumps(wrapped_stream).encode()
         content = chat_line + b"\n" + invalid_line + b"\n"
         upload = SimpleUploadedFile("mixed.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 200)
         fid = resp.json()["id"]
         resp = self.client.post(
             "/batches",
-            data=json.dumps({
-                "input_file_id": fid,
-                "completion_window": "24h",
-                "endpoint": "/v1/chat/completions",
-            }), headers=self.headers, content_type="application/json",
+            data=json.dumps(
+                {
+                    "input_file_id": fid,
+                    "completion_window": "24h",
+                    "endpoint": "/v1/chat/completions",
+                }
+            ),
+            headers=self.headers,
+            content_type="application/json",
         )
         bid = resp.json()["id"]
-        with patch('gateway.views.batches.get_router', return_value=mock_router()):
+        with patch("gateway.views.batches.get_router", return_value=mock_router()):
             self.run_batch_processing_loop()
 
         info = self.client.get(f"/batches/{bid}", headers=self.headers).json()
@@ -449,26 +501,38 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             for i in range(10)
         ]
         lines = [
-            json.dumps({
-                "custom_id": idx,
-                "method": "POST",
-                "url": "/v1/chat/completions",
-                "body": _build_chat_payload(self.model, m),
-            }).encode()
+            json.dumps(
+                {
+                    "custom_id": idx,
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": _build_chat_payload(self.model, m),
+                }
+            ).encode()
             for idx, m in enumerate(msgs, start=1)
         ]
         content = b"\n".join(lines) + b"\n"
         upload = SimpleUploadedFile("q.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+        )
 
         file_id = resp.json()["id"]
-        batch_payload = {"input_file_id": file_id, "completion_window": "24h", "endpoint": "/v1/chat/completions"}
-        resp = self.client.post("/batches", data=json.dumps(batch_payload), headers=self.headers,
-                                content_type="application/json")
+        batch_payload = {
+            "input_file_id": file_id,
+            "completion_window": "24h",
+            "endpoint": "/v1/chat/completions",
+        }
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(batch_payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
         batch_id = resp.json()["id"]
 
         # Process all 10 requests via mock_router
-        with patch('gateway.views.batches.get_router', return_value=mock_router()):
+        with patch("gateway.views.batches.get_router", return_value=mock_router()):
             self.run_batch_processing_loop()
 
         resp = self.client.get(f"/batches/{batch_id}", headers=self.headers)
@@ -480,23 +544,40 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         # Setup two input files with different numbers of requests
         def make_batch(n):
-            msgs = [[{"role": "system", "content": "X"}, {"role": "user", "content": str(i)}] for i in range(n)]
+            msgs = [
+                [{"role": "system", "content": "X"}, {"role": "user", "content": str(i)}]
+                for i in range(n)
+            ]
             lines = [
-                json.dumps({
-                    "custom_id": idx,
-                    "method": "POST",
-                    "url": "/v1/chat/completions",
-                    "body": _build_chat_payload(self.model, m),
-                }).encode() + b"\n"
+                json.dumps(
+                    {
+                        "custom_id": idx,
+                        "method": "POST",
+                        "url": "/v1/chat/completions",
+                        "body": _build_chat_payload(self.model, m),
+                    }
+                ).encode()
+                + b"\n"
                 for idx, m in enumerate(msgs, start=1)
             ]
             content = b"".join(lines)
             upload = SimpleUploadedFile(f"b{n}.jsonl", content, content_type="application/jsonl")
-            resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
+            resp = self.client.post(
+                "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+            )
             fid = resp.json()["id"]
-            resp = self.client.post("/batches", data=json.dumps({
-                "input_file_id": fid, "completion_window": "24h", "endpoint": "/v1/chat/completions"
-            }), headers=self.headers, content_type="application/json")
+            resp = self.client.post(
+                "/batches",
+                data=json.dumps(
+                    {
+                        "input_file_id": fid,
+                        "completion_window": "24h",
+                        "endpoint": "/v1/chat/completions",
+                    }
+                ),
+                headers=self.headers,
+                content_type="application/json",
+            )
             return resp.json()["id"], n
 
         batch1, n1 = make_batch(2)
@@ -505,11 +586,13 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         print(f"created batch {batch2} with {n2} requests")
         # Process both batches in same run
         router = mock_router().mock_router()
-        with patch('gateway.views.batches.get_router', return_value=router):
+        with patch("gateway.views.batches.get_router", return_value=router):
             self.run_batch_processing_loop()
 
         # Check counts
-        assert router.acompletion.call_count == 5, f"call count should be 5, got {router.acompletion.call_count}"
+        assert router.acompletion.call_count == 5, (
+            f"call count should be 5, got {router.acompletion.call_count}"
+        )
         for b_id, n in ((batch1, n1), (batch2, n2)):
             resp = self.client.get(f"/batches/{b_id}", headers=self.headers).json()
             counts = resp["request_counts"]
@@ -518,9 +601,10 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def test_cancel_before_processing(self):
         """Test cancelling a batch before processing (status validating)."""
         # Upload a single-line file in batch API format
-        payload = _build_chat_payload(self.model, messages=[
-            {"role": "system", "content": "X"}, {"role": "user", "content": "Y"}
-        ])
+        payload = _build_chat_payload(
+            self.model,
+            messages=[{"role": "system", "content": "X"}, {"role": "user", "content": "Y"}],
+        )
         wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
         content = json.dumps(wrapped).encode() + b"\n"
         upload = SimpleUploadedFile("c.jsonl", content, content_type="application/jsonl")
@@ -531,11 +615,13 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         # Create batch and cancel immediately
         resp = self.client.post(
             "/batches",
-            data=json.dumps({
-                "input_file_id": fid,
-                "completion_window": "24h",
-                "endpoint": "/v1/chat/completions",
-            }),
+            data=json.dumps(
+                {
+                    "input_file_id": fid,
+                    "completion_window": "24h",
+                    "endpoint": "/v1/chat/completions",
+                }
+            ),
             headers=self.headers,
             content_type="application/json",
         )
@@ -547,9 +633,10 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def test_cancel_in_progress(self):
         """Test cancelling a batch in in_progress state transitions through cancelling to cancelled."""
         # Upload and create a single-line batch in batch API format
-        payload = _build_chat_payload(self.model, messages=[
-            {"role": "system", "content": "X"}, {"role": "user", "content": "Z"}
-        ])
+        payload = _build_chat_payload(
+            self.model,
+            messages=[{"role": "system", "content": "X"}, {"role": "user", "content": "Z"}],
+        )
         wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
         content = json.dumps(wrapped).encode() + b"\n"
         upload = SimpleUploadedFile("c2.jsonl", content, content_type="application/jsonl")
@@ -559,11 +646,13 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         fid = resp.json()["id"]
         resp = self.client.post(
             "/batches",
-            data=json.dumps({
-                "input_file_id": fid,
-                "completion_window": "24h",
-                "endpoint": "/v1/chat/completions",
-            }),
+            data=json.dumps(
+                {
+                    "input_file_id": fid,
+                    "completion_window": "24h",
+                    "endpoint": "/v1/chat/completions",
+                }
+            ),
             headers=self.headers,
             content_type="application/json",
         )
@@ -571,6 +660,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         # Force status to in_progress directly (loop consumes lines too quickly in tests)
         from management.models import Batch
+
         Batch.objects.filter(id=b2).update(status="in_progress")
 
         # Cancel while in_progress
@@ -579,26 +669,26 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertEqual(data2["status"], "cancelling")
 
         # Finalize cancellation via processing loop
-        with patch('gateway.views.batches.get_router', return_value=mock_router()):
+        with patch("gateway.views.batches.get_router", return_value=mock_router()):
             self.run_batch_processing_loop()
         resp = self.client.get(f"/batches/{b2}", headers=self.headers)
         self.assertEqual(resp.json()["status"], "cancelled")
 
     def test_expired_batches_marked_expired(self):
         """Expired batches are marked as expired by the processing loop."""
-        from django.utils import timezone
         from management.models import Batch
 
         # Upload a file and create a batch in batch API format
-        payload = _build_chat_payload(self.model, messages=[
-            {"role": "system", "content": "Hello"},
-            {"role": "user", "content": "Expire"},
-        ])
+        payload = _build_chat_payload(
+            self.model,
+            messages=[
+                {"role": "system", "content": "Hello"},
+                {"role": "user", "content": "Expire"},
+            ],
+        )
         wrapped = {"custom_id": 1, "method": "POST", "url": "/v1/chat/completions", "body": payload}
         content = json.dumps(wrapped).encode("utf-8") + b"\n"
-        upload_file = SimpleUploadedFile(
-            "expire.jsonl", content, content_type="application/jsonl"
-        )
+        upload_file = SimpleUploadedFile("expire.jsonl", content, content_type="application/jsonl")
         resp = self.client.post(
             "/files", {"file": upload_file, "purpose": "batch"}, headers=self.headers
         )
@@ -623,10 +713,12 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         created_at = batch_data["created_at"]
 
         # Simulate expiration by setting expires_at to the creation time - 1
-        Batch.objects.filter(id=batch_id).update(expires_at=created_at - 1, created_at=created_at - 1)
+        Batch.objects.filter(id=batch_id).update(
+            expires_at=created_at - 1, created_at=created_at - 1
+        )
 
         # Run processing loop to trigger expiry logic
-        with patch('gateway.views.batches.get_router', return_value=mock_router()):
+        with patch("gateway.views.batches.get_router", return_value=mock_router()):
             self.run_batch_processing_loop()
 
         # Verify batch marked as expired
@@ -640,6 +732,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def test_cache_lock(self):
         """Test that the cache lock works as expected."""
         from gateway.views.utils import cache_lock
+
         with cache_lock("test", 60) as acquired:
             self.assertTrue(acquired)
             with cache_lock("test", 60) as inner_acquired:
@@ -658,26 +751,39 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             for i in range(2)
         ]
         lines = [
-            json.dumps({
-                "custom_id": idx,
-                "method": "POST",
-                "url": "/v1/chat/completions",
-                "body": _build_chat_payload(self.model, m),
-            }).encode()
+            json.dumps(
+                {
+                    "custom_id": idx,
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": _build_chat_payload(self.model, m),
+                }
+            ).encode()
             for idx, m in enumerate(msgs, start=1)
         ]
         content = b"\n".join(lines) + b"\n"
         upload = SimpleUploadedFile("q.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post("/files", {"file": upload, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+        )
 
         file_id = resp.json()["id"]
-        batch_payload = {"input_file_id": file_id, "completion_window": "24h", "endpoint": "/v1/chat/completions"}
-        resp = self.client.post("/batches", data=json.dumps(batch_payload), headers=self.headers,
-                                content_type="application/json")
+        batch_payload = {
+            "input_file_id": file_id,
+            "completion_window": "24h",
+            "endpoint": "/v1/chat/completions",
+        }
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(batch_payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
         batch_id = resp.json()["id"]
 
-        with patch('gateway.views.batches.get_router', return_value=mock_router()):
+        with patch("gateway.views.batches.get_router", return_value=mock_router()):
             from gateway.views.batches import run_batch_processing
+
             async def run_batch_processing_loop_concurrently():
                 print("Running two batch processing loops concurrently.")
                 await asyncio.gather(run_batch_processing(), run_batch_processing())
@@ -687,3 +793,185 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         resp = self.client.get(f"/batches/{batch_id}", headers=self.headers)
         counts = resp.json()["request_counts"]
         self.assertEqual(counts["total"], 2)
+
+    @override_settings(
+        AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=lambda: 200,
+        AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=10 / 60,
+        AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=0.5,
+    )
+    def test_batch_heavy_load(self):
+        class SlowMockRouter:
+            """Mock router that delays responses to trigger batch reload during processing."""
+
+            def __init__(self):
+                self.call_count = 0
+
+            def model_dump(self, **kwargs):
+                return {"choices": [{"message": {"content": f"response-{self.call_count}"}}]}
+
+            async def acompletion(self, **kwargs):
+                self.call_count += 1
+                await asyncio.sleep(0.5)
+                return self
+
+        num_requests = 1000
+        msgs = [
+            [{"role": "system", "content": "Test"}, {"role": "user", "content": f"Request {i}"}]
+            for i in range(num_requests)
+        ]
+        lines = [
+            json.dumps(
+                {
+                    "custom_id": idx,
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": _build_chat_payload(self.model, m),
+                }
+            ).encode()
+            for idx, m in enumerate(msgs, start=1)
+        ]
+        content = b"\n".join(lines) + b"\n"
+        upload = SimpleUploadedFile("race.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post(
+            "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        file_id = resp.json()["id"]
+        batch_payload = {
+            "input_file_id": file_id,
+            "completion_window": "24h",
+            "endpoint": "/v1/chat/completions",
+        }
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(batch_payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        batch_id = resp.json()["id"]
+
+        slow_router = SlowMockRouter()
+
+        with patch("gateway.views.batches.get_router", return_value=slow_router):
+            self.run_batch_processing_loop()
+
+        resp = self.client.get(f"/batches/{batch_id}", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        batch_data = resp.json()
+
+        counts = batch_data["request_counts"]
+        print(f"Request counts: {counts}")
+        self.assertEqual(
+            counts["total"],
+            num_requests,
+            f"Total count should be {num_requests}, got {counts['total']}",
+        )
+        self.assertEqual(
+            counts["completed"],
+            num_requests,
+            f"Completed count should be {num_requests}, got {counts['completed']}",
+        )
+        self.assertEqual(counts["failed"], 0, f"Failed count should be 0, got {counts['failed']}")
+
+        output_file_id = batch_data.get("output_file_id")
+        self.assertIsNotNone(output_file_id, "Output file should exist")
+
+        resp = self.client.get(f"/files/{output_file_id}/content", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        output_lines = resp.content.splitlines()
+
+        print(f"Output file has {len(output_lines)} lines (expected {num_requests})")
+
+        self.assertEqual(
+            len(output_lines),
+            num_requests,
+            f"BUG REPRODUCED: Output file has {len(output_lines)} lines but should have {num_requests}. "
+            f"Missing {num_requests - len(output_lines)} responses!",
+        )
+
+    @override_settings(
+        AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=lambda: 5,
+        AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=4 / 60,
+        AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=0.5,
+    )
+    def test_batch_large_responses(self):
+        """Test batch processing with large responses (1MB each) and 5 requests."""
+
+        class LargeResponseMockRouter:
+            """Mock router that returns large responses (~1MB each)."""
+
+            def __init__(self):
+                self.call_count = 0
+
+            def model_dump(self, **kwargs):
+                # Generate ~1MB of content
+                large_content = "x" * (1024 * 1024)
+                return {"choices": [{"message": {"content": large_content}}]}
+
+            async def acompletion(self, **kwargs):
+                self.call_count += 1
+                return self
+
+        num_requests = 20
+        msgs = [
+            [{"role": "system", "content": "Test"}, {"role": "user", "content": f"Request {i}"}]
+            for i in range(num_requests)
+        ]
+        lines = [
+            json.dumps(
+                {
+                    "custom_id": idx,
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": _build_chat_payload(self.model, m),
+                }
+            ).encode()
+            for idx, m in enumerate(msgs, start=1)
+        ]
+        content = b"\n".join(lines) + b"\n"
+        upload = SimpleUploadedFile("large.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post(
+            "/files", {"file": upload, "purpose": "batch"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        file_id = resp.json()["id"]
+        batch_payload = {
+            "input_file_id": file_id,
+            "completion_window": "24h",
+            "endpoint": "/v1/chat/completions",
+        }
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(batch_payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        batch_id = resp.json()["id"]
+
+        large_router = LargeResponseMockRouter()
+
+        with patch("gateway.views.batches.get_router", return_value=large_router):
+            self.run_batch_processing_loop()
+
+        resp = self.client.get(f"/batches/{batch_id}", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        batch_data = resp.json()
+
+        counts = batch_data["request_counts"]
+        self.assertEqual(counts["total"], num_requests)
+        self.assertEqual(counts["completed"], num_requests)
+        self.assertEqual(counts["failed"], 0)
+
+        output_file_id = batch_data.get("output_file_id")
+        self.assertIsNotNone(output_file_id)
+
+        resp = self.client.get(f"/files/{output_file_id}/content", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        self.assertGreater(len(resp.content), num_requests * 1024 * 1024)
+        output_lines = resp.content.splitlines()
+
+        self.assertEqual(len(output_lines), num_requests)

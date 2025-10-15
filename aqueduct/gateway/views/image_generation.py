@@ -3,21 +3,20 @@ from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from litellm.types.utils import EmbeddingResponse
+from litellm import BadRequestError
+from litellm.types.utils import ImageResponse
 from pydantic import TypeAdapter
 
-from gateway.config import get_router
+from gateway.router import get_router
 from management.models import Request
 
 from .decorators import (
     catch_router_exceptions,
     check_limits,
     check_model_availability,
-    ensure_usage,
     log_request,
     parse_body,
     token_authenticated,
-    tos_accepted,
 )
 from .utils import _get_token_usage
 
@@ -25,22 +24,30 @@ from .utils import _get_token_usage
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
-@tos_accepted
 @check_limits
-@parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
-@ensure_usage
+@parse_body(model=TypeAdapter(openai.types.ImageGenerateParams))
 @log_request
 @check_model_availability
 @catch_router_exceptions
-async def embeddings(
+async def image_generation(
     request: ASGIRequest,
-    pydantic_model: openai.types.EmbeddingCreateParams,
+    pydantic_model: openai.types.ImageGenerateParams,
     request_log: Request,
     *args,
     **kwargs,
 ):
     router = get_router()
-    embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
-    data = embedding.model_dump(exclude_none=True, exclude_unset=True)
+
+    if pydantic_model.get("stream"):
+        # LiteLLM cannot parse a Stream response, so we don't support streaming for now
+        raise BadRequestError(
+            "Aqueduct does not support image streaming.",
+            pydantic_model.get("model"),
+            llm_provider=None,
+        )
+
+    resp: ImageResponse = router.image_generation(**pydantic_model)
+    data = resp.model_dump(exclude_unset=True)
     request_log.token_usage = _get_token_usage(data)
-    return JsonResponse(data=data, status=200)
+
+    return JsonResponse(data)

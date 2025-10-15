@@ -31,15 +31,10 @@ from .decorators import (
 @check_model_availability
 @catch_router_exceptions
 async def speech(
-    request: ASGIRequest,
-    pydantic_model: openai.types.audio.SpeechCreateParams,
-    *args,
-    **kwargs,
+    request: ASGIRequest, pydantic_model: openai.types.audio.SpeechCreateParams, *args, **kwargs
 ):
     router = get_router()
 
     speech_output: HttpxBinaryResponseContent = await router.aspeech(**pydantic_model)
     byte_stream = await speech_output.aiter_bytes()
-    return StreamingHttpResponse(
-        streaming_content=byte_stream, content_type="text/event-stream"
-    )
+    return StreamingHttpResponse(streaming_content=byte_stream, content_type="text/event-stream")

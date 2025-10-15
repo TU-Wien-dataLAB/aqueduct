@@ -53,8 +53,6 @@ def get_mcp_config() -> dict[str, MCPServerConfig]:
     try:
         with open(path) as f:
             data = json.load(f)["mcpServers"]
-            return {
-                server: MCPServerConfig(**config) for server, config in data.items()
-            }
+            return {server: MCPServerConfig(**config) for server, config in data.items()}
     except (FileNotFoundError, TypeError, json.JSONDecodeError, KeyError):
         raise RuntimeError(f"Unable to load MCP config from {path}")

@@ -10,8 +10,8 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
@@ -142,12 +142,15 @@ AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(os.environ.get("AQUEDUCT_BATCH_P
 assert AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES > 10
 AQUEDUCT_BATCH_PROCESSING_CRONTAB = crontab(minute=f"*/{AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES}")
 AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS", 5 * 60))
+AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS", 30))
 
 AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", 16)
-AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", 4)
+AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY", 4)
 
 
 def batch_processing_concurrency():
+    """ Is called when starting a batch processing run and returns the size of the concurrency queue,
+    so how many requests run in parallel. """
     dt = datetime.now()
     min_c = AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY
     max_c = AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY

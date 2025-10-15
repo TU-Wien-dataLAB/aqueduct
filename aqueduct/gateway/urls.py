@@ -43,9 +43,7 @@ urlpatterns = [
     path("batches/<str:batch_id>", views.batch, name="batch"),
     path("v1/batches/<str:batch_id>", views.batch, name="v1_batch"),
     path("batches/<str:batch_id>/cancel", views.batch_cancel, name="batch_cancel"),
-    path(
-        "v1/batches/<str:batch_id>/cancel", views.batch_cancel, name="v1_batch_cancel"
-    ),
+    path("v1/batches/<str:batch_id>/cancel", views.batch_cancel, name="v1_batch_cancel"),
     # MCP server endpoints
     path("mcp-servers/<str:name>/mcp", mcp_views.mcp_server, name="mcp_server"),
 ]

@@ -5,10 +5,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.types.utils import ModelResponse
-from management.models import Request
 from pydantic import TypeAdapter
 
 from gateway.config import get_router
+from management.models import Request
 
 from .decorators import (
     catch_router_exceptions,
@@ -48,9 +48,7 @@ async def chat_completions(
     )
     if isinstance(chat_completion, CustomStreamWrapper):
         return StreamingHttpResponse(
-            streaming_content=_openai_stream(
-                stream=chat_completion, request_log=request_log
-            ),
+            streaming_content=_openai_stream(stream=chat_completion, request_log=request_log),
             content_type="text/event-stream",
         )
     elif isinstance(chat_completion, ModelResponse):

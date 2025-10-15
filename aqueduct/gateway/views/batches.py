@@ -13,11 +13,11 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from litellm import Router
-from management.models import Batch, BatchStatus, FileObject
 from openai.types.batch_create_params import BatchCreateParams
 from pydantic import TypeAdapter, ValidationError
 
 from gateway.config import get_router
+from management.models import Batch, BatchStatus, FileObject
 
 from .decorators import log_request, token_authenticated, tos_accepted
 from .utils import cache_lock
@@ -31,9 +31,7 @@ class BatchService:
     @staticmethod
     async def create_batch(user, params: dict) -> Batch:
         """Create a new batch from validated parameters."""
-        file_obj = await FileObject.objects.aget(
-            id=params["input_file_id"], token__user=user
-        )
+        file_obj = await FileObject.objects.aget(id=params["input_file_id"], token__user=user)
 
         if file_obj.purpose != "batch":
             raise ValueError("File purpose must be 'batch'")
@@ -49,16 +47,9 @@ class BatchService:
             status=BatchStatus.VALIDATING,
             metadata=params.get("metadata"),
             expires_at=int(
-                (
-                    now + timedelta(days=settings.AQUEDUCT_FILES_API_EXPIRY_DAYS)
-                ).timestamp()
+                (now + timedelta(days=settings.AQUEDUCT_FILES_API_EXPIRY_DAYS)).timestamp()
             ),
-            request_counts={
-                "input": num_lines,
-                "total": 0,
-                "completed": 0,
-                "failed": 0,
-            },
+            request_counts={"input": num_lines, "total": 0, "completed": 0, "failed": 0},
         )
         await sync_to_async(batch_obj.save)()
         return batch_obj
@@ -92,15 +83,10 @@ class BatchService:
 
 async def _list_batches(token):
     """List all batches for user."""
-    batch_objs = await sync_to_async(list)(
-        Batch.objects.filter(input_file__token__user=token.user)
-    )
+    batch_objs = await sync_to_async(list)(Batch.objects.filter(input_file__token__user=token.user))
     return JsonResponse(
         {
-            "data": [
-                b.model.model_dump(exclude_none=True, exclude_unset=True)
-                for b in batch_objs
-            ],
+            "data": [b.model.model_dump(exclude_none=True, exclude_unset=True) for b in batch_objs],
             "object": "list",
         }
     )
@@ -124,8 +110,7 @@ async def _create_batch(request: ASGIRequest, token):
     try:
         batch_obj = await BatchService.create_batch(token.user, params)
         return JsonResponse(
-            batch_obj.model.model_dump(exclude_none=True, exclude_unset=True),
-            status=200,
+            batch_obj.model.model_dump(exclude_none=True, exclude_unset=True), status=200
         )
     except FileObject.DoesNotExist:
         return JsonResponse({"error": "Input file not found."}, status=404)
@@ -160,9 +145,7 @@ async def batch(request: ASGIRequest, token, batch_id: str, *args, **kwargs):
     except Batch.DoesNotExist:
         return JsonResponse({"error": "Batch not found."}, status=404)
     openai_batch = batch_obj.model
-    return JsonResponse(
-        openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200
-    )
+    return JsonResponse(openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200)
 
 
 @csrf_exempt
@@ -181,19 +164,14 @@ async def batch_cancel(request: ASGIRequest, token, batch_id: str, *args, **kwar
         batch_obj.cancelling_at = now_ts
         batch_obj.status = BatchStatus.CANCELLING
         await sync_to_async(batch_obj.save)()
-    elif (
-        batch_obj.status == BatchStatus.VALIDATING
-        or batch_obj.status == BatchStatus.FINALIZING
-    ):
+    elif batch_obj.status == BatchStatus.VALIDATING or batch_obj.status == BatchStatus.FINALIZING:
         batch_obj.cancelling_at = now_ts
         batch_obj.cancelled_at = now_ts
         batch_obj.status = BatchStatus.CANCELLED
         await sync_to_async(batch_obj.save)()
 
     openai_batch = batch_obj.model
-    return JsonResponse(
-        openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200
-    )
+    return JsonResponse(openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200)
 
 
 async def _mark_batch_in_progress(batch: Batch):
@@ -270,9 +248,7 @@ class AsyncBoundedParallelQueue:
 
         task = asyncio.create_task(self._worker(coro, *args, **kwargs))
         self.tasks.add(task)
-        log.debug(
-            f"Added task to {self.__class__.__name__} (Running {len(self.tasks)} tasks)"
-        )
+        log.debug(f"Added task to {self.__class__.__name__} (Running {len(self.tasks)} tasks)")
         task.add_done_callback(self._remove_task)
         return task
 
@@ -410,18 +386,12 @@ class BatchRequestProcessor:
         except Exception:
             custom_id = None
 
-        error_data = {
-            "id": None,
-            "custom_id": custom_id,
-            "error": {"error": str(error)},
-        }
+        error_data = {"id": None, "custom_id": custom_id, "error": {"error": str(error)}}
 
         await sync_to_async(batch.append)(error_data, error=True)
 
 
-async def process_batch_request(
-    router: Router, batch: Batch, params: str, processed_ids: set
-):
+async def process_batch_request(router: Router, batch: Batch, params: str, processed_ids: set):
     """Process a single batch request line and record its output or error."""
     processor = BatchRequestProcessor(router, processed_ids)
     await processor.process(batch, params)
@@ -436,9 +406,7 @@ class BatchProcessingSession:
     def __init__(self):
         self.start_time = timezone.now()
         self.runtime_minutes = settings.AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES
-        self.reload_interval = (
-            settings.AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS
-        )
+        self.reload_interval = settings.AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS
         self.next_reload_time = self.current_timestamp() + self.reload_interval
         self.processed_ids = set()
 
@@ -473,11 +441,7 @@ class BatchLoader:
         """Load all active batches from database."""
         return await sync_to_async(list)(
             Batch.objects.filter(
-                status__in=[
-                    BatchStatus.VALIDATING,
-                    BatchStatus.IN_PROGRESS,
-                    BatchStatus.CANCELLING,
-                ]
+                status__in=[BatchStatus.VALIDATING, BatchStatus.IN_PROGRESS, BatchStatus.CANCELLING]
             )
         )
 
@@ -536,9 +500,7 @@ async def _process_batches(session: BatchProcessingSession):
 
         try:
             batch, params = await anext(rr)
-            await queue.process(
-                process_batch_request, router, batch, params, session.processed_ids
-            )
+            await queue.process(process_batch_request, router, batch, params, session.processed_ids)
         except StopAsyncIteration:
             batches = []
 

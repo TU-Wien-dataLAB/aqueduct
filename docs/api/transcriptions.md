@@ -24,15 +24,15 @@ Content-Type: multipart/form-data
 
 The request should be sent as `multipart/form-data` and is compatible with the OpenAI [TranscriptionCreateParams](https://platform.openai.com/docs/api-reference/audio/createTranscription) schema.
 
-| Parameter             | Type   | Description                                                      |
-| --------------------- | ------ | ---------------------------------------------------------------- |
-| `file`                | file   | The audio file to transcribe.                                    |
-| `model`               | string | The name of the speech-to-text model to use.                     |
-| `language`            | string | (Optional) The language of the audio file.                       |
-| `prompt`              | string | (Optional) Text to guide the model's style.                      |
-| `response_format`     | string | (Optional) The format of the output. Default: `json`.            |
-| `temperature`         | number | (Optional) The sampling temperature. Default: `0`.               |
-| `timestamp_granularities[]` | array | (Optional) The timestamp granularities to include.               |
+| Parameter                   | Type   | Description                                            |
+|-----------------------------|--------|--------------------------------------------------------|
+| `file`                      | file   | The audio file to transcribe.                          |
+| `model`                     | string | The name of the speech-to-text model to use.           |
+| `language`                  | string | (Optional) The language of the audio file.             |
+| `prompt`                    | string | (Optional) Text to guide the model's style.            |
+| `response_format`           | string | (Optional) The format of the output. Default: `json`.  |
+| `temperature`               | number | (Optional) The sampling temperature. Default: `0`.     |
+| `timestamp_granularities[]` | array  | (Optional) The timestamp granularities to include.     |
 
 See the OpenAI documentation for a full list of parameters.
 

@@ -4,10 +4,10 @@ from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from management.models import Request
 from pydantic import ConfigDict, RootModel, TypeAdapter
 
 from gateway.config import get_openai_client, get_router
+from management.models import Request
 
 from .decorators import (
     catch_router_exceptions,
@@ -52,16 +52,12 @@ async def transcriptions(
     router = get_router()
     deployment: litellm.Deployment = router.get_deployment(model_id=model)
 
-    model_relay, provider, _, _ = litellm.get_llm_provider(
-        deployment.litellm_params.model
-    )
+    model_relay, provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
     pydantic_model["model"] = model_relay
 
     transcription = await client.audio.transcriptions.create(**pydantic_model)
 
-    if isinstance(
-        transcription, openai.types.audio.transcription.Transcription
-    ) or isinstance(
+    if isinstance(transcription, openai.types.audio.transcription.Transcription) or isinstance(
         transcription, openai.types.audio.transcription_verbose.TranscriptionVerbose
     ):
         data = transcription.model_dump(exclude_none=True, exclude_unset=True)
@@ -69,9 +65,7 @@ async def transcriptions(
         return JsonResponse(data=data, status=200)
     elif isinstance(transcription, openai.AsyncStream):
         return StreamingHttpResponse(
-            streaming_content=_openai_stream(
-                stream=transcription, request_log=request_log
-            ),
+            streaming_content=_openai_stream(stream=transcription, request_log=request_log),
             content_type="text/event-stream",
         )
     else:

@@ -4,6 +4,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
 from django.urls import reverse
 from django.utils.html import format_html
+
 from gateway.config import get_router_config
 
 from .models import (
@@ -149,17 +150,11 @@ admin.site.register(User, UserAdmin)
 
 
 # Inline class for Membership
-class TeamMembershipInline(
-    admin.TabularInline
-):  # or admin.StackedInline for a different layout
+class TeamMembershipInline(admin.TabularInline):  # or admin.StackedInline for a different layout
     model = TeamMembership
     extra = 1  # How many empty rows to show for adding new members
     # autocomplete_fields = ('user_profile',)  # Easier selection of users
-    fields = (
-        "user_profile",
-        "is_admin",
-        "date_added",
-    )  # Fields to display in the inline
+    fields = ("user_profile", "is_admin", "date_added")  # Fields to display in the inline
     readonly_fields = ("date_added",)  # Make date_joined read-only as it's auto-set
 
 
@@ -244,9 +239,7 @@ class TokenAdmin(admin.ModelAdmin):
     def sa_link(self, obj):
         if obj.service_account is None:
             return "-"
-        link = reverse(
-            "admin:management_serviceaccount_change", args=[obj.service_account.id]
-        )
+        link = reverse("admin:management_serviceaccount_change", args=[obj.service_account.id])
         return format_html(
             '<a href="{}">{}</a>',
             link,

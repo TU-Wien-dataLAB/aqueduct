@@ -2,10 +2,10 @@ import base64
 import io
 import json
 import logging
+import re
 import time
 from datetime import timedelta
 from functools import wraps
-import re
 
 import httpx
 import litellm
@@ -15,16 +15,16 @@ from django.conf import settings
 from django.contrib import auth
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Sum
-from django.http import JsonResponse, HttpResponse, StreamingHttpResponse
+from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.utils import timezone
-from pydantic import ValidationError, TypeAdapter
 from openai.types.chat import ChatCompletionStreamOptionsParam
 from openai.types.chat.chat_completion_content_part_param import FileFile
+from pydantic import TypeAdapter, ValidationError
 from tos.middleware import cache
 from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
-from management.models import Request, Token, FileObject
+from management.models import FileObject, Request, Token
 
 logger = logging.getLogger("aqueduct")
 
@@ -33,7 +33,7 @@ def token_authenticated(token_auth_only: bool):
     def decorator(view_func):
         @wraps(view_func)
         async def wrapper(request: ASGIRequest, *args, **kwargs):
-            unauthorized_response = JsonResponse({'error': 'Authentication Required'}, status=401)
+            unauthorized_response = JsonResponse({"error": "Authentication Required"}, status=401)
             # Authentication Check
             if not (await request.auser()).is_authenticated:
                 user = await auth.aauthenticate(request=request)
@@ -43,7 +43,10 @@ def token_authenticated(token_auth_only: bool):
                 request.user = await request.auser()
 
             if not getattr(request, "user", None) or not request.user.is_authenticated:
-                logger.warning("Authentication check failed in ai_gateway_view: request.user is not authenticated.")
+                logger.warning(
+                    "Authentication check failed in ai_gateway_view: request.user "
+                    "is not authenticated."
+                )
                 return unauthorized_response
             logger.debug(f"User {request.user.email} authenticated.")
 
@@ -59,7 +62,7 @@ def token_authenticated(token_auth_only: bool):
 
             if not token:
                 return unauthorized_response
-            kwargs['token'] = token
+            kwargs["token"] = token
             return await view_func(request, *args, **kwargs)
 
         return wrapper
@@ -92,10 +95,10 @@ def parse_body(model: TypeAdapter):
                     for key, file in request.FILES.items():
                         data[key] = file.read()
                         if len(data[key]) > max_file_bytes:
-                            return JsonResponse({'error': 'File too large'}, status=413)
+                            return JsonResponse({"error": "File too large"}, status=413)
                         total_file_size_bytes += len(data[key])
                         if total_file_size_bytes > 32 * 1024 * 1024:
-                            return JsonResponse({'error': 'Files too large'}, status=413)
+                            return JsonResponse({"error": "Files too large"}, status=413)
 
                     model.validate_python(data)
 
@@ -108,15 +111,14 @@ def parse_body(model: TypeAdapter):
                         data[key] = buffer
                 else:
                     return JsonResponse(
-                        {"error": f"Unsupported Content-Type: {content_type}"},
-                        status=415
+                        {"error": f"Unsupported Content-Type: {content_type}"}, status=415
                     )
 
-                kwargs['pydantic_model'] = data
-                kwargs['pydantic_model']['timeout'] = settings.RELAY_REQUEST_TIMEOUT
+                kwargs["pydantic_model"] = data
+                kwargs["pydantic_model"]["timeout"] = settings.RELAY_REQUEST_TIMEOUT
                 return await view_func(request, *args, **kwargs)
             except ValidationError as e:
-                return JsonResponse({'error': str(e)}, status=400)
+                return JsonResponse({"error": str(e)}, status=400)
 
         return wrapper
 
@@ -126,11 +128,11 @@ def parse_body(model: TypeAdapter):
 def ensure_usage(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        model: dict | None = kwargs.get('pydantic_model', None)
+        model: dict | None = kwargs.get("pydantic_model", None)
         if not model:
             return await view_func(request, *args, **kwargs)
         else:
-            stream = model.get('stream', False)
+            stream = model.get("stream", False)
             if stream:
                 stream_options = model.get("stream_options", None)
                 if not stream_options:
@@ -145,58 +147,76 @@ def ensure_usage(view_func):
 def check_limits(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get('token', None)
+        token: Token | None = kwargs.get("token", None)
         if not token:
-            return JsonResponse({'error': 'Token not found'}, status=404)
+            return JsonResponse({"error": "Token not found"}, status=404)
 
         try:
             # Get limits asynchronously
             limits = await sync_to_async(token.get_limit)()
             logger.debug(f"Rate limits for Token '{token.name}' (ID: {token.id}): {limits}")
 
-            if limits.requests_per_minute is not None or limits.input_tokens_per_minute is not None or limits.output_tokens_per_minute is not None:
+            if (
+                limits.requests_per_minute is not None
+                or limits.input_tokens_per_minute is not None
+                or limits.output_tokens_per_minute is not None
+            ):
                 # Define the time window for usage check (last 60 seconds)
                 time_window_start = timezone.now() - timedelta(seconds=60)
 
                 # Query recent usage asynchronously using Django's async ORM
                 recent_requests_agg = await Request.objects.filter(
-                    token=token,
-                    timestamp__gte=time_window_start
+                    token=token, timestamp__gte=time_window_start
                 ).aaggregate(
-                    request_count=Count('id'),
-                    total_input_tokens=Sum('input_tokens'),
-                    total_output_tokens=Sum('output_tokens')
+                    request_count=Count("id"),
+                    total_input_tokens=Sum("input_tokens"),
+                    total_output_tokens=Sum("output_tokens"),
                 )
 
-                request_count = recent_requests_agg.get('request_count', 0) or 0
-                total_input = recent_requests_agg.get('total_input_tokens', 0) or 0
-                total_output = recent_requests_agg.get('total_output_tokens', 0) or 0
+                request_count = recent_requests_agg.get("request_count", 0) or 0
+                total_input = recent_requests_agg.get("total_input_tokens", 0) or 0
+                total_output = recent_requests_agg.get("total_output_tokens", 0) or 0
 
-                logger.debug(f"Recent usage (last 60s) for Token '{token.name}': "
-                             f"Requests={request_count}, Input={total_input}, Output={total_output}")
+                logger.debug(
+                    f"Recent usage (last 60s) for Token '{token.name}': "
+                    f"Requests={request_count}, Input={total_input}, Output={total_output}"
+                )
 
                 # --- Check Limits ---
                 exceeded = []
 
-                if limits.requests_per_minute is not None and request_count >= limits.requests_per_minute:
+                if (
+                    limits.requests_per_minute is not None
+                    and request_count >= limits.requests_per_minute
+                ):
                     exceeded.append(f"Request limit ({limits.requests_per_minute}/min)")
 
-                if limits.input_tokens_per_minute is not None and total_input >= limits.input_tokens_per_minute:
+                if (
+                    limits.input_tokens_per_minute is not None
+                    and total_input >= limits.input_tokens_per_minute
+                ):
                     exceeded.append(f"Input token limit ({limits.input_tokens_per_minute}/min)")
 
-                if limits.output_tokens_per_minute is not None and total_output >= limits.output_tokens_per_minute:
+                if (
+                    limits.output_tokens_per_minute is not None
+                    and total_output >= limits.output_tokens_per_minute
+                ):
                     exceeded.append(f"Output token limit ({limits.output_tokens_per_minute}/min)")
 
                 if len(exceeded) > 0:
                     error_message = "Rate limit exceeded. " + ", ".join(exceeded) + "."
                     logger.warning(
-                        f"Rate limit exceeded for Token '{token.name}' (ID: {token.id}). Details: {error_message}")
+                        f"Rate limit exceeded for Token '{token.name}' (ID: {token.id}). "
+                        f"Details: {error_message}"
+                    )
                     # Return 429 Too Many Requests
                     return JsonResponse({"error": error_message}, status=429)
 
         except Exception as e:
             logger.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
-            return JsonResponse({"error": "Internal gateway error checking rate limits"}, status=500)
+            return JsonResponse(
+                {"error": "Internal gateway error checking rate limits"}, status=500
+            )
 
         return await view_func(request, *args, **kwargs)
 
@@ -206,21 +226,21 @@ def check_limits(view_func):
 def log_request(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        pydantic_model: dict | None = kwargs.get('pydantic_model', None)
-        token = kwargs.get('token', None)
+        pydantic_model: dict | None = kwargs.get("pydantic_model", None)
+        token = kwargs.get("token", None)
         request_log = Request(
             token=token,
-            model=None if not pydantic_model else pydantic_model.get('model', None),
+            model=None if not pydantic_model else pydantic_model.get("model", None),
             # Use the resolved model from self
             timestamp=timezone.now(),
             method=request.method,
-            user_agent=request.headers.get('User-Agent', ''),
-            ip_address=request.META.get('REMOTE_ADDR')
+            user_agent=request.headers.get("User-Agent", ""),
+            ip_address=request.META.get("REMOTE_ADDR"),
             # path, Status, time, usage set later in the view or processing steps
         )
         # Calculate and set path (ensure leading slash)
         request_log.path = f"/{request.path.lstrip('/')}"
-        kwargs['request_log'] = request_log
+        kwargs["request_log"] = request_log
         logger.debug("Initial request log object created.")
         # Note: The log is NOT saved here; it's saved later in the view after relaying.
 
@@ -240,19 +260,19 @@ def log_request(view_func):
 def check_model_availability(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get('token', None)
+        token: Token | None = kwargs.get("token", None)
         if not token:
-            return JsonResponse({'error': 'Token not found'}, status=404)
-        body: dict | None = kwargs.get('pydantic_model', None)
+            return JsonResponse({"error": "Token not found"}, status=404)
+        body: dict | None = kwargs.get("pydantic_model", None)
         if not body:
             return await view_func(request, *args, **kwargs)
         else:
-            model: str | None = body.get('model', None)
+            model: str | None = body.get("model", None)
             if not model:
                 return await view_func(request, *args, **kwargs)
             else:
                 if await sync_to_async(token.model_excluded)(model):
-                    return JsonResponse({'error': 'Model not found!'}, status=404)
+                    return JsonResponse({"error": "Model not found!"}, status=404)
                 return await view_func(request, *args, **kwargs)
 
     return wrapper
@@ -263,26 +283,22 @@ async def extract_text_with_tika(file_bytes: bytes) -> str:
     tika_url = f"{getattr(settings, 'TIKA_SERVER_URL', 'http://localhost:9998')}/tika"
 
     async with httpx.AsyncClient() as client:
-        response = await client.put(
-            tika_url,
-            content=file_bytes,
-            headers={},
-            timeout=30.0
-        )
+        response = await client.put(tika_url, content=file_bytes, headers={}, timeout=30.0)
         response.raise_for_status()
         return response.text
 
 
 async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
     """Convert file description to bytes and content type."""
-    file_id = file.get('file_id', None)
-    file_data = file.get('file_data', None)
-    filename = file.get('filename', 'unknown')
+    file_id = file.get("file_id", None)
+    file_data = file.get("file_data", None)
 
     if file_data:
         # file data contains b64 encoded files -> decode as bytes
         try:
-            header, file_b64 = file_data.split(",", maxsplit=1)  # removes data uri (data:application/pdf;base64,<b64>)
+            header, file_b64 = file_data.split(
+                ",", maxsplit=1
+            )  # removes data uri (data:application/pdf;base64,<b64>)
             if not header.startswith("data:"):
                 raise ValueError("Incorrect data URI for base64 encoded file.")
             file_bytes = base64.b64decode(file_b64)
@@ -312,53 +328,66 @@ def process_file_content(view_func):
 
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get('token', None)
-        pydantic_model: dict | None = kwargs.get('pydantic_model', None)
+        token: Token | None = kwargs.get("token", None)
+        pydantic_model: dict | None = kwargs.get("pydantic_model", None)
         if not pydantic_model:
-            return JsonResponse({'error': 'Invalid request: missing request body'}, status=400)
+            return JsonResponse({"error": "Invalid request: missing request body"}, status=400)
 
-        messages = pydantic_model.get('messages', [])
+        messages = pydantic_model.get("messages", [])
         if not messages:
             return await view_func(request, *args, **kwargs)
 
         # Process messages to extract text from file content
         total_file_size_bytes = 0
         for message in messages:
-            content = message.get('content', [])
+            content = message.get("content", [])
             if not isinstance(content, list):
                 continue
 
             for content_item in content:
-                if isinstance(content_item, dict) and content_item.get('type') == 'file':
+                if isinstance(content_item, dict) and content_item.get("type") == "file":
                     try:
-                        file = FileFile(**content_item.get('file', {}))
+                        file = FileFile(**content_item.get("file", {}))
                         file_bytes = await file_to_bytes(token, file)
                         if len(file_bytes) > 10 * 1024 * 1024:
-                            return JsonResponse({
-                                'error': 'Error processing file content: File too large. Individual file must be <= 10MB.'},
-                                status=400)
+                            return JsonResponse(
+                                {
+                                    "error": "Error processing file content: File too large. "
+                                    "Individual file must be <= 10MB."
+                                },
+                                status=400,
+                            )
 
                         total_file_size_bytes += len(file_bytes)
                         if total_file_size_bytes > 32 * 1024 * 1024:
-                            return JsonResponse({
-                                'error': 'Error processing file content: Files too large in total. All files must be <= 32MB.'},
-                                status=400)
+                            return JsonResponse(
+                                {
+                                    "error": "Error processing file content: Files too large in total. "
+                                    "All files must be <= 32MB."
+                                },
+                                status=400,
+                            )
 
                         # Extract text using Tika
                         extracted_text = await extract_text_with_tika(file_bytes)
-                        extracted_text = f"Content of user-uploaded file '{file.get('filename', 'unknown filename')}':\n---\n{extracted_text}\n---"
+                        extracted_text = (
+                            f"Content of user-uploaded file '{file.get('filename', 'unknown filename')}':"
+                            f"\n---\n{extracted_text}\n---"
+                        )
 
                         # Replace file content with extracted text
-                        content_item['type'] = 'text'
-                        content_item['text'] = extracted_text
-                        del content_item['file']
+                        content_item["type"] = "text"
+                        content_item["text"] = extracted_text
+                        del content_item["file"]
 
                     except FileObject.DoesNotExist:
-                        return JsonResponse({'error': "File not found"}, status=404)
+                        return JsonResponse({"error": "File not found"}, status=404)
                     except Exception as e:
                         # return json response here if there was an error
                         logger.info(f"Error processing file content: {e}")
-                        return JsonResponse({'error': f'Error processing file: {str(e)}'}, status=400)
+                        return JsonResponse(
+                            {"error": f"Error processing file: {str(e)}"}, status=400
+                        )
 
         return await view_func(request, *args, **kwargs)
 
@@ -395,7 +424,12 @@ def catch_router_exceptions(view_func):
             return JsonResponse({"error": _r(e)}, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
             return JsonResponse({"error": _r(e)}, status=500)
-        except (litellm.APIConnectionError, litellm.APIError, openai.APIConnectionError, openai.APIError) as e:
+        except (
+            litellm.APIConnectionError,
+            litellm.APIError,
+            openai.APIConnectionError,
+            openai.APIError,
+        ) as e:
             return JsonResponse({"error": _r(e)}, status=500)
         except Exception as e:
             return JsonResponse({"error": _r(e)}, status=500)
@@ -407,20 +441,26 @@ def tos_accepted(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         if settings.TOS_ENABLED and settings.TOS_GATEWAY_VALIDATION:
-            token: Token = kwargs.get('token')
-            key_version = cache.get('django:tos:key_version')
+            token: Token = kwargs.get("token")
+            key_version = cache.get("django:tos:key_version")
             user_id = token.user.id
 
-            skip: bool = cache.get(f'django:tos:skip_tos_check:{user_id}', False, version=key_version)
+            skip: bool = cache.get(
+                f"django:tos:skip_tos_check:{user_id}", False, version=key_version
+            )
 
             if not skip:
-                user_agreed = cache.get(f'django:tos:agreed:{user_id}', None, version=key_version)
+                user_agreed = cache.get(f"django:tos:agreed:{user_id}", None, version=key_version)
                 if user_agreed is None:
                     user_agreed = await sync_to_async(has_user_agreed_latest_tos)(request.user)
 
                 if not user_agreed:
-                    return JsonResponse({"error": "In order to use the API you have to agree to the terms of service!"},
-                                        status=403)
+                    return JsonResponse(
+                        {
+                            "error": "In order to use the API you have to agree to the terms of service!"
+                        },
+                        status=403,
+                    )
 
         return await view_func(request, *args, **kwargs)
 

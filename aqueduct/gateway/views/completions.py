@@ -5,10 +5,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from litellm import TextCompletionStreamWrapper
 from litellm.types.utils import TextCompletionResponse
-from management.models import Request
 from pydantic import TypeAdapter
 
 from gateway.config import get_router
+from management.models import Request
 
 from .decorators import (
     catch_router_exceptions,
@@ -46,9 +46,7 @@ async def completions(
     ) = await router.atext_completion(**pydantic_model)
     if isinstance(completion, TextCompletionStreamWrapper):
         return StreamingHttpResponse(
-            streaming_content=_openai_stream(
-                stream=completion, request_log=request_log
-            ),
+            streaming_content=_openai_stream(stream=completion, request_log=request_log),
             headers={"Content-Type": "text/event-stream"},
         )
     elif isinstance(completion, TextCompletionResponse):

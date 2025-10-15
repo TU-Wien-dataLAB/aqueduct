@@ -213,3 +213,37 @@ class TOSGatewayTestCase(GatewayIntegrationTestCase):
         # Get the user with pk=user_id and create a UserAgreement
         user = User.objects.get(pk=user_id)
         UserAgreement.objects.create(terms_of_service=tos, user=user)
+
+
+MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
+MCP_TEST_CONFIG = {
+    "mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:9999/mcp"}}
+}
+
+
+@override_settings(
+    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
+    MCP_CONFIG_FILE_PATH=MCP_CONFIG_PATH,
+)
+class GatewayMCPTestCase(TransactionTestCase):
+    fixtures = ["gateway_data.json"]
+    AQUEDUCT_ACCESS_TOKEN = GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN
+
+    @classmethod
+    def _write_mcp_config(cls):
+        import json
+
+        os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
+        with open(MCP_CONFIG_PATH, "w") as f:
+            json.dump(MCP_TEST_CONFIG, f)
+
+    @classmethod
+    def setUpClass(cls):
+        cls._write_mcp_config()
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        if os.path.exists(MCP_CONFIG_PATH):
+            os.remove(MCP_CONFIG_PATH)

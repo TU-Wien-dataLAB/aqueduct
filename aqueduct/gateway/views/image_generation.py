@@ -9,13 +9,14 @@ from pydantic import TypeAdapter
 
 from gateway.router import get_router
 from management.models import Request
+
 from .decorators import (
-    token_authenticated,
-    check_limits,
-    parse_body,
-    log_request,
-    check_model_availability,
     catch_router_exceptions,
+    check_limits,
+    check_model_availability,
+    log_request,
+    parse_body,
+    token_authenticated,
 )
 from .utils import _get_token_usage
 

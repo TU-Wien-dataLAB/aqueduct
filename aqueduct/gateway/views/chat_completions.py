@@ -1,26 +1,25 @@
-import json
-
+import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from pydantic import TypeAdapter
-import openai
-
-from gateway.router import get_router
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.types.utils import ModelResponse
+from pydantic import TypeAdapter
 
+from gateway.router import get_router
 from management.models import Request
+
 from .decorators import (
-    token_authenticated,
+    catch_router_exceptions,
     check_limits,
-    parse_body,
+    check_model_availability,
     ensure_usage,
     log_request,
-    check_model_availability,
-    catch_router_exceptions,
-    process_file_content, tos_accepted
+    parse_body,
+    process_file_content,
+    token_authenticated,
+    tos_accepted,
 )
 from .utils import _get_token_usage, _openai_stream
 
@@ -37,11 +36,11 @@ from .utils import _get_token_usage, _openai_stream
 @check_model_availability
 @catch_router_exceptions
 async def chat_completions(
-        request: ASGIRequest,
-        pydantic_model: openai.types.chat.CompletionCreateParams,
-        request_log: Request,
-        *args,
-        **kwargs,
+    request: ASGIRequest,
+    pydantic_model: openai.types.chat.CompletionCreateParams,
+    request_log: Request,
+    *args,
+    **kwargs,
 ):
     router = get_router()
     chat_completion: CustomStreamWrapper | ModelResponse = await router.acompletion(
@@ -50,7 +49,7 @@ async def chat_completions(
     if isinstance(chat_completion, CustomStreamWrapper):
         return StreamingHttpResponse(
             streaming_content=_openai_stream(stream=chat_completion, request_log=request_log),
-            content_type='text/event-stream',
+            content_type="text/event-stream",
         )
     elif isinstance(chat_completion, ModelResponse):
         data = chat_completion.model_dump(exclude_none=True, exclude_unset=True)

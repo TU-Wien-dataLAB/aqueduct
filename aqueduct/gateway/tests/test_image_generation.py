@@ -135,12 +135,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
     def test_image_generation_endpoint_non_image_model(self):
         """Test image generation endpoint with a model that doesn't support image generation."""
 
-        payload = {
-            "model": "gpt-4.1-nano",
-            "prompt": "A test image",
-            "n": 1,
-            "size": "256x256",
-        }
+        payload = {"model": "gpt-4.1-nano", "prompt": "A test image", "n": 1, "size": "256x256"}
 
         response = self.client.post(
             self.url,
@@ -150,7 +145,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Invalid value: \'gpt-4.1-nano\'", response.json()["error"])
+        self.assertIn("Invalid value: 'gpt-4.1-nano'", response.json()["error"])
 
     def test_image_generation_endpoint_with_multiple_images(self):
         """Test image generation endpoint with multiple images (n parameter)."""

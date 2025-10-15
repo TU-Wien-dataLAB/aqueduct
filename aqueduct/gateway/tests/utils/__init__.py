@@ -7,20 +7,12 @@ import httpx
 from openai.types.chat import ChatCompletionChunk
 
 
-
 def _build_chat_headers(access_token):
-    return {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
+    return {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
 
 
 def _build_chat_payload(model, messages, max_completion_tokens=50, stream=False):
-    payload = {
-        "model": model,
-        "messages": messages,
-        "max_completion_tokens": max_completion_tokens,
-    }
+    payload = {"model": model, "messages": messages, "max_completion_tokens": max_completion_tokens}
     if stream:
         payload["stream"] = True
     return payload
@@ -37,7 +29,7 @@ async def _read_streaming_response_lines(response) -> List[str]:
         for line in chunk.splitlines():
             line = line.strip()
             if line.startswith("data: "):
-                data = line[len("data: "):]
+                data = line[len("data: ") :]
                 if data == "[DONE]":
                     continue
                 streamed_lines.append(data)

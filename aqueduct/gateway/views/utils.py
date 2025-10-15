@@ -1,7 +1,7 @@
 import json
 import time
 from contextlib import contextmanager
-from typing import AsyncGenerator, Any
+from typing import Any, AsyncGenerator
 
 from django.core.cache import cache
 from litellm import TextCompletionStreamWrapper
@@ -25,33 +25,31 @@ def _get_token_usage(content: bytes | dict) -> Usage:
     """
 
     if isinstance(content, dict):
-        usage_dict = content.get('usage', None)
+        usage_dict = content.get("usage", None)
     else:
         try:
-            usage_dict = json.loads(content).get('usage', None)
+            usage_dict = json.loads(content).get("usage", None)
         except json.JSONDecodeError:
             return Usage(input_tokens=0, output_tokens=0)
 
     if isinstance(usage_dict, dict):
-        input_tokens = usage_dict.get('prompt_tokens') or usage_dict.get('input_tokens', 0)
-        output_tokens = usage_dict.get('completion_tokens') or usage_dict.get('output_tokens', 0)
-        return Usage(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens
-        )
+        input_tokens = usage_dict.get("prompt_tokens") or usage_dict.get("input_tokens", 0)
+        output_tokens = usage_dict.get("completion_tokens") or usage_dict.get("output_tokens", 0)
+        return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
     else:
         return Usage(input_tokens=0, output_tokens=0)
 
 
-def _openai_stream(stream: CustomStreamWrapper | TextCompletionStreamWrapper | AsyncStream, request_log: Request) -> \
-        AsyncGenerator[str, Any]:
+def _openai_stream(
+    stream: CustomStreamWrapper | TextCompletionStreamWrapper | AsyncStream, request_log: Request
+) -> AsyncGenerator[str, Any]:
     start_time = time.monotonic()
 
     async def _stream():
         token_usage = Usage(0, 0)
         async for chunk in stream:
             chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
-            token_usage += _get_token_usage(chunk_str.encode('utf-8'))
+            token_usage += _get_token_usage(chunk_str.encode("utf-8"))
             try:
                 yield f"data: {chunk_str}\n\n"
             except Exception as e:
@@ -61,7 +59,7 @@ def _openai_stream(stream: CustomStreamWrapper | TextCompletionStreamWrapper | A
         request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
         await request_log.asave()
         # Streaming is done, yield the [DONE] chunk
-        yield f"data: [DONE]\n\n"
+        yield "data: [DONE]\n\n"
 
     return _stream()
 

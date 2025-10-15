@@ -1,17 +1,18 @@
-from django.conf import settings
+from datetime import datetime
+
 from django.db.models import Q
 from django.views.generic import TemplateView
-from datetime import datetime, timedelta
 
-from .base import BaseAqueductView
 from ..models import Batch
+from .base import BaseAqueductView
 
 
 class UserBatchesView(BaseAqueductView, TemplateView):
     """
     Displays a list of Batch instances accessible by the current user.
     """
-    template_name = 'management/batches.html'
+
+    template_name = "management/batches.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -20,12 +21,10 @@ class UserBatchesView(BaseAqueductView, TemplateView):
         teams = profile.teams.all()
 
         batches = Batch.objects.filter(
-            Q(input_file__token__user=user) |
-            Q(input_file__token__service_account__team__in=teams)
-        ).order_by('-created_at')
+            Q(input_file__token__user=user) | Q(input_file__token__service_account__team__in=teams)
+        ).order_by("-created_at")
 
         # Convert Unix timestamp to datetime for template date filter
-        from datetime import datetime
         for b in batches:
             b.created_dt = datetime.fromtimestamp(b.created_at)
             # input file preview (first lines)
@@ -45,8 +44,8 @@ class UserBatchesView(BaseAqueductView, TemplateView):
                 else:
                     b.output_file_id_preview = raw_out
             else:
-                b.output_file_preview = ''
-                b.output_file_id_preview = '-'
+                b.output_file_preview = ""
+                b.output_file_id_preview = "-"
             # error file preview and id
             if b.error_file:
                 b.error_file_preview = b.error_file.preview()
@@ -56,8 +55,8 @@ class UserBatchesView(BaseAqueductView, TemplateView):
                 else:
                     b.error_file_id_preview = raw_err
             else:
-                b.error_file_preview = ''
-                b.error_file_id_preview = '-'
+                b.error_file_preview = ""
+                b.error_file_id_preview = "-"
 
-        context['batches'] = batches
+        context["batches"] = batches
         return context

@@ -5,6 +5,4 @@ def settings(_):
     """
     Adds EXTRA_NAV_LINKS from settings to the template context.
     """
-    return {
-        'settings': django_settings,
-    }
+    return {"settings": django_settings}

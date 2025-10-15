@@ -17,6 +17,18 @@ spec:
         app: {{ .Release.Name }}
         component: celery-worker
     spec:
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - {{ .Release.Name }}
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: celery-worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

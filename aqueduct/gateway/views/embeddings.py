@@ -1,26 +1,25 @@
-import json
-
+import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from litellm.types.utils import EmbeddingResponse
+from management.models import Request
 from pydantic import TypeAdapter
-import openai
 
 from gateway.config import get_router
-from litellm.types.utils import EmbeddingResponse
 
-from management.models import Request
 from .decorators import (
-    token_authenticated,
+    catch_router_exceptions,
     check_limits,
-    parse_body,
+    check_model_availability,
     ensure_usage,
     log_request,
-    check_model_availability,
-    catch_router_exceptions, tos_accepted,
+    parse_body,
+    token_authenticated,
+    tos_accepted,
 )
-from .utils import _usage_from_bytes
+from .utils import _get_token_usage
 
 
 @csrf_exempt
@@ -34,14 +33,14 @@ from .utils import _usage_from_bytes
 @check_model_availability
 @catch_router_exceptions
 async def embeddings(
-        request: ASGIRequest,
-        pydantic_model: openai.types.EmbeddingCreateParams,
-        request_log: Request,
-        *args,
-        **kwargs,
+    request: ASGIRequest,
+    pydantic_model: openai.types.EmbeddingCreateParams,
+    request_log: Request,
+    *args,
+    **kwargs,
 ):
     router = get_router()
     embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
     data = embedding.model_dump(exclude_none=True, exclude_unset=True)
-    request_log.token_usage = _usage_from_bytes(json.dumps(data).encode("utf-8"))
+    request_log.token_usage = _get_token_usage(data)
     return JsonResponse(data=data, status=200)

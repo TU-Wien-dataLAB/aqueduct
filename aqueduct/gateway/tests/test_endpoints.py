@@ -4,19 +4,29 @@ from unittest.mock import patch
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
 from django.test import override_settings
+from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
 from openai.types.chat import ChatCompletion
 
 from gateway.config import get_router_config
-from gateway.tests.utils import _build_chat_headers, _build_chat_payload, \
-    _read_streaming_response_lines, _parse_streamed_content_pieces
-from gateway.tests.utils.base import GatewayIntegrationTestCase, INTEGRATION_TEST_BACKEND, ROUTER_CONFIG
-from management.models import Request, UserProfile, ServiceAccount, Team, Org
+from gateway.tests.utils import (
+    _build_chat_headers,
+    _build_chat_payload,
+    _parse_streamed_content_pieces,
+    _read_streaming_response_lines,
+)
+from gateway.tests.utils.base import (
+    INTEGRATION_TEST_BACKEND,
+    ROUTER_CONFIG,
+    GatewayIntegrationTestCase,
+)
 
 User = get_user_model()
 
 
 class EmbeddingTest(GatewayIntegrationTestCase):
-    model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "text-embedding-ada-002"
+    model = (
+        "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "text-embedding-ada-002"
+    )
 
     @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_embeddings(self):
@@ -27,23 +37,29 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         """
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest(
-                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase to manage multiple servers!")
+                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase "
+                "to manage multiple servers!"
+            )
 
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         assert self.model in ROUTER_CONFIG
         payload = {
             "model": self.model,
-            "input": ["The quick brown fox jumps over the lazy dog."]
+            "input": ["The quick brown fox jumps over the lazy dog."],
         }
-        endpoint = f"/embeddings"
+        endpoint = "/embeddings"
         response = self.client.post(
             endpoint,
             data=json.dumps(payload),
             headers=headers,
-            content_type="application/json"
+            content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
 
         response_json = response.json()
         print(f"\nEmbeddings response: {response_json}")
@@ -59,9 +75,13 @@ class EmbeddingTest(GatewayIntegrationTestCase):
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after embeddings.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after embeddings."
+        )
         req = requests[0]
-        self.assertIn("embeddings", req.path, "Request endpoint should be for embeddings.")
+        self.assertIn(
+            "embeddings", req.path, "Request endpoint should be for embeddings."
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
@@ -71,31 +91,41 @@ class EmbeddingTest(GatewayIntegrationTestCase):
 class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
     MESSAGES = [
         {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Write me a short poem!"}
+        {"role": "user", "content": "Write me a short poem!"},
     ]
 
-    def _build_chat_completion_request(self, messages, stream=False, **payload_kwargs) -> dict:
+    def _build_chat_completion_request(
+        self, messages, stream=False, **payload_kwargs
+    ) -> dict:
         """
         Helper to build headers, payload, and endpoint for chat completion requests.
         """
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        payload = _build_chat_payload(self.model, messages, stream=stream, **payload_kwargs)
-        endpoint = f"/chat/completions"
+        payload = _build_chat_payload(
+            self.model, messages, stream=stream, **payload_kwargs
+        )
+        endpoint = "/chat/completions"
         return dict(path=endpoint, data=json.dumps(payload), headers=headers)
 
     def _send_chat_completion(self, messages, **payload_kwargs):
         """
         Helper to send a chat completion request (non-streaming) using Django test client.
         """
-        request = self._build_chat_completion_request(messages, stream=False, **payload_kwargs)
+        request = self._build_chat_completion_request(
+            messages, stream=False, **payload_kwargs
+        )
         return self.client.post(**request, content_type="application/json")
 
     async def _send_chat_completion_streaming(self, messages, **payload_kwargs):
         """
         Helper to send a streaming chat completion request using Django async test client.
         """
-        request = self._build_chat_completion_request(messages, stream=True, **payload_kwargs)
-        response = await self.async_client.post(**request, content_type="application/json")
+        request = self._build_chat_completion_request(
+            messages, stream=True, **payload_kwargs
+        )
+        response = await self.async_client.post(
+            **request, content_type="application/json"
+        )
         return response
 
     def test_chat_completion(self):
@@ -106,7 +136,11 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         """
         response = self._send_chat_completion(self.MESSAGES)
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
 
         # Parse the response as JSON and convert to OpenAI ChatCompletion type for compatibility
         response_json = response.json()
@@ -120,9 +154,9 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(len(chat_completion.choices), 0)
 
         first_choice = chat_completion.choices[0]
-        self.assertTrue(hasattr(first_choice, 'message'))
+        self.assertTrue(hasattr(first_choice, "message"))
         self.assertIsNotNone(first_choice.message)
-        self.assertTrue(hasattr(first_choice.message, 'content'))
+        self.assertTrue(hasattr(first_choice.message, "content"))
         self.assertIsNotNone(first_choice.message.content)
 
         response_text = first_choice.message.content.strip()
@@ -130,9 +164,17 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after chat completion.")
+        self.assertEqual(
+            len(requests),
+            1,
+            "There should be exactly one request after chat completion.",
+        )
         req = requests[0]
-        self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion.")
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            "Request endpoint should be for chat completion.",
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
@@ -148,38 +190,47 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
 
         # Create a simple text file content and encode it as base64
         file_content = b"This is a test file content for base64 encoding."
-        file_base64 = base64.b64encode(file_content).decode('utf-8')
+        file_base64 = base64.b64encode(file_content).decode("utf-8")
 
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "user",
-                 "content": [
-                     {"type": "text", "text": "What's in this file?"},
-                     {"type": "file",
-                      "file": {
-                          "filename": "test.txt",
-                          "file_data": f"data:text/plain;base64,{file_base64}"
-                      }
-                      }]}
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What's in this file?"},
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": "test.txt",
+                                "file_data": f"data:text/plain;base64,{file_base64}",
+                            },
+                        },
+                    ],
+                }
             ],
             "max_completion_tokens": 50,
         }
 
         endpoint = "/chat/completions"
-        with patch('gateway.views.decorators.extract_text_with_tika',
-                   return_value="This is a test file content for base64 encoding."):
+        with patch(
+            "gateway.views.decorators.extract_text_with_tika",
+            return_value="This is a test file content for base64 encoding.",
+        ):
             response = self.client.post(
                 endpoint,
                 data=json.dumps(payload),
                 headers=headers,
-                content_type="application/json"
+                content_type="application/json",
             )
 
-        self.assertEqual(response.status_code, 200,
-                         f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
         content = chat_completion.choices[0].message.content
@@ -189,14 +240,25 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(len(content), 0)
 
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after base64 file input.")
+        self.assertEqual(
+            len(requests),
+            1,
+            "There should be exactly one request after base64 file input.",
+        )
         req = requests[0]
-        self.assertIn("chat/completions", req.path,
-                      "Request endpoint should be chat completion for base64 file input.")
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            "Request endpoint should be chat completion for base64 file input.",
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
-        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for base64 file input")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for base64 file input")
+        self.assertGreater(
+            req.input_tokens, 0, "input_tokens should be > 0 for base64 file input"
+        )
+        self.assertGreater(
+            req.output_tokens, 0, "output_tokens should be > 0 for base64 file input"
+        )
 
     def test_chat_completion_file_id_input(self):
         """
@@ -207,7 +269,9 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
 
         # First, upload a file using the files API
         file_content = b'{"custom_id": "test_file_id_input"}\n'
-        upload_file = SimpleUploadedFile("test_file_id.jsonl", file_content, content_type="application/jsonl")
+        upload_file = SimpleUploadedFile(
+            "test_file_id.jsonl", file_content, content_type="application/jsonl"
+        )
 
         # Prepare headers for file upload (remove Content-Type for multipart)
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
@@ -215,11 +279,13 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
 
         # Upload the file
         upload_response = self.client.post(
-            "/files",
-            {"file": upload_file, "purpose": "user_data"},
-            headers=headers,
+            "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
         )
-        self.assertEqual(upload_response.status_code, 200, f"File upload failed: {upload_response.json()}")
+        self.assertEqual(
+            upload_response.status_code,
+            200,
+            f"File upload failed: {upload_response.json()}",
+        )
         upload_data = upload_response.json()
         file_id = upload_data["id"]
 
@@ -229,48 +295,62 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "user",
-                 "content": [
-                     {"type": "text", "text": "What's in this file?"},
-                     {"type": "file",
-                      "file": {
-                          "file_id": file_id
-                      }
-                      }]}
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What's in this file?"},
+                        {"type": "file", "file": {"file_id": file_id}},
+                    ],
+                }
             ],
             "max_completion_tokens": 50,
         }
 
         endpoint = "/chat/completions"
-        with patch('gateway.views.decorators.extract_text_with_tika',
-                   return_value="This is a test file content for base64 encoding."):
+        with patch(
+            "gateway.views.decorators.extract_text_with_tika",
+            return_value="This is a test file content for base64 encoding.",
+        ):
             response = self.client.post(
                 endpoint,
                 data=json.dumps(payload),
                 headers=headers,
-                content_type="application/json"
+                content_type="application/json",
             )
 
-        self.assertEqual(response.status_code, 200,
-                         f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
         content = chat_completion.choices[0].message.content.strip()
         self.assertGreater(len(content), 0)
 
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 2,
-                         "There should be exactly two requests after file_id input (file upload + chat completion).")
+        self.assertEqual(
+            len(requests),
+            2,
+            "There should be exactly two requests after file_id input (file upload + chat completion).",
+        )
 
         # Get the chat completion request (should be the one with /chat/completions path)
         chat_request = next(r for r in requests if "chat/completions" in r.path)
         req = chat_request
-        self.assertIn("chat/completions", req.path,
-                      "Request endpoint should be chat completion for file_id input.")
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            "Request endpoint should be chat completion for file_id input.",
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
-        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for file_id input")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for file_id input")
+        self.assertGreater(
+            req.input_tokens, 0, "input_tokens should be > 0 for file_id input"
+        )
+        self.assertGreater(
+            req.output_tokens, 0, "output_tokens should be > 0 for file_id input"
+        )
 
     def test_chat_completion_file_id_not_found(self):
         """
@@ -282,14 +362,13 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "user",
-                 "content": [
-                     {"type": "text", "text": "What's in this file?"},
-                     {"type": "file",
-                      "file": {
-                          "file_id": "non-existent-file-id"
-                      }
-                      }]}
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What's in this file?"},
+                        {"type": "file", "file": {"file_id": "non-existent-file-id"}},
+                    ],
+                }
             ],
             "max_completion_tokens": 50,
         }
@@ -299,11 +378,14 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             endpoint,
             data=json.dumps(payload),
             headers=headers,
-            content_type="application/json"
+            content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 404,
-                         f"Expected 404 Not Found, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            404,
+            f"Expected 404 Not Found, got {response.status_code}: {response.content}",
+        )
 
     def test_chat_completion_file_id_different_user(self):
         """
@@ -311,11 +393,12 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         Should raise a 404 error.
         """
         from django.core.files.uploadedfile import SimpleUploadedFile
-        from management.models import Token
 
         # First, upload a file using the files API with the default user
         file_content = b'{"custom_id": "test_file_id_input"}\n'
-        upload_file = SimpleUploadedFile("test_file_id.jsonl", file_content, content_type="application/jsonl")
+        upload_file = SimpleUploadedFile(
+            "test_file_id.jsonl", file_content, content_type="application/jsonl"
+        )
 
         # Prepare headers for file upload (remove Content-Type for multipart)
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
@@ -323,11 +406,13 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
 
         # Upload the file
         upload_response = self.client.post(
-            "/files",
-            {"file": upload_file, "purpose": "user_data"},
-            headers=headers,
+            "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
         )
-        self.assertEqual(upload_response.status_code, 200, f"File upload failed: {upload_response.json()}")
+        self.assertEqual(
+            upload_response.status_code,
+            200,
+            f"File upload failed: {upload_response.json()}",
+        )
         upload_data = upload_response.json()
         file_id = upload_data["id"]
 
@@ -337,30 +422,34 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "user",
-                 "content": [
-                     {"type": "text", "text": "What's in this file?"},
-                     {"type": "file",
-                      "file": {
-                          "file_id": file_id
-                      }
-                      }]}
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What's in this file?"},
+                        {"type": "file", "file": {"file_id": file_id}},
+                    ],
+                }
             ],
             "max_completion_tokens": 50,
         }
 
         endpoint = "/chat/completions"
-        with patch('gateway.views.decorators.extract_text_with_tika',
-                   return_value="This is a test file content for base64 encoding."):
+        with patch(
+            "gateway.views.decorators.extract_text_with_tika",
+            return_value="This is a test file content for base64 encoding.",
+        ):
             response = self.client.post(
                 endpoint,
                 data=json.dumps(payload),
                 headers=headers,
-                content_type="application/json"
+                content_type="application/json",
             )
 
-        self.assertEqual(response.status_code, 404,
-                         f"Expected 404 Not Found, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            404,
+            f"Expected 404 Not Found, got {response.status_code}: {response.content}",
+        )
 
     def test_chat_completion_base64_file_size_limit_individual(self):
         """
@@ -371,22 +460,26 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         # Create a file content that exceeds 10MB (10MB + 1 byte)
         file_size = 10 * 1024 * 1024 + 1  # 10MB + 1 byte
         file_content = b"x" * file_size
-        file_base64 = base64.b64encode(file_content).decode('utf-8')
+        file_base64 = base64.b64encode(file_content).decode("utf-8")
 
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "user",
-                 "content": [
-                     {"type": "text", "text": "What's in this file?"},
-                     {"type": "file",
-                      "file": {
-                          "filename": "large_file.txt",
-                          "file_data": f"data:text/plain;base64,{file_base64}"
-                      }
-                      }]}
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What's in this file?"},
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": "large_file.txt",
+                                "file_data": f"data:text/plain;base64,{file_base64}",
+                            },
+                        },
+                    ],
+                }
             ],
             "max_completion_tokens": 50,
         }
@@ -396,11 +489,14 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             endpoint,
             data=json.dumps(payload),
             headers=headers,
-            content_type="application/json"
+            content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400,
-                         f"Expected 400 Bad Request for file size > 10MB, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 Bad Request for file size > 10MB, got {response.status_code}: {response.content}",
+        )
 
     def test_chat_completion_base64_file_size_limit_total(self):
         """
@@ -412,32 +508,40 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         # Each file is 11MB, so 3 files = 33MB total
         individual_file_size = 11 * 1024 * 1024  # 11MB each
         file_content = b"x" * individual_file_size
-        file_base64 = base64.b64encode(file_content).decode('utf-8')
+        file_base64 = base64.b64encode(file_content).decode("utf-8")
 
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "user",
-                 "content": [
-                     {"type": "text", "text": "What's in these files?"},
-                     {"type": "file",
-                      "file": {
-                          "filename": "large_file_1.txt",
-                          "file_data": f"data:text/plain;base64,{file_base64}"
-                      }},
-                     {"type": "file",
-                      "file": {
-                          "filename": "large_file_2.txt",
-                          "file_data": f"data:text/plain;base64,{file_base64}"
-                      }},
-                     {"type": "file",
-                      "file": {
-                          "filename": "large_file_3.txt",
-                          "file_data": f"data:text/plain;base64,{file_base64}"
-                      }}
-                 ]}
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What's in these files?"},
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": "large_file_1.txt",
+                                "file_data": f"data:text/plain;base64,{file_base64}",
+                            },
+                        },
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": "large_file_2.txt",
+                                "file_data": f"data:text/plain;base64,{file_base64}",
+                            },
+                        },
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": "large_file_3.txt",
+                                "file_data": f"data:text/plain;base64,{file_base64}",
+                            },
+                        },
+                    ],
+                }
             ],
             "max_completion_tokens": 50,
         }
@@ -447,11 +551,15 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             endpoint,
             data=json.dumps(payload),
             headers=headers,
-            content_type="application/json"
+            content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400,
-                         f"Expected 400 Bad Request for total file size > 32MB, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 Bad Request for total file size > 32MB, got {response.status_code}: "
+            f"{response.content}",
+        )
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     def test_chat_completion_timeout(self):
@@ -463,8 +571,9 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         response = self._send_chat_completion(self.MESSAGES)
 
         self.assertEqual(
-            response.status_code, 504,
-            f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}"
+            response.status_code,
+            504,
+            f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}",
         )
 
     @override_settings(STREAM_REQUEST_TIMEOUT=5)
@@ -476,18 +585,25 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         the endpoint matches, and input/output tokens are > 0.
         """
         # For some reason authentication does not work in async test case...
-        await sync_to_async(lambda: self.async_client.force_login(
-            User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
+        await sync_to_async(
+            lambda: self.async_client.force_login(
+                User.objects.get_or_create(username="Me", email="me@example.com")[0]
+            )
+        )()
 
         response = await self._send_chat_completion_streaming(self.MESSAGES)
 
         # Should be a StreamingHttpResponse with status 200
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
+        self.assertEqual(
+            response.status_code, 200, f"Expected 200 OK, got {response.status_code}"
+        )
 
         # Collect all streamed lines (each line is a data: ... event)
         streamed_lines = await _read_streaming_response_lines(response)
 
-        self.assertGreater(len(streamed_lines), 0, "Should receive at least one streamed data chunk.")
+        self.assertGreater(
+            len(streamed_lines), 0, "Should receive at least one streamed data chunk."
+        )
 
         # Parse each chunk as JSON and collect content pieces
         content_pieces = _parse_streamed_content_pieces(streamed_lines)
@@ -497,13 +613,25 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that the database contains one request and endpoint matches
         requests = await sync_to_async(lambda: list(Request.objects.all()))()
-        self.assertEqual(len(requests), 1, "There should be exactly one request after streaming chat completion.")
+        self.assertEqual(
+            len(requests),
+            1,
+            "There should be exactly one request after streaming chat completion.",
+        )
         req = requests[0]
-        self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion (streaming).")
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            "Request endpoint should be for chat completion (streaming).",
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
-        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming)")
+        self.assertGreater(
+            req.input_tokens, 0, "input_tokens should be > 0 (streaming)"
+        )
+        self.assertGreater(
+            req.output_tokens, 0, "output_tokens should be > 0 (streaming)"
+        )
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
     @async_to_sync
@@ -514,14 +642,18 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         the endpoint matches, and input/output tokens are > 0.
         """
         # For some reason authentication does not work in async test case...
-        await sync_to_async(lambda: self.async_client.force_login(
-            User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
+        await sync_to_async(
+            lambda: self.async_client.force_login(
+                User.objects.get_or_create(username="Me", email="me@example.com")[0]
+            )
+        )()
 
         response = await self._send_chat_completion_streaming(self.MESSAGES)
 
         self.assertEqual(
-            response.status_code, 504,
-            f"Expected 504 Gateway Timeout, got {response.status_code}"
+            response.status_code,
+            504,
+            f"Expected 504 Gateway Timeout, got {response.status_code}",
         )
 
     def test_chat_completion_excluded_model(self):
@@ -532,23 +664,26 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
 
         response = self._send_chat_completion(self.MESSAGES)
 
-        self.assertEqual(response.status_code, 404,
-                         f"Expected 404 Model not found, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            404,
+            f"Expected 404 Model not found, got {response.status_code}: {response.content}",
+        )
 
     def test_chat_completion_unknown_model(self):
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        payload = {
-            "model": "unknown-model",
-            "messages": self.MESSAGES,
-        }
+        payload = {"model": "unknown-model", "messages": self.MESSAGES}
         response = self.client.post(
             "/chat/completions",
             data=json.dumps(payload),
             headers=headers,
             content_type="application/json",
         )
-        self.assertEqual(response.status_code, 400,
-                         f"Expected 400 Bad Request, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 Bad Request, got {response.status_code}: {response.content}",
+        )
 
     @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_chat_completion_schema_generation(self):
@@ -561,20 +696,26 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             "type": "object",
             "properties": {
                 "greeting": {"type": "string"},
-                "count": {"type": "integer"}
+                "count": {"type": "integer"},
             },
-            "required": ["greeting", "count"]
+            "required": ["greeting", "count"],
         }
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "You produce JSON output based on a schema."},
-                {"role": "user", "content": "Generate JSON matching the provided schema."}
+                {
+                    "role": "system",
+                    "content": "You produce JSON output based on a schema.",
+                },
+                {
+                    "role": "user",
+                    "content": "Generate JSON matching the provided schema.",
+                },
             ],
             # { "type": "json_schema", "json_schema": {...} }
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {"name": "schema", "schema": json_schema}
+                "json_schema": {"name": "schema", "schema": json_schema},
             },
             "max_completion_tokens": 50,
         }
@@ -583,11 +724,14 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             endpoint,
             data=json.dumps(payload),
             headers=headers,
-            content_type="application/json"
+            content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200,
-                         f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
         content = chat_completion.choices[0].message.content.strip()
@@ -598,31 +742,50 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsInstance(result["count"], int)
 
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after schema generation.")
+        self.assertEqual(
+            len(requests),
+            1,
+            "There should be exactly one request after schema generation.",
+        )
         req = requests[0]
-        self.assertIn("chat/completions", req.path,
-                      "Request endpoint should be for chat completion schema generation.")
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            "Request endpoint should be for chat completion schema generation.",
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
-        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for schema generation")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for schema generation")
+        self.assertGreater(
+            req.input_tokens, 0, "input_tokens should be > 0 for schema generation"
+        )
+        self.assertGreater(
+            req.output_tokens, 0, "output_tokens should be > 0 for schema generation"
+        )
 
     def test_chat_completion_multimodal_input(self):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest(
-                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase to manage multiple servers!")
+                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase "
+                "to manage multiple servers!"
+            )
 
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+        image_url = (
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/"
+            "Gfp-wisconsin-madison-the-nature-boardwalk.jpg/"
+            "2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+        )
 
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "user",
-                 "content": [
-                     {"type": "text", "text": "What’s in this image?"},
-                     {"type": "image_url", "image_url": {"url": image_url}},
-                 ]}
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What’s in this image?"},
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                    ],
+                }
             ],
             "max_completion_tokens": 50,
         }
@@ -631,25 +794,39 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             endpoint,
             data=json.dumps(payload),
             headers=headers,
-            content_type="application/json"
+            content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200,
-                         f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
         content = chat_completion.choices[0].message.content.strip()
         self.assertGreater(len(content), 0)
 
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after multimodal input.")
+        self.assertEqual(
+            len(requests),
+            1,
+            "There should be exactly one request after multimodal input.",
+        )
         req = requests[0]
-        self.assertIn("chat/completions", req.path,
-                      "Request endpoint should be chat completion for multimodal input.")
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            "Request endpoint should be chat completion for multimodal input.",
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
-        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for multimodal input")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for multimodal input")
+        self.assertGreater(
+            req.input_tokens, 0, "input_tokens should be > 0 for multimodal input"
+        )
+        self.assertGreater(
+            req.output_tokens, 0, "output_tokens should be > 0 for multimodal input"
+        )
 
     @override_settings(STREAM_REQUEST_TIMEOUT=5)
     @async_to_sync
@@ -658,41 +835,54 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         Sends a streaming chat completion request with a JSON schema.
         Verifies the streamed content adheres to the schema and logs the request.
         """
-        await sync_to_async(lambda: self.async_client.force_login(
-            User.objects.get_or_create(username='Me', email="me@example.com")[0]))()
+        await sync_to_async(
+            lambda: self.async_client.force_login(
+                User.objects.get_or_create(username="Me", email="me@example.com")[0]
+            )
+        )()
 
         json_schema = {
             "type": "object",
             "properties": {
                 "greeting": {"type": "string"},
-                "count": {"type": "integer"}
+                "count": {"type": "integer"},
             },
-            "required": ["greeting", "count"]
+            "required": ["greeting", "count"],
         }
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "You produce JSON output based on a schema."},
-                {"role": "user", "content": "Generate JSON matching the provided schema."}
+                {
+                    "role": "system",
+                    "content": "You produce JSON output based on a schema.",
+                },
+                {
+                    "role": "user",
+                    "content": "Generate JSON matching the provided schema.",
+                },
             ],
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {"name": "schema", "schema": json_schema}
+                "json_schema": {"name": "schema", "schema": json_schema},
             },
             "max_completion_tokens": 50,
-            "stream": True
+            "stream": True,
         }
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         response = await self.async_client.post(
             "/chat/completions",
             data=json.dumps(payload),
             headers=headers,
-            content_type="application/json"
+            content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
+        self.assertEqual(
+            response.status_code, 200, f"Expected 200 OK, got {response.status_code}"
+        )
         streamed_lines = await _read_streaming_response_lines(response)
-        self.assertGreater(len(streamed_lines), 0, "Should receive at least one streamed data chunk.")
+        self.assertGreater(
+            len(streamed_lines), 0, "Should receive at least one streamed data chunk."
+        )
 
         content_pieces = _parse_streamed_content_pieces(streamed_lines)
         full_content = "".join(content_pieces).strip()
@@ -703,24 +893,38 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsInstance(result["count"], int)
 
         requests = await sync_to_async(lambda: list(Request.objects.all()))()
-        self.assertEqual(len(requests), 1, "There should be exactly one request after schema generation streaming.")
+        self.assertEqual(
+            len(requests),
+            1,
+            "There should be exactly one request after schema generation streaming.",
+        )
         req = requests[0]
-        self.assertIn("chat/completions", req.path,
-                      "Request endpoint should be for chat completion (streaming schema generation).")
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            "Request endpoint should be for chat completion (streaming schema generation).",
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
-        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming schema generation)")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming schema generation)")
+        self.assertGreater(
+            req.input_tokens,
+            0,
+            "input_tokens should be > 0 (streaming schema generation)",
+        )
+        self.assertGreater(
+            req.output_tokens,
+            0,
+            "output_tokens should be > 0 (streaming schema generation)",
+        )
 
 
 class ListModelsIntegrationTest(GatewayIntegrationTestCase):
-
     def _send_model_list_request(self):
         return self.client.get(
-            f"/models",
-            data='',
+            "/models",
+            data="",
             content_type="application/json",
-            headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+            headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN),
         )
 
     def test_list_models(self):
@@ -730,7 +934,11 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         """
         response = self._send_model_list_request()
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
 
         response_json = response.json()
         print(f"\nList models response: {response_json}")
@@ -747,9 +955,13 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after list models.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after list models."
+        )
         req = requests[0]
-        self.assertIn("models", req.path, "Request endpoint should be for model listing.")
+        self.assertIn(
+            "models", req.path, "Request endpoint should be for model listing."
+        )
 
     def test_list_models_with_invalid_token(self):
         """
@@ -764,21 +976,21 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # No payload needed for model listing
         response = self.client.get(
-            f"/models",
-            data='',
-            content_type="application/json",
-            **headers
+            "/models", data="", content_type="application/json", **headers
         )
 
         # Should be 401 Unauthorized or 403 Forbidden
         self.assertIn(
-            response.status_code, [401, 403],
-            f"Expected 401 or 403 for invalid token, got {response.status_code}: {response.content}"
+            response.status_code,
+            [401, 403],
+            f"Expected 401 or 403 for invalid token, got {response.status_code}: {response.content}",
         )
 
         # There should be no request recorded in the database (or possibly one, depending on implementation)
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 0, "There should be no request recorded for invalid token.")
+        self.assertEqual(
+            len(requests), 0, "There should be no request recorded for invalid token."
+        )
 
     def test_list_excluded_model(self):
         org = Org.objects.get(name="E060")
@@ -791,7 +1003,11 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         response = self._send_model_list_request()
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
 
         response_json = response.json()
         print(f"\nList models response: {response_json}")
@@ -808,9 +1024,13 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after list models.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after list models."
+        )
         req = requests[0]
-        self.assertIn("models", req.path, "Request endpoint should be for model listing.")
+        self.assertIn(
+            "models", req.path, "Request endpoint should be for model listing."
+        )
 
 
 class TokenLimitTest(ChatCompletionsIntegrationTest):
@@ -833,12 +1053,17 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             # Ensure a service account exists for the team and associate it with the token
             # Only associate the service account with the token if the token does not already have a service account
 
-            service_account = ServiceAccount.objects.create(team=team, name="Whale Service")
+            service_account = ServiceAccount.objects.create(
+                team=team, name="Whale Service"
+            )
 
-            from management.models import Token
-            token = Token.objects.filter(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN)).first()
+            token = Token.objects.filter(
+                key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN)
+            ).first()
             if not token:
-                raise RuntimeError("Could not find Token associated with AQUEDUCT_ACCESS_TOKEN.")
+                raise RuntimeError(
+                    "Could not find Token associated with AQUEDUCT_ACCESS_TOKEN."
+                )
 
             # Only set the service_account if it is not already set
             if getattr(token, "service_account_id", None) is None:
@@ -853,25 +1078,40 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             return team
         elif kind == "user":
             user = User.objects.get(username="Me")
-            profile = user.profile if hasattr(user, "profile") else UserProfile.objects.get(user=user)
+            profile = (
+                user.profile
+                if hasattr(user, "profile")
+                else UserProfile.objects.get(user=user)
+            )
             setattr(profile, field, value)
             profile.save(update_fields=[field])
             return profile
         else:
             raise ValueError(f"Unknown kind: {kind}")
 
-    def _rate_limit_test_template(self, kind: str, field: str, value: int, messages, max_completion_tokens, limit_desc):
+    def _rate_limit_test_template(
+        self,
+        kind: str,
+        field: str,
+        value: int,
+        messages,
+        max_completion_tokens,
+        limit_desc,
+    ):
         """
         Generic template for rate limit tests for org, team, or user.
         Uses the Django test client to POST to the chat completion endpoint.
         """
         # Set the limit
-        obj = self.setup_limits(kind, field, value)
+        self.setup_limits(kind, field, value)
 
-        response1 = self._send_chat_completion(messages, max_completion_tokens=max_completion_tokens)
+        response1 = self._send_chat_completion(
+            messages, max_completion_tokens=max_completion_tokens
+        )
         self.assertEqual(
-            response1.status_code, 200,
-            f"Expected 200 OK, got {response1.status_code}: {response1.content}"
+            response1.status_code,
+            200,
+            f"Expected 200 OK, got {response1.status_code}: {response1.content}",
         )
         response_json = response1.json()
         chat_completion = ChatCompletion.model_validate(response_json)
@@ -881,33 +1121,44 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1,
-                         f"There should be exactly one request after first chat completion ({limit_desc}).")
+        self.assertEqual(
+            len(requests),
+            1,
+            f"There should be exactly one request after first chat completion ({limit_desc}).",
+        )
         req = requests[0]
-        self.assertIn("chat/completions", req.path, "Request endpoint should be for chat completion.")
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            "Request endpoint should be for chat completion.",
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
         # Second request should fail with 429
-        response2 = self._send_chat_completion(messages, max_completion_tokens=max_completion_tokens)
+        response2 = self._send_chat_completion(
+            messages, max_completion_tokens=max_completion_tokens
+        )
         self.assertEqual(
-            response2.status_code, 429,
-            f"Expected 429 Too Many Requests, got {response2.status_code}: {response2.content}"
+            response2.status_code,
+            429,
+            f"Expected 429 Too Many Requests, got {response2.status_code}: {response2.content}",
         )
         # Optionally, check error message
         try:
             error_json = response2.json()
             self.assertTrue(
                 "rate limit" in str(error_json).lower() or "429" in str(error_json),
-                f"Expected rate limit error message, got: {error_json}"
+                f"Expected rate limit error message, got: {error_json}",
             )
         except Exception:
             # If not JSON, just check content
             self.assertTrue(
-                "rate limit" in response2.content.decode().lower() or "429" in response2.content.decode(),
-                f"Expected rate limit error message, got: {response2.content}"
+                "rate limit" in response2.content.decode().lower()
+                or "429" in response2.content.decode(),
+                f"Expected rate limit error message, got: {response2.content}",
             )
 
     def test_org_rate_limit_requests_per_minute(self):
@@ -921,7 +1172,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             value=1,
             messages=self.MESSAGES,
             max_completion_tokens=5,
-            limit_desc="org requests_per_minute"
+            limit_desc="org requests_per_minute",
         )
 
     def test_team_rate_limit_requests_per_minute(self):
@@ -935,7 +1186,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             value=1,
             messages=self.MESSAGES,
             max_completion_tokens=5,
-            limit_desc="team requests_per_minute"
+            limit_desc="team requests_per_minute",
         )
 
     def test_user_rate_limit_requests_per_minute(self):
@@ -949,7 +1200,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             value=1,
             messages=self.MESSAGES,
             max_completion_tokens=5,
-            limit_desc="user requests_per_minute"
+            limit_desc="user requests_per_minute",
         )
 
     def test_org_rate_limit_input_tokens_per_minute(self):
@@ -963,7 +1214,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             value=5,
             messages=self.MESSAGES,
             max_completion_tokens=1,
-            limit_desc="org input_tokens_per_minute"
+            limit_desc="org input_tokens_per_minute",
         )
 
     def test_team_rate_limit_input_tokens_per_minute(self):
@@ -977,7 +1228,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             value=5,
             messages=self.MESSAGES,
             max_completion_tokens=1,
-            limit_desc="team input_tokens_per_minute"
+            limit_desc="team input_tokens_per_minute",
         )
 
     def test_user_rate_limit_input_tokens_per_minute(self):
@@ -991,7 +1242,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             value=5,
             messages=self.MESSAGES,
             max_completion_tokens=1,
-            limit_desc="user input_tokens_per_minute"
+            limit_desc="user input_tokens_per_minute",
         )
 
     def test_org_rate_limit_output_tokens_per_minute(self):
@@ -1005,7 +1256,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             value=5,
             messages=self.MESSAGES,
             max_completion_tokens=10,
-            limit_desc="org output_tokens_per_minute"
+            limit_desc="org output_tokens_per_minute",
         )
 
     def test_team_rate_limit_output_tokens_per_minute(self):
@@ -1019,7 +1270,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             value=5,
             messages=self.MESSAGES,
             max_completion_tokens=10,
-            limit_desc="team output_tokens_per_minute"
+            limit_desc="team output_tokens_per_minute",
         )
 
     def test_user_rate_limit_output_tokens_per_minute(self):
@@ -1033,5 +1284,5 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             value=5,
             messages=self.MESSAGES,
             max_completion_tokens=10,
-            limit_desc="user output_tokens_per_minute"
+            limit_desc="user output_tokens_per_minute",
         )

@@ -1,6 +1,6 @@
 import json
 from functools import lru_cache
-from typing import TypedDict, Literal
+from typing import Literal, TypedDict
 
 import openai
 import yaml
@@ -15,7 +15,7 @@ def get_router_config() -> dict:
         with open(path) as f:
             data = yaml.safe_load(f)
     except (FileNotFoundError, TypeError):
-        raise RuntimeError(f'Unable to load router config from {path}')
+        raise RuntimeError(f"Unable to load router config from {path}")
     return data
 
 
@@ -23,7 +23,7 @@ def get_router_config() -> dict:
 def get_router() -> Router:
     config = get_router_config()
     if config is None:
-        raise RuntimeError(f"Router config not found!")
+        raise RuntimeError("Router config not found!")
     return Router(**config)
 
 
@@ -35,8 +35,11 @@ def get_openai_client(model: str) -> openai.AsyncClient:
         raise ValueError(f"Deployment for model '{model}' not found!")
     litellm_params = deployment.litellm_params
 
-    return openai.AsyncClient(api_key=litellm_params.api_key, base_url=litellm_params.api_base,
-                              timeout=litellm_params.timeout)
+    return openai.AsyncClient(
+        api_key=litellm_params.api_key,
+        base_url=litellm_params.api_base,
+        timeout=litellm_params.timeout,
+    )
 
 
 class MCPServerConfig(TypedDict):
@@ -50,6 +53,8 @@ def get_mcp_config() -> dict[str, MCPServerConfig]:
     try:
         with open(path) as f:
             data = json.load(f)["mcpServers"]
-            return {server: MCPServerConfig(**config) for server, config in data.items()}
+            return {
+                server: MCPServerConfig(**config) for server, config in data.items()
+            }
     except (FileNotFoundError, TypeError, json.JSONDecodeError, KeyError):
-        raise RuntimeError(f'Unable to load MCP config from {path}')
+        raise RuntimeError(f"Unable to load MCP config from {path}")

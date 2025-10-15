@@ -2,11 +2,11 @@ import asyncio
 import json
 import threading
 import uuid
-from typing import Dict, Optional
+from typing import AsyncGenerator, Dict, Optional
 
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from mcp.client.streamable_http import streamablehttp_client
@@ -166,6 +166,20 @@ class MCPSessionManager:
             raise ValueError(f"Session {session_id} not found")
         await session.send_message(message)
 
+    def receive_message(self, session_id: str):
+        """Receive message from session (called from Django view)."""
+        future = asyncio.run_coroutine_threadsafe(
+            self._receive_message_impl(session_id), self._loop
+        )
+        return future.result(timeout=30)
+
+    async def _receive_message_impl(self, session_id: str):
+        """Actually receive the message (runs in background thread)."""
+        session = self._sessions.get(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+        return await session.receive_message()
+
     def shutdown_all(self):
         """Shutdown all sessions (called on app shutdown)."""
         if not self._loop:
@@ -184,12 +198,46 @@ class MCPSessionManager:
         self._sessions.clear()
 
 
+async def _mcp_sse_stream(session_id: str) -> AsyncGenerator[str, None]:
+    """Async generator that streams MCP messages as Server-Sent Events."""
+    try:
+        while True:
+            try:
+                message = session_manager.receive_message(session_id)
+                if isinstance(message, Exception):
+                    # Send error event if we received an exception
+                    yield f'data: {{"error": "{str(message)}"}}\n\n'
+                    break
+                else:
+                    # Send the message as a JSON-RPC SSE event
+                    message_json = message.message.model_dump_json(exclude_none=True)
+                    yield f"data: {message_json}\n\n"
+            except ValueError as e:
+                if "terminated" in str(e).lower() or "not found" in str(e).lower():
+                    # Session terminated or not found, end the stream
+                    yield f'data: {{"event": "session_ended", "reason": "{str(e)}"}}\n\n'
+                    break
+                else:
+                    # Other ValueError, send error and continue
+                    yield f'data: {{"error": "{str(e)}"}}\n\n'
+            except Exception as e:
+                # Unexpected error, send error and end stream
+                yield f'data: {{"error": "{str(e)}", "event": "stream_error"}}\n\n'
+                break
+
+    except Exception as e:
+        # Top-level error, send final error
+        yield f'data: {{"error": "Stream failed: {str(e)}", "event": "stream_ended"}}\n\n'
+
+
 # Global session manager - starts automatically
 session_manager = MCPSessionManager()
 session_manager.start()
 
 
-async def handle_get_request(request: ASGIRequest, name: str) -> JsonResponse:
+async def handle_get_request(
+    request: ASGIRequest, name: str
+) -> JsonResponse | StreamingHttpResponse:
     """Create new session or return SSE stream."""
     session_id = request.headers.get("X-MCP-Session-ID")
 
@@ -206,8 +254,24 @@ async def handle_get_request(request: ASGIRequest, name: str) -> JsonResponse:
 
         return JsonResponse({"session_id": new_session_id, "server_name": name})
     else:
-        # TODO: Return SSE stream for existing session
-        return JsonResponse({"error": "SSE streaming not yet implemented"}, status=501)
+        # Return SSE stream for existing session
+        session = session_manager.get_session(session_id)
+        if not session:
+            return JsonResponse({"error": "Session not found"}, status=404)
+
+        if session.terminated:
+            return JsonResponse({"error": "Session terminated"}, status=410)
+
+        return StreamingHttpResponse(
+            streaming_content=_mcp_sse_stream(session_id),
+            content_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Cache-Control, X-MCP-Session-ID",
+            },
+        )
 
 
 async def handle_post_request(request: ASGIRequest, name: str) -> JsonResponse:

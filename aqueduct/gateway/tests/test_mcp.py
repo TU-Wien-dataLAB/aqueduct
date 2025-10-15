@@ -192,3 +192,98 @@ class MCPSessionLifecycleTest(GatewayMCPTestCase):
             400,
             f"Expected 400 Bad Request for missing session ID, got {response.status_code}: {response.content}",
         )
+
+
+class MCPSSEStreamTest(GatewayMCPTestCase):
+    def test_mcp_sse_stream_successful(self):
+        """Test that SSE streaming works for an existing session."""
+        server_name = "test-server"
+        mcp_endpoint = f"/mcp-servers/{server_name}/mcp"
+        session_id = "test-session-id"
+
+        mock_session = MagicMock()
+        mock_session.terminated = False
+
+        mock_message = MagicMock()
+        mock_message.message.model_dump_json.return_value = '{"jsonrpc": "2.0", "result": "test"}'
+
+        with (
+            patch("gateway.views.mcp.session_manager.get_session") as mock_get_session,
+            patch("gateway.views.mcp.session_manager.receive_message") as mock_receive,
+        ):
+            mock_get_session.return_value = mock_session
+            mock_receive.return_value = mock_message
+
+            # First call returns a message, second call raises ValueError to end stream
+            mock_receive.side_effect = [
+                mock_message,  # First call returns message
+                ValueError("Session terminated"),  # Second call ends stream
+            ]
+
+            response = self.client.get(
+                mcp_endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
+                    "X-MCP-Session-ID": session_id,
+                },
+            )
+
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Expected 200 OK for SSE stream, got {response.status_code}",
+            )
+
+            # Check SSE response headers
+            self.assertEqual(response["Content-Type"], "text/event-stream")
+            self.assertEqual(response["Cache-Control"], "no-cache")
+            self.assertEqual(response["Connection"], "keep-alive")
+
+    def test_mcp_sse_stream_session_not_found(self):
+        """Test that missing session returns 404."""
+        server_name = "test-server"
+        mcp_endpoint = f"/mcp-servers/{server_name}/mcp"
+        session_id = "nonexistent-session-id"
+
+        with patch("gateway.views.mcp.session_manager.get_session") as mock_get_session:
+            mock_get_session.return_value = None
+
+            response = self.client.get(
+                mcp_endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
+                    "X-MCP-Session-ID": session_id,
+                },
+            )
+
+            self.assertEqual(
+                response.status_code,
+                404,
+                f"Expected 404 Not Found for missing session, got {response.status_code}",
+            )
+
+    def test_mcp_sse_stream_session_terminated(self):
+        """Test that terminated session returns 410 Gone."""
+        server_name = "test-server"
+        mcp_endpoint = f"/mcp-servers/{server_name}/mcp"
+        session_id = "terminated-session-id"
+
+        mock_session = MagicMock()
+        mock_session.terminated = True
+
+        with patch("gateway.views.mcp.session_manager.get_session") as mock_get_session:
+            mock_get_session.return_value = mock_session
+
+            response = self.client.get(
+                mcp_endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
+                    "X-MCP-Session-ID": session_id,
+                },
+            )
+
+            self.assertEqual(
+                response.status_code,
+                410,
+                f"Expected 410 Gone for terminated session, got {response.status_code}",
+            )

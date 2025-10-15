@@ -1,14 +1,26 @@
 from .auth import SSOTemplateView
-from .org import OrgView, OrgSwitchView
-from .team import TeamCreateView, TeamDeleteView, TeamDetailView, TeamAdminManagementView, TeamUpdateView
+from .batches import UserBatchesView
+from .files import UserFilesView
+from .models import ModelListView
+from .org import OrgSwitchView, OrgView
 from .service_account import (
     ServiceAccountCreateView,
     ServiceAccountDeleteView,
     ServiceAccountTransferOwnershipView,
-    ServiceAccountUpdateView
+    ServiceAccountUpdateView,
 )
-from .tokens import UserTokensView, TokenCreateView, TokenDeleteView, TokenRegenerateView, TokenEditView
-from .models import ModelListView
+from .team import (
+    TeamAdminManagementView,
+    TeamCreateView,
+    TeamDeleteView,
+    TeamDetailView,
+    TeamUpdateView,
+)
+from .tokens import (
+    TokenCreateView,
+    TokenDeleteView,
+    TokenEditView,
+    TokenRegenerateView,
+    UserTokensView,
+)
 from .usage import UsageDashboardView
-from .files import UserFilesView
-from .batches import UserBatchesView

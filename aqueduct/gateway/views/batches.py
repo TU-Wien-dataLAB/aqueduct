@@ -2,25 +2,25 @@ import asyncio
 import json
 import logging
 from collections import deque
-from typing import AsyncIterator, Any
+from datetime import timedelta
+from typing import AsyncIterator
 
+from asgiref.sync import sync_to_async
+from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
-from asgiref.sync import sync_to_async
-from django.utils import timezone
-from datetime import timedelta
 from litellm import Router
-
-from pydantic import ValidationError, TypeAdapter
 from openai.types.batch_create_params import BatchCreateParams
+from pydantic import TypeAdapter, ValidationError
 
-from management.models import Batch, FileObject, BatchStatus
-from django.conf import settings
-from .decorators import token_authenticated, log_request, tos_accepted
-from .utils import cache_lock
+from management.models import Batch, BatchStatus, FileObject
+
 from ..router import get_router
+from .decorators import log_request, token_authenticated, tos_accepted
+from .utils import cache_lock
 
 log = logging.getLogger("aqueduct")
 
@@ -31,10 +31,7 @@ class BatchService:
     @staticmethod
     async def create_batch(user, params: dict) -> Batch:
         """Create a new batch from validated parameters."""
-        file_obj = await FileObject.objects.aget(
-            id=params["input_file_id"],
-            token__user=user
-        )
+        file_obj = await FileObject.objects.aget(id=params["input_file_id"], token__user=user)
 
         if file_obj.purpose != "batch":
             raise ValueError("File purpose must be 'batch'")
@@ -49,15 +46,10 @@ class BatchService:
             input_file=file_obj,
             status=BatchStatus.VALIDATING,
             metadata=params.get("metadata"),
-            expires_at=int((now + timedelta(
-                days=settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
-            )).timestamp()),
-            request_counts={
-                "input": num_lines,
-                "total": 0,
-                "completed": 0,
-                "failed": 0
-            }
+            expires_at=int(
+                (now + timedelta(days=settings.AQUEDUCT_FILES_API_EXPIRY_DAYS)).timestamp()
+            ),
+            request_counts={"input": num_lines, "total": 0, "completed": 0, "failed": 0},
         )
         await sync_to_async(batch_obj.save)()
         return batch_obj
@@ -81,8 +73,7 @@ class BatchService:
         else:
             count = await sync_to_async(
                 Batch.objects.filter(
-                    input_file__token__user=token.user,
-                    status__in=active_statuses,
+                    input_file__token__user=token.user, status__in=active_statuses
                 ).count
             )()
             limit = settings.MAX_USER_BATCHES
@@ -92,29 +83,23 @@ class BatchService:
 
 async def _list_batches(token):
     """List all batches for user."""
-    batch_objs = await sync_to_async(list)(
-        Batch.objects.filter(input_file__token__user=token.user)
+    batch_objs = await sync_to_async(list)(Batch.objects.filter(input_file__token__user=token.user))
+    return JsonResponse(
+        {
+            "data": [b.model.model_dump(exclude_none=True, exclude_unset=True) for b in batch_objs],
+            "object": "list",
+        }
     )
-    return JsonResponse({
-        "data": [
-            b.model.model_dump(exclude_none=True, exclude_unset=True)
-            for b in batch_objs
-        ],
-        "object": "list",
-    })
 
 
 async def _create_batch(request: ASGIRequest, token):
     """Create a new batch."""
     can_create, limit = await BatchService.check_batch_limit(token)
     if not can_create:
-        return JsonResponse(
-            {"error": f"Batch limit reached ({limit})"},
-            status=403
-        )
+        return JsonResponse({"error": f"Batch limit reached ({limit})"}, status=403)
 
     try:
-        body = request.body.decode('utf-8')
+        body = request.body.decode("utf-8")
         TypeAdapter(BatchCreateParams).validate_json(body)
         params = json.loads(body)
     except ValidationError as e:
@@ -125,8 +110,7 @@ async def _create_batch(request: ASGIRequest, token):
     try:
         batch_obj = await BatchService.create_batch(token.user, params)
         return JsonResponse(
-            batch_obj.model.model_dump(exclude_none=True, exclude_unset=True),
-            status=200
+            batch_obj.model.model_dump(exclude_none=True, exclude_unset=True), status=200
         )
     except FileObject.DoesNotExist:
         return JsonResponse({"error": "Input file not found."}, status=404)
@@ -157,15 +141,11 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
 async def batch(request: ASGIRequest, token, batch_id: str, *args, **kwargs):
     """GET /batches/{batch_id} - retrieve a batch"""
     try:
-        batch_obj = await Batch.objects.aget(
-            id=batch_id, input_file__token=token
-        )
+        batch_obj = await Batch.objects.aget(id=batch_id, input_file__token=token)
     except Batch.DoesNotExist:
         return JsonResponse({"error": "Batch not found."}, status=404)
     openai_batch = batch_obj.model
-    return JsonResponse(
-        openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200
-    )
+    return JsonResponse(openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200)
 
 
 @csrf_exempt
@@ -175,9 +155,7 @@ async def batch(request: ASGIRequest, token, batch_id: str, *args, **kwargs):
 async def batch_cancel(request: ASGIRequest, token, batch_id: str, *args, **kwargs):
     """POST /batches/{batch_id}/cancel - cancel an in-progress batch"""
     try:
-        batch_obj = await Batch.objects.aget(
-            id=batch_id, input_file__token=token
-        )
+        batch_obj = await Batch.objects.aget(id=batch_id, input_file__token=token)
     except Batch.DoesNotExist:
         return JsonResponse({"error": "Batch not found."}, status=404)
 
@@ -193,9 +171,7 @@ async def batch_cancel(request: ASGIRequest, token, batch_id: str, *args, **kwar
         await sync_to_async(batch_obj.save)()
 
     openai_batch = batch_obj.model
-    return JsonResponse(
-        openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200
-    )
+    return JsonResponse(openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200)
 
 
 async def _mark_batch_in_progress(batch: Batch):
@@ -226,7 +202,7 @@ async def _mark_batch_completed(batch: Batch):
 async def round_robin(batches: list[Batch]) -> AsyncIterator[tuple[Batch, str]]:
     """
     Round-robin iterator over batch requests.
-    
+
     Yields (batch, request_line) tuples, automatically handling:
     - Status transitions (validating -> in_progress)
     - Cancellations
@@ -299,9 +275,9 @@ class EndpointDispatcher:
     """Dispatches requests to appropriate router methods based on endpoint."""
 
     ENDPOINT_MAP = {
-        '/chat/completions': 'acompletion',
-        '/completions': 'atext_completion',
-        '/embeddings': 'aembedding',
+        "/chat/completions": "acompletion",
+        "/completions": "atext_completion",
+        "/embeddings": "aembedding",
     }
 
     def __init__(self, router: Router):
@@ -311,8 +287,8 @@ class EndpointDispatcher:
         """Dispatch request to appropriate router method."""
         for endpoint_suffix, method_name in self.ENDPOINT_MAP.items():
             if endpoint.endswith(endpoint_suffix):
-                if endpoint_suffix == '/completions' and 'chat' in endpoint:
-                    method_name = 'acompletion'
+                if endpoint_suffix == "/completions" and "chat" in endpoint:
+                    method_name = "acompletion"
 
                 method = getattr(self.router, method_name)
                 return await method(**body)
@@ -367,9 +343,7 @@ class BatchRequestProcessor:
         """Validate request parameters."""
         url = params.get("url")
         if url != batch.endpoint:
-            raise RuntimeError(
-                f"Request URL mismatch: {url} != {batch.endpoint}"
-            )
+            raise RuntimeError(f"Request URL mismatch: {url} != {batch.endpoint}")
 
         body = params.get("body", {})
         if body.get("stream", False):
@@ -396,9 +370,9 @@ class BatchRequestProcessor:
             "response": {
                 "status_code": 200,
                 "request_id": data.get("id", f"batch-{custom_id}"),
-                "body": data
+                "body": data,
             },
-            "error": None
+            "error": None,
         }
 
         await sync_to_async(batch.append)(response_data)
@@ -412,11 +386,7 @@ class BatchRequestProcessor:
         except Exception:
             custom_id = None
 
-        error_data = {
-            "id": None,
-            "custom_id": custom_id,
-            "error": {"error": str(error)}
-        }
+        error_data = {"id": None, "custom_id": custom_id, "error": {"error": str(error)}}
 
         await sync_to_async(batch.append)(error_data, error=True)
 
@@ -470,7 +440,9 @@ class BatchLoader:
     async def load_active_batches() -> list[Batch]:
         """Load all active batches from database."""
         return await sync_to_async(list)(
-            Batch.objects.filter(status__in=[BatchStatus.VALIDATING, BatchStatus.IN_PROGRESS, BatchStatus.CANCELLING])
+            Batch.objects.filter(
+                status__in=[BatchStatus.VALIDATING, BatchStatus.IN_PROGRESS, BatchStatus.CANCELLING]
+            )
         )
 
     @staticmethod
@@ -478,8 +450,7 @@ class BatchLoader:
         """Mark expired batches as expired."""
         await sync_to_async(
             lambda: Batch.objects.filter(
-                expires_at__isnull=False,
-                expires_at__lt=before_timestamp,
+                expires_at__isnull=False, expires_at__lt=before_timestamp
             ).update(status=BatchStatus.EXPIRED, expired_at=before_timestamp)
         )()
 
@@ -529,13 +500,7 @@ async def _process_batches(session: BatchProcessingSession):
 
         try:
             batch, params = await anext(rr)
-            await queue.process(
-                process_batch_request,
-                router,
-                batch,
-                params,
-                session.processed_ids
-            )
+            await queue.process(process_batch_request, router, batch, params, session.processed_ids)
         except StopAsyncIteration:
             batches = []
 

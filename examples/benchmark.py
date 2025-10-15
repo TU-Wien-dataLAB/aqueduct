@@ -1,7 +1,9 @@
-import os
 import asyncio
-import httpx
+import os
 import time
+from typing import Optional
+
+import httpx
 
 # Config from environment
 TOKEN = os.getenv("BENCH_TOKEN", "")
@@ -28,13 +30,15 @@ else:
     COMPLETION_PAYLOAD = None
 
 
-async def fetch(client: httpx.AsyncClient, i: int) -> float:
+async def fetch(client: httpx.AsyncClient, i: int) -> Optional[float]:
     start = time.perf_counter()
     try:
         if REQUEST_TYPE == "GET":
             response = await client.get(ENDPOINT, headers=HEADERS, timeout=15.0)
         else:
-            response = await client.post(ENDPOINT, headers=HEADERS, json=COMPLETION_PAYLOAD, timeout=15.0)
+            response = await client.post(
+                ENDPOINT, headers=HEADERS, json=COMPLETION_PAYLOAD, timeout=15.0
+            )
         response.raise_for_status()
     except Exception as e:
         print(f"Run {i + 1}: Error - {e}")

@@ -1,10 +1,12 @@
 import logging
 
-from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 from django.conf import settings
+from mozilla_django_oidc.auth import OIDCAuthenticationBackend
+
 from .models import Org, UserProfile
 
-log = logging.getLogger('aqueduct')
+log = logging.getLogger("aqueduct")
+
 
 def default_org_name_from_groups(groups: list[str]) -> str | None:
     """
@@ -20,16 +22,15 @@ def get_org_name_from_groups(groups):
     """
     Extracts the organization name from the user's groups.
     """
-    if hasattr(settings, 'ORG_NAME_FROM_OIDC_GROUPS_FUNCTION'):
+    if hasattr(settings, "ORG_NAME_FROM_OIDC_GROUPS_FUNCTION"):
         return settings.ORG_NAME_FROM_OIDC_GROUPS_FUNCTION(groups)
     else:
         return default_org_name_from_groups(groups)
 
 
 class OIDCBackend(OIDCAuthenticationBackend):
-
     def _groups(self, claims) -> list[str]:
-        return claims.get('groups', settings.OIDC_DEFAULT_GROUPS)
+        return claims.get("groups", settings.OIDC_DEFAULT_GROUPS)
 
     def _org(self, groups: list[str]) -> Org | None:
         org_name = get_org_name_from_groups(groups)
@@ -48,7 +49,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         profile = UserProfile.objects.create(user=user, org=org)
 
         # Check if user is admin
-        if hasattr(settings, 'ADMIN_GROUP'):
+        if hasattr(settings, "ADMIN_GROUP"):
             is_admin = settings.ADMIN_GROUP in groups
         else:
             is_admin = False
@@ -79,7 +80,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
             profile = UserProfile.objects.create(user=user, org=org)
 
         # Check if user is admin
-        if hasattr(settings, 'ADMIN_GROUP'):
+        if hasattr(settings, "ADMIN_GROUP"):
             is_admin = settings.ADMIN_GROUP in groups
         else:
             is_admin = False

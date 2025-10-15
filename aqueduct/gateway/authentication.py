@@ -1,26 +1,30 @@
-from django.contrib.auth.backends import BaseBackend
-from django.contrib.auth import get_user_model
-from django.utils import timezone
-from management.models import Token
 import logging
+
+from django.contrib.auth import get_user_model
+from django.contrib.auth.backends import BaseBackend
+from django.utils import timezone
+
+from management.models import Token
 
 logger = logging.getLogger("aqueduct")
 User = get_user_model()
 
 
 def token_from_request(request) -> str | None:
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
         # No valid header, authentication cannot proceed with this backend.
         logger.debug("TokenAuthenticationBackend: No 'Bearer ' auth header found.")
         return None
 
     try:
-        token_key = auth_header.split(' ')[1]
+        token_key = auth_header.split(" ")[1]
         if not token_key:
             raise IndexError
         logger.debug(
-            f"TokenAuthenticationBackend: Attempting to authenticate with token starting with {Token._generate_preview(token_key)}")
+            "TokenAuthenticationBackend: Attempting to authenticate with token starting with %s",
+            Token._generate_preview(token_key),
+        )
         return token_key
     except IndexError:
         logger.warning("Authentication failed: Empty or badly formatted Bearer token in header.")
@@ -55,23 +59,32 @@ class TokenAuthenticationBackend(BaseBackend):
 
         if not token_instance:
             logger.warning(
-                f"Authentication failed: Invalid token provided (starts with {Token._generate_preview(token_key)}). Token.find_by_key returned None.")
+                "Authentication failed: Invalid token provided (starts with %s). "
+                "Token.find_by_key returned None.",
+                Token._generate_preview(token_key),
+            )
             return None
 
         # Optional: Check for token expiry
         if token_instance.expires_at and token_instance.expires_at < timezone.now():
             logger.warning(
-                f"Authentication failed: Token {token_instance.name} ({token_instance.key_preview}) has expired.")
+                f"Authentication failed: Token {token_instance.name} ({token_instance.key_preview}) "
+                f"has expired."
+            )
             return None
 
         # Token is valid, return the associated user
         # Ensure the related user exists (should always be true due to ForeignKey constraints)
         if not token_instance.user:
-            logger.error(f"Critical: Valid token {token_instance.id} found but has no associated user.")
+            logger.error(
+                f"Critical: Valid token {token_instance.id} found but has no associated user."
+            )
             return None
 
         logger.info(
-            f"Authentication successful via token: {token_instance.name} ({token_instance.key_preview}) for user {token_instance.user.email}")
+            f"Authentication successful via token: {token_instance.name} "
+            f"({token_instance.key_preview}) for user {token_instance.user.email}"
+        )
         # Attach the token to the user object for potential use in views/middleware downstream
         # Note: Modifying request.user directly isn't standard, attaching to request is better if needed
         # For now, we just return the user as required by authenticate()

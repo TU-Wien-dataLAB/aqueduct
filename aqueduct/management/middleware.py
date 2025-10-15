@@ -2,16 +2,16 @@ from django.contrib.auth import get_user_model
 from django.core.handlers.asgi import ASGIRequest
 from django.http import HttpResponse
 from django.urls import reverse
+from tos.middleware import UserAgreementMiddleware as TOSUserAgreementMiddleware
 
 User = get_user_model()
-
-from tos.middleware import UserAgreementMiddleware as TOSUserAgreementMiddleware
 
 
 class UserAgreementMiddleware(TOSUserAgreementMiddleware):
     """
     Some middleware to check if users have agreed to the latest TOS
     """
+
     sync_capable = True
     async_capable = False
 

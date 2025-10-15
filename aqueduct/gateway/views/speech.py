@@ -7,14 +7,16 @@ from openai import HttpxBinaryResponseContent
 from pydantic import TypeAdapter
 
 from gateway.router import get_router
+
 from .decorators import (
-    token_authenticated,
+    catch_router_exceptions,
     check_limits,
-    parse_body,
+    check_model_availability,
     ensure_usage,
     log_request,
-    check_model_availability,
-    catch_router_exceptions, tos_accepted,
+    parse_body,
+    token_authenticated,
+    tos_accepted,
 )
 
 
@@ -29,18 +31,10 @@ from .decorators import (
 @check_model_availability
 @catch_router_exceptions
 async def speech(
-        request: ASGIRequest,
-        pydantic_model: openai.types.audio.SpeechCreateParams,
-        *args,
-        **kwargs,
+    request: ASGIRequest, pydantic_model: openai.types.audio.SpeechCreateParams, *args, **kwargs
 ):
     router = get_router()
 
-    speech_output: HttpxBinaryResponseContent = await router.aspeech(
-        **pydantic_model
-    )
+    speech_output: HttpxBinaryResponseContent = await router.aspeech(**pydantic_model)
     byte_stream = await speech_output.aiter_bytes()
-    return StreamingHttpResponse(
-        streaming_content=byte_stream,
-        content_type='text/event-stream',
-    )
+    return StreamingHttpResponse(streaming_content=byte_stream, content_type="text/event-stream")

@@ -20,7 +20,25 @@ from .decorators import parse_jsonrpc_message
 
 
 class SimpleTaskGroup:
-    """Minimal task group that spawns tasks without cancel scopes."""
+    """Minimal task group implementation
+    that provides task spawning without cancel scopes.
+
+    This class exists to solve a specific problem with the MCP SDK's StreamableHTTPTransport:
+    - The SDK's post_writer method requires a TaskGroup object with start_soon() and cancel_scope
+    - The official anyio.create_task_group() creates cancel scopes tied to specific tasks
+    - When the context is entered in one task and exited in another, anyio raises:
+      RuntimeError: "Attempted to exit cancel scope in a different task than it was entered in"
+
+    In our architecture, sessions are managed across different asyncio tasks via
+    asyncio.run_coroutine_threadsafe(), so we cannot use anyio's task groups directly.
+
+    This implementation provides the minimal interface that StreamableHTTPTransport needs:
+    - start_soon(): Spawn concurrent tasks for handling JSONRPCRequests
+    - cancel_scope: Mock cancel scope for compatibility (SDK calls .cancel() during cleanup)
+
+    The actual cleanup happens in ManagedMCPSession.stop() by closing streams and awaiting tasks,
+    so we don't need real cancel scope functionality here.
+    """
 
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop

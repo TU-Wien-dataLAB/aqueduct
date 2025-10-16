@@ -1,7 +1,6 @@
 import asyncio
-import threading
 import uuid
-from typing import AsyncGenerator, Dict, Optional
+from typing import AsyncGenerator, Dict
 
 import anyio
 import httpx
@@ -20,17 +19,17 @@ from .decorators import parse_jsonrpc_message
 
 
 class SimpleTaskGroup:
-    """Minimal task group implementation
-    that provides task spawning without cancel scopes.
+    """Minimal task group implementation that provides task spawning without cancel scopes.
 
     This class exists to solve a specific problem with the MCP SDK's StreamableHTTPTransport:
     - The SDK's post_writer method requires a TaskGroup object with start_soon() and cancel_scope
-    - The official anyio.create_task_group() creates cancel scopes tied to specific tasks
+    - The official anyio.create_task_group() creates cancel scopes tied to specific async contexts
     - When the context is entered in one task and exited in another, anyio raises:
       RuntimeError: "Attempted to exit cancel scope in a different task than it was entered in"
 
-    In our architecture, sessions are managed across different asyncio tasks via
-    asyncio.run_coroutine_threadsafe(), so we cannot use anyio's task groups directly.
+    In our architecture, MCP sessions are long-lived and span multiple HTTP requests/responses.
+    Each HTTP request runs in a separate async task, so we cannot use anyio's task groups which
+    require the entire lifecycle (enter/exit) to occur within a single async context manager scope.
 
     This implementation provides the minimal interface that StreamableHTTPTransport needs:
     - start_soon(): Spawn concurrent tasks for handling JSONRPCRequests
@@ -86,12 +85,12 @@ class ManagedMCPSession:
         self.write_stream: MemoryObjectSendStream[SessionMessage] | None = None
 
         # Internal streams and client
-        self._read_stream_writer = None
-        self._write_stream_reader = None
-        self._httpx_client = None
-        self._post_writer_task = None
-        self._get_stream_task = None
-        self._task_group = None
+        self._read_stream_writer: MemoryObjectSendStream[SessionMessage | Exception] | None = None
+        self._write_stream_reader: MemoryObjectReceiveStream[SessionMessage] | None = None
+        self._httpx_client: httpx.AsyncClient | None = None
+        self._post_writer_task: asyncio.Task | None = None
+        self._get_stream_task: asyncio.Task | None = None
+        self._task_group: SimpleTaskGroup | None = None
 
         self.terminated = False
         self.created_at = timezone.now()
@@ -156,7 +155,7 @@ class ManagedMCPSession:
         if self._get_stream_task and not self._get_stream_task.done():
             self._get_stream_task.cancel()
             try:
-                await self._get_stream_task
+                await self._get_stream_task  # type: ignore
             except asyncio.CancelledError:
                 pass
 
@@ -193,37 +192,17 @@ class ManagedMCPSession:
 
 
 class MCPSessionManager:
-    """Manages MCP sessions in a dedicated background thread."""
+    """Manages MCP sessions using Daphne's event loop."""
 
     def __init__(self):
         self._sessions: Dict[str, ManagedMCPSession] = {}
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
-        self._started = False
+        self._lock = asyncio.Lock()
+        self._cleanup_task = None
 
-    def start(self):
-        """Start the background event loop thread."""
-        if self._started:
-            return
-
-        self._started = True
-        self._thread = threading.Thread(target=self._run_loop, daemon=True)
-        self._thread.start()
-
-        # Wait for loop to be ready
-        while self._loop is None:
-            threading.Event().wait(0.01)
-
-    def _run_loop(self):
-        """Run the asyncio event loop in background thread."""
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
-
-        # Start cleanup task
-        self._loop.create_task(self._cleanup_idle_sessions())
-
-        # Run forever
-        self._loop.run_forever()
+    async def start(self):
+        """Start the cleanup task."""
+        if self._cleanup_task is None:
+            self._cleanup_task = asyncio.create_task(self._cleanup_idle_sessions())
 
     async def _cleanup_idle_sessions(self, max_idle_seconds: int = 3600):
         """Background task to cleanup idle sessions."""
@@ -233,102 +212,70 @@ class MCPSessionManager:
             now = timezone.now()
             to_remove = []
 
-            for session_id, session in self._sessions.items():
-                idle_seconds = (now - session.last_accessed_at).total_seconds()
-                if idle_seconds > max_idle_seconds:
-                    to_remove.append(session_id)
+            async with self._lock:
+                for session_id, session in self._sessions.items():
+                    idle_seconds = (now - session.last_accessed_at).total_seconds()
+                    if idle_seconds > max_idle_seconds:
+                        to_remove.append(session_id)
 
             for session_id in to_remove:
-                session = self._sessions.pop(session_id, None)
+                async with self._lock:
+                    session = self._sessions.pop(session_id, None)
                 if session:
                     await session.stop()
 
-    def create_session(self, url: str, headers: dict | None = None) -> str:
-        """Create a new MCP session (called from Django view)."""
-        if not self._loop:
-            raise RuntimeError("Session manager not started")
-        future = asyncio.run_coroutine_threadsafe(
-            self._create_session_impl(url, headers), self._loop
-        )
-        return future.result(timeout=10)
-
-    async def _create_session_impl(self, url: str, headers: dict | None) -> str:
-        """Actually create the session (runs in background thread)."""
+    async def create_session(self, url: str, headers: dict | None = None) -> str:
+        """Create a new MCP session."""
         session_id = str(uuid.uuid4())
         session = ManagedMCPSession(session_id, url, headers)
 
         await session.start()
 
-        self._sessions[session_id] = session
+        async with self._lock:
+            self._sessions[session_id] = session
         return session_id
 
-    def get_session(self, session_id: str) -> Optional[ManagedMCPSession]:
+    async def get_session(self, session_id: str) -> ManagedMCPSession | None:
         """Get a session by ID."""
-        return self._sessions.get(session_id)
+        async with self._lock:
+            return self._sessions.get(session_id)
 
-    def terminate_session(self, session_id: str):
-        """Terminate a session (called from Django view)."""
-        if not self._loop:
-            raise RuntimeError("Session manager not started")
-        future = asyncio.run_coroutine_threadsafe(
-            self._terminate_session_impl(session_id), self._loop
-        )
-        return future.result(timeout=10)
-
-    async def _terminate_session_impl(self, session_id: str):
-        """Actually terminate the session (runs in background thread)."""
-        session = self._sessions.pop(session_id, None)
+    async def terminate_session(self, session_id: str):
+        """Terminate a session."""
+        async with self._lock:
+            session = self._sessions.pop(session_id, None)
         if session:
             await session.stop()
 
-    def send_message(self, session_id: str, message: SessionMessage):
-        """Send message to session (called from Django view)."""
-        if not self._loop:
-            raise RuntimeError("Session manager not started")
-        future = asyncio.run_coroutine_threadsafe(
-            self._send_message_impl(session_id, message), self._loop
-        )
-        return future.result(timeout=30)
-
-    async def _send_message_impl(self, session_id: str, message: SessionMessage):
-        """Actually send the message (runs in background thread)."""
-        session = self._sessions.get(session_id)
+    async def send_message(self, session_id: str, message: SessionMessage):
+        """Send message to session."""
+        session = await self.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
         await session.send_message(message)
 
-    def receive_message(self, session_id: str):
-        """Receive message from session (called from Django view)."""
-        if not self._loop:
-            raise RuntimeError("Session manager not started")
-        future = asyncio.run_coroutine_threadsafe(
-            self._receive_message_impl(session_id), self._loop
-        )
-        return future.result(timeout=30)
-
-    async def _receive_message_impl(self, session_id: str):
-        """Actually receive the message (runs in background thread)."""
-        session = self._sessions.get(session_id)
+    async def receive_message(self, session_id: str):
+        """Receive message from session."""
+        session = await self.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
         return await session.receive_message()
 
-    def shutdown_all(self):
-        """Shutdown all sessions (called on app shutdown)."""
-        if not self._loop:
-            return
+    async def shutdown_all(self):
+        """Shutdown all sessions."""
+        async with self._lock:
+            sessions = list(self._sessions.values())
+            self._sessions.clear()
 
-        future = asyncio.run_coroutine_threadsafe(self._shutdown_all_impl(), self._loop)
-        future.result(timeout=30)
-
-        # Stop the event loop
-        self._loop.call_soon_threadsafe(self._loop.stop)
-
-    async def _shutdown_all_impl(self):
-        """Actually shutdown all sessions."""
-        for session in self._sessions.values():
+        for session in sessions:
             await session.stop()
-        self._sessions.clear()
+
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
 
 
 async def _mcp_sse_stream(session_id: str) -> AsyncGenerator[str, None]:
@@ -340,55 +287,51 @@ async def _mcp_sse_stream(session_id: str) -> AsyncGenerator[str, None]:
     try:
         while True:
             try:
-                message = session_manager.receive_message(session_id)
+                message = await session_manager.receive_message(session_id)
                 if isinstance(message, Exception):
-                    # Send error event if we received an exception
                     yield f'data: {{"error": "{str(message)}"}}\n\n'
                     break
                 else:
-                    # Send the message as a JSON-RPC SSE event
                     message_json = message.message.model_dump_json(exclude_none=True)
                     yield f"data: {message_json}\n\n"
             except ValueError as e:
                 if "terminated" in str(e).lower() or "not found" in str(e).lower():
-                    # Session terminated or not found, end the stream
                     yield f'data: {{"event": "session_ended", "reason": "{str(e)}"}}\n\n'
                     break
                 else:
-                    # Other ValueError, send error and continue
                     yield f'data: {{"error": "{str(e)}"}}\n\n'
             except Exception as e:
-                # Unexpected error, send error and end stream
                 yield f'data: {{"error": "{str(e)}", "event": "stream_error"}}\n\n'
                 break
 
     except Exception as e:
-        # Top-level error, send final error
         yield f'data: {{"error": "Stream failed: {str(e)}", "event": "stream_ended"}}\n\n'
 
 
-# Global session manager - starts automatically
 session_manager = MCPSessionManager()
-session_manager.start()
+
+
+async def _ensure_session_manager_started():
+    """Ensure the session manager cleanup task is running."""
+    await session_manager.start()
 
 
 async def handle_get_request(
     request: ASGIRequest, name: str, session_id: str | None = None
 ) -> JsonResponse | StreamingHttpResponse:
     """Create new session or return SSE stream."""
+    await _ensure_session_manager_started()
 
-    # If no session_id, create a new session
     if not session_id:
         mcp_config = get_mcp_config()
         server_config = mcp_config[name]
         url = server_config["url"]
-        session_id = session_manager.create_session(url)
+        session_id = await session_manager.create_session(url)
         return JsonResponse(
             {"session_id": session_id, "server_name": name, "status": "session_created"}
         )
 
-    # Return SSE stream for existing session
-    session = session_manager.get_session(session_id)
+    session = await session_manager.get_session(session_id)
     if not session:
         return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -414,6 +357,8 @@ async def handle_post_request(
     is_initialize: bool,
 ) -> JsonResponse:
     """Send message to MCP session."""
+    await _ensure_session_manager_started()
+
     if json_rpc_message is None:
         return JsonResponse({"error": "Missing JSON-RPC message"}, status=400)
 
@@ -424,19 +369,19 @@ async def handle_post_request(
             mcp_config = get_mcp_config()
             server_config = mcp_config[name]
             url = server_config["url"]
-            session_id = session_manager.create_session(url)
+            session_id = await session_manager.create_session(url)
 
         if not session_id:
             return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
 
-        session = session_manager.get_session(session_id)
+        session = await session_manager.get_session(session_id)
         if not session:
             return JsonResponse({"error": "Session not found"}, status=404)
 
         session_message = SessionMessage(json_rpc_message)
-        session_manager.send_message(session_id, session_message)
+        await session_manager.send_message(session_id, session_message)
 
-        received_message = session_manager.receive_message(session_id)
+        received_message = await session_manager.receive_message(session_id)
 
         if isinstance(received_message, Exception):
             return JsonResponse({"error": str(received_message)}, status=500)
@@ -457,11 +402,13 @@ async def handle_delete_request(
     request: ASGIRequest, name: str, session_id: str | None = None
 ) -> JsonResponse:
     """Terminate MCP session."""
+    await _ensure_session_manager_started()
+
     if not session_id:
         return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
 
     try:
-        session_manager.terminate_session(session_id)
+        await session_manager.terminate_session(session_id)
         return JsonResponse({"status": "session_terminated"})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=400)

@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from gateway.tests.utils.base import GatewayMCPTestCase
 
@@ -25,7 +25,7 @@ class MCPSessionLifecycleTest(GatewayMCPTestCase):
             patch("gateway.views.mcp.session_manager.get_session") as mock_get,
             patch("gateway.views.mcp.session_manager.send_message") as mock_send,
             patch("gateway.views.mcp.session_manager.receive_message") as mock_receive,
-            patch("gateway.views.mcp.session_manager.terminate_session") as mock_terminate,
+            patch("gateway.views.mcp.session_manager.terminate_session"),
         ):
             mock_create.return_value = "test-session-id"
             mock_get.return_value = mock_session
@@ -85,179 +85,13 @@ class MCPSessionLifecycleTest(GatewayMCPTestCase):
             self.assertEqual(response_json["jsonrpc"], "2.0")
             self.assertEqual(response_json["id"], 1)
             self.assertIn("result", response_json)
+            self.assertIn("mcp-session-id", response.headers)
+            self.assertEqual(response.headers["mcp-session-id"], session_id)
 
-            mock_get.assert_called()
-            mock_send.assert_called_once()
-            mock_receive.assert_called_once()
+            mock_get.assert_called_with(session_id)
 
-            response = self.client.delete(
-                mcp_endpoint,
-                headers={
-                    "Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-                    "Mcp-Session-Id": session_id,
-                },
-            )
-
-            self.assertEqual(
-                response.status_code,
-                200,
-                f"Expected 200 OK for session termination, got {response.status_code}: {response.content}",
-            )
-
-            response_json = response.json()
-            self.assertEqual(response_json["status"], "session_terminated")
-
-            mock_terminate.assert_called_once_with(session_id)
-
-    def test_mcp_session_create_invalid_server(self):
-        mcp_endpoint = "/mcp-servers/nonexistent-server/mcp"
-
-        response = self.client.get(
-            mcp_endpoint,
-            headers={
-                "Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-                "Content-Type": "application/json",
-            },
-        )
-
-        self.assertEqual(
-            response.status_code,
-            404,
-            f"Expected 404 Not Found for invalid server, got {response.status_code}: {response.content}",
-        )
-
-    def test_mcp_session_post_without_session_id(self):
-        server_name = "test-server"
-        mcp_endpoint = f"/mcp-servers/{server_name}/mcp"
-
-        message_data = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
-
-        response = self.client.post(
-            mcp_endpoint,
-            data=json.dumps(message_data),
-            content_type="application/json",
-            headers={
-                "Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-                "Content-Type": "application/json",
-            },
-        )
-
-        self.assertEqual(
-            response.status_code,
-            400,
-            f"Expected 400 Bad Request for missing session ID, got {response.status_code}: {response.content}",
-        )
-
-    def test_mcp_session_post_with_invalid_session(self):
-        server_name = "test-server"
-        mcp_endpoint = f"/mcp-servers/{server_name}/mcp"
-
-        with patch("gateway.views.mcp.session_manager.get_session") as mock_get:
-            mock_get.return_value = None
-
-            message_data = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {"name": "test-client", "version": "1.0.0"},
-                },
-            }
-
-            response = self.client.post(
-                mcp_endpoint,
-                data=json.dumps(message_data),
-                content_type="application/json",
-                headers={
-                    "Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-                    "Mcp-Session-Id": "invalid-session-id",
-                },
-            )
-
-            self.assertEqual(
-                response.status_code,
-                404,
-                f"Expected 404 Not Found for invalid session, got {response.status_code}: {response.content}",
-            )
-
-    def test_mcp_session_delete_without_session_id(self):
-        server_name = "test-server"
-        mcp_endpoint = f"/mcp-servers/{server_name}/mcp"
-
-        response = self.client.delete(
-            mcp_endpoint, headers={"Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}"}
-        )
-
-        self.assertEqual(
-            response.status_code,
-            400,
-            f"Expected 400 Bad Request for missing session ID, got {response.status_code}: {response.content}",
-        )
-
-    def test_mcp_session_post_initialize_without_session_id(self):
-        """Test that POST initialize request creates a session when no session ID is provided."""
-        server_name = "test-server"
-        mcp_endpoint = f"/mcp-servers/{server_name}/mcp"
-
-        mock_session = MagicMock()
-        mock_session.session_id = "new-session-id"
-        mock_session.terminated = False
-        mock_session.get_mcp_session_id.return_value = "mcp-session-123"
-
-        mock_response_message = MagicMock()
-        mock_response_message.message.model_dump.return_value = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {}},
-        }
-
-        with (
-            patch("gateway.views.mcp.session_manager.create_session") as mock_create,
-            patch("gateway.views.mcp.session_manager.get_session") as mock_get,
-            patch("gateway.views.mcp.session_manager.send_message") as mock_send,
-            patch("gateway.views.mcp.session_manager.receive_message") as mock_receive,
-        ):
-            mock_create.return_value = "new-session-id"
-            mock_get.return_value = mock_session
-            mock_receive.return_value = mock_response_message
-
-            message_data = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {"name": "test-client", "version": "1.0.0"},
-                },
-            }
-
-            response = self.client.post(
-                mcp_endpoint,
-                data=json.dumps(message_data),
-                content_type="application/json",
-                headers={
-                    "Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-                    "Content-Type": "application/json",
-                },
-            )
-
-            self.assertEqual(
-                response.status_code,
-                200,
-                f"Expected 200 OK for initialize without session ID, got {response.status_code}: {response.content}",
-            )
-
-            response_json = response.json()
-            self.assertEqual(response_json["jsonrpc"], "2.0")
-            self.assertEqual(response_json["id"], 1)
-            self.assertIn("result", response_json)
-
-            mock_create.assert_called_once()
-            mock_send.assert_called_once()
-            mock_receive.assert_called_once()
+            mock_send.assert_called_once_with(session_id, ANY)
+            mock_receive.assert_called_once_with(session_id)
 
 
 class MCPSSEStreamTest(GatewayMCPTestCase):

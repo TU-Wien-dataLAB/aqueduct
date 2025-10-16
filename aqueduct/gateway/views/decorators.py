@@ -465,3 +465,44 @@ def tos_accepted(view_func):
         return await view_func(request, *args, **kwargs)
 
     return wrapper
+
+
+def parse_jsonrpc_message(view_func):
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        try:
+            data = json.loads(request.body)
+            json_rpc_message = None
+
+            try:
+                from mcp.types import JSONRPCMessage
+
+                json_rpc_message = JSONRPCMessage.model_validate(data)
+            except ValidationError as e:
+                return JsonResponse({"error": f"Invalid JSON-RPC message: {str(e)}"}, status=400)
+            except Exception as e:
+                return JsonResponse(
+                    {"error": f"Failed to parse JSON-RPC message: {str(e)}"}, status=400
+                )
+
+            is_initialize = (
+                hasattr(json_rpc_message.root, "method")
+                and json_rpc_message.root.method == "initialize"
+            )
+
+            session_id = request.headers.get("Mcp-Session-Id")
+
+            if not is_initialize and not session_id:
+                return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
+
+            kwargs["json_rpc_message"] = json_rpc_message
+            kwargs["session_id"] = session_id
+            kwargs["is_initialize"] = is_initialize
+
+            return await view_func(request, *args, **kwargs)
+        except json.JSONDecodeError as e:
+            return JsonResponse({"error": f"Invalid JSON: {str(e)}"}, status=400)
+        except Exception as e:
+            return JsonResponse({"error": f"Request processing error: {str(e)}"}, status=400)
+
+    return wrapper

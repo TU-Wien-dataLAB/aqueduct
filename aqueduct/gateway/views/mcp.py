@@ -1,5 +1,4 @@
 import asyncio
-import json
 import threading
 import uuid
 from typing import AsyncGenerator, Dict, Optional
@@ -8,12 +7,14 @@ from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStre
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage
 
 from ..config import get_mcp_config
+from .decorators import parse_jsonrpc_message
 
 
 class ManagedMCPSession:
@@ -239,10 +240,10 @@ async def handle_get_request(
     request: ASGIRequest, name: str
 ) -> JsonResponse | StreamingHttpResponse:
     """Create new session or return SSE stream."""
-    session_id = request.headers.get("X-MCP-Session-ID")
+    session_id = request.headers.get("Mcp-Session-Id")
 
     if not session_id:
-        # Create new session
+        # Create new session (initialization)
         try:
             mcp_config = get_mcp_config()
             server_config = mcp_config[name]
@@ -252,7 +253,14 @@ async def handle_get_request(
 
         new_session_id = session_manager.create_session(url)
 
-        return JsonResponse({"session_id": new_session_id, "server_name": name})
+        session = session_manager.get_session(new_session_id)
+        mcp_session_id = session.get_mcp_session_id() if session else None
+
+        response = JsonResponse({"session_id": new_session_id, "server_name": name})
+        if mcp_session_id:
+            response["Mcp-Session-Id"] = mcp_session_id
+
+        return response
     else:
         # Return SSE stream for existing session
         session = session_manager.get_session(session_id)
@@ -269,38 +277,60 @@ async def handle_get_request(
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
                 "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Cache-Control, X-MCP-Session-ID",
+                "Access-Control-Allow-Headers": "Cache-Control, Mcp-Session-Id",
+                "Mcp-Session-Id": session.get_mcp_session_id() or session_id,
             },
         )
 
 
-async def handle_post_request(request: ASGIRequest, name: str) -> JsonResponse:
+@parse_jsonrpc_message
+async def handle_post_request(
+    request: ASGIRequest,
+    name: str,
+    json_rpc_message: JSONRPCMessage = None,
+    session_id: str | None = None,
+    is_initialize: bool = False,
+) -> JsonResponse:
     """Send message to MCP session."""
-    session_id = request.headers.get("X-MCP-Session-ID")
-    if not session_id:
-        return JsonResponse({"error": "X-MCP-Session-ID header required"}, status=400)
-
-    session = session_manager.get_session(session_id)
-    if not session:
-        return JsonResponse({"error": "Session not found"}, status=404)
-
     try:
-        data = json.loads(request.body)
-        json_rpc_message = JSONRPCMessage.model_validate(data)
-        session_message = SessionMessage(json_rpc_message)
+        if is_initialize and not session_id:
+            mcp_config = get_mcp_config()
+            server_config = mcp_config[name]
+            url = server_config["url"]
+            session_id = session_manager.create_session(url)
 
+        session = session_manager.get_session(session_id)
+        if not session:
+            return JsonResponse({"error": "Session not found"}, status=404)
+
+        session_message = SessionMessage(json_rpc_message)
         session_manager.send_message(session_id, session_message)
 
-        return JsonResponse({"status": "message_sent"})
+        received_message = session_manager.receive_message(session_id)
+
+        if isinstance(received_message, Exception):
+            return JsonResponse({"error": str(received_message)}, status=500)
+
+        response_data = received_message.message.model_dump(exclude_none=True)
+        response = JsonResponse(response_data)
+
+        if is_initialize:
+            mcp_session_id = session.get_mcp_session_id()
+            if mcp_session_id:
+                response["Mcp-Session-Id"] = mcp_session_id
+
+        return response
+    except (KeyError, RuntimeError) as e:
+        return JsonResponse({"error": f"MCP server '{name}' not found: {str(e)}"}, status=404)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=400)
 
 
 async def handle_delete_request(request: ASGIRequest, name: str) -> JsonResponse:
     """Terminate MCP session."""
-    session_id = request.headers.get("X-MCP-Session-ID")
+    session_id = request.headers.get("Mcp-Session-Id")
     if not session_id:
-        return JsonResponse({"error": "X-MCP-Session-ID header required"}, status=400)
+        return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
 
     try:
         session_manager.terminate_session(session_id)
@@ -309,6 +339,7 @@ async def handle_delete_request(request: ASGIRequest, name: str) -> JsonResponse
         return JsonResponse({"error": str(e)}, status=400)
 
 
+@csrf_exempt
 @require_http_methods(["GET", "POST", "DELETE"])
 async def mcp_server(request: ASGIRequest, name):
     """

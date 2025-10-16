@@ -237,59 +237,51 @@ session_manager.start()
 
 
 async def handle_get_request(
-    request: ASGIRequest, name: str
+    request: ASGIRequest, name: str, session_id: str | None = None
 ) -> JsonResponse | StreamingHttpResponse:
     """Create new session or return SSE stream."""
-    session_id = request.headers.get("Mcp-Session-Id")
 
-    if not session_id:
-        # Create new session (initialization)
-        try:
-            mcp_config = get_mcp_config()
-            server_config = mcp_config[name]
-            url = server_config["url"]
-        except (KeyError, RuntimeError) as e:
-            return JsonResponse({"error": f"MCP server '{name}' not found: {str(e)}"}, status=404)
+    # Return SSE stream for existing session
+    session = session_manager.get_session(session_id)
+    if not session:
+        return JsonResponse({"error": "Session not found"}, status=404)
 
-        new_session_id = session_manager.create_session(url)
+    if session.terminated:
+        return JsonResponse({"error": "Session terminated"}, status=410)
 
-        return JsonResponse({"session_id": new_session_id, "server_name": name})
-    else:
-        # Return SSE stream for existing session
-        session = session_manager.get_session(session_id)
-        if not session:
-            return JsonResponse({"error": "Session not found"}, status=404)
-
-        if session.terminated:
-            return JsonResponse({"error": "Session terminated"}, status=410)
-
-        return StreamingHttpResponse(
-            streaming_content=_mcp_sse_stream(session_id),
-            content_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*",
-            },
-        )
+    return StreamingHttpResponse(
+        streaming_content=_mcp_sse_stream(session_id),
+        content_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
 
-@parse_jsonrpc_message
 async def handle_post_request(
     request: ASGIRequest,
     name: str,
-    json_rpc_message: JSONRPCMessage = None,
-    session_id: str | None = None,
-    is_initialize: bool = False,
+    json_rpc_message: JSONRPCMessage,
+    session_id: str | None,
+    is_initialize: bool,
 ) -> JsonResponse:
     """Send message to MCP session."""
+    if json_rpc_message is None:
+        return JsonResponse({"error": "Missing JSON-RPC message"}, status=400)
+
     print("Request:", session_id, json_rpc_message.model_dump_json(exclude_none=True))
+
     try:
         if is_initialize and not session_id:
             mcp_config = get_mcp_config()
             server_config = mcp_config[name]
             url = server_config["url"]
             session_id = session_manager.create_session(url)
+
+        if not session_id:
+            return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
 
         session = session_manager.get_session(session_id)
         if not session:
@@ -304,8 +296,10 @@ async def handle_post_request(
             return JsonResponse({"error": str(received_message)}, status=500)
 
         response_data = received_message.message.model_dump(exclude_none=True)
+        print(response_data)
         response = JsonResponse(response_data)
-        response.headers["mcp-session-id"] = session_id
+        if session_id:
+            response.headers["mcp-session-id"] = session_id
         return response
     except (KeyError, RuntimeError) as e:
         return JsonResponse({"error": f"MCP server '{name}' not found: {str(e)}"}, status=404)
@@ -313,9 +307,10 @@ async def handle_post_request(
         return JsonResponse({"error": str(e)}, status=400)
 
 
-async def handle_delete_request(request: ASGIRequest, name: str) -> JsonResponse:
+async def handle_delete_request(
+    request: ASGIRequest, name: str, session_id: str | None = None
+) -> JsonResponse:
     """Terminate MCP session."""
-    session_id = request.headers.get("Mcp-Session-Id")
     if not session_id:
         return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
 
@@ -327,14 +322,27 @@ async def handle_delete_request(request: ASGIRequest, name: str) -> JsonResponse
 
 
 @csrf_exempt
+@parse_jsonrpc_message
 @require_http_methods(["GET", "POST", "DELETE"])
-async def mcp_server(request: ASGIRequest, name):
+async def mcp_server(
+    request: ASGIRequest,
+    name,
+    json_rpc_message: JSONRPCMessage | None = None,
+    session_id: str | None = None,
+    is_initialize: bool = False,
+):
     """
     Handles GET, POST and DELETE requests for /mcp-servers/{name}/mcp path.
     """
     if request.method == "GET":
-        return await handle_get_request(request, name)
+        return await handle_get_request(request, name, session_id=session_id)
     elif request.method == "POST":
-        return await handle_post_request(request, name)
+        return await handle_post_request(
+            request,
+            name,
+            json_rpc_message=json_rpc_message,
+            session_id=session_id,
+            is_initialize=is_initialize,
+        )
     elif request.method == "DELETE":
-        return await handle_delete_request(request, name)
+        return await handle_delete_request(request, name, session_id)

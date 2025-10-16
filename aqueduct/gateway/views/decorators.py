@@ -1,3 +1,6 @@
+# pyright: reportAttributeAccessIssue=false
+# pyright: reportAssignmentType=false
+
 import base64
 import io
 import json
@@ -470,6 +473,12 @@ def tos_accepted(view_func):
 def parse_jsonrpc_message(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
+        session_id = request.headers.get("Mcp-Session-Id")
+        kwargs["session_id"] = session_id
+
+        if request.method != "POST":
+            return await view_func(request, *args, **kwargs)
+
         try:
             data = json.loads(request.body)
             json_rpc_message = None
@@ -490,13 +499,10 @@ def parse_jsonrpc_message(view_func):
                 and json_rpc_message.root.method == "initialize"
             )
 
-            session_id = request.headers.get("Mcp-Session-Id")
-
             if not is_initialize and not session_id:
                 return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
 
             kwargs["json_rpc_message"] = json_rpc_message
-            kwargs["session_id"] = session_id
             kwargs["is_initialize"] = is_initialize
 
             return await view_func(request, *args, **kwargs)

@@ -253,14 +253,7 @@ async def handle_get_request(
 
         new_session_id = session_manager.create_session(url)
 
-        session = session_manager.get_session(new_session_id)
-        mcp_session_id = session.get_mcp_session_id() if session else None
-
-        response = JsonResponse({"session_id": new_session_id, "server_name": name})
-        if mcp_session_id:
-            response["Mcp-Session-Id"] = mcp_session_id
-
-        return response
+        return JsonResponse({"session_id": new_session_id, "server_name": name})
     else:
         # Return SSE stream for existing session
         session = session_manager.get_session(session_id)
@@ -277,8 +270,6 @@ async def handle_get_request(
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
                 "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Cache-Control, Mcp-Session-Id",
-                "Mcp-Session-Id": session.get_mcp_session_id() or session_id,
             },
         )
 
@@ -292,6 +283,7 @@ async def handle_post_request(
     is_initialize: bool = False,
 ) -> JsonResponse:
     """Send message to MCP session."""
+    print("Request:", session_id, json_rpc_message.model_dump_json(exclude_none=True))
     try:
         if is_initialize and not session_id:
             mcp_config = get_mcp_config()
@@ -313,12 +305,7 @@ async def handle_post_request(
 
         response_data = received_message.message.model_dump(exclude_none=True)
         response = JsonResponse(response_data)
-
-        if is_initialize:
-            mcp_session_id = session.get_mcp_session_id()
-            if mcp_session_id:
-                response["Mcp-Session-Id"] = mcp_session_id
-
+        response.headers["mcp-session-id"] = session_id
         return response
     except (KeyError, RuntimeError) as e:
         return JsonResponse({"error": f"MCP server '{name}' not found: {str(e)}"}, status=404)

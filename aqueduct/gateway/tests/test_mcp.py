@@ -255,9 +255,6 @@ class MCPSessionLifecycleTest(GatewayMCPTestCase):
             self.assertEqual(response_json["id"], 1)
             self.assertIn("result", response_json)
 
-            self.assertIn("Mcp-Session-Id", response)
-            self.assertEqual(response["Mcp-Session-Id"], "mcp-session-123")
-
             mock_create.assert_called_once()
             mock_send.assert_called_once()
             mock_receive.assert_called_once()

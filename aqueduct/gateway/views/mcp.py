@@ -3,13 +3,15 @@ import threading
 import uuid
 from typing import AsyncGenerator, Dict, Optional
 
+import anyio
+import httpx
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import StreamableHTTPTransport
 from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage
 
@@ -17,39 +19,143 @@ from ..config import get_mcp_config
 from .decorators import parse_jsonrpc_message
 
 
+class SimpleTaskGroup:
+    """Minimal task group that spawns tasks without cancel scopes."""
+
+    def __init__(self, loop: asyncio.AbstractEventLoop):
+        self._loop = loop
+        self._tasks = []
+
+    def start_soon(self, coro_func, *args):
+        """Start a coroutine as a task."""
+        task = self._loop.create_task(coro_func(*args))
+        self._tasks.append(task)
+        return task
+
+    async def cancel_all(self):
+        """Cancel all spawned tasks."""
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    @property
+    def cancel_scope(self):
+        """Mock cancel scope for compatibility."""
+        return MockCancelScope()
+
+
+class MockCancelScope:
+    """Mock cancel scope for compatibility."""
+
+    def cancel(self):
+        """Mock cancel - does nothing since we don't have cancel scopes."""
+        pass
+
+
 class ManagedMCPSession:
-    """MCP session that stays alive via manually-managed context manager."""
+    """MCP session that uses StreamableHTTPTransport directly without cancel scopes."""
 
     def __init__(self, session_id: str, url: str, headers: dict | None = None):
         self.session_id = session_id
         self.url = url
         self.headers = headers
 
-        self._context = streamablehttp_client(url=url, headers=headers)
+        # Create transport directly (no context manager)
+        self.transport = StreamableHTTPTransport(url=url, headers=headers)
 
+        # Streams that transport will use
         self.read_stream: MemoryObjectReceiveStream[SessionMessage | Exception] | None = None
         self.write_stream: MemoryObjectSendStream[SessionMessage] | None = None
-        self.get_session_id_callback = None
+
+        # Internal streams and client
+        self._read_stream_writer = None
+        self._write_stream_reader = None
+        self._httpx_client = None
+        self._post_writer_task = None
+        self._get_stream_task = None
+        self._task_group = None
+
         self.terminated = False
         self.created_at = timezone.now()
         self.last_accessed_at = timezone.now()
 
     async def start(self):
-        """Start the session by entering the context manager."""
-        streams = await self._context.__aenter__()
-        self.read_stream, self.write_stream, self.get_session_id_callback = streams
+        """Start the session by setting up streams and tasks."""
+        # Create memory streams (exactly like streamablehttp_client does)
+        self._read_stream_writer, self.read_stream = anyio.create_memory_object_stream[
+            SessionMessage | Exception
+        ](0)
+        self.write_stream, self._write_stream_reader = anyio.create_memory_object_stream[
+            SessionMessage
+        ](0)
+
+        # Create httpx client
+        self._httpx_client = httpx.AsyncClient(
+            headers=self.transport.request_headers,
+            timeout=httpx.Timeout(self.transport.timeout, read=self.transport.sse_read_timeout),
+        )
+
+        # Create simple task group
+        self._task_group = SimpleTaskGroup(asyncio.get_event_loop())
+
+        # Start post_writer task (this is what handles all the logic)
+        def start_get_stream_task():
+            if self._httpx_client and self._read_stream_writer:
+                self._get_stream_task = asyncio.create_task(
+                    self.transport.handle_get_stream(self._httpx_client, self._read_stream_writer)  # type: ignore
+                )
+
+        self._post_writer_task = asyncio.create_task(
+            self.transport.post_writer(
+                self._httpx_client,  # type: ignore
+                self._write_stream_reader,  # type: ignore
+                self._read_stream_writer,  # type: ignore
+                self.write_stream,
+                start_get_stream_task,
+                self._task_group,  # type: ignore - Pass our simple task group
+            )
+        )
 
     async def stop(self):
-        """Stop the session by exiting the context manager."""
+        """Stop the session cleanly."""
         if self.terminated:
             return
         self.terminated = True
-        await self._context.__aexit__(None, None, None)
+
+        # Terminate session via DELETE request
+        if self.transport.session_id and self._httpx_client:
+            await self.transport.terminate_session(self._httpx_client)
+
+        # Close streams (this will cause post_writer to exit)
+        if self._read_stream_writer:
+            await self._read_stream_writer.aclose()
+        if self.write_stream:
+            await self.write_stream.aclose()
+
+        # Wait for tasks to complete
+        if self._post_writer_task and not self._post_writer_task.done():
+            await self._post_writer_task
+        if self._get_stream_task and not self._get_stream_task.done():
+            self._get_stream_task.cancel()
+            try:
+                await self._get_stream_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel any remaining tasks in task group
+        if self._task_group:
+            await self._task_group.cancel_all()
+
+        # Close httpx client
+        if self._httpx_client:
+            await self._httpx_client.aclose()
 
     async def send_message(self, message: SessionMessage):
         """Send a message to the MCP server."""
         if self.terminated:
             raise ValueError("Session terminated")
+        if not self.write_stream:
+            raise ValueError("Session not started")
         await self.write_stream.send(message)
         self.last_accessed_at = timezone.now()
 
@@ -57,15 +163,15 @@ class ManagedMCPSession:
         """Receive a message from the MCP server."""
         if self.terminated:
             raise ValueError("Session terminated")
+        if not self.read_stream:
+            raise ValueError("Session not started")
         message = await self.read_stream.receive()
         self.last_accessed_at = timezone.now()
         return message
 
     def get_mcp_session_id(self) -> str | None:
         """Get the MCP protocol session ID (not our internal session_id)."""
-        if self.get_session_id_callback:
-            return self.get_session_id_callback()
-        return None
+        return self.transport.get_session_id()
 
 
 class MCPSessionManager:
@@ -121,6 +227,8 @@ class MCPSessionManager:
 
     def create_session(self, url: str, headers: dict | None = None) -> str:
         """Create a new MCP session (called from Django view)."""
+        if not self._loop:
+            raise RuntimeError("Session manager not started")
         future = asyncio.run_coroutine_threadsafe(
             self._create_session_impl(url, headers), self._loop
         )
@@ -142,6 +250,8 @@ class MCPSessionManager:
 
     def terminate_session(self, session_id: str):
         """Terminate a session (called from Django view)."""
+        if not self._loop:
+            raise RuntimeError("Session manager not started")
         future = asyncio.run_coroutine_threadsafe(
             self._terminate_session_impl(session_id), self._loop
         )
@@ -155,6 +265,8 @@ class MCPSessionManager:
 
     def send_message(self, session_id: str, message: SessionMessage):
         """Send message to session (called from Django view)."""
+        if not self._loop:
+            raise RuntimeError("Session manager not started")
         future = asyncio.run_coroutine_threadsafe(
             self._send_message_impl(session_id, message), self._loop
         )
@@ -169,6 +281,8 @@ class MCPSessionManager:
 
     def receive_message(self, session_id: str):
         """Receive message from session (called from Django view)."""
+        if not self._loop:
+            raise RuntimeError("Session manager not started")
         future = asyncio.run_coroutine_threadsafe(
             self._receive_message_impl(session_id), self._loop
         )
@@ -201,6 +315,10 @@ class MCPSessionManager:
 
 async def _mcp_sse_stream(session_id: str) -> AsyncGenerator[str, None]:
     """Async generator that streams MCP messages as Server-Sent Events."""
+    if not session_id:
+        yield 'data: {"error": "Session ID required"}\n\n'
+        return
+
     try:
         while True:
             try:
@@ -241,6 +359,16 @@ async def handle_get_request(
 ) -> JsonResponse | StreamingHttpResponse:
     """Create new session or return SSE stream."""
 
+    # If no session_id, create a new session
+    if not session_id:
+        mcp_config = get_mcp_config()
+        server_config = mcp_config[name]
+        url = server_config["url"]
+        session_id = session_manager.create_session(url)
+        return JsonResponse(
+            {"session_id": session_id, "server_name": name, "status": "session_created"}
+        )
+
     # Return SSE stream for existing session
     session = session_manager.get_session(session_id)
     if not session:
@@ -263,7 +391,7 @@ async def handle_get_request(
 async def handle_post_request(
     request: ASGIRequest,
     name: str,
-    json_rpc_message: JSONRPCMessage,
+    json_rpc_message: JSONRPCMessage | None,
     session_id: str | None,
     is_initialize: bool,
 ) -> JsonResponse:

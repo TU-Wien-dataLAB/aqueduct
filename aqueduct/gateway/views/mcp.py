@@ -15,8 +15,10 @@ from mcp.client.streamable_http import StreamableHTTPTransport
 from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage, JSONRPCRequest
 
+from management.models import Request, Token
+
 from ..config import get_mcp_config
-from .decorators import parse_jsonrpc_message, token_authenticated
+from .decorators import log_request, parse_jsonrpc_message, token_authenticated
 
 log = logging.getLogger("aqueduct")
 
@@ -490,9 +492,11 @@ async def handle_delete_request(
 @parse_jsonrpc_message
 @require_http_methods(["GET", "POST", "DELETE"])
 @token_authenticated(token_auth_only=True)
+@log_request
 async def mcp_server(
     request: ASGIRequest,
-    token,
+    token: Token,
+    request_log: Request,
     name,
     json_rpc_message: JSONRPCMessage | None = None,
     session_id: str | None = None,

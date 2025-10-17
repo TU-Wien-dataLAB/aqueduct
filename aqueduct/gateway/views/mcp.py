@@ -140,9 +140,6 @@ class ManagedMCPSession:
             )
         )
 
-        # Yield to event loop to ensure post_writer starts
-        await asyncio.sleep(0)
-
         log.info(f"MCP session {self.session_id} started")
 
     async def stop(self):
@@ -197,8 +194,8 @@ class ManagedMCPSession:
         if not self.write_stream:
             raise ValueError("Session not started")
 
-        method = getattr(message.message, "method", "unknown")
-        log.debug(f"Sending: {method} to session {self.session_id}")
+        message_type = message.message.root.__class__.__name__
+        log.info(f"Sending: {message_type} to session {self.session_id}")
         await self.write_stream.send(message)
         log.debug(f"Message sent to stream in session {self.session_id}")
         self.last_accessed_at = timezone.now()
@@ -216,14 +213,10 @@ class ManagedMCPSession:
         if isinstance(message, Exception):
             log.warning(f"{self.session_id}: Received exception: {str(message)}")
         else:
-            method = getattr(message.message, "method", "unknown")
-            log.info(f"{self.session_id}: Received {method}")
+            message_type = message.message.root.__class__.__name__
+            log.info(f"{self.session_id}: Received {message_type}")
 
         return message
-
-    def get_mcp_session_id(self) -> str | None:
-        """Get the MCP protocol session ID (not our internal session_id)."""
-        return self.transport.get_session_id()
 
 
 class MCPSessionManager:
@@ -350,6 +343,7 @@ async def _mcp_sse_stream(session_id: str) -> AsyncGenerator[str, None]:
                 else:
                     message_json = message.message.model_dump_json(exclude_none=True)
                     yield f"data: {message_json}\n\n"
+            # TODO: handle timeout
             except ValueError as e:
                 if "terminated" in str(e).lower() or "not found" in str(e).lower():
                     log.info(f"SSE stream for session {session_id} ended: {str(e)}")
@@ -380,20 +374,9 @@ async def _ensure_session_manager_started():
 async def handle_get_request(
     request: ASGIRequest, name: str, session_id: str | None = None
 ) -> JsonResponse | StreamingHttpResponse:
-    """Create new session or return SSE stream."""
+    """Return SSE stream for an existing session."""
     await _ensure_session_manager_started()
 
-    if not session_id:
-        log.info(f"Creating session for MCP server '{name}'")
-        mcp_config = get_mcp_config()
-        server_config = mcp_config[name]
-        url = server_config["url"]
-        session_id = await session_manager.create_session(url)
-        return JsonResponse(
-            {"session_id": session_id, "server_name": name, "status": "session_created"}
-        )
-
-    log.debug(f"Getting existing session {session_id} for MCP server '{name}'")
     session = await session_manager.get_session(session_id)
     if not session:
         log.warning(f"Session {session_id} not found for MCP server '{name}'")
@@ -428,8 +411,8 @@ async def handle_post_request(
     if json_rpc_message is None:
         return JsonResponse({"error": "Missing JSON-RPC message"}, status=400)
 
-    method = getattr(json_rpc_message.root, "method", "unknown")
-    log.info(f"MCP POST {name} - Session: {session_id}, Method: {method}")
+    message_type = json_rpc_message.root.__class__.__name__
+    log.info(f"MCP POST {name} - Session: {session_id}, Method: {message_type}")
 
     try:
         if is_initialize and not session_id:

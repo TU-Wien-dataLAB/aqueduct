@@ -31,29 +31,7 @@ class MCPSessionLifecycleTest(GatewayMCPTestCase):
             mock_get.return_value = mock_session
             mock_receive.return_value = mock_response_message
 
-            response = self.client.get(
-                mcp_endpoint,
-                headers={
-                    "Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
-                    "Content-Type": "application/json",
-                },
-            )
-
-            self.assertEqual(
-                response.status_code,
-                200,
-                f"Expected 200 OK for session creation, got {response.status_code}: {response.content}",
-            )
-
-            response_json = response.json()
-            self.assertIn("session_id", response_json)
-            self.assertIn("server_name", response_json)
-            self.assertEqual(response_json["server_name"], server_name)
-            session_id = response_json["session_id"]
-            self.assertEqual(session_id, "test-session-id")
-
-            mock_create.assert_called_once()
-
+            # Step 1: Create session via POST initialize request
             message_data = {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -69,6 +47,31 @@ class MCPSessionLifecycleTest(GatewayMCPTestCase):
                 mcp_endpoint,
                 data=json.dumps(message_data),
                 content_type="application/json",
+                headers={"Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}"},
+            )
+
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Expected 200 OK for session creation, got {response.status_code}: {response.content}",
+            )
+
+            response_json = response.json()
+            self.assertEqual(response_json["jsonrpc"], "2.0")
+            self.assertEqual(response_json["id"], 1)
+            self.assertIn("result", response_json)
+            self.assertIn("mcp-session-id", response.headers)
+
+            session_id = response.headers["mcp-session-id"]
+            self.assertEqual(session_id, "test-session-id")
+
+            mock_create.assert_called_once()
+            mock_send.assert_called_once_with(session_id, ANY)
+            mock_receive.assert_called_once_with(session_id)
+
+            # Step 2: Test SSE stream for existing session
+            response = self.client.get(
+                mcp_endpoint,
                 headers={
                     "Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}",
                     "Mcp-Session-Id": session_id,
@@ -78,20 +81,15 @@ class MCPSessionLifecycleTest(GatewayMCPTestCase):
             self.assertEqual(
                 response.status_code,
                 200,
-                f"Expected 200 OK for message send, got {response.status_code}: {response.content}",
+                f"Expected 200 OK for SSE stream, got {response.status_code}",
             )
 
-            response_json = response.json()
-            self.assertEqual(response_json["jsonrpc"], "2.0")
-            self.assertEqual(response_json["id"], 1)
-            self.assertIn("result", response_json)
-            self.assertIn("mcp-session-id", response.headers)
-            self.assertEqual(response.headers["mcp-session-id"], session_id)
+            # Check SSE response headers
+            self.assertEqual(response["Content-Type"], "text/event-stream")
+            self.assertEqual(response["Cache-Control"], "no-cache")
+            self.assertEqual(response["Connection"], "keep-alive")
 
             mock_get.assert_called_with(session_id)
-
-            mock_send.assert_called_once_with(session_id, ANY)
-            mock_receive.assert_called_once_with(session_id)
 
 
 class MCPSSEStreamTest(GatewayMCPTestCase):

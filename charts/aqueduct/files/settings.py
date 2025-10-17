@@ -114,7 +114,7 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
 
 OIDC_DEFAULT_GROUPS = ["default"]
 ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
-ADMIN_GROUP = "default"  # all users are admins
+ADMIN_GROUP = "aqueduct-admin"  # all users are admins
 
 EXTRA_NAV_LINKS = {
     'Bug Report': 'https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md',
@@ -278,6 +278,12 @@ CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": CELERY_BROKER_URL,
+    }
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
 

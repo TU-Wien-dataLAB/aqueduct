@@ -16,7 +16,7 @@ from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage, JSONRPCRequest
 
 from ..config import get_mcp_config
-from .decorators import parse_jsonrpc_message
+from .decorators import parse_jsonrpc_message, token_authenticated
 
 log = logging.getLogger("aqueduct")
 
@@ -489,8 +489,10 @@ async def handle_delete_request(
 @csrf_exempt
 @parse_jsonrpc_message
 @require_http_methods(["GET", "POST", "DELETE"])
+@token_authenticated(token_auth_only=True)
 async def mcp_server(
     request: ASGIRequest,
+    token,
     name,
     json_rpc_message: JSONRPCMessage | None = None,
     session_id: str | None = None,

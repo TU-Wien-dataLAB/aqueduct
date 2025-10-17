@@ -101,41 +101,34 @@ class ManagedMCPSession:
 
     async def start(self):
         """Start the session by setting up streams and tasks."""
-        log.info(f"[TRACE] Starting MCP session {self.session_id} for URL: {self.url}")
+        log.info(f"Starting MCP session {self.session_id} for {self.url}")
 
         # Create memory streams (exactly like streamablehttp_client does)
-        log.debug(f"[TRACE] {self.session_id}: Creating memory streams")
+        log.debug(f"{self.session_id}: Creating memory streams")
         self._read_stream_writer, self.read_stream = anyio.create_memory_object_stream[
             SessionMessage | Exception
         ](0)
         self.write_stream, self._write_stream_reader = anyio.create_memory_object_stream[
             SessionMessage
         ](0)
-        log.debug(f"[TRACE] {self.session_id}: Memory streams created (buffer size 0)")
 
         # Create httpx client
-        log.debug(f"[TRACE] {self.session_id}: Creating httpx client")
         self._httpx_client = httpx.AsyncClient(
             headers=self.transport.request_headers,
             timeout=httpx.Timeout(self.transport.timeout, read=self.transport.sse_read_timeout),
         )
 
         # Create simple task group
-        log.debug(f"[TRACE] {self.session_id}: Creating task group")
         self._task_group = SimpleTaskGroup(asyncio.get_event_loop())
 
         # Start post_writer task (this is what handles all the logic)
         def start_get_stream_task():
             if self._httpx_client and self._read_stream_writer:
-                log.info(
-                    f"[TRACE] {self.session_id}: GET STREAM STARTING - notifications/initialized received"
-                )
+                log.debug(f"Starting GET stream task for session {self.session_id}")
                 self._get_stream_task = asyncio.create_task(
                     self.transport.handle_get_stream(self._httpx_client, self._read_stream_writer)  # type: ignore
                 )
-                log.info(f"[TRACE] {self.session_id}: GET STREAM TASK CREATED")
 
-        log.info(f"[TRACE] {self.session_id}: Creating post_writer task")
         self._post_writer_task = asyncio.create_task(
             self.transport.post_writer(
                 self._httpx_client,  # type: ignore
@@ -146,13 +139,11 @@ class ManagedMCPSession:
                 self._task_group,  # type: ignore - Pass our simple task group
             )
         )
-        log.info(f"[TRACE] {self.session_id}: post_writer task created, yielding to event loop")
 
         # Yield to event loop to ensure post_writer starts
         await asyncio.sleep(0)
-        log.info(f"[TRACE] {self.session_id}: Yielded to event loop, post_writer should be running")
 
-        log.info(f"[TRACE] {self.session_id}: MCP session started successfully")
+        log.info(f"MCP session {self.session_id} started")
 
     async def stop(self):
         """Stop the session cleanly."""
@@ -206,16 +197,10 @@ class ManagedMCPSession:
         if not self.write_stream:
             raise ValueError("Session not started")
 
-        log.info(
-            f"[TRACE] {self.session_id}: SEND_MESSAGE called - {message.message.model_dump_json(exclude_none=True)}"
-        )
-        log.info(
-            f"[TRACE] {self.session_id}: About to write to write_stream (will block until post_writer receives)"
-        )
+        method = getattr(message.message, "method", "unknown")
+        log.debug(f"Sending: {method} to session {self.session_id}")
         await self.write_stream.send(message)
-        log.info(
-            f"[TRACE] {self.session_id}: Message sent to write_stream (post_writer received it)"
-        )
+        log.debug(f"Message sent to stream in session {self.session_id}")
         self.last_accessed_at = timezone.now()
 
     async def receive_message(self) -> SessionMessage | Exception:
@@ -225,17 +210,14 @@ class ManagedMCPSession:
         if not self.read_stream:
             raise ValueError("Session not started")
 
-        log.info(f"[TRACE] {self.session_id}: RECEIVE_MESSAGE called - waiting on read_stream")
         message = await self.read_stream.receive()
-        log.info(f"[TRACE] {self.session_id}: RECEIVE_MESSAGE got message from read_stream")
         self.last_accessed_at = timezone.now()
 
         if isinstance(message, Exception):
-            log.warning(f"[TRACE] {self.session_id}: Received exception: {str(message)}")
+            log.warning(f"{self.session_id}: Received exception: {str(message)}")
         else:
-            log.info(
-                f"[TRACE] {self.session_id}: Received message: {message.message.model_dump_json(exclude_none=True)}"
-            )
+            method = getattr(message.message, "method", "unknown")
+            log.info(f"{self.session_id}: Received {method}")
 
         return message
 
@@ -273,7 +255,7 @@ class MCPSessionManager:
                         to_remove.append(session_id)
 
             if to_remove:
-                log.info(f"Cleaning up {len(to_remove)} idle MCP sessions: {to_remove}")
+                log.info(f"Cleaning up {len(to_remove)} idle sessions")
                 for session_id in to_remove:
                     async with self._lock:
                         session = self._sessions.pop(session_id, None)
@@ -284,7 +266,7 @@ class MCPSessionManager:
     async def create_session(self, url: str, headers: dict | None = None) -> str:
         """Create a new MCP session."""
         session_id = str(uuid.uuid4())
-        log.info(f"Creating new MCP session {session_id} for URL: {url}")
+        log.info(f"Creating MCP session {session_id} for {url}")
 
         session = ManagedMCPSession(session_id, url, headers)
         await session.start()
@@ -292,7 +274,7 @@ class MCPSessionManager:
         async with self._lock:
             self._sessions[session_id] = session
 
-        log.info(f"Created and started MCP session {session_id}")
+        log.info(f"MCP session {session_id} created and started")
         return session_id
 
     async def get_session(self, session_id: str) -> ManagedMCPSession | None:
@@ -302,20 +284,20 @@ class MCPSessionManager:
 
     async def terminate_session(self, session_id: str):
         """Terminate a session."""
-        log.info(f"Terminating MCP session {session_id}")
+        log.info(f"Terminating session {session_id}")
         async with self._lock:
             session = self._sessions.pop(session_id, None)
         if session:
             await session.stop()
-            log.info(f"Terminated MCP session {session_id}")
+            log.info(f"Session {session_id} terminated")
         else:
-            log.warning(f"Attempted to terminate non-existent session {session_id}")
+            log.warning(f"Attempt to terminate non-existent session {session_id}")
 
     async def send_message(self, session_id: str, message: SessionMessage):
         """Send message to session."""
         session = await self.get_session(session_id)
         if not session:
-            log.error(f"Session {session_id} not found when trying to send message")
+            log.warning(f"Session {session_id} not found for send_message")
             raise ValueError(f"Session {session_id} not found")
         await session.send_message(message)
 
@@ -323,7 +305,7 @@ class MCPSessionManager:
         """Receive message from session."""
         session = await self.get_session(session_id)
         if not session:
-            log.error(f"Session {session_id} not found when trying to receive message")
+            log.warning(f"Session {session_id} not found for receive_message")
             raise ValueError(f"Session {session_id} not found")
         return await session.receive_message()
 
@@ -350,11 +332,11 @@ class MCPSessionManager:
 async def _mcp_sse_stream(session_id: str) -> AsyncGenerator[str, None]:
     """Async generator that streams MCP messages as Server-Sent Events."""
     if not session_id:
-        log.warning("SSE stream started without session ID")
+        log.warning("SSE stream missing session ID")
         yield 'data: {"error": "Session ID required"}\n\n'
         return
 
-    log.info(f"Starting SSE stream for session {session_id}")
+    log.info(f"SSE stream started for session {session_id}")
     try:
         while True:
             try:
@@ -402,7 +384,7 @@ async def handle_get_request(
     await _ensure_session_manager_started()
 
     if not session_id:
-        log.info(f"Creating new session for MCP server '{name}'")
+        log.info(f"Creating session for MCP server '{name}'")
         mcp_config = get_mcp_config()
         server_config = mcp_config[name]
         url = server_config["url"]
@@ -421,7 +403,7 @@ async def handle_get_request(
         log.warning(f"Session {session_id} is terminated for MCP server '{name}'")
         return JsonResponse({"error": "Session terminated"}, status=410)
 
-    log.info(f"Starting SSE stream for existing session {session_id}")
+    log.info(f"MCP GET {name} - SSE stream for existing session {session_id}")
     return StreamingHttpResponse(
         streaming_content=_mcp_sse_stream(session_id),
         content_type="text/event-stream",
@@ -446,18 +428,17 @@ async def handle_post_request(
     if json_rpc_message is None:
         return JsonResponse({"error": "Missing JSON-RPC message"}, status=400)
 
-    log.info(
-        f"MCP request - Session: {session_id}, Message: {json_rpc_message.model_dump_json(exclude_none=True)}"
-    )
+    method = getattr(json_rpc_message.root, "method", "unknown")
+    log.info(f"MCP POST {name} - Session: {session_id}, Method: {method}")
 
     try:
         if is_initialize and not session_id:
-            log.info(f"Initializing new session for MCP server '{name}'")
+            log.info(f"Initializing session for MCP server '{name}'")
             mcp_config = get_mcp_config()
             server_config = mcp_config[name]
             url = server_config["url"]
             session_id = await session_manager.create_session(url)
-            log.info(f"Created new session {session_id} for initialization")
+            log.info(f"Session {session_id} initialized")
 
         if not session_id:
             log.warning("MCP request missing session ID")
@@ -465,36 +446,32 @@ async def handle_post_request(
 
         session = await session_manager.get_session(session_id)
         if not session:
-            log.warning(f"Session {session_id} not found during POST request")
+            log.warning(f"Session {session_id} not found in POST request")
             return JsonResponse({"error": "Session not found"}, status=404)
 
-        log.info(f"[TRACE] handle_post_request: About to send message to session {session_id}")
+        log.debug(f"Sending message to session {session_id}")
         session_message = SessionMessage(json_rpc_message)
         await session_manager.send_message(session_id, session_message)
 
         # Only wait for response if this is a request (not a notification)
         # Per MCP spec: "The server MUST NOT send a response to notifications"
         if isinstance(json_rpc_message.root, JSONRPCRequest):
-            log.info(
-                f"[TRACE] handle_post_request: Message is a request, waiting for response from session {session_id}"
-            )
+            log.debug(f"Waiting for response from session {session_id}")
             received_message = await session_manager.receive_message(session_id)
-            log.info(f"[TRACE] handle_post_request: Received response from session {session_id}")
+            log.debug(f"Received response from session {session_id}")
 
             if isinstance(received_message, Exception):
                 log.error(f"Session {session_id} returned exception: {str(received_message)}")
                 return JsonResponse({"error": str(received_message)}, status=500)
 
             response_data = received_message.message.model_dump(exclude_none=True)
-            log.info(f"MCP response - Session: {session_id}, Data: {response_data}")
+            log.debug(f"MCP response session {session_id}: {len(str(response_data))} chars")
             response = JsonResponse(response_data)
             if session_id:
                 response.headers["mcp-session-id"] = session_id
             return response
         else:
-            log.info(
-                "[TRACE] handle_post_request: Message is a notification, returning 202 Accepted without waiting"
-            )
+            log.debug(f"Notification processed for session {session_id}")
             response = JsonResponse({"status": "accepted"}, status=202)
             if session_id:
                 response.headers["mcp-session-id"] = session_id
@@ -514,9 +491,10 @@ async def handle_delete_request(
     await _ensure_session_manager_started()
 
     if not session_id:
-        log.warning("MCP DELETE request missing session ID")
+        log.warning(f"Session {session_id} not found for MCP server '{name}'")
         return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
 
+    log.info(f"MCP DELETE {name} - Closing session {session_id}")
     try:
         await session_manager.terminate_session(session_id)
         return JsonResponse({"status": "session_terminated"})

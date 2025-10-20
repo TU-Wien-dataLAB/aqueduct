@@ -13,7 +13,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from mcp.client.streamable_http import StreamableHTTPTransport
 from mcp.shared.message import SessionMessage
-from mcp.types import JSONRPCMessage, JSONRPCRequest
+from mcp.types import JSONRPCMessage, JSONRPCNotification, JSONRPCRequest
 
 from management.models import Request, Token
 
@@ -141,8 +141,6 @@ class ManagedMCPSession:
                 self._task_group,  # type: ignore - Pass our simple task group
             )
         )
-
-        log.info(f"MCP session {self.session_id} started")
 
     async def stop(self):
         """Stop the session cleanly."""
@@ -328,40 +326,155 @@ async def _mcp_sse_stream(session_id: str) -> AsyncGenerator[str, None]:
     """Async generator that streams MCP messages as Server-Sent Events."""
     if not session_id:
         log.warning("SSE stream missing session ID")
-        yield 'data: {"error": "Session ID required"}\n\n'
+        # Create a proper JSONRPCNotification for the error
+        error_msg = JSONRPCMessage(
+            root=JSONRPCNotification(
+                jsonrpc="2.0",
+                method="stream_error",
+                params={"code": -32000, "message": "Session ID required"},
+            )
+        )
+        yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
         return
 
     log.info(f"SSE stream started for session {session_id}")
     try:
         while True:
             try:
-                message = await session_manager.receive_message(session_id)
+                message: SessionMessage | Exception = await session_manager.receive_message(
+                    session_id
+                )
                 if isinstance(message, Exception):
                     log.error(
                         f"SSE stream for session {session_id} received exception: {str(message)}"
                     )
-                    yield f'data: {{"error": "{str(message)}"}}\n\n'
+                    # Convert exception to JSONRPCNotification
+                    error_msg = JSONRPCMessage(
+                        root=JSONRPCNotification(
+                            jsonrpc="2.0",
+                            method="stream_error",
+                            params={"code": -32001, "message": str(message)},
+                        )
+                    )
+                    yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
                     break
                 else:
                     message_json = message.message.model_dump_json(exclude_none=True)
                     yield f"data: {message_json}\n\n"
-            # TODO: handle timeout
+            # TODO: handle timeout?
             except ValueError as e:
                 if "terminated" in str(e).lower() or "not found" in str(e).lower():
                     log.info(f"SSE stream for session {session_id} ended: {str(e)}")
-                    yield f'data: {{"event": "session_ended", "reason": "{str(e)}"}}\n\n'
+                    # Send proper session end notification
+                    end_msg = JSONRPCMessage(
+                        root=JSONRPCNotification(
+                            jsonrpc="2.0", method="session_ended", params={"reason": str(e)}
+                        )
+                    )
+                    yield f"data: {end_msg.model_dump_json(exclude_none=True)}\n\n"
                     break
                 else:
                     log.error(f"SSE stream for session {session_id} ValueError: {str(e)}")
-                    yield f'data: {{"error": "{str(e)}"}}\n\n'
+                    error_msg = JSONRPCMessage(
+                        root=JSONRPCNotification(
+                            jsonrpc="2.0",
+                            method="stream_error",
+                            params={"code": -32002, "message": str(e)},
+                        )
+                    )
+                    yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
             except Exception as e:
                 log.error(f"SSE stream for session {session_id} unexpected error: {str(e)}")
-                yield f'data: {{"error": "{str(e)}", "event": "stream_error"}}\n\n'
+                error_msg = JSONRPCMessage(
+                    root=JSONRPCNotification(
+                        jsonrpc="2.0",
+                        method="stream_error",
+                        params={"code": -32003, "message": str(e)},
+                    )
+                )
+                yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
                 break
 
     except Exception as e:
         log.error(f"SSE stream for session {session_id} failed: {str(e)}")
-        yield f'data: {{"error": "Stream failed: {str(e)}", "event": "stream_ended"}}\n\n'
+        error_msg = JSONRPCMessage(
+            root=JSONRPCNotification(
+                jsonrpc="2.0",
+                method="stream_error",
+                params={"code": -32004, "message": f"Stream failed: {str(e)}"},
+            )
+        )
+        yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
+        return
+
+    log.info(f"SSE stream started for session {session_id}")
+    try:
+        while True:
+            try:
+                message: SessionMessage | Exception = await session_manager.receive_message(
+                    session_id
+                )
+                if isinstance(message, Exception):
+                    log.error(
+                        f"SSE stream for session {session_id} received exception: {str(message)}"
+                    )
+                    # Convert exception to JSONRPCNotification
+                    error_msg = JSONRPCMessage(
+                        root=JSONRPCNotification(
+                            jsonrpc="2.0",
+                            method="stream_error",
+                            params={"code": -32001, "message": str(message)},
+                        )
+                    )
+                    yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
+                    break
+                else:
+                    message_json = message.message.model_dump_json(exclude_none=True)
+                    yield f"data: {message_json}\n\n"
+            # TODO: handle timeout?
+            except ValueError as e:
+                if "terminated" in str(e).lower() or "not found" in str(e).lower():
+                    log.info(f"SSE stream for session {session_id} ended: {str(e)}")
+                    # Send proper session end notification
+                    end_msg = JSONRPCMessage(
+                        root=JSONRPCNotification(
+                            jsonrpc="2.0", method="session_ended", params={"reason": str(e)}
+                        )
+                    )
+                    yield f"data: {end_msg.model_dump_json(exclude_none=True)}\n\n"
+                    break
+                else:
+                    log.error(f"SSE stream for session {session_id} ValueError: {str(e)}")
+                    error_msg = JSONRPCMessage(
+                        root=JSONRPCNotification(
+                            jsonrpc="2.0",
+                            method="stream_error",
+                            params={"code": -32002, "message": str(e)},
+                        )
+                    )
+                    yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
+            except Exception as e:
+                log.error(f"SSE stream for session {session_id} unexpected error: {str(e)}")
+                error_msg = JSONRPCMessage(
+                    root=JSONRPCNotification(
+                        jsonrpc="2.0",
+                        method="stream_error",
+                        params={"code": -32003, "message": str(e)},
+                    )
+                )
+                yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
+                break
+
+    except Exception as e:
+        log.error(f"SSE stream for session {session_id} failed: {str(e)}")
+        error_msg = JSONRPCMessage(
+            root=JSONRPCNotification(
+                jsonrpc="2.0",
+                method="stream_error",
+                params={"code": -32004, "message": f"Stream failed: {str(e)}"},
+            )
+        )
+        yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
 
 
 session_manager = MCPSessionManager()
@@ -378,6 +491,10 @@ async def handle_get_request(
 ) -> JsonResponse | StreamingHttpResponse:
     """Return SSE stream for an existing session."""
     await _ensure_session_manager_started()
+
+    if not session_id:
+        log.warning(f"Session ID required for MCP server '{name}'")
+        return JsonResponse({"error": "Session ID required"}, status=400)
 
     session = await session_manager.get_session(session_id)
     if not session:
@@ -418,6 +535,8 @@ async def handle_post_request(
 
     try:
         if is_initialize and not session_id:
+            # TODO: before we initialize a session we should check if the server is available, otherwise we should return an error
+            #  currently it runs quietly into a timeout
             log.info(f"Initializing session for MCP server '{name}'")
             mcp_config = get_mcp_config()
             server_config = mcp_config[name]

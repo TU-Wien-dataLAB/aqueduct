@@ -25,6 +25,7 @@ or plain HTTP clients (e.g., `curl`) to make requests.
 | `/batches/{batch_id}/cancel` | POST        | Cancel a batch job                      |
 | `/audio/speech`              | POST        | Generate audio from text                |
 | `/images/generations`        | POST        | Generate images from text               |
+| `/mcp-servers/{name}/mcp`    | GET, POST, DELETE | Model Context Protocol server interaction |
 
 Click an endpoint below to learn more:
 
@@ -36,6 +37,7 @@ Click an endpoint below to learn more:
 - [Batches](batches.md)
 - [Audio Speech](speech.md)
 - [Image generation](image_generation.md)
+- [Model Context Protocol (MCP)](mcp.md)
 
 ---
 

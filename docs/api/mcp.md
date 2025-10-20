@@ -25,6 +25,42 @@ DELETE /mcp-servers/{name}/mcp     - End a session
 
 Replace `{name}` with your MCP server name from the MCP server list in the UI.
 
+### Sequence Diagram (MCP 2025-08-16 spec)
+
+``` mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    
+    note over Client,Server: initialization
+    Client->>Server: POST InitializeRequest
+    Server->>Client: InitializeResponse<br/>Mcp-Session-Id: 1868a90c...
+    Client->>Server: POST InitializedNotification<br/>Mcp-Session-Id: 1868a90c...
+    Server->>Client: 202 Accepted
+    
+    note over Client,Server: client requests
+    Client->>Server: POST ... request ...<br/>Mcp-Session-Id: 1868a90c...
+    
+    alt [single HTTP response]
+        Server->>Client: ... response ...
+    else [server opens SSE stream]
+        loop [while connection remains open]
+            Server->>Client: ... SSE messages from server ...
+            Server->>Client: SSE event: ... response ...
+        end
+    end
+    
+    note over Client,Server: client notifications/responses
+    Client->>Server: POST ... notification/response ...<br/>Mcp-Session-Id: 1868a90c...
+    Server->>Client: 202 Accepted
+    
+    note over Client,Server: server requests
+    loop [while connection remains open]
+        Client->>Server: GET<br/>Mcp-Session-Id: 1868a90c...
+        Server->>Client: ... SSE messages from server ...
+    end
+```
+
 ### Python Example
 
 ```python

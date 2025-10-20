@@ -16,10 +16,9 @@ from mcp.client.streamable_http import StreamableHTTPTransport
 from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage, JSONRPCNotification, JSONRPCRequest
 
+from gateway.config import get_mcp_config
+from gateway.views.decorators import log_request, parse_jsonrpc_message, token_authenticated
 from management.models import Request, Token
-
-from ..config import get_mcp_config
-from .decorators import log_request, parse_jsonrpc_message, token_authenticated
 
 log = logging.getLogger("aqueduct")
 

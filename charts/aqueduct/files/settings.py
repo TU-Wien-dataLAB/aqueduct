@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -30,6 +31,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "insecure-secret-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
+TESTING = len(sys.argv) > 1 and sys.argv[1] == 'test'
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split()
 
@@ -114,7 +116,7 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
 
 OIDC_DEFAULT_GROUPS = ["default"]
 ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
-ADMIN_GROUP = "aqueduct-admin"  # all users are admins
+ADMIN_GROUP = "default"  # all users are admins
 
 EXTRA_NAV_LINKS = {
     'Bug Report': 'https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md',
@@ -142,7 +144,8 @@ AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(os.environ.get("AQUEDUCT_BATCH_P
 assert AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES > 10
 AQUEDUCT_BATCH_PROCESSING_CRONTAB = crontab(minute=f"*/{AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES}")
 AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS", 5 * 60))
-AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS", 30))
+AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS = int(
+    os.environ.get("AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS", 30))
 
 AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", 16)
 AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY", 4)
@@ -263,6 +266,8 @@ DATABASES = {
 # 3. If it's SQLite, fill in the NAME for the file
 if DATABASE_ENGINE == 'django.db.backends.sqlite3':
     DATABASES['default']['NAME'] = str(BASE_DIR / 'db.sqlite3')
+    if TESTING:
+        DATABASES['default']['TEST'] = {"NAME": os.path.join(BASE_DIR, "db_test.sqlite3"), }
 elif DATABASE_ENGINE == 'django.db.backends.postgresql':
     DATABASES['default'].update({
         'NAME': os.getenv('POSTGRES_DB', 'aqueduct'),
@@ -278,12 +283,6 @@ CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": CELERY_BROKER_URL,
-    }
-}
-
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
 

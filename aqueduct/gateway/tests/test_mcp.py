@@ -2,6 +2,7 @@ import os
 import socket
 import subprocess
 import time
+from contextlib import asynccontextmanager
 
 from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
@@ -48,6 +49,16 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     def mcp_url(self):
         return f"{self.live_server_url}/mcp-servers/test-server/mcp"
 
+    @asynccontextmanager
+    async def client_session(self):
+        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
+            read_stream,
+            write_stream,
+            _,
+        ):
+            async with ClientSession(read_stream, write_stream) as session:
+                yield session
+
     @classmethod
     def _write_mcp_config(cls):
         import json
@@ -76,7 +87,6 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             s.listen(1)
             port = s.getsockname()[1]
 
-        # port = 3001
         cls.mcp_server_port = port
         cls._update_mcp_config_port(port)
 
@@ -94,7 +104,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             )
 
             # Give the server time to start
-            time.sleep(3)
+            time.sleep(2)
 
             # Check if process is still running
             if cls.mcp_server_process.poll() is None:
@@ -143,12 +153,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 class MCPLiveClientTest(MCPLiveServerTestCase):
     async def test_list_tools(self):
         """Test MCP tools listing using the exact pattern from scratch file."""
-        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
-            read_stream,
-            write_stream,
-            _,
-        ):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                tools = await session.list_tools()
-                print(f"Available tools: {[tool.name for tool in tools.tools]}")
+        async with self.client_session() as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            print(f"Available tools: {[tool.name for tool in tools.tools]}")

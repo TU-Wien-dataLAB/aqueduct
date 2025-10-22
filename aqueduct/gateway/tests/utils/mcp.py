@@ -1,3 +1,4 @@
+import fcntl
 import os
 import socket
 import subprocess
@@ -61,9 +62,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     def headers(self):
         # ChannelsLiveServerTestCase really hates if I try to access model classes (through import)
         # -> stops raising AppRegistryNotReady
-        from gateway.tests.utils.base import GatewayIntegrationTestCase
-
-        return {"Authorization": f"Bearer {GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN}"}
+        return {"Authorization": "Bearer sk-123abc"}
 
     @property
     def mcp_url(self):
@@ -117,23 +116,54 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             cls.mcp_server_process = subprocess.Popen(
                 ["npx", "@modelcontextprotocol/server-everything", "streamableHttp"],
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 env=env,
                 cwd=os.path.dirname(MCP_CONFIG_PATH),
             )
 
-            # Give the server time to start
-            time.sleep(2)
+            # Set stdout to non-blocking mode
+            if cls.mcp_server_process.stdout:
+                fd = cls.mcp_server_process.stdout.fileno()
+                flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
-            # Check if process is still running
-            if cls.mcp_server_process.poll() is None:
-                print(f"✓ MCP everything server started successfully on port {port}")
-            else:
-                stdout, stderr = cls.mcp_server_process.communicate()
-                raise RuntimeError(
-                    f"MCP server failed to start. stdout: {stdout}, stderr: {stderr}"
-                )
+            # Wait for server to be ready by reading output
+            start_time = time.time()
+            timeout = 10  # 10 second timeout
+            output_buffer = ""
+
+            while time.time() - start_time < timeout:
+                # Check if process is still running
+                if cls.mcp_server_process.poll() is not None:
+                    stdout, _ = cls.mcp_server_process.communicate()
+                    raise RuntimeError(f"MCP server failed to start. stdout: {stdout}")
+
+                # Try to read some output
+                try:
+                    if cls.mcp_server_process.stdout:
+                        chunk = cls.mcp_server_process.stdout.read()
+                        if chunk is not None and chunk:
+                            output_buffer += chunk
+                            # Process complete lines
+                            while "\n" in output_buffer:
+                                line, output_buffer = output_buffer.split("\n", 1)
+                                if line.strip():
+                                    print(f"MCP Server: {line.strip()}")
+                                    if "MCP Streamable HTTP Server listening on port" in line:
+                                        print(
+                                            f"✓ MCP everything server started successfully on port {port}"
+                                        )
+                                        return
+                except (OSError, BlockingIOError, TypeError):
+                    pass
+
+                time.sleep(0.1)
+
+            # If we get here, timeout occurred
+            raise RuntimeError(
+                f"MCP server did not start within {timeout} seconds. Last output: {output_buffer}"
+            )
         except FileNotFoundError:
             raise RuntimeError(
                 "npx command not found. Please ensure Node.js and npm are installed."

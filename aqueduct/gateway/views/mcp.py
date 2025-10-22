@@ -19,6 +19,7 @@ from mcp.types import JSONRPCMessage, JSONRPCNotification, JSONRPCRequest
 
 from gateway.config import get_mcp_config
 from gateway.views.decorators import (
+    check_mcp_server_availability,
     log_request,
     mcp_transport_security,
     parse_jsonrpc_message,
@@ -769,6 +770,7 @@ async def handle_delete_request(
 @parse_jsonrpc_message
 @require_http_methods(["GET", "POST", "DELETE"])
 @token_authenticated(token_auth_only=True)
+@check_mcp_server_availability
 @mcp_transport_security
 @log_request
 async def mcp_server(

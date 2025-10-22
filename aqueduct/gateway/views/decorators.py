@@ -363,6 +363,23 @@ def check_model_availability(view_func):
     return wrapper
 
 
+def check_mcp_server_availability(view_func):
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        token: Token | None = kwargs.get("token", None)
+        if not token:
+            return JsonResponse({"error": "Token not found"}, status=404)
+        server_name: str | None = kwargs.get("name", None)
+        if not server_name:
+            return await view_func(request, *args, **kwargs)
+        else:
+            if await sync_to_async(token.mcp_server_excluded)(server_name):
+                return JsonResponse({"error": "MCP server not found!"}, status=404)
+            return await view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
 async def extract_text_with_tika(file_bytes: bytes) -> str:
     """Extract text from file bytes using Tika API."""
     tika_url = f"{getattr(settings, 'TIKA_SERVER_URL', 'http://localhost:9998')}/tika"

@@ -451,3 +451,200 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
             # Should succeed because localhost:* is in allowed hosts
             self.assertEqual(response.status_code, 200)
+
+
+class MCPServerExclusionTest(MCPLiveServerTestCase):
+    """Test MCP server exclusion functionality."""
+
+    async def test_mcp_server_access_allowed(self):
+        """Test that MCP server is accessible when not excluded."""
+        async with self.client_session() as session:
+            result = await session.initialize()
+            self.assertIsNotNone(result)
+            self.assertIsNotNone(result.serverInfo)
+
+    async def test_org_excluded_mcp_server(self):
+        """Test that MCP server is blocked when excluded at org level."""
+        from asgiref.sync import sync_to_async
+
+        from management.models import Org
+
+        # Get org and add exclusion
+        org = await sync_to_async(Org.objects.get)(name="E060")
+        await sync_to_async(org.add_excluded_mcp_server)("test-server")
+
+        # Try to access the MCP server - should get 404
+        import httpx
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1.0"},
+            },
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.mcp_url, json=payload, headers=self.headers)
+            self.assertEqual(response.status_code, 404)
+
+        # Clean up
+        await sync_to_async(org.remove_excluded_mcp_server)("test-server")
+
+    async def test_team_excluded_mcp_server(self):
+        """Test that MCP server is blocked when excluded at team level."""
+        from asgiref.sync import sync_to_async
+
+        from management.models import ServiceAccount, Team, Token
+
+        # Get team and add exclusion
+        team = await sync_to_async(Team.objects.get)(name="Whale")
+        await sync_to_async(team.add_excluded_mcp_server)("test-server")
+
+        # Create a service account for the team
+        service_account = await sync_to_async(ServiceAccount.objects.create)(
+            team=team, name="Test Service Account"
+        )
+
+        # Create a token for the service account
+        from gateway.tests.utils.base import GatewayIntegrationTestCase
+
+        token = await sync_to_async(Token.objects.get)(
+            key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
+        )
+        token.service_account = service_account
+        await sync_to_async(token.save)()
+
+        # Try to access the MCP server - should get 404
+        import httpx
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1.0"},
+            },
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.mcp_url, json=payload, headers=self.headers)
+            self.assertEqual(response.status_code, 404)
+
+        # Clean up
+        token.service_account = None
+        await sync_to_async(token.save)()
+        await sync_to_async(service_account.delete)()
+        await sync_to_async(team.remove_excluded_mcp_server)("test-server")
+
+    async def test_user_excluded_mcp_server(self):
+        """Test that MCP server is blocked when excluded at user profile level."""
+        from asgiref.sync import sync_to_async
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+
+        # Get user and their profile
+        user = await sync_to_async(User.objects.get)(username="Me")
+        profile = await sync_to_async(lambda: user.profile)()
+
+        # Add exclusion to user profile
+        await sync_to_async(profile.add_excluded_mcp_server)("test-server")
+
+        # Try to access the MCP server - should get 404
+        import httpx
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1.0"},
+            },
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.mcp_url, json=payload, headers=self.headers)
+            self.assertEqual(response.status_code, 404)
+
+        # Clean up
+        await sync_to_async(profile.remove_excluded_mcp_server)("test-server")
+
+    async def test_merged_exclusion_lists(self):
+        """Test that exclusion lists merge correctly across hierarchy."""
+        from asgiref.sync import sync_to_async
+        from django.contrib.auth import get_user_model
+
+        from gateway.tests.utils.base import GatewayIntegrationTestCase
+        from management.models import Org, Token
+
+        User = get_user_model()
+
+        # Get the token to test exclusion list logic
+        token = await sync_to_async(Token.objects.get)(
+            key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
+        )
+
+        # Setup: Org excludes test-server, user has merge enabled (default)
+        org = await sync_to_async(Org.objects.get)(name="E060")
+        await sync_to_async(org.add_excluded_mcp_server)("test-server")
+
+        user = await sync_to_async(User.objects.get)(username="Me")
+        profile = await sync_to_async(lambda: user.profile)()
+
+        # Verify merge_mcp_server_exclusion_lists is True by default
+        merge_enabled = await sync_to_async(lambda: profile.merge_mcp_server_exclusion_lists)()
+        self.assertTrue(merge_enabled)
+
+        # Check that test-server is in exclusion list (should be merged from org)
+        exclusion_list = await sync_to_async(token.mcp_server_exclusion_list)()
+        self.assertIn("test-server", exclusion_list)
+
+        # Verify the server is marked as excluded
+        is_excluded = await sync_to_async(token.mcp_server_excluded)("test-server")
+        self.assertTrue(is_excluded)
+
+        # Now disable merging at user level
+        profile.merge_mcp_server_exclusion_lists = False
+        await sync_to_async(profile.save)()
+
+        # Check that test-server is NOT in exclusion list (merge disabled, user has no exclusions)
+        exclusion_list = await sync_to_async(token.mcp_server_exclusion_list)()
+        self.assertNotIn("test-server", exclusion_list)
+
+        # Verify the server is NOT marked as excluded
+        is_excluded = await sync_to_async(token.mcp_server_excluded)("test-server")
+        self.assertFalse(is_excluded)
+
+        # Clean up
+        profile.merge_mcp_server_exclusion_lists = True
+        await sync_to_async(profile.save)()
+        await sync_to_async(org.remove_excluded_mcp_server)("test-server")
+
+    async def test_nonexistent_mcp_server(self):
+        """Test that accessing a non-existent MCP server returns 404."""
+        import httpx
+
+        nonexistent_url = f"{self.live_server_url}/mcp-servers/nonexistent-server/mcp"
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1.0"},
+            },
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(nonexistent_url, json=payload, headers=self.headers)
+            self.assertEqual(response.status_code, 404)

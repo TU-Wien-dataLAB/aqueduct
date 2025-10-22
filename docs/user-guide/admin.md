@@ -56,6 +56,35 @@ Excluded models are not available in any endpoints (returns 404) and are filtere
 The `merge_exclusion_lists` field determines how exclusion lists are built across the User, Team, Org, and global settings levels. When `merge_exclusion_lists` is enabled, the exclusion list for an entity is constructed by merging its own list with those from higher levels—moving upward through Org and finally the global settings. If `merge_exclusion_lists` is disabled at any level, merging stops there, and higher-level exclusions (including global) are not included.
 
 **Example:**  
-Suppose a User has an exclusion list `["A", "B"]` and `merge_exclusion_lists=True`; their Org has `["C"]` with `merge_exclusion_lists=False`; and the global exclusion list is `["D"]`. The effective exclusion list for the User would be `["A", "B", "C"]`—the Org’s `merge_exclusion_lists=False` means the global settings are ignored.
+Suppose a User has an exclusion list `["A", "B"]` and `merge_exclusion_lists=True`; their Org has `["C"]` with `merge_exclusion_lists=False`; and the global exclusion list is `["D"]`. The effective exclusion list for the User would be `["A", "B", "C"]`—the Org's `merge_exclusion_lists=False` means the global settings are ignored.
 
 This system provides fine-grained control over how and where model exclusions are inherited.
+
+## Excluding MCP Servers
+
+Similar to model exclusions, you can exclude specific MCP servers for Organizations, Teams, or UserProfiles through the admin interface. This prevents users from accessing certain MCP servers while allowing access to others.
+
+To exclude MCP servers:
+1. Navigate to the Org, Team, or UserProfile detail view in the Django Admin
+2. In the "Excluded MCP Servers" section, select the servers you want to exclude
+3. Save the changes
+
+When an MCP server is excluded:
+- Requests to that server return a 404 error
+- The server is effectively unavailable to users in that scope
+
+### MCP Server Exclusion Hierarchy
+
+MCP server exclusions follow the same hierarchical pattern as model exclusions:
+
+- **For User Tokens**: UserProfile → Org → Global Settings
+- **For Service Account Tokens**: Team → Org → Global Settings
+
+The `merge_mcp_server_exclusion_lists` field works identically to `merge_exclusion_lists`:
+- When enabled (default), the exclusion list includes servers from the current level plus all higher levels
+- When disabled, only the current level's exclusions apply, stopping the upward merge
+
+**Example:**  
+A Team excludes `["server-a"]` with merge enabled; its Org excludes `["server-b"]` with merge disabled; global settings exclude `["server-c"]`. Service accounts in that Team would have an effective exclusion list of `["server-a", "server-b"]`—the Org's merge disabled prevents the global `server-c` from being included.
+
+You can configure the global default MCP server exclusion list in `settings.py` using the `AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST` setting (defaults to an empty list).

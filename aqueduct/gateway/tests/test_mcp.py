@@ -11,7 +11,13 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
         async with self.client_session() as session:
             await session.initialize()
             tools = await session.list_tools()
-            print(f"Available tools: {[tool.name for tool in tools.tools]}")
+
+            self.assertIsNotNone(tools)
+            self.assertIsInstance(tools.tools, list)
+            self.assertGreater(len(tools.tools), 0)
+            # Verify expected tools are present
+            tool_names = [tool.name for tool in tools.tools]
+            self.assertIn("echo", tool_names)
 
     async def test_call_tool(self):
         """Test calling a tool."""
@@ -19,7 +25,12 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             await session.initialize()
             tool_name = "echo"
             result = await session.call_tool(tool_name, {"message": "test"})
-            print(f"Tool result: {result.content}")
+
+            self.assertIsNotNone(result)
+            self.assertIsInstance(result.content, list)
+            self.assertGreater(len(result.content), 0)
+            # Verify the echo tool returns the input message
+            self.assertIn("test", result.content[0].text)
 
     async def test_call_tool_long_running(self):
         """Test calling a long-running tool with progress updates."""
@@ -27,55 +38,82 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             await session.initialize()
             tool_name = "longRunningOperation"
             result = await session.call_tool(tool_name, {"duration": 3, "steps": 5})
-            print(f"Tool result: {result.content}")
+
+            self.assertIsNotNone(result)
+            self.assertIsInstance(result.content, list)
+            self.assertGreater(len(result.content), 0)
 
     async def test_list_resources(self):
         """Test listing resources."""
         async with self.client_session() as session:
             await session.initialize()
             resources = await session.list_resources()
-            print(f"Available resources: {[r.uri for r in resources.resources]}")
+            self.assertIsNotNone(resources)
+            self.assertIsInstance(resources.resources, list)
+            # Resources may be empty, but the response should be valid
+            self.assertGreater(len(resources.resources), 0)
 
     async def test_read_resource(self):
         """Test reading a resource."""
         async with self.client_session() as session:
             await session.initialize()
             resources = await session.list_resources()
+            self.assertGreater(len(resources.resources), 0)
+
             resource_uri = resources.resources[0].uri
             result = await session.read_resource(resource_uri)
-            print(f"Resource content: {result.contents}")
+
+            self.assertIsNotNone(result)
+            self.assertIsInstance(result.contents, list)
+            self.assertGreater(len(result.contents), 0)
 
     async def test_list_prompts(self):
         """Test listing prompts."""
         async with self.client_session() as session:
             await session.initialize()
             prompts = await session.list_prompts()
-            print(f"Available prompts: {[p.name for p in prompts.prompts]}")
+
+            self.assertIsNotNone(prompts)
+            self.assertIsInstance(prompts.prompts, list)
+            self.assertGreater(len(prompts.prompts), 0)
+            # Verify prompt names are strings
+            for prompt in prompts.prompts:
+                self.assertIsInstance(prompt.name, str)
 
     async def test_get_prompt(self):
         """Test getting a prompt."""
         async with self.client_session() as session:
             await session.initialize()
             prompts = await session.list_prompts()
+            self.assertGreater(len(prompts.prompts), 0)
+
             prompt_name = prompts.prompts[0].name
             result = await session.get_prompt(prompt_name)
-            print(f"Prompt messages: {result.messages}")
+
+            self.assertIsNotNone(result)
+            self.assertIsInstance(result.messages, list)
+            self.assertGreater(len(result.messages), 0)
 
     async def test_send_ping(self):
         """Test sending ping."""
         async with self.client_session() as session:
             await session.initialize()
             result = await session.send_ping()
-            print(f"Ping result: {result}")
+
+            self.assertIsNotNone(result)
 
     async def test_list_resource_templates(self):
         """Test listing resource templates."""
         async with self.client_session() as session:
             await session.initialize()
             templates = await session.list_resource_templates()
-            print(
-                f"Available resource templates: {[t.uriTemplate for t in templates.resourceTemplates]}"
-            )
+
+            self.assertIsNotNone(templates)
+            self.assertIsInstance(templates.resourceTemplates, list)
+            # Resource templates may be empty, but response should be valid
+            if templates.resourceTemplates:
+                for template in templates.resourceTemplates:
+                    self.assertIsInstance(template.uriTemplate, str)
 
     async def test_complete_resource_template(self):
         """Test completion for resource template reference."""
@@ -89,9 +127,12 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
                 ref = ResourceTemplateReference(type="ref/resource", uri=template.uriTemplate)
                 argument = {"name": "test", "value": "argument"}
                 result = await session.complete(ref, argument)
-                print(f"Resource template completion result: {result.completion.values}")
+
+                self.assertIsNotNone(result)
+                self.assertIsNotNone(result.completion)
+                self.assertIsInstance(result.completion.values, list)
             else:
-                print("No resource templates available for completion test")
+                self.skipTest("No resource templates available for completion test")
 
     async def test_complete_prompt_reference(self):
         """Test completion for prompt reference."""
@@ -105,23 +146,28 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
                 ref = PromptReference(type="ref/prompt", name=prompt.name)
                 argument = {"name": "test", "value": "argument"}
                 result = await session.complete(ref, argument)
-                print(f"Prompt completion result: {result.completion.values}")
+
+                self.assertIsNotNone(result)
+                self.assertIsNotNone(result.completion)
+                self.assertIsInstance(result.completion.values, list)
             else:
-                print("No prompts available for completion test")
+                self.skipTest("No prompts available for completion test")
 
     async def test_set_logging_level(self):
         """Test setting server logging level."""
         async with self.client_session() as session:
             await session.initialize()
             result = await session.set_logging_level("debug")
-            print(f"Set logging level result: {result}")
+
+            self.assertIsNotNone(result)
 
     async def test_send_roots_list_changed(self):
         """Test sending roots list changed notification."""
         async with self.client_session() as session:
             await session.initialize()
             result = await session.send_roots_list_changed()
-            print(f"Roots list changed result: {result}")
+
+            self.assertIsNone(result)
 
     async def test_send_progress_notification(self):
         """Test sending progress notification."""
@@ -130,7 +176,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             result = await session.send_progress_notification(
                 progress_token="test-token", progress=50.0, total=100.0, message="Processing..."
             )
-            print(f"Progress notification result: {result}")
+
+            self.assertIsNone(result)
 
     async def test_call_tool_with_progress_callback(self):
         """Test calling tool with progress callback."""
@@ -138,9 +185,6 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         def progress_callback(progress_token, progress, total=None):
             progress_updates.append((progress_token, progress, total))
-            print(
-                f"Progress update - token: {progress_token}, progress: {progress}, total: {total}"
-            )
 
         async with self.client_session() as session:
             await session.initialize()
@@ -148,8 +192,17 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             result = await session.call_tool(
                 tool_name, {"duration": 2, "steps": 3}, progress_callback=progress_callback
             )
-            print(f"Tool result: {result.content}")
-            print(f"Received {len(progress_updates)} progress updates")
+
+            self.assertIsNotNone(result)
+            self.assertIsInstance(result.content, list)
+            self.assertGreater(len(result.content), 0)
+            # Verify progress updates were received
+            self.assertGreater(len(progress_updates), 0)
+            # Verify structure of progress updates
+            for update in progress_updates:
+                self.assertEqual(len(update), 3)
+                progress_token, progress, total = update
+                self.assertIsInstance(progress, (int, float))
 
     async def test_call_tool_with_timeout(self):
         """Test calling tool with read timeout."""
@@ -159,7 +212,10 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             result = await session.call_tool(
                 tool_name, {"message": "test"}, read_timeout_seconds=timedelta(seconds=10)
             )
-            print(f"Tool result: {result.content}")
+
+            self.assertIsNotNone(result)
+            self.assertIsInstance(result.content, list)
+            self.assertGreater(len(result.content), 0)
 
     async def test_list_methods_with_cursor(self):
         """Test list methods with cursor parameter functionality."""
@@ -168,39 +224,70 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
             # Test tools with cursor (if supported)
             tools = await session.list_tools()
+            self.assertIsNotNone(tools)
             if hasattr(tools, "nextCursor") and tools.nextCursor:
                 next_tools = await session.list_tools(cursor=tools.nextCursor)
-                print(f"Next page tools: {[tool.name for tool in next_tools.tools]}")
+                self.assertIsNotNone(next_tools)
+                self.assertIsInstance(next_tools.tools, list)
 
             # Test resources with cursor (if supported)
             resources = await session.list_resources()
+            self.assertIsNotNone(resources)
             if hasattr(resources, "nextCursor") and resources.nextCursor:
                 next_resources = await session.list_resources(cursor=resources.nextCursor)
-                print(f"Next page resources: {[r.uri for r in next_resources.resources]}")
+                self.assertIsNotNone(next_resources)
+                self.assertIsInstance(next_resources.resources, list)
 
     async def test_error_invalid_tool_name(self):
         """Test error handling for invalid tool name."""
         async with self.client_session() as session:
             await session.initialize()
-            try:
+            with self.assertRaises(Exception) as context:
                 await session.call_tool("nonexistent_tool", {})
-                print("ERROR: Should have raised exception for invalid tool")
-            except Exception as e:
-                print(f"Correctly caught error for invalid tool: {e}")
+
+            self.assertIsNotNone(context.exception)
 
     async def test_error_invalid_resource_uri(self):
         """Test error handling for invalid resource URI."""
         async with self.client_session() as session:
             await session.initialize()
-            try:
+            with self.assertRaises(Exception) as context:
                 invalid_uri = AnyUrl("invalid://not-a-real-uri")
                 await session.read_resource(invalid_uri)
-                print("ERROR: Should have raised exception for invalid URI")
-            except Exception as e:
-                print(f"Correctly caught error for invalid URI: {e}")
+
+            self.assertIsNotNone(context.exception)
 
     async def test_initialize(self):
         """Test initialize method directly."""
         async with self.client_session() as session:
             result = await session.initialize()
-            print(f"Initialize result: {result}")
+
+            self.assertIsNotNone(result)
+            # Verify initialization result has expected attributes
+            self.assertIsNotNone(result.serverInfo)
+            self.assertIsNotNone(result.capabilities)
+
+    async def test_session_creation(self):
+        """Test that sessions have unique IDs."""
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamablehttp_client
+
+        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
+            r,
+            w,
+            get_session_id,
+        ):
+            async with ClientSession(r, w) as session:
+                await session.initialize()
+                s1 = get_session_id()
+
+        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
+            r,
+            w,
+            get_session_id,
+        ):
+            async with ClientSession(r, w) as session:
+                await session.initialize()
+                s2 = get_session_id()
+
+        self.assertNotEqual(s1, s2)

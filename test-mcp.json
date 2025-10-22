@@ -4,15 +4,13 @@
       "type": "streamable-http",
       "url": "http://localhost:3001/mcp",
       "description": "For Streamable HTTP connections, add this URL directly in your MCP Client",
-      "tags": ["development", "testing"],
-      "icon_url": "https://example.com/icons/test-server.png"
+      "tags": ["development", "testing"]
     },
     "aqueduct": {
       "type": "streamable-http",
       "url": "http://localhost:8000/mcp-servers/test-server/mcp",
       "description": "Aqueduct's internal MCP server for development and testing",
-      "tags": ["production", "api"],
-      "icon_url": "https://example.com/icons/aqueduct.png"
+      "tags": ["production", "api"]
     }
   }
 }

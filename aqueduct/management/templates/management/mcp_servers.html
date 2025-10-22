@@ -22,26 +22,27 @@
     {% endif %}
 
     {% if mcp_servers %}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {% for server_name, server_config in mcp_servers.items %}
-        <div class="card card-compact bg-base-100 shadow-xl hover:shadow-2xl transition-shadow duration-300">
-            <figure class="h-32 bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center">
-                <img src="{{ server_config.icon_url }}" alt="{{ server_name }}" 
-                     class="h-16 w-16 object-contain" 
-                     onerror="this.src='{% static 'icons/mcp.svg' %}'">
-            </figure>
+        <div class="card bg-base-100 border border-base-300 hover:border-primary/50 transition-all duration-200">
             <div class="card-body">
-                <h2 class="card-title text-xl capitalize">
-                    {{ server_name|title }}
-                </h2>
+                <div class="flex items-start gap-3">
+                    <img src="{{ server_config.icon_url }}" alt="{{ server_name }}" 
+                         class="h-10 w-10 object-contain flex-shrink-0 mt-1" 
+                         onerror="this.src='{% static 'icons/mcp.svg' %}'">
+                    <div class="flex-1 min-w-0">
+                        <h2 class="card-title text-lg capitalize mb-1">
+                            {{ server_name|title }}
+                        </h2>
+                        {% if server_config.description %}
+                        <p class="text-sm text-base-content/70 line-clamp-2">{{ server_config.description }}</p>
+                        {% else %}
+                        <p class="text-sm text-base-content/50 italic">No description available</p>
+                        {% endif %}
+                    </div>
+                </div>
                 
-                {% if server_config.description %}
-                <p class="text-base-content/80 mt-2">{{ server_config.description }}</p>
-                {% else %}
-                <p class="text-base-content/50 italic mt-2">No description available</p>
-                {% endif %}
-                
-                <div class="card-actions justify-between items-center mt-4">
+                <div class="flex justify-between items-center mt-4 pt-4 border-t border-base-300">
                     <div class="flex flex-wrap gap-1">
                         {% if server_config.tags %}
                         {% for tag in server_config.tags %}
@@ -51,8 +52,8 @@
                         <span class="badge badge-ghost badge-sm">untagged</span>
                         {% endif %}
                     </div>
-                    <div class="tooltip tooltip-left" data-tip="{{ site_host }}/mcp-servers/{{ server_name }}/mcp">
-                        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('{{ site_host }}/mcp-servers/{{ server_name }}/mcp')">
+                    <div class="tooltip tooltip-left" data-tip="Copy URL">
+                        <button class="btn btn-ghost btn-sm btn-square" onclick="navigator.clipboard.writeText('{{ site_host }}/mcp-servers/{{ server_name }}/mcp')">
                             <span class="h-4 w-4 inline-flex">
                                 <img src="{% static 'icons/copy.svg' %}" alt="Copy" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                             </span>

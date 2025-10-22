@@ -1,6 +1,6 @@
 import json
 from functools import lru_cache
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 import openai
 import yaml
@@ -45,6 +45,9 @@ def get_openai_client(model: str) -> openai.AsyncClient:
 class MCPServerConfig(TypedDict):
     type: Literal["streamable-http"]  # only support "streamable-http"
     url: str
+    description: NotRequired[str]
+    tags: NotRequired[list[str]]
+    icon_url: NotRequired[str]
 
 
 @lru_cache(maxsize=1)

@@ -83,7 +83,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     const successIconSrc = "{% static 'icons/check.svg' %}";
     const copyIconSrc = "{% static 'icons/copy.svg' %}";
-    
+
     // Add copy feedback
     document.querySelectorAll('button').forEach(button => {
         if (button.onclick && button.onclick.toString().includes('clipboard')) {

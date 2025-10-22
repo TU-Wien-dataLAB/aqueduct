@@ -51,10 +51,7 @@
                         <span class="badge badge-ghost badge-sm">untagged</span>
                         {% endif %}
                     </div>
-                    <div class="flex items-center gap-2">
-                        <div class="tooltip tooltip-left" data-tip="{{ site_host }}/mcp-servers/{{ server_name }}/mcp">
-                            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                        </div>
+                    <div class="tooltip tooltip-left" data-tip="{{ site_host }}/mcp-servers/{{ server_name }}/mcp">
                         <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('{{ site_host }}/mcp-servers/{{ server_name }}/mcp')">
                             <span class="h-4 w-4 inline-flex">
                                 <img src="{% static 'icons/copy.svg' %}" alt="Copy" class="w-4 h-4 [[data-theme=dark]_&]:invert">

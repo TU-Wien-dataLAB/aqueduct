@@ -58,6 +58,13 @@
                                     Batches
                                 </a>
                             </li>
+                            <li>
+                                <a href="{% url 'mcp_servers' %}" class="flex items-center gap-1 font-semibold">
+                                    <img src="{% static 'icons/tool.svg' %}" alt="MCP Servers"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    MCP Servers
+                                </a>
+                            </li>
                             {% if user.is_superuser %}
                                 {% if settings.SILKY_ENABLED %}
                                     <li>

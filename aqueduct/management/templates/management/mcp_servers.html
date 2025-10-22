@@ -8,7 +8,7 @@
     <div class="mb-6">
         <h1 class="text-3xl font-bold mb-2">MCP Servers</h1>
         <p class="text-lg text-base-content/70">
-            Available MCP (Model Context Protocol) servers for integration with your applications.
+            Available MCP (Model Context Protocol) servers through the Aqueduct MCP gateway.
         </p>
     </div>
 
@@ -33,7 +33,6 @@
             <div class="card-body">
                 <h2 class="card-title text-xl capitalize">
                     {{ server_name|title }}
-                    <div class="badge badge-primary">{{ server_config.type }}</div>
                 </h2>
                 
                 {% if server_config.description %}
@@ -46,20 +45,20 @@
                     <div class="flex flex-wrap gap-1">
                         {% if server_config.tags %}
                         {% for tag in server_config.tags %}
-                        <span class="badge badge-outline badge-sm">{{ tag }}</span>
+                        <span class="badge badge-soft badge-info badge-sm">{{ tag }}</span>
                         {% endfor %}
                         {% else %}
-                        <span class="badge badge-outline badge-sm">untagged</span>
+                        <span class="badge badge-ghost badge-sm">untagged</span>
                         {% endif %}
                     </div>
                     <div class="flex items-center gap-2">
-                        <div class="tooltip tooltip-left" data-tip="{{ server_config.url }}">
+                        <div class="tooltip tooltip-left" data-tip="{{ site_host }}/mcp-servers/{{ server_name }}/mcp">
                             <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                         </div>
-                        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('{{ server_config.url }}')">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
+                        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('{{ site_host }}/mcp-servers/{{ server_name }}/mcp')">
+                            <span class="h-4 w-4 inline-flex">
+                                <img src="{% static 'icons/copy.svg' %}" alt="Copy" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                            </span>
                         </button>
                     </div>
                 </div>
@@ -82,12 +81,15 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const successIconSrc = "{% static 'icons/check.svg' %}";
+    const copyIconSrc = "{% static 'icons/copy.svg' %}";
+    
     // Add copy feedback
     document.querySelectorAll('button').forEach(button => {
         if (button.onclick && button.onclick.toString().includes('clipboard')) {
             button.addEventListener('click', function() {
                 const originalHTML = this.innerHTML;
-                this.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>';
+                this.innerHTML = '<span class="h-4 w-4 inline-flex"><img src="' + successIconSrc + '" alt="Copied" class="w-4 h-4 [[data-theme=dark]_&]:invert"></span>';
                 setTimeout(() => {
                     this.innerHTML = originalHTML;
                 }, 2000);

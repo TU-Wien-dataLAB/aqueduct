@@ -20,6 +20,8 @@ class MCPServersView(LoginRequiredMixin, TemplateView):
                 if "icon_url" not in server_config:
                     server_config["icon_url"] = "/static/icons/mcp.svg"
             context["mcp_servers"] = mcp_config
+            # Add the current site's domain for constructing full URLs
+            context["site_host"] = f"{self.request.scheme}://{self.request.get_host()}"
         except Exception as e:
             context["mcp_servers"] = {}
             context["error"] = str(e)

@@ -7,6 +7,7 @@ from typing import AsyncGenerator, Dict
 import anyio
 import httpx
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
@@ -17,7 +18,12 @@ from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage, JSONRPCNotification, JSONRPCRequest
 
 from gateway.config import get_mcp_config
-from gateway.views.decorators import log_request, parse_jsonrpc_message, token_authenticated
+from gateway.views.decorators import (
+    log_request,
+    mcp_transport_security,
+    parse_jsonrpc_message,
+    token_authenticated,
+)
 from management.models import Request, Token
 
 log = logging.getLogger("aqueduct")
@@ -585,14 +591,31 @@ async def handle_get_request(
         )
 
     log.info(f"MCP GET {name} - SSE stream for existing session {session_id}")
+
+    # Build headers with proper CORS origin
+    headers = {"Cache-Control": "no-cache", "Connection": "keep-alive"}
+
+    # Set CORS header only if origin is allowed
+    origin = request.headers.get("origin")
+    allowed_origins = getattr(settings, "MCP_ALLOWED_ORIGINS", [])
+
+    if origin:
+        # Check exact match first
+        if origin in allowed_origins:
+            headers["Access-Control-Allow-Origin"] = origin
+        else:
+            # Check wildcard patterns
+            for allowed in allowed_origins:
+                if allowed.endswith(":*"):
+                    base_origin = allowed[:-2]
+                    if origin.startswith(base_origin + ":"):
+                        headers["Access-Control-Allow-Origin"] = origin
+                        break
+
     return StreamingHttpResponse(
         streaming_content=_mcp_sse_stream(session_id),
         content_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-        },
+        headers=headers,
     )
 
 
@@ -746,6 +769,7 @@ async def handle_delete_request(
 @parse_jsonrpc_message
 @require_http_methods(["GET", "POST", "DELETE"])
 @token_authenticated(token_auth_only=True)
+@mcp_transport_security
 @log_request
 async def mcp_server(
     request: ASGIRequest,

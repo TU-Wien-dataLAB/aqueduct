@@ -32,6 +32,88 @@ from management.models import FileObject, Request, Token
 logger = logging.getLogger("aqueduct")
 
 
+def mcp_transport_security(view_func):
+    """Validate MCP transport security (DNS rebinding protection).
+
+    Validates:
+    - Host header (DNS rebinding protection)
+    - Origin header (CSRF protection)
+    - Content-Type header for POST requests
+
+    Returns appropriate status codes:
+    - 421: Invalid Host header
+    - 403: Invalid Origin header
+    - 400: Invalid Content-Type header
+    """
+
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        from django.conf import settings
+
+        # Skip validation if DNS rebinding protection is disabled
+        if not getattr(settings, "MCP_ENABLE_DNS_REBINDING_PROTECTION", True):
+            return await view_func(request, *args, **kwargs)
+
+        # Validate Content-Type for POST requests
+        if request.method == "POST":
+            content_type = request.headers.get("content-type", "")
+            if not content_type.lower().startswith("application/json"):
+                logger.warning(f"Invalid Content-Type header: {content_type}")
+                return JsonResponse({"error": "Invalid Content-Type header"}, status=400)
+
+        # Validate Host header against allowed values
+        allowed_hosts = getattr(settings, "MCP_ALLOWED_HOSTS", [])
+        host = request.headers.get("host")
+
+        if not host:
+            logger.warning("Missing Host header in request")
+            return JsonResponse({"error": "Invalid Host header"}, status=421)
+
+        # Check exact match first
+        host_valid = False
+        if host in allowed_hosts:
+            host_valid = True
+        else:
+            # Check wildcard port patterns (e.g., "localhost:*")
+            for allowed in allowed_hosts:
+                if allowed.endswith(":*"):
+                    base_host = allowed[:-2]
+                    if host.startswith(base_host + ":"):
+                        host_valid = True
+                        break
+
+        if not host_valid:
+            logger.warning(f"Invalid Host header: {host}")
+            return JsonResponse({"error": "Invalid Host header"}, status=421)
+
+        # Validate Origin header against allowed values
+        # Origin can be absent for same-origin requests, so it's only validated if present
+        origin = request.headers.get("origin")
+        if origin:
+            allowed_origins = getattr(settings, "MCP_ALLOWED_ORIGINS", [])
+
+            # Check exact match first
+            origin_valid = False
+            if origin in allowed_origins:
+                origin_valid = True
+            else:
+                # Check wildcard port patterns (e.g., "http://localhost:*")
+                for allowed in allowed_origins:
+                    if allowed.endswith(":*"):
+                        base_origin = allowed[:-2]
+                        if origin.startswith(base_origin + ":"):
+                            origin_valid = True
+                            break
+
+            if not origin_valid:
+                logger.warning(f"Invalid Origin header: {origin}")
+                return JsonResponse({"error": "Invalid Origin header"}, status=403)
+
+        return await view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
 def token_authenticated(token_auth_only: bool):
     def decorator(view_func):
         @wraps(view_func)

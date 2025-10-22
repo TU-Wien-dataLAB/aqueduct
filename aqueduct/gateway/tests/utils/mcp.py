@@ -22,6 +22,26 @@ class MCPDaphneProcess(DaphneProcess):
         settings.MCP_CONFIG_FILE_PATH = MCP_CONFIG_PATH
         print(f"Updating MCP_CONFIG_FILE_PATH: {settings.MCP_CONFIG_FILE_PATH}")
 
+        # Configure MCP security settings for testing
+        settings.MCP_ENABLE_DNS_REBINDING_PROTECTION = True
+        settings.MCP_ALLOWED_HOSTS = ["localhost:8000", "localhost:*", "127.0.0.1:*"]
+        settings.MCP_ALLOWED_ORIGINS = [
+            "http://localhost:3000",
+            "http://localhost:*",
+            "http://127.0.0.1:*",
+        ]
+
+        # Allow test hosts in Django's ALLOWED_HOSTS so requests reach our security decorator
+        # Add common test hosts that we'll use to test the security decorator
+        if "evil.testserver" not in settings.ALLOWED_HOSTS:
+            settings.ALLOWED_HOSTS.append("evil.testserver")
+        if "malicious.com" not in settings.ALLOWED_HOSTS:
+            settings.ALLOWED_HOSTS.append("malicious.com")
+
+        print(
+            f"MCP Security: Protection={settings.MCP_ENABLE_DNS_REBINDING_PROTECTION}, Hosts={settings.MCP_ALLOWED_HOSTS}"
+        )
+
         super().run()
 
 

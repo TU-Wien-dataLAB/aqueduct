@@ -291,3 +291,163 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
                 s2 = get_session_id()
 
         self.assertNotEqual(s1, s2)
+
+
+class MCPTransportSecurityTest(MCPLiveServerTestCase):
+    """Test MCP transport security (DNS rebinding protection)."""
+
+    async def test_valid_host_allowed(self):
+        """Test that valid hosts are allowed."""
+        # The normal client_session should work with valid hosts (localhost:*)
+        async with self.client_session() as session:
+            result = await session.initialize()
+            self.assertIsNotNone(result)
+            self.assertIsNotNone(result.serverInfo)
+
+    async def test_invalid_host_rejected(self):
+        """Test that invalid Host header is rejected with 421."""
+        import httpx
+
+        # We need to test with a host that's valid for Django's ALLOWED_HOSTS
+        # but invalid for our MCP security settings.
+        # Since the test server runs on a random port, we use a different port on localhost
+        headers = {
+            "Authorization": self.headers["Authorization"],
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1.0"},
+            },
+        }
+
+        # Create a custom request with a host not in our allowed list
+        # Use a specific port that's not in localhost:* pattern would be caught,
+        # but our test allows localhost:*, so we need to use a completely different host
+        # that Django would allow (testserver) but our security wouldn't
+        async with httpx.AsyncClient() as client:
+            request = client.build_request("POST", self.mcp_url, json=payload, headers=headers)
+            # Use a host that would fail our security check
+            # Django test server allows 'testserver' by default
+            request.headers["host"] = "evil.testserver:8000"
+            response = await client.send(request)
+
+            # Should return 421 for invalid Host header
+            self.assertEqual(response.status_code, 421)
+            self.assertIn("error", response.json())
+
+    async def test_invalid_origin_rejected(self):
+        """Test that invalid Origin header is rejected with 403."""
+        from urllib.parse import urlparse
+
+        import httpx
+
+        # Extract the actual host from the live server URL
+        parsed_url = urlparse(self.live_server_url)
+        valid_host = parsed_url.netloc
+
+        headers = {
+            "Authorization": self.headers["Authorization"],
+            "Content-Type": "application/json",
+            "Host": valid_host,
+            "Origin": "https://evil.com",
+        }
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1.0"},
+            },
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.mcp_url, json=payload, headers=headers)
+
+            # Should return 403 for invalid Origin header
+            self.assertEqual(response.status_code, 403)
+            self.assertIn("error", response.json())
+
+    async def test_invalid_content_type_rejected(self):
+        """Test that invalid Content-Type is rejected with 400."""
+        from urllib.parse import urlparse
+
+        import httpx
+
+        # Extract the actual host from the live server URL
+        parsed_url = urlparse(self.live_server_url)
+        valid_host = parsed_url.netloc
+
+        headers = {
+            "Authorization": self.headers["Authorization"],
+            "Content-Type": "text/plain",
+            "Host": valid_host,
+        }
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1.0"},
+            },
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.mcp_url, json=payload, headers=headers)
+
+            # Should return 400 for invalid Content-Type
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("error", response.json())
+
+    async def test_missing_origin_allowed(self):
+        """Test that missing Origin header is allowed (same-origin requests)."""
+        # Normal requests without Origin should work
+        async with self.client_session() as session:
+            result = await session.initialize()
+            self.assertIsNotNone(result)
+            self.assertIsNotNone(result.serverInfo)
+
+    async def test_wildcard_port_allowed(self):
+        """Test that wildcard port patterns work (localhost:*)."""
+        from urllib.parse import urlparse
+
+        import httpx
+
+        # Extract the actual host from the live server URL (should match localhost:*)
+        parsed_url = urlparse(self.live_server_url)
+        valid_host = parsed_url.netloc
+
+        headers = {
+            "Authorization": self.headers["Authorization"],
+            "Content-Type": "application/json",
+            "Host": valid_host,
+        }
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1.0"},
+            },
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.mcp_url, json=payload, headers=headers)
+
+            # Should succeed because localhost:* is in allowed hosts
+            self.assertEqual(response.status_code, 200)

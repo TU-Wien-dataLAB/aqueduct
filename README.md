@@ -92,7 +92,7 @@ flowchart TB
         MCPClients[MCP Clients]
     end
 
-    subgraph Gateway["Aqueduct AI Gateway"]
+    subgraph Gateway["Aqueduct AI Gateway (Django)"]
         Auth[Authentication &<br/>Authorization]
         Middleware[Request Processing<br/>Rate Limits • Access Control • Logging]
         
@@ -100,10 +100,8 @@ flowchart TB
         MCPProxy[MCP Proxy]
         
         LiteLLM[LiteLLM Router]
-    end
-    
-    subgraph Management["Management UI"]
-        Admin[Django Admin<br/>Token Creation • Usage Dashboard<br/>Org/Team/User Management]
+        
+        Admin[Management UI<br/>Token Creation • Usage Dashboard<br/>Org/Team/User Management]:::mgmtStyle
     end
     
     subgraph Config["Configuration Files"]
@@ -154,7 +152,6 @@ flowchart TB
     
     class Client,OAIClients,MCPClients clientStyle
     class Gateway,Auth,Middleware,API,MCPProxy,LiteLLM gatewayStyle
-    class Management,Admin mgmtStyle
     class Config,RouterConfig,MCPConfig configStyle
     class Storage,DB,FileStorage,Cache,Workers storageStyle
     class External,Models,MCP externalStyle

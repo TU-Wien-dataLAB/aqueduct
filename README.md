@@ -96,7 +96,7 @@ flowchart TB
         Auth[Authentication &<br/>Authorization]
         Middleware[Request Processing<br/>Rate Limits / Access Control / Logging]
         
-        API[OpenAI-Compatible API<br/>Chat / Completions / Embeddings<br/>Files / Batches <br/>TTS / STT]
+        API[OpenAI-Compatible API<br/>Chat Completions / Embeddings<br/>Files / Batches <br/>TTS / STT / Image Generation]
         MCPProxy[MCP Proxy]
         
         LiteLLM[LiteLLM Router]

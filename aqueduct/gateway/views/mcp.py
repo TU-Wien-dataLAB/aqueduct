@@ -498,7 +498,6 @@ async def _mcp_sse_stream(session_id: str) -> AsyncGenerator[str, None]:
                 else:
                     message_json = message.message.model_dump_json(exclude_none=True)
                     yield f"data: {message_json}\n\n"
-            # TODO: handle timeout?
             except ValueError as e:
                 if "terminated" in str(e).lower() or "not found" in str(e).lower():
                     log.info(f"SSE stream for session {session_id} ended: {str(e)}")
@@ -641,8 +640,6 @@ async def handle_post_request(
 
     try:
         if is_initialize and not session_id:
-            # TODO: before we initialize a session we should check if the server is available, otherwise we should return an error
-            #  currently it runs quietly into a timeout
             log.info(f"Initializing session for MCP server '{name}'")
             mcp_config = get_mcp_config()
             server_config = mcp_config[name]

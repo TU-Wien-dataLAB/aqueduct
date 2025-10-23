@@ -776,7 +776,7 @@ async def handle_delete_request(
 async def mcp_server(
     request: ASGIRequest,
     token: Token,
-    request_log: Request,
+    request_log: Request | None,
     name,
     json_rpc_message: JSONRPCMessage | None = None,
     session_id: str | None = None,

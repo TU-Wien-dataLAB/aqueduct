@@ -311,6 +311,12 @@ def check_limits(view_func):
 def log_request(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
+        is_initialize = kwargs.get("is_initialize", False)
+
+        if request.path.startswith("/mcp-servers/") and not is_initialize:
+            kwargs["request_log"] = None
+            return await view_func(request, *args, **kwargs)
+
         pydantic_model: dict | None = kwargs.get("pydantic_model", None)
         token = kwargs.get("token", None)
         request_log = Request(
@@ -576,7 +582,7 @@ def parse_jsonrpc_message(view_func):
         kwargs["session_id"] = session_id
 
         if request.method != "POST":
-            return await view_func(request, *args, **kwargs)
+            return await view_func(request, request_log=None, *args, **kwargs)
 
         try:
             data = json.loads(request.body)

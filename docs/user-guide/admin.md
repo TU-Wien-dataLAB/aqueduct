@@ -88,3 +88,26 @@ The `merge_mcp_server_exclusion_lists` field works identically to `merge_exclusi
 A Team excludes `["server-a"]` with merge enabled; its Org excludes `["server-b"]` with merge disabled; global settings exclude `["server-c"]`. Service accounts in that Team would have an effective exclusion list of `["server-a", "server-b"]`—the Org's merge disabled prevents the global `server-c` from being included.
 
 You can configure the global default MCP server exclusion list in `settings.py` using the `AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST` setting (defaults to an empty list).
+
+## MCP Server Configuration
+
+MCP servers are configured through a JSON file referenced in `settings.py` via `MCP_CONFIG_FILE_PATH` (defaults to "mcp.json"). Each server configuration includes:
+
+- **type**: Transport type (e.g., "streamable-http")
+- **url**: Server endpoint URL
+- **description**: Server description
+- **tags**: Categories for organization
+
+**Example configuration**:
+```json
+{
+  "mcpServers": {
+    "test-server": {
+      "type": "streamable-http",
+      "url": "http://localhost:3001/mcp",
+      "description": "For Streamable HTTP connections",
+      "tags": ["development", "testing"]
+    }
+  }
+}
+```

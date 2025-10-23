@@ -88,115 +88,76 @@ cd aqueduct && python manage.py test
 ```mermaid
 flowchart TB
     subgraph Client["Client Applications"]
-        direction LR
-        OpenAI[OpenAI SDK]
-        HTTP[HTTP/REST Clients]
-        MCP_Client[MCP Clients]
+        OAIClients[OpenAI SDK / HTTP Clients]
+        MCPClients[MCP Clients]
     end
 
-    subgraph Gateway["Aqueduct AI Gateway (Django + ASGI)"]
-        direction TB
+    subgraph Gateway["Aqueduct AI Gateway"]
+        Auth[Authentication &<br/>Authorization]
+        Middleware[Request Processing<br/>Rate Limits • Access Control • Logging]
         
-        subgraph Auth["Authentication & Authorization"]
-            TokenAuth[Token Authentication]
-            OIDC[OIDC Integration]
-            TOS[Terms of Service]
-        end
+        API[OpenAI-Compatible API<br/>Chat • Completions • Embeddings<br/>Files • Batches • Audio • Images • Models]
+        MCPProxy[MCP Proxy]
         
-        subgraph Router["Request Processing"]
-            Limits[Rate Limiting]
-            ModelCheck[Model Access Control]
-            FileProc[File Processing]
-            Logging[Request Logging]
-        end
-        
-        subgraph API["API Endpoints"]
-            ChatAPI[Chat Completions]
-            CompAPI[Completions]
-            EmbedAPI[Embeddings]
-            BatchAPI[Batch Jobs]
-            FileAPI[Files]
-            SpeechAPI[Audio/Speech]
-            ImageAPI[Image Generation]
-            ModelsAPI[Models]
-            MCPAPI[MCP Proxy]
-        end
-        
-        LiteLLM[LiteLLM Router SDK]
+        LiteLLM[LiteLLM Router]
     end
     
-    subgraph Management["Management Layer"]
-        direction TB
-        AdminUI[Django Admin UI]
-        
-        subgraph Hierarchy["Organization Hierarchy"]
-            Org[Organizations]
-            Teams[Teams]
-            Users[Users]
-            Tokens[API Tokens]
-        end
-        
-        subgraph Config["Configuration"]
-            ModelExcl[Model Exclusions]
-            RateLimits[Rate Limits]
-            MCPConfig[MCP Server Config]
-        end
+    subgraph Management["Management UI"]
+        Admin[Django Admin<br/>Token Creation • Usage Dashboard<br/>Org/Team/User Management]
     end
     
-    subgraph Storage["Data & Storage"]
-        PostgreSQL[(PostgreSQL)]
-        Redis[(Redis Cache)]
-        FileStore[File Storage]
+    subgraph Config["Configuration Files"]
+        RouterConfig[router_config.yaml]
+        MCPConfig[mcp.json]
     end
     
-    subgraph Workers["Background Processing"]
-        Celery[Celery Workers]
-        Tika[Apache Tika<br/>Text Extraction]
+    subgraph Storage["Storage & Workers"]
+        DB[(PostgreSQL)]
+        FileStorage[File Storage<br/>Directory]
+        Cache[(Redis)]
+        Workers[Celery • Tika]
     end
     
     subgraph External["External Services"]
-        direction TB
-        AIModels[AI Model Providers<br/>OpenAI, Anthropic, etc.]
-        MCPServers[MCP Servers<br/>Tool Providers]
+        Models[AI Model Providers]
+        MCP[MCP Servers]
     end
 
-    Client -->|API Requests| Auth
-    Auth --> Router
-    Router --> API
+    OAIClients -->|API Requests| Auth
+    MCPClients -->|MCP Protocol| Auth
+    
+    Auth --> Middleware
+    Middleware --> API
+    Middleware --> MCPProxy
+    
     API --> LiteLLM
+    LiteLLM --> Models
     
-    MCP_Client -.->|MCP Protocol| MCPAPI
-    MCPAPI -.->|Proxy| MCPServers
+    MCPProxy --> MCP
     
-    LiteLLM -->|Route Requests| AIModels
+    RouterConfig -.->|Configure| LiteLLM
+    MCPConfig -.->|Configure| MCPProxy
     
-    AdminUI --> Hierarchy
-    Hierarchy --> Config
+    Admin -.->|View Usage| DB
+    Middleware -.->|Log Usage| DB
     
-    Auth -.->|Validate| PostgreSQL
-    Router -.->|Check Limits| PostgreSQL
-    Router -.->|Log Usage| PostgreSQL
-    API -.->|Store Files| FileStore
-    
-    FileProc -->|Extract Text| Tika
-    BatchAPI -->|Queue Jobs| Celery
-    
-    Celery -.->|Process| Redis
-    Logging -.->|Cache| Redis
-    
-    Config -.->|Configure| LiteLLM
+    API -.->|Store/Read Files| FileStorage
+    API -.->|Queue Batch Jobs| Workers
+    Workers -.-> Cache
     
     classDef clientStyle fill:#e1f5ff,stroke:#01579b,stroke-width:2px
     classDef gatewayStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
     classDef mgmtStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef configStyle fill:#fff9c4,stroke:#f57f17,stroke-width:2px
     classDef storageStyle fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
     classDef externalStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     
-    class Client,OpenAI,HTTP,MCP_Client clientStyle
-    class Gateway,Auth,Router,API,LiteLLM gatewayStyle
-    class Management,AdminUI,Hierarchy,Config mgmtStyle
-    class Storage,PostgreSQL,Redis,FileStore,Workers,Celery,Tika storageStyle
-    class External,AIModels,MCPServers externalStyle
+    class Client,OAIClients,MCPClients clientStyle
+    class Gateway,Auth,Middleware,API,MCPProxy,LiteLLM gatewayStyle
+    class Management,Admin mgmtStyle
+    class Config,RouterConfig,MCPConfig configStyle
+    class Storage,DB,FileStorage,Cache,Workers storageStyle
+    class External,Models,MCP externalStyle
 ```
 
 ### Core Features

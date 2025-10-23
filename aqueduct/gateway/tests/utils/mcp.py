@@ -1,4 +1,3 @@
-import fcntl
 import os
 import socket
 import subprocess
@@ -130,16 +129,11 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 cwd=os.path.dirname(MCP_CONFIG_PATH),
             )
 
-            # Set stdout to non-blocking mode
-            if cls.mcp_server_process.stdout:
-                fd = cls.mcp_server_process.stdout.fileno()
-                flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-                fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-
-            # Wait for server to be ready by reading output
+            # Wait for server to be ready by checking if it accepts connections
+            print(f"Waiting for MCP server to accept connections on port {port}...")
             start_time = time.time()
-            timeout = 10  # 10 second timeout
-            output_buffer = ""
+            timeout = 30
+            last_error = None
 
             while time.time() - start_time < timeout:
                 # Check if process is still running
@@ -147,30 +141,20 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                     stdout, _ = cls.mcp_server_process.communicate()
                     raise RuntimeError(f"MCP server failed to start. stdout: {stdout}")
 
-                # Try to read some output
+                # Try to connect to the server
                 try:
-                    if cls.mcp_server_process.stdout:
-                        chunk = cls.mcp_server_process.stdout.read()
-                        if chunk is not None and chunk:
-                            output_buffer += chunk
-                            # Process complete lines
-                            while "\n" in output_buffer:
-                                line, output_buffer = output_buffer.split("\n", 1)
-                                if line.strip():
-                                    print(f"MCP Server: {line.strip()}")
-                                    if "MCP Streamable HTTP Server listening on port" in line:
-                                        print(
-                                            f"✓ MCP everything server started successfully on port {port}"
-                                        )
-                                        return
-                except (OSError, BlockingIOError, TypeError):
-                    pass
-
-                time.sleep(0.1)
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                        sock.settimeout(1.0)
+                        sock.connect(("localhost", port))
+                        print(f"✓ MCP everything server started successfully on port {port}")
+                        return
+                except (socket.error, ConnectionRefusedError, OSError) as e:
+                    last_error = e
+                    time.sleep(0.5)
 
             # If we get here, timeout occurred
             raise RuntimeError(
-                f"MCP server did not start within {timeout} seconds. Last output: {output_buffer}"
+                f"MCP server did not accept connections within {timeout} seconds. Last error: {last_error}"
             )
         except FileNotFoundError:
             raise RuntimeError(

@@ -19,6 +19,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             tool_names = [tool.name for tool in tools.tools]
             self.assertIn("echo", tool_names)
 
+        await self.assertRequestLogged()
+
     async def test_call_tool(self):
         """Test calling a tool."""
         async with self.client_session() as session:
@@ -31,6 +33,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertGreater(len(result.content), 0)
             # Verify the echo tool returns the input message
             self.assertIn("test", result.content[0].text)
+
+        await self.assertRequestLogged()
 
     async def test_call_tool_long_running(self):
         """Test calling a long-running tool with progress updates."""
@@ -53,6 +57,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             # Resources may be empty, but the response should be valid
             self.assertGreater(len(resources.resources), 0)
 
+        await self.assertRequestLogged()
+
     async def test_read_resource(self):
         """Test reading a resource."""
         async with self.client_session() as session:
@@ -67,6 +73,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsInstance(result.contents, list)
             self.assertGreater(len(result.contents), 0)
 
+        await self.assertRequestLogged()
+
     async def test_list_prompts(self):
         """Test listing prompts."""
         async with self.client_session() as session:
@@ -79,6 +87,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             # Verify prompt names are strings
             for prompt in prompts.prompts:
                 self.assertIsInstance(prompt.name, str)
+
+        await self.assertRequestLogged()
 
     async def test_get_prompt(self):
         """Test getting a prompt."""
@@ -94,6 +104,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsInstance(result.messages, list)
             self.assertGreater(len(result.messages), 0)
 
+        await self.assertRequestLogged()
+
     async def test_send_ping(self):
         """Test sending ping."""
         async with self.client_session() as session:
@@ -101,6 +113,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             result = await session.send_ping()
 
             self.assertIsNotNone(result)
+
+        await self.assertRequestLogged()
 
     async def test_list_resource_templates(self):
         """Test listing resource templates."""
@@ -114,6 +128,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             if templates.resourceTemplates:
                 for template in templates.resourceTemplates:
                     self.assertIsInstance(template.uriTemplate, str)
+
+        await self.assertRequestLogged()
 
     async def test_complete_resource_template(self):
         """Test completion for resource template reference."""
@@ -134,6 +150,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             else:
                 self.skipTest("No resource templates available for completion test")
 
+        await self.assertRequestLogged()
+
     async def test_complete_prompt_reference(self):
         """Test completion for prompt reference."""
         async with self.client_session() as session:
@@ -153,6 +171,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             else:
                 self.skipTest("No prompts available for completion test")
 
+        await self.assertRequestLogged()
+
     async def test_set_logging_level(self):
         """Test setting server logging level."""
         async with self.client_session() as session:
@@ -161,6 +181,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
             self.assertIsNotNone(result)
 
+        await self.assertRequestLogged()
+
     async def test_send_roots_list_changed(self):
         """Test sending roots list changed notification."""
         async with self.client_session() as session:
@@ -168,6 +190,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             result = await session.send_roots_list_changed()
 
             self.assertIsNone(result)
+
+        await self.assertRequestLogged()
 
     async def test_send_progress_notification(self):
         """Test sending progress notification."""
@@ -178,6 +202,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             )
 
             self.assertIsNone(result)
+
+        await self.assertRequestLogged()
 
     async def test_call_tool_with_progress_callback(self):
         """Test calling tool with progress callback."""
@@ -204,6 +230,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
                 progress_token, progress, total = update
                 self.assertIsInstance(progress, (int, float))
 
+        await self.assertRequestLogged()
+
     async def test_call_tool_with_timeout(self):
         """Test calling tool with read timeout."""
         async with self.client_session() as session:
@@ -216,6 +244,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsNotNone(result)
             self.assertIsInstance(result.content, list)
             self.assertGreater(len(result.content), 0)
+
+        await self.assertRequestLogged()
 
     async def test_list_methods_with_cursor(self):
         """Test list methods with cursor parameter functionality."""
@@ -238,6 +268,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
                 self.assertIsNotNone(next_resources)
                 self.assertIsInstance(next_resources.resources, list)
 
+        await self.assertRequestLogged()
+
     async def test_error_invalid_tool_name(self):
         """Test error handling for invalid tool name."""
         async with self.client_session() as session:
@@ -246,6 +278,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
                 await session.call_tool("nonexistent_tool", {})
 
             self.assertIsNotNone(context.exception)
+
+        await self.assertRequestLogged()
 
     async def test_error_invalid_resource_uri(self):
         """Test error handling for invalid resource URI."""
@@ -257,6 +291,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
             self.assertIsNotNone(context.exception)
 
+        await self.assertRequestLogged()
+
     async def test_initialize(self):
         """Test initialize method directly."""
         async with self.client_session() as session:
@@ -266,6 +302,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             # Verify initialization result has expected attributes
             self.assertIsNotNone(result.serverInfo)
             self.assertIsNotNone(result.capabilities)
+
+        await self.assertRequestLogged()
 
     async def test_session_creation(self):
         """Test that sessions have unique IDs."""
@@ -291,6 +329,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
                 s2 = get_session_id()
 
         self.assertNotEqual(s1, s2)
+        await self.assertRequestLogged(n=2)
 
 
 class MCPTransportSecurityTest(MCPLiveServerTestCase):
@@ -303,6 +342,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             result = await session.initialize()
             self.assertIsNotNone(result)
             self.assertIsNotNone(result.serverInfo)
+
+        await self.assertRequestLogged()
 
     async def test_invalid_host_rejected(self):
         """Test that invalid Host header is rejected with 421."""
@@ -342,6 +383,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             self.assertEqual(response.status_code, 421)
             self.assertIn("error", response.json())
 
+        await self.assertRequestLogged(n=0)
+
     async def test_invalid_origin_rejected(self):
         """Test that invalid Origin header is rejected with 403."""
         from urllib.parse import urlparse
@@ -377,6 +420,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             self.assertEqual(response.status_code, 403)
             self.assertIn("error", response.json())
 
+        await self.assertRequestLogged(0)
+
     async def test_invalid_content_type_rejected(self):
         """Test that invalid Content-Type is rejected with 400."""
         from urllib.parse import urlparse
@@ -411,6 +456,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             self.assertEqual(response.status_code, 400)
             self.assertIn("error", response.json())
 
+        await self.assertRequestLogged(n=0)
+
     async def test_missing_origin_allowed(self):
         """Test that missing Origin header is allowed (same-origin requests)."""
         # Normal requests without Origin should work
@@ -418,6 +465,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             result = await session.initialize()
             self.assertIsNotNone(result)
             self.assertIsNotNone(result.serverInfo)
+
+        await self.assertRequestLogged()
 
     async def test_wildcard_port_allowed(self):
         """Test that wildcard port patterns work (localhost:*)."""
@@ -452,6 +501,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             # Should succeed because localhost:* is in allowed hosts
             self.assertEqual(response.status_code, 200)
 
+        await self.assertRequestLogged(n=1)
+
 
 class MCPServerExclusionTest(MCPLiveServerTestCase):
     """Test MCP server exclusion functionality."""
@@ -462,6 +513,8 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
             result = await session.initialize()
             self.assertIsNotNone(result)
             self.assertIsNotNone(result.serverInfo)
+
+        await self.assertRequestLogged()
 
     async def test_org_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at org level."""
@@ -648,3 +701,5 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         async with httpx.AsyncClient() as client:
             response = await client.post(nonexistent_url, json=payload, headers=self.headers)
             self.assertEqual(response.status_code, 404)
+
+        await self.assertRequestLogged(n=1)

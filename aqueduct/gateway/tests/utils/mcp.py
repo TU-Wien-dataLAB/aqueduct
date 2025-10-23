@@ -5,6 +5,7 @@ import subprocess
 import time
 from contextlib import asynccontextmanager
 
+from asgiref.sync import sync_to_async
 from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
 from mcp import ClientSession
@@ -77,6 +78,13 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         ):
             async with ClientSession(read_stream, write_stream) as session:
                 yield session
+
+    async def assertRequestLogged(self, n: int = 1):
+        # Check that (only) initialize request was logged
+        from management.models import Request
+
+        mcp_requests = await sync_to_async(list)(Request.objects.all())
+        self.assertEqual(len(mcp_requests), n, f"There should be exactly {n} logged MCP request.")
 
     @classmethod
     def _write_mcp_config(cls):

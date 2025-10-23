@@ -87,21 +87,21 @@ cd aqueduct && python manage.py test
 
 ```mermaid
 flowchart TB
-    subgraph Client["Client Applications"]
+    subgraph Client["Clients"]
         OAIClients[OpenAI SDK / HTTP Clients]
         MCPClients[MCP Clients]
     end
 
-    subgraph Gateway["Aqueduct AI Gateway (Django)"]
+    subgraph Gateway["Gateway (Django)"]
         Auth[Authentication &<br/>Authorization]
-        Middleware[Request Processing<br/>Rate Limits • Access Control • Logging]
+        Middleware[Request Processing<br/>Rate Limits / Access Control / Logging]
         
-        API[OpenAI-Compatible API<br/>Chat • Completions • Embeddings<br/>Files • Batches • Audio • Images • Models]
+        API[OpenAI-Compatible API<br/>Chat / Completions / Embeddings<br/>Files / Batches <br/>TTS / STT]
         MCPProxy[MCP Proxy]
         
         LiteLLM[LiteLLM Router]
         
-        Admin[Management UI<br/>Token Creation • Usage Dashboard<br/>Org/Team/User Management]:::mgmtStyle
+        Admin[Management UI<br/>Token Creation / Usage Dashboard<br/>User Management]:::mgmtStyle
     end
     
     subgraph Config["Configuration Files"]
@@ -113,7 +113,7 @@ flowchart TB
         DB[(PostgreSQL)]
         FileStorage[File Storage<br/>Directory]
         Cache[(Redis)]
-        Workers[Celery • Tika]
+        Workers[Celery / Tika]
     end
     
     subgraph External["External Services"]

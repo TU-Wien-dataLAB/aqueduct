@@ -33,6 +33,10 @@ jobs:
       - name: Ruff - check formatting
         run: ruff format --check
 
+      - name: MCP Tests Test
+        run: uv run python aqueduct/manage.py test gateway.tests.test_mcp.MCPLiveClientTest.test_list_tools
+
+
       - name: Gateway Tests
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

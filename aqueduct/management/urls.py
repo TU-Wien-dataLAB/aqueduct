@@ -44,4 +44,5 @@ urlpatterns = [
     path("usage/", views.UsageDashboardView.as_view(), name="usage"),
     path("files/", views.UserFilesView.as_view(), name="files"),
     path("batches/", views.UserBatchesView.as_view(), name="batches"),
+    path("mcp-servers/", views.MCPServersView.as_view(), name="mcp_servers"),
 ]

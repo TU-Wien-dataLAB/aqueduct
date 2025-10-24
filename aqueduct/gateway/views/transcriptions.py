@@ -6,7 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from pydantic import ConfigDict, RootModel, TypeAdapter
 
-from gateway.router import get_openai_client, get_router
+from gateway.config import get_openai_client, get_router
 from management.models import Request
 
 from .decorators import (

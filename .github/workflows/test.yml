@@ -39,7 +39,8 @@ jobs:
 
       - name: MCP Tests Test
         env:
-          DJANGO_LOG_LEVEL: DEBUG
+          DJANGO_LOG_LEVEL: INFO
+          OIDC_OP_JWKS_ENDPOINT: https://example.com/application/o/example/jwks/
         run: uv run python aqueduct/manage.py test gateway.tests.test_mcp.MCPLiveClientTest.test_list_tools
 
 #      - name: Gateway Tests

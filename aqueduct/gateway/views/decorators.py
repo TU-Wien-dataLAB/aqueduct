@@ -109,9 +109,9 @@ def mcp_transport_security(view_func):
                             origin_valid = True
                             break
 
-        if not origin_valid:
-            logger.error(f"Invalid Origin header: {origin}")
-            return JsonResponse({"error": "Invalid Origin header"}, status=403)
+            if not origin_valid:
+                logger.error(f"Invalid Origin header: {origin}")
+                return JsonResponse({"error": "Invalid Origin header"}, status=403)
 
         return await view_func(request, *args, **kwargs)
 

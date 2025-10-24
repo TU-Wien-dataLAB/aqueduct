@@ -62,6 +62,7 @@ def mcp_transport_security(view_func):
             logger.debug(f"POST request Content-Type: '{content_type}'")
             if not content_type.lower().startswith("application/json"):
                 logger.warning(f"Invalid Content-Type header: {content_type}")
+                logger.error(f"Invalid Content-Type header: {content_type}")
                 return JsonResponse({"error": "Invalid Content-Type header"}, status=400)
 
         # Validate Host header against allowed values
@@ -69,7 +70,7 @@ def mcp_transport_security(view_func):
         host = request.headers.get("host")
 
         if not host:
-            logger.warning("Missing Host header in request")
+            logger.error("Missing Host header in request")
             return JsonResponse({"error": "Invalid Host header"}, status=421)
 
         # Check exact match first
@@ -86,7 +87,7 @@ def mcp_transport_security(view_func):
                         break
 
         if not host_valid:
-            logger.warning(f"Invalid Host header: {host}")
+            logger.error(f"Invalid Host header: {host}")
             return JsonResponse({"error": "Invalid Host header"}, status=421)
 
         # Validate Origin header against allowed values
@@ -108,9 +109,9 @@ def mcp_transport_security(view_func):
                             origin_valid = True
                             break
 
-            if not origin_valid:
-                logger.warning(f"Invalid Origin header: {origin}")
-                return JsonResponse({"error": "Invalid Origin header"}, status=403)
+        if not origin_valid:
+            logger.error(f"Invalid Origin header: {origin}")
+            return JsonResponse({"error": "Invalid Origin header"}, status=403)
 
         return await view_func(request, *args, **kwargs)
 
@@ -131,7 +132,7 @@ def token_authenticated(token_auth_only: bool):
                 request.user = await request.auser()
 
             if not getattr(request, "user", None) or not request.user.is_authenticated:
-                logger.warning(
+                logger.error(
                     "Authentication check failed in ai_gateway_view: request.user "
                     "is not authenticated."
                 )
@@ -140,6 +141,7 @@ def token_authenticated(token_auth_only: bool):
 
             token_key = token_from_request(request)
             if token_auth_only and not token_key:
+                logger.error("Token not found in request")
                 return unauthorized_response
 
             if token_key:
@@ -149,6 +151,7 @@ def token_authenticated(token_auth_only: bool):
                 token = await Token.objects.filter(user=request.user).afirst()
 
             if not token:
+                logger.error("Token not found during authentication")
                 return unauthorized_response
             kwargs["token"] = token
             return await view_func(request, *args, **kwargs)
@@ -183,9 +186,11 @@ def parse_body(model: TypeAdapter):
                     for key, file in request.FILES.items():
                         data[key] = file.read()
                         if len(data[key]) > max_file_bytes:
+                            logger.error("File in request too large")
                             return JsonResponse({"error": "File too large"}, status=413)
                         total_file_size_bytes += len(data[key])
                         if total_file_size_bytes > 32 * 1024 * 1024:
+                            logger.error("Files in request too large")
                             return JsonResponse({"error": "Files too large"}, status=413)
 
                     model.validate_python(data)
@@ -198,6 +203,7 @@ def parse_body(model: TypeAdapter):
                         buffer.name = file.name
                         data[key] = buffer
                 else:
+                    logger.error(f"Unsupported Content-Type: {content_type}")
                     return JsonResponse(
                         {"error": f"Unsupported Content-Type: {content_type}"}, status=415
                     )
@@ -206,6 +212,7 @@ def parse_body(model: TypeAdapter):
                 kwargs["pydantic_model"]["timeout"] = settings.RELAY_REQUEST_TIMEOUT
                 return await view_func(request, *args, **kwargs)
             except ValidationError as e:
+                logger.error(f"Validation error: {e}")
                 return JsonResponse({"error": str(e)}, status=400)
 
         return wrapper
@@ -237,6 +244,7 @@ def check_limits(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
+            logger.error("Token not found")
             return JsonResponse({"error": "Token not found"}, status=404)
 
         try:
@@ -297,11 +305,13 @@ def check_limits(view_func):
                         f"Rate limit exceeded for Token '{token.name}' (ID: {token.id}). "
                         f"Details: {error_message}"
                     )
+                    logger.error(f"Rate limit exceeded - {error_message}")
                     # Return 429 Too Many Requests
                     return JsonResponse({"error": error_message}, status=429)
 
         except Exception as e:
             logger.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
+            logger.error("Internal gateway error checking rate limits")
             return JsonResponse(
                 {"error": "Internal gateway error checking rate limits"}, status=500
             )
@@ -356,6 +366,7 @@ def check_model_availability(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
+            logger.error("Token not found")
             return JsonResponse({"error": "Token not found"}, status=404)
         body: dict | None = kwargs.get("pydantic_model", None)
         if not body:
@@ -366,6 +377,7 @@ def check_model_availability(view_func):
                 return await view_func(request, *args, **kwargs)
             else:
                 if await sync_to_async(token.model_excluded)(model):
+                    logger.error(f"Model not found - {model}")
                     return JsonResponse({"error": "Model not found!"}, status=404)
                 return await view_func(request, *args, **kwargs)
 
@@ -377,12 +389,14 @@ def check_mcp_server_availability(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
+            logger.error("Token not found")
             return JsonResponse({"error": "Token not found"}, status=404)
         server_name: str | None = kwargs.get("name", None)
         if not server_name:
             return await view_func(request, *args, **kwargs)
         else:
             if await sync_to_async(token.mcp_server_excluded)(server_name):
+                logger.error(f"MCP server not found - {server_name}")
                 return JsonResponse({"error": "MCP server not found!"}, status=404)
             return await view_func(request, *args, **kwargs)
 
@@ -442,6 +456,7 @@ def process_file_content(view_func):
         token: Token | None = kwargs.get("token", None)
         pydantic_model: dict | None = kwargs.get("pydantic_model", None)
         if not pydantic_model:
+            logger.error("Invalid request - missing request body")
             return JsonResponse({"error": "Invalid request: missing request body"}, status=400)
 
         messages = pydantic_model.get("messages", [])
@@ -461,6 +476,9 @@ def process_file_content(view_func):
                         file = FileFile(**content_item.get("file", {}))
                         file_bytes = await file_to_bytes(token, file)
                         if len(file_bytes) > 10 * 1024 * 1024:
+                            logger.error(
+                                "File processing error - File too large (individual file must be <= 10MB)"
+                            )
                             return JsonResponse(
                                 {
                                     "error": "Error processing file content: File too large. "
@@ -471,6 +489,9 @@ def process_file_content(view_func):
 
                         total_file_size_bytes += len(file_bytes)
                         if total_file_size_bytes > 32 * 1024 * 1024:
+                            logger.error(
+                                "File processing error - Files too large in total (all files must be <= 32MB)"
+                            )
                             return JsonResponse(
                                 {
                                     "error": "Error processing file content: Files too large in total. "
@@ -492,10 +513,11 @@ def process_file_content(view_func):
                         del content_item["file"]
 
                     except FileObject.DoesNotExist:
+                        logger.error("File not found")
                         return JsonResponse({"error": "File not found"}, status=404)
                     except Exception as e:
                         # return json response here if there was an error
-                        logger.info(f"Error processing file content: {e}")
+                        logger.error(f"Error processing file - {str(e)}")
                         return JsonResponse(
                             {"error": f"Error processing file: {str(e)}"}, status=400
                         )
@@ -518,22 +540,31 @@ def catch_router_exceptions(view_func):
         try:
             return await view_func(request, *args, **kwargs)
         except (litellm.BadRequestError, openai.BadRequestError) as e:
+            logger.error(f"Bad request - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=400)
         except (litellm.AuthenticationError, openai.AuthenticationError) as e:
+            logger.error(f"Authentication error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=401)
         except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
+            logger.error(f"Permission denied - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=403)
         except (litellm.NotFoundError, openai.NotFoundError) as e:
+            logger.error(f"Not found - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=404)
         except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
+            logger.error(f"Unprocessable entity - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=422)
         except (litellm.RateLimitError, openai.RateLimitError) as e:
+            logger.error(f"Rate limit exceeded - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=429)
         except (litellm.Timeout, openai.APITimeoutError) as e:
+            logger.error(f"Timeout - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=504)
         except litellm.ServiceUnavailableError as e:
+            logger.error(f"Service unavailable - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
+            logger.error(f"Internal server error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=500)
         except (
             litellm.APIConnectionError,
@@ -541,8 +572,10 @@ def catch_router_exceptions(view_func):
             openai.APIConnectionError,
             openai.APIError,
         ) as e:
+            logger.error(f"API error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=500)
         except Exception as e:
+            logger.error(f"Unexpected error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=500)
 
     return wrapper
@@ -566,6 +599,7 @@ def tos_accepted(view_func):
                     user_agreed = await sync_to_async(has_user_agreed_latest_tos)(request.user)
 
                 if not user_agreed:
+                    logger.error("Terms of service agreement required")
                     return JsonResponse(
                         {
                             "error": "In order to use the API you have to agree to the terms of service!"
@@ -615,6 +649,7 @@ def parse_jsonrpc_message(view_func):
             )
 
             if not is_initialize and not session_id:
+                logger.error("Mcp-Session-Id header required")
                 return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
 
             kwargs["json_rpc_message"] = json_rpc_message

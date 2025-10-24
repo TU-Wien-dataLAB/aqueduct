@@ -11,9 +11,10 @@ from django.test import override_settings
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.base import GatewayBatchesTestCase
 
-logger = logging.getLogger("aqueduct")
-logging.disable(logging.NOTSET)
-logger.setLevel(logging.DEBUG)
+if settings.TESTING:
+    logger = logging.getLogger("aqueduct")
+    logging.disable(logging.NOTSET)
+    logger.setLevel(logging.DEBUG)
 
 
 def mock_router():

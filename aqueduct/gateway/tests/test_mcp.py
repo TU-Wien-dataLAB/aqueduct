@@ -1,13 +1,20 @@
+import logging
 from datetime import timedelta
 
+from django.conf import settings
 from pydantic.networks import AnyUrl
 
 from gateway.tests.utils.mcp import MCPLiveServerTestCase
 
+if settings.TESTING:
+    logger = logging.getLogger("aqueduct")
+    logging.disable(logging.NOTSET)
+    logger.setLevel(logging.DEBUG)
+
 
 class MCPLiveClientTest(MCPLiveServerTestCase):
     async def test_list_tools(self):
-        """Test MCP tools listing using the exact pattern from scratch file."""
+        """Test MCP tools listing."""
         async with self.client_session() as session:
             await session.initialize()
             tools = await session.list_tools()

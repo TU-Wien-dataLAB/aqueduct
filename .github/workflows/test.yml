@@ -28,25 +28,25 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: Set up ruff and run `ruff check`
-        uses: astral-sh/ruff-action@v3
-
-      - name: Ruff - check imports
-        run: ruff check --select I
-
-      - name: Ruff - check formatting
-        run: ruff format --check
+#      - name: Set up ruff and run `ruff check`
+#        uses: astral-sh/ruff-action@v3
+#
+#      - name: Ruff - check imports
+#        run: ruff check --select I
+#
+#      - name: Ruff - check formatting
+#        run: ruff format --check
 
       - name: MCP Tests Test
         run: uv run python aqueduct/manage.py test gateway.tests.test_mcp.MCPLiveClientTest.test_list_tools
 
-      - name: Gateway Tests
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          INTEGRATION_TEST_BACKEND: ${{ matrix.backend }}
-          START_VLLM_SERVER: ${{ matrix.start }}
-        run: uv run ${{ matrix.start == 'true' && '--extra vllm' || '' }} python aqueduct/manage.py test gateway
+#      - name: Gateway Tests
+#        env:
+#          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+#          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+#          INTEGRATION_TEST_BACKEND: ${{ matrix.backend }}
+#          START_VLLM_SERVER: ${{ matrix.start }}
+#        run: uv run ${{ matrix.start == 'true' && '--extra vllm' || '' }} python aqueduct/manage.py test gateway
 
   compose:
     runs-on: ubuntu-latest

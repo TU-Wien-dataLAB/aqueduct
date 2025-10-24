@@ -121,7 +121,12 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             env = os.environ.copy()
             env["PORT"] = str(port)
             cls.mcp_server_process = subprocess.Popen(
-                ["npx", "@modelcontextprotocol/server-everything", "streamableHttp"],
+                # ["npx", "@modelcontextprotocol/server-everything", "streamableHttp"],
+                [
+                    "sh",
+                    "-c",
+                    "sleep 10s && npx @modelcontextprotocol/server-everything streamableHttp",
+                ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

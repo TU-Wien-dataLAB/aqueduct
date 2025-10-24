@@ -62,7 +62,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     def headers(self):
         # ChannelsLiveServerTestCase really hates if I try to access model classes (through import)
         # -> stops raising AppRegistryNotReady
-        return {"Authorization": "Bearer sk-123abc"}
+        return {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
 
     @property
     def mcp_url(self):
@@ -121,12 +121,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             env = os.environ.copy()
             env["PORT"] = str(port)
             cls.mcp_server_process = subprocess.Popen(
-                # ["npx", "@modelcontextprotocol/server-everything", "streamableHttp"],
-                [
-                    "sh",
-                    "-c",
-                    "sleep 10s && npx @modelcontextprotocol/server-everything streamableHttp",
-                ],
+                ["npx", "@modelcontextprotocol/server-everything", "streamableHttp"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

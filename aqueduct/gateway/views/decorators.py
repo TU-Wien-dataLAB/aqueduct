@@ -54,9 +54,12 @@ def mcp_transport_security(view_func):
         if not getattr(settings, "MCP_ENABLE_DNS_REBINDING_PROTECTION", True):
             return await view_func(request, *args, **kwargs)
 
+        logger.debug(f"MCP request headers: {dict(request.headers)}")
+
         # Validate Content-Type for POST requests
         if request.method == "POST":
             content_type = request.headers.get("content-type", "")
+            logger.debug(f"POST request Content-Type: '{content_type}'")
             if not content_type.lower().startswith("application/json"):
                 logger.warning(f"Invalid Content-Type header: {content_type}")
                 return JsonResponse({"error": "Invalid Content-Type header"}, status=400)

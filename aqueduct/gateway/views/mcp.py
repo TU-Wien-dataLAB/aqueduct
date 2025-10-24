@@ -782,8 +782,9 @@ async def mcp_server(
     """
     Handles GET, POST and DELETE requests for /mcp-servers/{name}/mcp path.
     """
-    log.debug(
-        f"MCP server request - Method: {request.method}, Server: '{name}', Session: {session_id}"
+    log.info(
+        f"MCP server request - Method: {request.method}, Server: '{name}', Session: {session_id}, "
+        f"Headers: {dict(request.headers)}"
     )
 
     if request.method == "GET":

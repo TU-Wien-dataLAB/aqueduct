@@ -588,7 +588,12 @@ def parse_jsonrpc_message(view_func):
             return await view_func(request, request_log=None, *args, **kwargs)
 
         try:
-            data = json.loads(request.body)
+            body = request.body
+            logger.error(f"Request body in parse_jsonrpc_message: {body!r}")
+            if body is None:
+                logger.error("Request body is None")
+                return JsonResponse({"error": "Missing request body"}, status=400)
+            data = json.loads(body)
             json_rpc_message = None
 
             try:
@@ -596,8 +601,10 @@ def parse_jsonrpc_message(view_func):
 
                 json_rpc_message = JSONRPCMessage.model_validate(data)
             except ValidationError as e:
+                logger.error(f"JSON-RPC validation error: {str(e)}, data was: {data!r}")
                 return JsonResponse({"error": f"Invalid JSON-RPC message: {str(e)}"}, status=400)
             except Exception as e:
+                logger.error(f"JSON-RPC parse error: {str(e)}, data was: {data!r}")
                 return JsonResponse(
                     {"error": f"Failed to parse JSON-RPC message: {str(e)}"}, status=400
                 )
@@ -615,8 +622,10 @@ def parse_jsonrpc_message(view_func):
 
             return await view_func(request, *args, **kwargs)
         except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {str(e)}, body was: {request.body!r}")
             return JsonResponse({"error": f"Invalid JSON: {str(e)}"}, status=400)
         except Exception as e:
+            logger.error(f"Request processing error: {str(e)}", exc_info=True)
             return JsonResponse({"error": f"Request processing error: {str(e)}"}, status=400)
 
     return wrapper

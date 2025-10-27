@@ -1,4 +1,5 @@
 import json
+from http import HTTPStatus
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayIntegrationTestCase
@@ -23,6 +24,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             "model": self.model,
             "prompt": "A beautiful landscape with mountains and a lake",
             "size": "256x256",
+            "user_id": "Emma Noether",
         }
 
         response = self.client.post(
@@ -32,7 +34,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
         response_json = response.json()
         self.assertIn("data", response_json, "Response should contain 'data' field")
@@ -57,6 +59,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             "images/generations", req.path, "Request endpoint should be for image generation."
         )
         self.assertIsInstance(req.token_usage, Usage)
+        self.assertEqual(req.user_id, "Emma Noether")
 
     def test_image_generation_with_b64_json_response_format(self):
         """Test image generation with response format "b64_json"."""
@@ -75,7 +78,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
         response_json = response.json()
         self.assertIn("data", response_json, "Response should contain 'data' field")
@@ -111,7 +114,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_image_generation_endpoint_empty_prompt(self):
         """Test image generation endpoint with empty prompt."""
@@ -130,7 +133,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_image_generation_endpoint_non_image_model(self):
         """Test image generation endpoint with a model that doesn't support image generation."""
@@ -144,7 +147,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.assertIn("Invalid value: 'gpt-4.1-nano'", response.json()["error"])
 
     def test_image_generation_endpoint_with_multiple_images(self):
@@ -164,7 +167,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
         response_json = response.json()
         self.assertIn("data", response_json, "Response should contain 'data' field")
@@ -189,7 +192,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_image_generation_endpoint_stream(self):
         """Test image generation endpoint with `stream=True`."""
@@ -203,5 +206,20 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.assertIn("Aqueduct does not support image streaming.", response.json()["error"])
+
+    def test_image_generation_with_extra_fields_in_body(self):
+        """Extra fields in the request body."""
+
+        payload = {"model": self.model, "prompt": "A test image", "sth_extra": "Oh yeah"}
+
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("got an unexpected keyword argument 'sth_extra'", response.json()["error"])

@@ -1,4 +1,5 @@
 import json
+from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from openai.types.image import Image
@@ -37,7 +38,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
         response_json = response.json()
         self.assertIn("data", response_json, "Response should contain 'data' field")
@@ -76,7 +77,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
         response_json = response.json()
         self.assertIn("data", response_json, "Response should contain 'data' field")
@@ -112,7 +113,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_image_generation_endpoint_empty_prompt(self):
         """Test image generation endpoint with empty prompt."""
@@ -131,7 +132,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_image_generation_endpoint_non_image_model(self):
         """Test image generation endpoint with a model that doesn't support image generation."""
@@ -145,7 +146,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.assertIn("Incompatible model 'gpt-4.1-nano'!", response.json()["error"])
 
     def test_image_generation_endpoint_with_multiple_images(self):
@@ -165,7 +166,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
         response_json = response.json()
         self.assertIn("data", response_json, "Response should contain 'data' field")
@@ -187,7 +188,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_image_generation_endpoint_stream(self):
         """Test image generation endpoint with `stream=True`."""
@@ -201,7 +202,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.assertIn("Aqueduct does not support image streaming.", response.json()["error"])
 
     def test_image_generation_with_alias(self):
@@ -289,3 +290,19 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
                             1,
                             "There should be exactly one request after image generation.",
                         )
+
+
+    def test_image_generation_with_extra_fields_in_body(self):
+        """Extra fields in the request body."""
+
+        payload = {"model": self.model, "prompt": "A test image", "sth_extra": "Oh yeah"}
+
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("got an unexpected keyword argument 'sth_extra'", response.json()["error"])

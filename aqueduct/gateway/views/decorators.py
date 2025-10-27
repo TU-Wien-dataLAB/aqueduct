@@ -288,6 +288,15 @@ def check_limits(view_func):
     return wrapper
 
 
+def _get_user_id_from_body(request: ASGIRequest) -> str:
+    """Extract user ID from request body."""
+    try:
+        user_id = json.loads(request.body.decode("utf-8")).get("user_id", "")
+        return str(user_id)
+    except Exception:
+        return ""
+
+
 def log_request(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
@@ -307,6 +316,7 @@ def log_request(view_func):
             method=request.method,
             user_agent=request.headers.get("User-Agent", ""),
             ip_address=request.META.get("REMOTE_ADDR"),
+            user_id=_get_user_id_from_body(request),
             # path, Status, time, usage set later in the view or processing steps
         )
         # Calculate and set path (ensure leading slash)

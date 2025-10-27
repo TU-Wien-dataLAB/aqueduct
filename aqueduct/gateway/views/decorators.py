@@ -558,20 +558,21 @@ def catch_router_exceptions(view_func):
         except (litellm.Timeout, openai.APITimeoutError) as e:
             log.error(f"Timeout - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=504)
-        except litellm.ServiceUnavailableError as e:
+        except (
+            litellm.ServiceUnavailableError,
+            litellm.APIConnectionError,
+            openai.APIConnectionError,
+        ) as e:
             log.error(f"Service unavailable - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
             log.error(f"Internal server error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=500)
-        except (
-            litellm.APIConnectionError,
-            litellm.APIError,
-            openai.APIConnectionError,
-            openai.APIError,
-        ) as e:
+        except (litellm.APIError, openai.APIError) as e:
+            # APIError is raised e.g. when user sends extra kwargs in the request body,
+            # so we return a 400 Bad request.
             log.error(f"API error - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=500)
+            return JsonResponse({"error": _r(e)}, status=400)
         except Exception as e:
             log.error(f"Unexpected error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=500)

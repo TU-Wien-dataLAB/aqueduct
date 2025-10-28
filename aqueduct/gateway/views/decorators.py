@@ -290,10 +290,17 @@ def check_limits(view_func):
 
 def _get_user_id_from_body(request: ASGIRequest) -> str:
     """Extract user ID from request body."""
-    try:
-        user_id = json.loads(request.body.decode("utf-8")).get("user_id", "")
-        return str(user_id)
-    except Exception:
+    if request.content_type == "multipart/form-data":
+        return request.POST.get("user_id", "")
+
+    elif request.content_type == "application/json":
+        try:
+            user_id = json.loads(request.body.decode("utf-8")).get("user_id", "")
+            return str(user_id)
+        except Exception as err:
+            logger.info(f"Cound not retrieve user_id from request body: {err}")
+            return ""
+    else:
         return ""
 
 

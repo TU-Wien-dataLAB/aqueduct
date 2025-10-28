@@ -7,6 +7,8 @@ from openai.types.images_response import ImagesResponse
 
 from gateway.config import get_openai_client, get_router, get_router_config
 from gateway.tests.utils import _build_chat_headers
+from django.urls import reverse
+
 from gateway.tests.utils.base import GatewayIntegrationTestCase
 from management.models import Request, Usage
 
@@ -15,12 +17,11 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
     """Test the image generation endpoint."""
 
     model = "dall-e-2"
-    url = "/images/generations"
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+        cls.url = reverse("gateway:image_generation")
 
     def test_image_generation_endpoint_defaults(self):
         """Test basic image generation with valid parameters."""
@@ -233,63 +234,63 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
         mock_image_response = ImagesResponse(data=[mock_image_object], created=123456789)
 
-        with patch("gateway.config.get_router_config", return_value=mock_config):
-            with patch("gateway.views.image_generation.get_router") as mock_router:
-                with patch(
-                    "gateway.views.image_generation.litellm.get_llm_provider"
-                ) as mock_get_llm_provider:
-                    deployment_mock = MagicMock()
-                    deployment_mock.litellm_params.model = f"openai/{self.model}"
-                    mock_router.get_deployment = MagicMock(return_value=deployment_mock)
+        with (
+            patch("gateway.config.get_router_config", return_value=mock_config),
+            patch("gateway.views.image_generation.get_router") as mock_router,
+            patch("gateway.views.image_generation.litellm.get_llm_provider") as mock_get_llm_provider
+        ):
+            deployment_mock = MagicMock()
+            deployment_mock.litellm_params.model = f"openai/{self.model}"
+            mock_router.get_deployment = MagicMock(return_value=deployment_mock)
 
-                    # Mock litellm.get_llm_provider to return the relay model and provider
-                    mock_get_llm_provider.return_value = (self.model, "openai", None, None)
+            # Mock litellm.get_llm_provider to return the relay model and provider
+            mock_get_llm_provider.return_value = (self.model, "openai", None, None)
 
-                    with patch("gateway.views.image_generation.get_openai_client") as mock_client:
-                        # Mock the client's images.generate method to return our mock response
-                        mock_openai_client = AsyncMock()
-                        mock_openai_client.images.generate.return_value = mock_image_response
-                        mock_client.return_value = mock_openai_client
+            with patch("gateway.views.image_generation.get_openai_client") as mock_client:
+                # Mock the client's images.generate method to return our mock response
+                mock_openai_client = AsyncMock()
+                mock_openai_client.images.generate.return_value = mock_image_response
+                mock_client.return_value = mock_openai_client
 
-                        payload = {
-                            "model": "image",  # Using alias instead of actual model name
-                            "prompt": "A beautiful landscape with mountains and a lake",
-                            "size": "256x256",
-                        }
+                payload = {
+                    "model": "image",  # Using alias instead of actual model name
+                    "prompt": "A beautiful landscape with mountains and a lake",
+                    "size": "256x256",
+                }
 
-                        response = self.client.post(
-                            "/images/generations",
-                            data=json.dumps(payload),
-                            headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN),
-                            content_type="application/json",
-                        )
+                response = self.client.post(
+                    "/images/generations",
+                    data=json.dumps(payload),
+                    headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN),
+                    content_type="application/json",
+                )
 
-                        # Should return 200 with alias resolution
-                        self.assertEqual(response.status_code, 200)
+                # Should return 200 with alias resolution
+                self.assertEqual(response.status_code, 200)
 
-                        response_json = response.json()
-                        self.assertIn("data", response_json, "Response should contain 'data' field")
-                        self.assertIsInstance(response_json["data"], list, "Data should be a list")
-                        self.assertGreater(
-                            len(response_json["data"]), 0, "Data should not be empty"
-                        )
+                response_json = response.json()
+                self.assertIn("data", response_json, "Response should contain 'data' field")
+                self.assertIsInstance(response_json["data"], list, "Data should be a list")
+                self.assertGreater(
+                    len(response_json["data"]), 0, "Data should not be empty"
+                )
 
-                        # Check first image object structure
-                        img_data = response_json["data"][0]
-                        self.assertIn(
-                            "b64_json", img_data, "Image data should contain 'b64_json' field"
-                        )
-                        self.assertIsInstance(
-                            img_data["b64_json"], str, "Image data should be a string"
-                        )
+                # Check first image object structure
+                img_data = response_json["data"][0]
+                self.assertIn(
+                    "b64_json", img_data, "Image data should contain 'b64_json' field"
+                )
+                self.assertIsInstance(
+                    img_data["b64_json"], str, "Image data should be a string"
+                )
 
-                        # Check that the database contains one request
-                        requests = list(Request.objects.all())
-                        self.assertEqual(
-                            len(requests),
-                            1,
-                            "There should be exactly one request after image generation.",
-                        )
+                # Check that the database contains one request
+                requests = list(Request.objects.all())
+                self.assertEqual(
+                    len(requests),
+                    1,
+                    "There should be exactly one request after image generation.",
+                )
 
 
     def test_image_generation_with_extra_fields_in_body(self):

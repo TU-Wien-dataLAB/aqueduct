@@ -10,6 +10,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TransactionTestCase, override_settings
 
+from gateway.tests.utils import _build_chat_headers
 from management.models import Org, Token, UserProfile
 
 INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
@@ -121,6 +122,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
                 raise RuntimeError(
                     "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
                 )
+        cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
 
     @staticmethod
     def create_new_user() -> tuple[str, int]:

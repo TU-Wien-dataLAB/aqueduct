@@ -78,3 +78,19 @@ def cache_lock(lock_id, ttl: int):
     finally:
         if status and time.monotonic() < timeout_at:
             cache.delete(lock_id)
+
+
+def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
+    """Check if a value is in a list of allowed values or if it matches a wildcard pattern within these values."""
+    if value is None:
+        return False
+
+    valid = value in allowed_values
+    if not valid:
+        # Check wildcard port patterns (e.g., "http://localhost:*")
+        for allowed in allowed_values:
+            if allowed.endswith(":*"):
+                base_origin = allowed[:-2]
+                if value.startswith(base_origin + ":"):
+                    return True
+    return valid

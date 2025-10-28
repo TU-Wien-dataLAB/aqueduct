@@ -1,6 +1,3 @@
-# pyright: reportAttributeAccessIssue=false
-# pyright: reportAssignmentType=false
-
 import base64
 import io
 import json
@@ -20,6 +17,7 @@ from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Sum
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.utils import timezone
+from mcp.types import JSONRPCMessage
 from openai.types.chat import ChatCompletionStreamOptionsParam
 from openai.types.chat.chat_completion_content_part_param import FileFile
 from pydantic import TypeAdapter, ValidationError
@@ -27,9 +25,10 @@ from tos.middleware import cache
 from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
+from gateway.views.utils import in_wildcard
 from management.models import FileObject, Request, Token
 
-logger = logging.getLogger("aqueduct")
+log = logging.getLogger("aqueduct")
 
 
 def mcp_transport_security(view_func):
@@ -54,15 +53,14 @@ def mcp_transport_security(view_func):
         if not getattr(settings, "MCP_ENABLE_DNS_REBINDING_PROTECTION", True):
             return await view_func(request, *args, **kwargs)
 
-        logger.debug(f"MCP request headers: {dict(request.headers)}")
+        log.debug(f"MCP request headers: {dict(request.headers)}")
 
         # Validate Content-Type for POST requests
         if request.method == "POST":
             content_type = request.headers.get("content-type", "")
-            logger.debug(f"POST request Content-Type: '{content_type}'")
+            log.debug(f"POST request Content-Type: '{content_type}'")
             if not content_type.lower().startswith("application/json"):
-                logger.warning(f"Invalid Content-Type header: {content_type}")
-                logger.error(f"Invalid Content-Type header: {content_type}")
+                log.error(f"Invalid Content-Type header: {content_type}")
                 return JsonResponse({"error": "Invalid Content-Type header"}, status=400)
 
         # Validate Host header against allowed values
@@ -70,24 +68,12 @@ def mcp_transport_security(view_func):
         host = request.headers.get("host")
 
         if not host:
-            logger.error("Missing Host header in request")
+            log.error("Missing Host header in request")
             return JsonResponse({"error": "Invalid Host header"}, status=421)
 
-        # Check exact match first
-        host_valid = False
-        if host in allowed_hosts:
-            host_valid = True
-        else:
-            # Check wildcard port patterns (e.g., "localhost:*")
-            for allowed in allowed_hosts:
-                if allowed.endswith(":*"):
-                    base_host = allowed[:-2]
-                    if host.startswith(base_host + ":"):
-                        host_valid = True
-                        break
-
+        host_valid = in_wildcard(host, allowed_hosts)
         if not host_valid:
-            logger.error(f"Invalid Host header: {host}")
+            log.error(f"Invalid Host header: {host}")
             return JsonResponse({"error": "Invalid Host header"}, status=421)
 
         # Validate Origin header against allowed values
@@ -95,22 +81,9 @@ def mcp_transport_security(view_func):
         origin = request.headers.get("origin")
         if origin:
             allowed_origins = getattr(settings, "MCP_ALLOWED_ORIGINS", [])
-
-            # Check exact match first
-            origin_valid = False
-            if origin in allowed_origins:
-                origin_valid = True
-            else:
-                # Check wildcard port patterns (e.g., "http://localhost:*")
-                for allowed in allowed_origins:
-                    if allowed.endswith(":*"):
-                        base_origin = allowed[:-2]
-                        if origin.startswith(base_origin + ":"):
-                            origin_valid = True
-                            break
-
+            origin_valid = in_wildcard(origin, allowed_origins)
             if not origin_valid:
-                logger.error(f"Invalid Origin header: {origin}")
+                log.error(f"Invalid Origin header: {origin}")
                 return JsonResponse({"error": "Invalid Origin header"}, status=403)
 
         return await view_func(request, *args, **kwargs)
@@ -132,16 +105,16 @@ def token_authenticated(token_auth_only: bool):
                 request.user = await request.auser()
 
             if not getattr(request, "user", None) or not request.user.is_authenticated:
-                logger.error(
+                log.error(
                     "Authentication check failed in ai_gateway_view: request.user "
                     "is not authenticated."
                 )
                 return unauthorized_response
-            logger.debug(f"User {request.user.email} authenticated.")
+            log.debug(f"User {request.user.email} authenticated.")
 
             token_key = token_from_request(request)
             if token_auth_only and not token_key:
-                logger.error("Token not found in request")
+                log.error("Token not found in request")
                 return unauthorized_response
 
             if token_key:
@@ -151,7 +124,7 @@ def token_authenticated(token_auth_only: bool):
                 token = await Token.objects.filter(user=request.user).afirst()
 
             if not token:
-                logger.error("Token not found during authentication")
+                log.error("Token not found during authentication")
                 return unauthorized_response
             kwargs["token"] = token
             return await view_func(request, *args, **kwargs)
@@ -186,11 +159,11 @@ def parse_body(model: TypeAdapter):
                     for key, file in request.FILES.items():
                         data[key] = file.read()
                         if len(data[key]) > max_file_bytes:
-                            logger.error("File in request too large")
+                            log.error("File in request too large")
                             return JsonResponse({"error": "File too large"}, status=413)
                         total_file_size_bytes += len(data[key])
                         if total_file_size_bytes > 32 * 1024 * 1024:
-                            logger.error("Files in request too large")
+                            log.error("Files in request too large")
                             return JsonResponse({"error": "Files too large"}, status=413)
 
                     model.validate_python(data)
@@ -203,7 +176,7 @@ def parse_body(model: TypeAdapter):
                         buffer.name = file.name
                         data[key] = buffer
                 else:
-                    logger.error(f"Unsupported Content-Type: {content_type}")
+                    log.error(f"Unsupported Content-Type: {content_type}")
                     return JsonResponse(
                         {"error": f"Unsupported Content-Type: {content_type}"}, status=415
                     )
@@ -212,7 +185,7 @@ def parse_body(model: TypeAdapter):
                 kwargs["pydantic_model"]["timeout"] = settings.RELAY_REQUEST_TIMEOUT
                 return await view_func(request, *args, **kwargs)
             except ValidationError as e:
-                logger.error(f"Validation error: {e}")
+                log.error(f"Validation error: {e}")
                 return JsonResponse({"error": str(e)}, status=400)
 
         return wrapper
@@ -244,13 +217,13 @@ def check_limits(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
-            logger.error("Token not found")
+            log.error("Token not found")
             return JsonResponse({"error": "Token not found"}, status=404)
 
         try:
             # Get limits asynchronously
             limits = await sync_to_async(token.get_limit)()
-            logger.debug(f"Rate limits for Token '{token.name}' (ID: {token.id}): {limits}")
+            log.debug(f"Rate limits for Token '{token.name}' (ID: {token.id}): {limits}")
 
             if (
                 limits.requests_per_minute is not None
@@ -273,7 +246,7 @@ def check_limits(view_func):
                 total_input = recent_requests_agg.get("total_input_tokens", 0) or 0
                 total_output = recent_requests_agg.get("total_output_tokens", 0) or 0
 
-                logger.debug(
+                log.debug(
                     f"Recent usage (last 60s) for Token '{token.name}': "
                     f"Requests={request_count}, Input={total_input}, Output={total_output}"
                 )
@@ -301,17 +274,17 @@ def check_limits(view_func):
 
                 if len(exceeded) > 0:
                     error_message = "Rate limit exceeded. " + ", ".join(exceeded) + "."
-                    logger.warning(
+                    log.warning(
                         f"Rate limit exceeded for Token '{token.name}' (ID: {token.id}). "
                         f"Details: {error_message}"
                     )
-                    logger.error(f"Rate limit exceeded - {error_message}")
+                    log.error(f"Rate limit exceeded - {error_message}")
                     # Return 429 Too Many Requests
                     return JsonResponse({"error": error_message}, status=429)
 
         except Exception as e:
-            logger.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
-            logger.error("Internal gateway error checking rate limits")
+            log.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
+            log.error("Internal gateway error checking rate limits")
             return JsonResponse(
                 {"error": "Internal gateway error checking rate limits"}, status=500
             )
@@ -345,7 +318,7 @@ def log_request(view_func):
         # Calculate and set path (ensure leading slash)
         request_log.path = f"/{request.path.lstrip('/')}"
         kwargs["request_log"] = request_log
-        logger.debug("Initial request log object created.")
+        log.debug("Initial request log object created.")
         # Note: The log is NOT saved here; it's saved later in the view after relaying.
 
         start_time = time.monotonic()
@@ -366,7 +339,7 @@ def check_model_availability(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
-            logger.error("Token not found")
+            log.error("Token not found")
             return JsonResponse({"error": "Token not found"}, status=404)
         body: dict | None = kwargs.get("pydantic_model", None)
         if not body:
@@ -377,7 +350,7 @@ def check_model_availability(view_func):
                 return await view_func(request, *args, **kwargs)
             else:
                 if await sync_to_async(token.model_excluded)(model):
-                    logger.error(f"Model not found - {model}")
+                    log.error(f"Model not found - {model}")
                     return JsonResponse({"error": "Model not found!"}, status=404)
                 return await view_func(request, *args, **kwargs)
 
@@ -389,14 +362,14 @@ def check_mcp_server_availability(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
-            logger.error("Token not found")
+            log.error("Token not found")
             return JsonResponse({"error": "Token not found"}, status=404)
         server_name: str | None = kwargs.get("name", None)
         if not server_name:
             return await view_func(request, *args, **kwargs)
         else:
             if await sync_to_async(token.mcp_server_excluded)(server_name):
-                logger.error(f"MCP server not found - {server_name}")
+                log.error(f"MCP server not found - {server_name}")
                 return JsonResponse({"error": "MCP server not found!"}, status=404)
             return await view_func(request, *args, **kwargs)
 
@@ -456,7 +429,7 @@ def process_file_content(view_func):
         token: Token | None = kwargs.get("token", None)
         pydantic_model: dict | None = kwargs.get("pydantic_model", None)
         if not pydantic_model:
-            logger.error("Invalid request - missing request body")
+            log.error("Invalid request - missing request body")
             return JsonResponse({"error": "Invalid request: missing request body"}, status=400)
 
         messages = pydantic_model.get("messages", [])
@@ -476,7 +449,7 @@ def process_file_content(view_func):
                         file = FileFile(**content_item.get("file", {}))
                         file_bytes = await file_to_bytes(token, file)
                         if len(file_bytes) > 10 * 1024 * 1024:
-                            logger.error(
+                            log.error(
                                 "File processing error - File too large (individual file must be <= 10MB)"
                             )
                             return JsonResponse(
@@ -489,7 +462,7 @@ def process_file_content(view_func):
 
                         total_file_size_bytes += len(file_bytes)
                         if total_file_size_bytes > 32 * 1024 * 1024:
-                            logger.error(
+                            log.error(
                                 "File processing error - Files too large in total (all files must be <= 32MB)"
                             )
                             return JsonResponse(
@@ -513,11 +486,11 @@ def process_file_content(view_func):
                         del content_item["file"]
 
                     except FileObject.DoesNotExist:
-                        logger.error("File not found")
+                        log.error("File not found")
                         return JsonResponse({"error": "File not found"}, status=404)
                     except Exception as e:
                         # return json response here if there was an error
-                        logger.error(f"Error processing file - {str(e)}")
+                        log.error(f"Error processing file - {str(e)}")
                         return JsonResponse(
                             {"error": f"Error processing file: {str(e)}"}, status=400
                         )
@@ -540,31 +513,31 @@ def catch_router_exceptions(view_func):
         try:
             return await view_func(request, *args, **kwargs)
         except (litellm.BadRequestError, openai.BadRequestError) as e:
-            logger.error(f"Bad request - {_r(e)}")
+            log.error(f"Bad request - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=400)
         except (litellm.AuthenticationError, openai.AuthenticationError) as e:
-            logger.error(f"Authentication error - {_r(e)}")
+            log.error(f"Authentication error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=401)
         except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
-            logger.error(f"Permission denied - {_r(e)}")
+            log.error(f"Permission denied - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=403)
         except (litellm.NotFoundError, openai.NotFoundError) as e:
-            logger.error(f"Not found - {_r(e)}")
+            log.error(f"Not found - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=404)
         except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
-            logger.error(f"Unprocessable entity - {_r(e)}")
+            log.error(f"Unprocessable entity - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=422)
         except (litellm.RateLimitError, openai.RateLimitError) as e:
-            logger.error(f"Rate limit exceeded - {_r(e)}")
+            log.error(f"Rate limit exceeded - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=429)
         except (litellm.Timeout, openai.APITimeoutError) as e:
-            logger.error(f"Timeout - {_r(e)}")
+            log.error(f"Timeout - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=504)
         except litellm.ServiceUnavailableError as e:
-            logger.error(f"Service unavailable - {_r(e)}")
+            log.error(f"Service unavailable - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
-            logger.error(f"Internal server error - {_r(e)}")
+            log.error(f"Internal server error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=500)
         except (
             litellm.APIConnectionError,
@@ -572,10 +545,10 @@ def catch_router_exceptions(view_func):
             openai.APIConnectionError,
             openai.APIError,
         ) as e:
-            logger.error(f"API error - {_r(e)}")
+            log.error(f"API error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=500)
         except Exception as e:
-            logger.error(f"Unexpected error - {_r(e)}")
+            log.error(f"Unexpected error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=500)
 
     return wrapper
@@ -599,7 +572,7 @@ def tos_accepted(view_func):
                     user_agreed = await sync_to_async(has_user_agreed_latest_tos)(request.user)
 
                 if not user_agreed:
-                    logger.error("Terms of service agreement required")
+                    log.error("Terms of service agreement required")
                     return JsonResponse(
                         {
                             "error": "In order to use the API you have to agree to the terms of service!"
@@ -619,26 +592,26 @@ def parse_jsonrpc_message(view_func):
         kwargs["session_id"] = session_id
 
         if request.method != "POST":
+            if not session_id:
+                log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
+                return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
+
             return await view_func(request, request_log=None, *args, **kwargs)
 
         try:
             body = request.body
-            logger.error(f"Request body in parse_jsonrpc_message: {body!r}")
             if body is None:
-                logger.error("Request body is None")
+                log.error("Request body is None")
                 return JsonResponse({"error": "Missing request body"}, status=400)
             data = json.loads(body)
-            json_rpc_message = None
 
             try:
-                from mcp.types import JSONRPCMessage
-
                 json_rpc_message = JSONRPCMessage.model_validate(data)
             except ValidationError as e:
-                logger.error(f"JSON-RPC validation error: {str(e)}, data was: {data!r}")
+                log.error(f"JSON-RPC validation error: {str(e)}, data was: {data!r}")
                 return JsonResponse({"error": f"Invalid JSON-RPC message: {str(e)}"}, status=400)
             except Exception as e:
-                logger.error(f"JSON-RPC parse error: {str(e)}, data was: {data!r}")
+                log.error(f"JSON-RPC parse error: {str(e)}, data was: {data!r}")
                 return JsonResponse(
                     {"error": f"Failed to parse JSON-RPC message: {str(e)}"}, status=400
                 )
@@ -649,7 +622,7 @@ def parse_jsonrpc_message(view_func):
             )
 
             if not is_initialize and not session_id:
-                logger.error("Mcp-Session-Id header required")
+                log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
                 return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
 
             kwargs["json_rpc_message"] = json_rpc_message
@@ -657,10 +630,10 @@ def parse_jsonrpc_message(view_func):
 
             return await view_func(request, *args, **kwargs)
         except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error: {str(e)}, body was: {request.body!r}")
+            log.error(f"JSON decode error: {str(e)}, body was: {request.body!r}")
             return JsonResponse({"error": f"Invalid JSON: {str(e)}"}, status=400)
         except Exception as e:
-            logger.error(f"Request processing error: {str(e)}", exc_info=True)
+            log.error(f"Request processing error: {str(e)}", exc_info=True)
             return JsonResponse({"error": f"Request processing error: {str(e)}"}, status=400)
 
     return wrapper

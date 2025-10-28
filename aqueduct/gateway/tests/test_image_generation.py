@@ -1,7 +1,8 @@
 import json
 from http import HTTPStatus
 
-from gateway.tests.utils import _build_chat_headers
+from django.urls import reverse
+
 from gateway.tests.utils.base import GatewayIntegrationTestCase
 from management.models import Request, Usage
 
@@ -10,12 +11,11 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
     """Test the image generation endpoint."""
 
     model = "dall-e-2"
-    url = "/images/generations"
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+        cls.url = reverse("gateway:image_generation")
 
     def test_image_generation_endpoint_defaults(self):
         """Test basic image generation with valid parameters."""

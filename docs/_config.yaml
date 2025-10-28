@@ -61,3 +61,10 @@ liquid:
 # Back to top link
 back_to_top: true
 back_to_top_text: "Back to top"
+
+enable_copy_code_button: true
+
+mermaid:
+  # Version of mermaid library
+  # Pick an available version from https://cdn.jsdelivr.net/npm/mermaid/
+  version: "11.12.0"

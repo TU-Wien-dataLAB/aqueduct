@@ -1,9 +1,13 @@
+import base64
 import json
+import logging
 from unittest.mock import patch
 
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
+from django.urls import reverse
 from openai.types.chat import ChatCompletion
 
 from gateway.router import get_router_config
@@ -22,9 +26,16 @@ from management.models import Org, Request, ServiceAccount, Team, Token, UserPro
 
 User = get_user_model()
 
+logger = logging.getLogger("aqueduct")
+
 
 class EmbeddingTest(GatewayIntegrationTestCase):
     model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "text-embedding-ada-002"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.url = reverse("gateway:embeddings")
 
     @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_embeddings(self):
@@ -39,12 +50,13 @@ class EmbeddingTest(GatewayIntegrationTestCase):
                 "to manage multiple servers!"
             )
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         assert self.model in ROUTER_CONFIG
         payload = {"model": self.model, "input": ["The quick brown fox jumps over the lazy dog."]}
-        endpoint = "/embeddings"
         response = self.client.post(
-            endpoint, data=json.dumps(payload), headers=headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(
@@ -54,7 +66,7 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         )
 
         response_json = response.json()
-        print(f"\nEmbeddings response: {response_json}")
+        logger.debug("\nEmbeddings response: %s", response_json)
 
         # OpenAI-style embeddings response should have 'data' and 'embedding' fields
         self.assertIn("data", response_json)
@@ -74,22 +86,57 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertEqual(req.output_tokens, 0, "output_tokens should be 0")
+        self.assertEqual(req.user_id, "")
+
+    @override_settings(RELAY_REQUEST_TIMEOUT=5)
+    def test_embeddings_with_user_id_in_body(self):
+        """
+        Test that sending "user_id" in request body doesn't break anything and user id is logged.
+        """
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest(
+                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase "
+                "to manage multiple servers!"
+            )
+
+        payload = {
+            "model": self.model,
+            "input": ["The quick brown fox jumps over the lazy dog."],
+            "user_id": "Jane Doe",
+        }
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
+        req = Request.objects.last()
+        self.assertEqual(req.user_id, "Jane Doe")
 
 
-class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
+class ChatCompletionsBase(GatewayIntegrationTestCase):
     MESSAGES = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Write me a short poem!"},
     ]
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.url = reverse("gateway:chat_completions")
+
     def _build_chat_completion_request(self, messages, stream=False, **payload_kwargs) -> dict:
         """
         Helper to build headers, payload, and endpoint for chat completion requests.
         """
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         payload = _build_chat_payload(self.model, messages, stream=stream, **payload_kwargs)
-        endpoint = "/chat/completions"
-        return dict(path=endpoint, data=json.dumps(payload), headers=headers)
+        return dict(path=self.url, data=json.dumps(payload), headers=self.headers)
 
     def _send_chat_completion(self, messages, **payload_kwargs):
         """
@@ -106,6 +153,8 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         response = await self.async_client.post(**request, content_type="application/json")
         return response
 
+
+class ChatCompletionsIntegrationTest(ChatCompletionsBase):
     def test_chat_completion(self):
         """
         Sends a simple chat completion request to the vLLM server using the Django test client.
@@ -124,7 +173,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
 
-        print(f"\nChat completion response: {chat_completion}")
+        logger.debug("\nChat completion response: %s", chat_completion)
 
         self.assertIsNotNone(chat_completion)
         self.assertTrue(chat_completion.choices)
@@ -138,7 +187,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsNotNone(first_choice.message.content)
 
         response_text = first_choice.message.content.strip()
-        print(response_text)
+        logger.debug(response_text)
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
@@ -146,13 +195,34 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             len(requests), 1, "There should be exactly one request after chat completion."
         )
         req = requests[0]
-        self.assertIn(
-            "chat/completions", req.path, "Request endpoint should be for chat completion."
-        )
+        self.assertIn(self.url, req.path, "Request endpoint should be for chat completion.")
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
+        self.assertEqual(req.user_id, "")
+
+    def test_chat_completion_with_user_id_in_body(self):
+        """
+        Test that sending "user_id" in request body doesn't break anything and user id is logged.
+        """
+        payload = _build_chat_payload(self.model, self.MESSAGES)
+        payload["user_id"] = 42
+
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
+        req = Request.objects.last()
+        self.assertEqual(req.user_id, "42")
 
     @override_settings(TIKA_SERVER_URL=None)
     def test_chat_completion_base64_file_input(self):
@@ -160,13 +230,9 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         Sends a chat completion request with base64 encoded file input.
         Tests the file upload functionality using base64 encoding.
         """
-        import base64
-
         # Create a simple text file content and encode it as base64
         file_content = b"This is a test file content for base64 encoding."
         file_base64 = base64.b64encode(file_content).decode("utf-8")
-
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
             "model": self.model,
@@ -186,15 +252,18 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                 }
             ],
             "max_completion_tokens": 50,
+            "user_id": 42,
         }
 
-        endpoint = "/chat/completions"
         with patch(
             "gateway.views.decorators.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
-                endpoint, data=json.dumps(payload), headers=headers, content_type="application/json"
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
         self.assertEqual(
@@ -205,9 +274,8 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
         content = chat_completion.choices[0].message.content
-        if content is not None:
-            content = content.strip()
         self.assertIsNotNone(content)
+        content = content.strip()
         self.assertGreater(len(content), 0)
 
         requests = list(Request.objects.all())
@@ -216,9 +284,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         )
         req = requests[0]
         self.assertIn(
-            "chat/completions",
-            req.path,
-            "Request endpoint should be chat completion for base64 file input.",
+            self.url, req.path, "Request endpoint should be chat completion for base64 file input."
         )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
@@ -226,14 +292,13 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(
             req.output_tokens, 0, "output_tokens should be > 0 for base64 file input"
         )
+        self.assertEqual(req.user_id, "42")
 
     def test_chat_completion_file_id_input(self):
         """
         Sends a chat completion request with file_id input.
         Tests the file upload functionality using a file ID from the files API.
         """
-        from django.core.files.uploadedfile import SimpleUploadedFile
-
         # First, upload a file using the files API
         file_content = b'{"custom_id": "test_file_id_input"}\n'
         upload_file = SimpleUploadedFile(
@@ -255,8 +320,6 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         file_id = upload_data["id"]
 
         # Now use the file_id in a chat completion request
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-
         payload = {
             "model": self.model,
             "messages": [
@@ -269,15 +332,18 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                 }
             ],
             "max_completion_tokens": 50,
+            "user_id": 42,
         }
 
-        endpoint = "/chat/completions"
         with patch(
             "gateway.views.decorators.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
-                endpoint, data=json.dumps(payload), headers=headers, content_type="application/json"
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
         self.assertEqual(
@@ -298,25 +364,22 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         )
 
         # Get the chat completion request (should be the one with /chat/completions path)
-        chat_request = next(r for r in requests if "chat/completions" in r.path)
+        chat_request = next(r for r in requests if self.url in r.path)
         req = chat_request
         self.assertIn(
-            "chat/completions",
-            req.path,
-            "Request endpoint should be chat completion for file_id input.",
+            self.url, req.path, "Request endpoint should be chat completion for file_id input."
         )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for file_id input")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for file_id input")
+        self.assertEqual(req.user_id, "42")
 
     def test_chat_completion_file_id_not_found(self):
         """
         Sends a chat completion request with a non-existent file_id.
         Should raise a 404 error.
         """
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-
         payload = {
             "model": self.model,
             "messages": [
@@ -331,9 +394,11 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             "max_completion_tokens": 50,
         }
 
-        endpoint = "/chat/completions"
         response = self.client.post(
-            endpoint, data=json.dumps(payload), headers=headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(
@@ -347,8 +412,6 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         Sends a chat completion request with a file_id that was created by a different user.
         Should raise a 404 error.
         """
-        from django.core.files.uploadedfile import SimpleUploadedFile
-
         # First, upload a file using the files API with the default user
         file_content = b'{"custom_id": "test_file_id_input"}\n'
         upload_file = SimpleUploadedFile(
@@ -386,13 +449,12 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             "max_completion_tokens": 50,
         }
 
-        endpoint = "/chat/completions"
         with patch(
             "gateway.views.decorators.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
-                endpoint, data=json.dumps(payload), headers=headers, content_type="application/json"
+                self.url, data=json.dumps(payload), headers=headers, content_type="application/json"
             )
 
         self.assertEqual(
@@ -405,14 +467,10 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         """
         Tests that individual files uploaded via base64 are rejected if they exceed 10MB.
         """
-        import base64
-
         # Create a file content that exceeds 10MB (10MB + 1 byte)
         file_size = 10 * 1024 * 1024 + 1  # 10MB + 1 byte
         file_content = b"x" * file_size
         file_base64 = base64.b64encode(file_content).decode("utf-8")
-
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
             "model": self.model,
@@ -434,9 +492,11 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             "max_completion_tokens": 50,
         }
 
-        endpoint = "/chat/completions"
         response = self.client.post(
-            endpoint, data=json.dumps(payload), headers=headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(
@@ -449,15 +509,11 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         """
         Tests that total files uploaded via base64 are rejected if they exceed 32MB in total.
         """
-        import base64
-
         # Create multiple files that together exceed 32MB
         # Each file is 11MB, so 3 files = 33MB total
         individual_file_size = 11 * 1024 * 1024  # 11MB each
         file_content = b"x" * individual_file_size
         file_base64 = base64.b64encode(file_content).decode("utf-8")
-
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
             "model": self.model,
@@ -493,9 +549,11 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             "max_completion_tokens": 50,
         }
 
-        endpoint = "/chat/completions"
         response = self.client.post(
-            endpoint, data=json.dumps(payload), headers=headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(
@@ -550,7 +608,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         # Parse each chunk as JSON and collect content pieces
         content_pieces = _parse_streamed_content_pieces(streamed_lines)
         full_content = "".join(content_pieces).strip()
-        print(f"Full streamed content: {full_content}")
+        logger.debug("Full streamed content: %s", full_content)
         self.assertTrue(full_content, "Streamed content should not be empty.")
 
         # Check that the database contains one request and endpoint matches
@@ -560,9 +618,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         )
         req = requests[0]
         self.assertIn(
-            "chat/completions",
-            req.path,
-            "Request endpoint should be for chat completion (streaming).",
+            self.url, req.path, "Request endpoint should be for chat completion (streaming)."
         )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
@@ -605,12 +661,11 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         )
 
     def test_chat_completion_unknown_model(self):
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         payload = {"model": "unknown-model", "messages": self.MESSAGES}
         response = self.client.post(
-            "/chat/completions",
+            self.url,
             data=json.dumps(payload),
-            headers=headers,
+            headers=self.headers,
             content_type="application/json",
         )
         self.assertEqual(
@@ -625,7 +680,6 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         Sends a chat completion request with a JSON schema, non-streaming.
         Verifies the response content adheres to the schema and logs the request.
         """
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         json_schema = {
             "type": "object",
             "properties": {"greeting": {"type": "string"}, "count": {"type": "integer"}},
@@ -643,10 +697,13 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                 "json_schema": {"name": "schema", "schema": json_schema},
             },
             "max_completion_tokens": 50,
+            "user_id": "johndoe",
         }
-        endpoint = "/chat/completions"
         response = self.client.post(
-            endpoint, data=json.dumps(payload), headers=headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(
@@ -669,9 +726,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         )
         req = requests[0]
         self.assertIn(
-            "chat/completions",
-            req.path,
-            "Request endpoint should be for chat completion schema generation.",
+            self.url, req.path, "Request endpoint should be for chat completion schema generation."
         )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
@@ -679,6 +734,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(
             req.output_tokens, 0, "output_tokens should be > 0 for schema generation"
         )
+        self.assertEqual(req.user_id, "johndoe")
 
     def test_chat_completion_multimodal_input(self):
         if INTEGRATION_TEST_BACKEND == "vllm":
@@ -687,7 +743,6 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                 "to manage multiple servers!"
             )
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         image_url = (
             "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/"
             "Gfp-wisconsin-madison-the-nature-boardwalk.jpg/"
@@ -706,10 +761,13 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                 }
             ],
             "max_completion_tokens": 50,
+            "user_id": "johndoe",
         }
-        endpoint = "/chat/completions"
         response = self.client.post(
-            endpoint, data=json.dumps(payload), headers=headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(
@@ -728,14 +786,13 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         )
         req = requests[0]
         self.assertIn(
-            "chat/completions",
-            req.path,
-            "Request endpoint should be chat completion for multimodal input.",
+            self.url, req.path, "Request endpoint should be chat completion for multimodal input."
         )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for multimodal input")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for multimodal input")
+        self.assertEqual(req.user_id, "johndoe")
 
     @override_settings(STREAM_REQUEST_TIMEOUT=5)
     @async_to_sync
@@ -767,12 +824,12 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             },
             "max_completion_tokens": 50,
             "stream": True,
+            "user_id": "johndoe",
         }
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         response = await self.async_client.post(
-            "/chat/completions",
+            self.url,
             data=json.dumps(payload),
-            headers=headers,
+            headers=self.headers,
             content_type="application/json",
         )
 
@@ -798,7 +855,7 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         )
         req = requests[0]
         self.assertIn(
-            "chat/completions",
+            self.url,
             req.path,
             "Request endpoint should be for chat completion (streaming schema generation).",
         )
@@ -810,16 +867,12 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(
             req.output_tokens, 0, "output_tokens should be > 0 (streaming schema generation)"
         )
+        self.assertEqual(req.user_id, "johndoe")
 
 
 class ListModelsIntegrationTest(GatewayIntegrationTestCase):
     def _send_model_list_request(self):
-        return self.client.get(
-            "/models",
-            data="",
-            content_type="application/json",
-            headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN),
-        )
+        return self.client.get("/models", content_type="application/json", headers=self.headers)
 
     def test_list_models(self):
         """
@@ -835,7 +888,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         )
 
         response_json = response.json()
-        print(f"\nList models response: {response_json}")
+        logger.debug("\nList models response: %s", response_json)
 
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
@@ -844,7 +897,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]
-        print(f"Available model IDs: {model_ids}")
+        logger.debug("Available model IDs: %s", model_ids)
         self.assertIn(self.model, model_ids)
 
         # Check that the database contains one request and endpoint matches
@@ -865,7 +918,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         }
 
         # No payload needed for model listing
-        response = self.client.get("/models", data="", content_type="application/json", **headers)
+        response = self.client.get("/models", content_type="application/json", headers=headers)
 
         # Should be 401 Unauthorized or 403 Forbidden
         self.assertIn(
@@ -896,7 +949,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         )
 
         response_json = response.json()
-        print(f"\nList models response: {response_json}")
+        logger.debug("\nList models response: %s", response_json)
 
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
@@ -904,7 +957,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]
-        print(f"Available model IDs: {model_ids}")
+        logger.debug("Available model IDs: %s", model_ids)
         self.assertEqual(len(model_ids), len(model_list) - 1)
         self.assertNotIn(self.model, model_ids)
 
@@ -915,8 +968,8 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         self.assertIn("models", req.path, "Request endpoint should be for model listing.")
 
 
-class TokenLimitTest(ChatCompletionsIntegrationTest):
-    def setup_limits(self, kind: str, field: str, value: int):
+class TokenLimitTest(ChatCompletionsBase):
+    def _setup_limits(self, kind: str, field: str, value: int):
         """
         Set a rate limit for the given kind ('org', 'team', 'user') and field.
         Returns the object whose limit was set.
@@ -973,7 +1026,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
         Uses the Django test client to POST to the chat completion endpoint.
         """
         # Set the limit
-        self.setup_limits(kind, field, value)
+        self._setup_limits(kind, field, value)
 
         response1 = self._send_chat_completion(
             messages, max_completion_tokens=max_completion_tokens
@@ -997,9 +1050,7 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
             f"There should be exactly one request after first chat completion ({limit_desc}).",
         )
         req = requests[0]
-        self.assertIn(
-            "chat/completions", req.path, "Request endpoint should be for chat completion."
-        )
+        self.assertIn(self.url, req.path, "Request endpoint should be for chat completion.")
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")

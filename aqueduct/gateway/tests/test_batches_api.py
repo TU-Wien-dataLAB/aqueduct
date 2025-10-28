@@ -11,6 +11,7 @@ from django.urls import reverse
 
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.base import GatewayBatchesTestCase
+from management.models import Token
 
 if settings.TESTING:
     logger = logging.getLogger("aqueduct")
@@ -39,7 +40,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.headers.pop("Content-Type", None)
-        cls.url_completions = reverse("gateway:v1_chat_completions")
+        cls.url_chat = reverse("gateway:v1_chat_completions")
 
     def test_batch_lifecycle(self):
         """Test the full batch lifecycle: upload, create, process, and retrieve outputs."""
@@ -54,8 +55,8 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         ]
         payload1 = _build_chat_payload(self.model, messages1)
         payload2 = _build_chat_payload(self.model, messages2)
-        wrapped1 = {"custom_id": 1, "method": "POST", "url": self.url_completions, "body": payload1}
-        wrapped2 = {"custom_id": 2, "method": "POST", "url": self.url_completions, "body": payload2}
+        wrapped1 = {"custom_id": 1, "method": "POST", "url": self.url_chat, "body": payload1}
+        wrapped2 = {"custom_id": 2, "method": "POST", "url": self.url_chat, "body": payload2}
         content = (
             json.dumps(wrapped1).encode("utf-8")
             + b"\n"
@@ -75,7 +76,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             # Allowed batch completion_window literal
             "completion_window": "24h",
             # Matches OpenAI-compatible endpoint literals
-            "endpoint": self.url_completions,
+            "endpoint": self.url_chat,
         }
         response = self.client.post(
             "/batches",
@@ -140,7 +141,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         payload = {
             "input_file_id": "does_not_exist",
             "completion_window": "24h",
-            "endpoint": self.url_completions,
+            "endpoint": self.url_chat,
         }
         resp = self.client.post(
             "/batches",
@@ -168,7 +169,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             self.model,
             messages=[{"role": "system", "content": "Hi"}, {"role": "user", "content": "Token1"}],
         )
-        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_completions, "body": payload}
+        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_chat, "body": payload}
         content = json.dumps(wrapped).encode() + b"\n"
         f1 = SimpleUploadedFile("t1.jsonl", content, content_type="application/jsonl")
         # Create batch under token1 (self.headers)
@@ -177,11 +178,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         resp = self.client.post(
             "/batches",
             data=json.dumps(
-                {
-                    "input_file_id": fid1,
-                    "completion_window": "24h",
-                    "endpoint": self.url_completions,
-                }
+                {"input_file_id": fid1, "completion_window": "24h", "endpoint": self.url_chat}
             ),
             headers=self.headers,
             content_type="application/json",
@@ -189,8 +186,6 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         b1 = resp.json()["id"]
 
         # Build headers for a second token (from fixture pk=2)
-        from management.models import Token
-
         token2 = Token.objects.get(pk=2)
         # Generate a fresh secret for token2 (update key_hash/preview) and authenticate with raw key
         secret2 = token2._set_new_key()
@@ -205,11 +200,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         resp = self.client.post(
             "/batches",
             data=json.dumps(
-                {
-                    "input_file_id": fid2,
-                    "completion_window": "24h",
-                    "endpoint": self.url_completions,
-                }
+                {"input_file_id": fid2, "completion_window": "24h", "endpoint": self.url_chat}
             ),
             headers=headers2,
             content_type="application/json",
@@ -232,7 +223,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         payload = _build_chat_payload(
             self.model, [{"role": "system", "content": "X"}, {"role": "user", "content": "Y"}]
         )
-        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_completions, "body": payload}
+        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_chat, "body": payload}
         content = (json.dumps(wrapped) + "\n").encode("utf-8")
         upload = SimpleUploadedFile("limit.jsonl", content, content_type="application/jsonl")
         resp = self.client.post(
@@ -244,7 +235,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         batch_payload = {
             "input_file_id": file_id,
             "completion_window": "24h",
-            "endpoint": self.url_completions,
+            "endpoint": self.url_chat,
         }
 
         # Allowed up to MAX_USER_BATCHES batches
@@ -282,7 +273,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         payload = _build_chat_payload(
             self.model, [{"role": "system", "content": "X"}, {"role": "user", "content": "Y"}]
         )
-        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_completions, "body": payload}
+        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_chat, "body": payload}
         content = (json.dumps(wrapped) + "\n").encode("utf-8")
         upload = SimpleUploadedFile("limit2.jsonl", content, content_type="application/jsonl")
         resp = self.client.post(
@@ -294,7 +285,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         batch_payload = {
             "input_file_id": file_id,
             "completion_window": "24h",
-            "endpoint": self.url_completions,
+            "endpoint": self.url_chat,
         }
 
         # Create up to the limit
@@ -336,7 +327,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         """Test batch creation and processing for chat, simple completions, and embeddings endpoints."""
         tests = [
             (
-                self.url_completions,
+                self.url_chat,
                 json.dumps(
                     _build_chat_payload(
                         self.model,
@@ -362,7 +353,12 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             resp = self.client.post(
                 "/batches",
                 data=json.dumps(
-                    {"input_file_id": fid, "completion_window": "24h", "endpoint": endpoint}
+                    {
+                        "input_file_id": fid,
+                        "completion_window": "24h",
+                        "endpoint": endpoint,
+                        "user_id": 42,
+                    }
                 ),
                 headers=self.headers,
                 content_type="application/json",
@@ -426,7 +422,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         wrapped_chat = {
             "custom_id": 1,
             "method": "POST",
-            "url": self.url_completions,
+            "url": self.url_chat,
             "body": chat_payload,
         }
         chat_line = json.dumps(wrapped_chat).encode()
@@ -438,7 +434,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         wrapped_stream = {
             "custom_id": 2,
             "method": "POST",
-            "url": self.url_completions,
+            "url": self.url_chat,
             "body": stream_payload,
         }
         invalid_line = json.dumps(wrapped_stream).encode()
@@ -452,7 +448,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         resp = self.client.post(
             "/batches",
             data=json.dumps(
-                {"input_file_id": fid, "completion_window": "24h", "endpoint": self.url_completions}
+                {"input_file_id": fid, "completion_window": "24h", "endpoint": self.url_chat}
             ),
             headers=self.headers,
             content_type="application/json",
@@ -493,7 +489,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
                 {
                     "custom_id": idx,
                     "method": "POST",
-                    "url": self.url_completions,
+                    "url": self.url_chat,
                     "body": _build_chat_payload(self.model, m),
                 }
             ).encode()
@@ -509,7 +505,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         batch_payload = {
             "input_file_id": file_id,
             "completion_window": "24h",
-            "endpoint": self.url_completions,
+            "endpoint": self.url_chat,
         }
         resp = self.client.post(
             "/batches",
@@ -541,7 +537,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
                     {
                         "custom_id": idx,
                         "method": "POST",
-                        "url": self.url_completions,
+                        "url": self.url_chat,
                         "body": _build_chat_payload(self.model, m),
                     }
                 ).encode()
@@ -557,11 +553,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             resp = self.client.post(
                 "/batches",
                 data=json.dumps(
-                    {
-                        "input_file_id": fid,
-                        "completion_window": "24h",
-                        "endpoint": self.url_completions,
-                    }
+                    {"input_file_id": fid, "completion_window": "24h", "endpoint": self.url_chat}
                 ),
                 headers=self.headers,
                 content_type="application/json",
@@ -593,7 +585,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             self.model,
             messages=[{"role": "system", "content": "X"}, {"role": "user", "content": "Y"}],
         )
-        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_completions, "body": payload}
+        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_chat, "body": payload}
         content = json.dumps(wrapped).encode() + b"\n"
         upload = SimpleUploadedFile("c.jsonl", content, content_type="application/jsonl")
         resp = self.client.post(
@@ -604,7 +596,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         resp = self.client.post(
             "/batches",
             data=json.dumps(
-                {"input_file_id": fid, "completion_window": "24h", "endpoint": self.url_completions}
+                {"input_file_id": fid, "completion_window": "24h", "endpoint": self.url_chat}
             ),
             headers=self.headers,
             content_type="application/json",
@@ -621,7 +613,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             self.model,
             messages=[{"role": "system", "content": "X"}, {"role": "user", "content": "Z"}],
         )
-        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_completions, "body": payload}
+        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_chat, "body": payload}
         content = json.dumps(wrapped).encode() + b"\n"
         upload = SimpleUploadedFile("c2.jsonl", content, content_type="application/jsonl")
         resp = self.client.post(
@@ -631,7 +623,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         resp = self.client.post(
             "/batches",
             data=json.dumps(
-                {"input_file_id": fid, "completion_window": "24h", "endpoint": self.url_completions}
+                {"input_file_id": fid, "completion_window": "24h", "endpoint": self.url_chat}
             ),
             headers=self.headers,
             content_type="application/json",
@@ -666,7 +658,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
                 {"role": "user", "content": "Expire"},
             ],
         )
-        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_completions, "body": payload}
+        wrapped = {"custom_id": 1, "method": "POST", "url": self.url_chat, "body": payload}
         content = json.dumps(wrapped).encode("utf-8") + b"\n"
         upload_file = SimpleUploadedFile("expire.jsonl", content, content_type="application/jsonl")
         resp = self.client.post(
@@ -679,7 +671,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         batch_payload = {
             "input_file_id": file_id,
             "completion_window": "24h",
-            "endpoint": self.url_completions,
+            "endpoint": self.url_chat,
         }
         resp = self.client.post(
             "/batches",
@@ -735,7 +727,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
                 {
                     "custom_id": idx,
                     "method": "POST",
-                    "url": self.url_completions,
+                    "url": self.url_chat,
                     "body": _build_chat_payload(self.model, m),
                 }
             ).encode()
@@ -751,7 +743,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         batch_payload = {
             "input_file_id": file_id,
             "completion_window": "24h",
-            "endpoint": self.url_completions,
+            "endpoint": self.url_chat,
         }
         resp = self.client.post(
             "/batches",
@@ -804,7 +796,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
                 {
                     "custom_id": idx,
                     "method": "POST",
-                    "url": self.url_completions,
+                    "url": self.url_chat,
                     "body": _build_chat_payload(self.model, m),
                 }
             ).encode()
@@ -821,7 +813,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         batch_payload = {
             "input_file_id": file_id,
             "completion_window": "24h",
-            "endpoint": self.url_completions,
+            "endpoint": self.url_chat,
         }
         resp = self.client.post(
             "/batches",
@@ -904,7 +896,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
                 {
                     "custom_id": idx,
                     "method": "POST",
-                    "url": self.url_completions,
+                    "url": self.url_chat,
                     "body": _build_chat_payload(self.model, m),
                 }
             ).encode()
@@ -921,7 +913,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         batch_payload = {
             "input_file_id": file_id,
             "completion_window": "24h",
-            "endpoint": self.url_completions,
+            "endpoint": self.url_chat,
         }
         resp = self.client.post(
             "/batches",

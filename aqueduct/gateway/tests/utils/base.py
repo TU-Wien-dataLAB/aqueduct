@@ -8,6 +8,7 @@ from typing import Literal, Optional
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
+from django.urls import reverse
 
 from gateway.tests.utils import _build_chat_headers
 from management.models import Org, Token, UserProfile
@@ -149,6 +150,16 @@ class GatewayFilesTestCase(TransactionTestCase):
     fixtures = ["gateway_data.json"]
     AQUEDUCT_ACCESS_TOKEN = GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Prepare auth headers for file API
+        headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+        # Remove Content-Type header to allow multipart file upload
+        headers.pop("Content-Type", None)
+        cls.headers = headers
+        cls.url_files = reverse("gateway:files")
+
     def tearDown(self):
         super().tearDown()
         # Clean up the file storage directory after each test
@@ -191,6 +202,19 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
     tts_model = "gpt-4o-mini-tts"
     stt_model = "whisper-1"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+
+        # Remove Content-Type header to allow multipart file upload
+        multipart_headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+        multipart_headers.pop("Content-Type", None)
+        cls.multipart_headers = multipart_headers
+
+        cls.url_tts = reverse("gateway:speech")
+        cls.url_stt = reverse("gateway:transcriptions")
 
 
 @override_settings(

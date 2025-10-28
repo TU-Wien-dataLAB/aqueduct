@@ -86,6 +86,38 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertEqual(req.output_tokens, 0, "output_tokens should be 0")
+        self.assertEqual(req.user_id, "")
+
+    @override_settings(RELAY_REQUEST_TIMEOUT=5)
+    def test_embeddings_with_user_id_in_body(self):
+        """
+        Test that sending "user_id" in request body doesn't break anything and user id is logged.
+        """
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest(
+                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase "
+                "to manage multiple servers!"
+            )
+
+        payload = {
+            "model": self.model,
+            "input": ["The quick brown fox jumps over the lazy dog."],
+            "user_id": "Jane Doe",
+        }
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
+        req = Request.objects.last()
+        self.assertEqual(req.user_id, "Jane Doe")
 
 
 class ChatCompletionsBase(GatewayIntegrationTestCase):
@@ -168,6 +200,29 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
+        self.assertEqual(req.user_id, "")
+
+    def test_chat_completion_with_user_id_in_body(self):
+        """
+        Test that sending "user_id" in request body doesn't break anything and user id is logged.
+        """
+        payload = _build_chat_payload(self.model, self.MESSAGES)
+        payload["user_id"] = 42
+
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
+        req = Request.objects.last()
+        self.assertEqual(req.user_id, "42")
 
     @override_settings(TIKA_SERVER_URL=None)
     def test_chat_completion_base64_file_input(self):
@@ -197,6 +252,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 }
             ],
             "max_completion_tokens": 50,
+            "user_id": 42,
         }
 
         with patch(
@@ -236,6 +292,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertGreater(
             req.output_tokens, 0, "output_tokens should be > 0 for base64 file input"
         )
+        self.assertEqual(req.user_id, "42")
 
     def test_chat_completion_file_id_input(self):
         """
@@ -275,6 +332,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 }
             ],
             "max_completion_tokens": 50,
+            "user_id": 42,
         }
 
         with patch(
@@ -315,6 +373,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for file_id input")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for file_id input")
+        self.assertEqual(req.user_id, "42")
 
     def test_chat_completion_file_id_not_found(self):
         """
@@ -770,6 +829,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 "json_schema": {"name": "schema", "schema": json_schema},
             },
             "max_completion_tokens": 50,
+            "user_id": "johndoe",
         }
         response = self.client.post(
             self.url,
@@ -806,6 +866,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertGreater(
             req.output_tokens, 0, "output_tokens should be > 0 for schema generation"
         )
+        self.assertEqual(req.user_id, "johndoe")
 
     def test_chat_completion_multimodal_input(self):
         if INTEGRATION_TEST_BACKEND == "vllm":
@@ -834,6 +895,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 }
             ],
             "max_completion_tokens": 50,
+            "user_id": "johndoe",
         }
         response = self.client.post(
             self.url,
@@ -864,6 +926,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for multimodal input")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for multimodal input")
+        self.assertEqual(req.user_id, "johndoe")
 
     @override_settings(STREAM_REQUEST_TIMEOUT=5)
     @async_to_sync
@@ -895,6 +958,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             },
             "max_completion_tokens": 50,
             "stream": True,
+            "user_id": "johndoe",
         }
         response = await self.async_client.post(
             self.url,
@@ -937,6 +1001,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertGreater(
             req.output_tokens, 0, "output_tokens should be > 0 (streaming schema generation)"
         )
+        self.assertEqual(req.user_id, "johndoe")
 
 
 class ListModelsIntegrationTest(GatewayIntegrationTestCase):

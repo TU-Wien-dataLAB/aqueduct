@@ -7,7 +7,7 @@ from litellm import BadRequestError
 from litellm.types.utils import ImageResponse
 from pydantic import TypeAdapter
 
-from gateway.router import get_router
+from gateway.config import get_router
 from management.models import Request
 
 from .decorators import (

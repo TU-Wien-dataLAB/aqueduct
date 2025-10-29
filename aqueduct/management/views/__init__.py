@@ -1,6 +1,7 @@
 from .auth import SSOTemplateView
 from .batches import UserBatchesView
 from .files import UserFilesView
+from .mcp_servers import MCPServersView
 from .models import ModelListView
 from .org import OrgSwitchView, OrgView
 from .service_account import (

@@ -6,7 +6,7 @@ from django.db.models.functions import Coalesce, TruncDay, TruncHour, TruncMinut
 from django.utils import timezone
 from django.views.generic import TemplateView
 
-from gateway.router import get_router_config
+from gateway.config import get_router_config
 
 from ..models import Org, Request, Token
 from .base import BaseAqueductView

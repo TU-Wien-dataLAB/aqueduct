@@ -7,7 +7,7 @@ from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.types.utils import ModelResponse
 from pydantic import TypeAdapter
 
-from gateway.router import get_router
+from gateway.config import get_router
 from management.models import Request
 
 from .decorators import (

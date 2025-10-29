@@ -24,6 +24,7 @@ services:
       sh -c "python manage.py collectstatic --no-input && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
     volumes:
       - ./example_router_config.yaml:/app/example_router_config.yaml
+      - ./test-mcp.json:/app/test-mcp.json
     ports:
       - "8000:8000"
     env_file:
@@ -51,6 +52,7 @@ services:
     build: .
     volumes:
       - ./example_router_config.yaml:/app/example_router_config.yaml
+      - ./test-mcp.json:/app/test-mcp.json
     env_file:
       - .example.env
     depends_on:
@@ -80,6 +82,15 @@ services:
     image: apache/tika:3.2.3.0
     ports:
       - "9998:9998"
+
+  mcp-everything:
+    image: node:20-slim
+    container_name: mcp_everything
+    command: npx @modelcontextprotocol/server-everything streamableHttp
+    environment:
+      - PORT=3001
+    ports:
+      - "3001:3001"
 
 volumes:
   postgres_data:

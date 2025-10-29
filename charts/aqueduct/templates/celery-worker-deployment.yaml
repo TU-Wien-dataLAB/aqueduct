@@ -12,6 +12,7 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ .Values.routerConfig | toString | sha256sum }}
+        checksum/mcp-config: {{ .Values.mcpConfig | toString | sha256sum }}
         checksum/settings: {{ include (print $.Template.BasePath "/configmap-settings.yaml") . | toString | sha256sum }}
       labels:
         app: {{ .Release.Name }}
@@ -43,6 +44,9 @@ spec:
             - name: router-config
               mountPath: /etc/aqueduct/router_config.yaml
               subPath: router_config.yaml
+            - name: mcp-config
+              mountPath: /etc/aqueduct/mcp.json
+              subPath: mcp.json
             {{- if .Values.persistence.files.enabled }}
             - name: files
               mountPath: {{ .Values.persistence.files.mountPath }}
@@ -54,6 +58,9 @@ spec:
         - name: router-config
           configMap:
             name: {{ .Release.Name }}-router-config
+        - name: mcp-config
+          configMap:
+            name: {{ .Release.Name }}-mcp-config
         {{- if .Values.persistence.files.enabled }}
         - name: files
           persistentVolumeClaim:

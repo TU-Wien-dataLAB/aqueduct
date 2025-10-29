@@ -10,6 +10,8 @@ Usage:
 {{- if .Values.ingress.enabled }}
 - name: ALLOWED_HOSTS
   value: {{ .Values.ingress.host | quote }}
+- name: MCP_ALLOWED_HOSTS
+  value: {{ .Values.ingress.host | quote }}
 {{- end }}
 - name: SECRET_KEY
   {{- if .Values.djangoSecretKey.value }}

@@ -570,7 +570,6 @@ def mcp_transport_security(view_func):
             log.error(f"Invalid Host header: {host}")
             return JsonResponse({"error": "Invalid Host header"}, status=421)
 
-        # TODO: should we use this or CSRF of django somehow?
         # Validate Origin header against allowed values
         # Origin can be absent for same-origin requests, so it's only validated if present
         allowed_origins = getattr(settings, "MCP_ALLOWED_ORIGINS", [])

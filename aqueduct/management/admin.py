@@ -77,9 +77,6 @@ class ExcludedMCPServersAdminForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Dynamically provide choices using get_mcp_server_choices
-        from .admin import get_mcp_server_choices
-
         self.fields["excluded_mcp_servers"].choices = [(s, s) for s in get_mcp_server_choices()]
         if self.instance and getattr(self.instance, "excluded_mcp_servers", None):
             self.initial["excluded_mcp_servers"] = self.instance.excluded_mcp_servers
@@ -96,8 +93,6 @@ class UserProfileAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        from .admin import get_mcp_server_choices, get_model_choices
-
         self.fields["excluded_models"].choices = [(m, m) for m in get_model_choices()]
         if self.instance and getattr(self.instance, "excluded_models", None):
             self.initial["excluded_models"] = self.instance.excluded_models

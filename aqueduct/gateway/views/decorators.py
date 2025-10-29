@@ -31,66 +31,6 @@ from management.models import FileObject, Request, Token
 log = logging.getLogger("aqueduct")
 
 
-def mcp_transport_security(view_func):
-    """Validate MCP transport security (DNS rebinding protection).
-
-    Validates:
-    - Host header (DNS rebinding protection)
-    - Origin header (CSRF protection)
-    - Content-Type header for POST requests
-
-    Returns appropriate status codes:
-    - 421: Invalid Host header
-    - 403: Invalid Origin header
-    - 400: Invalid Content-Type header
-    """
-
-    @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
-        from django.conf import settings
-
-        # Skip validation if DNS rebinding protection is disabled
-        if not getattr(settings, "MCP_ENABLE_DNS_REBINDING_PROTECTION", True):
-            return await view_func(request, *args, **kwargs)
-
-        log.debug(f"MCP request headers: {dict(request.headers)}")
-
-        # Validate Content-Type for POST requests
-        if request.method == "POST":
-            content_type = request.headers.get("content-type", "")
-            log.debug(f"POST request Content-Type: '{content_type}'")
-            if not content_type.lower().startswith("application/json"):
-                log.error(f"Invalid Content-Type header: {content_type}")
-                return JsonResponse({"error": "Invalid Content-Type header"}, status=400)
-
-        # Validate Host header against allowed values
-        allowed_hosts = getattr(settings, "MCP_ALLOWED_HOSTS", [])
-        host = request.headers.get("host")
-
-        if not host:
-            log.error("Missing Host header in request")
-            return JsonResponse({"error": "Invalid Host header"}, status=421)
-
-        host_valid = in_wildcard(host, allowed_hosts)
-        if not host_valid:
-            log.error(f"Invalid Host header: {host}")
-            return JsonResponse({"error": "Invalid Host header"}, status=421)
-
-        # Validate Origin header against allowed values
-        # Origin can be absent for same-origin requests, so it's only validated if present
-        origin = request.headers.get("origin")
-        if origin:
-            allowed_origins = getattr(settings, "MCP_ALLOWED_ORIGINS", [])
-            origin_valid = in_wildcard(origin, allowed_origins)
-            if not origin_valid:
-                log.error(f"Invalid Origin header: {origin}")
-                return JsonResponse({"error": "Invalid Origin header"}, status=403)
-
-        return await view_func(request, *args, **kwargs)
-
-    return wrapper
-
-
 def token_authenticated(token_auth_only: bool):
     def decorator(view_func):
         @wraps(view_func)
@@ -579,6 +519,67 @@ def tos_accepted(view_func):
                         },
                         status=403,
                     )
+
+        return await view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+def mcp_transport_security(view_func):
+    """Validate MCP transport security (DNS rebinding protection).
+
+    Validates:
+    - Host header (DNS rebinding protection)
+    - Origin header (CSRF protection)
+    - Content-Type header for POST requests
+
+    Returns appropriate status codes:
+    - 421: Invalid Host header
+    - 403: Invalid Origin header
+    - 400: Invalid Content-Type header
+    """
+
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        from django.conf import settings
+
+        # Skip validation if DNS rebinding protection is disabled
+        if not getattr(settings, "MCP_ENABLE_DNS_REBINDING_PROTECTION", True):
+            return await view_func(request, *args, **kwargs)
+
+        log.debug(f"MCP request headers: {dict(request.headers)}")
+
+        # Validate Content-Type for POST requests
+        if request.method == "POST":
+            content_type = request.headers.get("content-type", "")
+            log.debug(f"POST request Content-Type: '{content_type}'")
+            if not content_type.lower().startswith("application/json"):
+                log.error(f"Invalid Content-Type header: {content_type}")
+                return JsonResponse({"error": "Invalid Content-Type header"}, status=400)
+
+        # Validate Host header against allowed values
+        allowed_hosts = getattr(settings, "MCP_ALLOWED_HOSTS", [])
+        host = request.headers.get("host")
+
+        if not host:
+            log.error("Missing Host header in request")
+            return JsonResponse({"error": "Invalid Host header"}, status=421)
+
+        host_valid = in_wildcard(host, allowed_hosts)
+        if not host_valid:
+            log.error(f"Invalid Host header: {host}")
+            return JsonResponse({"error": "Invalid Host header"}, status=421)
+
+        # TODO: should we use this or CSRF of django somehow?
+        # Validate Origin header against allowed values
+        # Origin can be absent for same-origin requests, so it's only validated if present
+        allowed_origins = getattr(settings, "MCP_ALLOWED_ORIGINS", [])
+        origin = request.headers.get("origin")
+        if origin:
+            origin_valid = in_wildcard(origin, allowed_origins)
+            if not origin_valid:
+                log.error(f"Invalid Origin header: {origin}")
+                return JsonResponse({"error": "Invalid Origin header"}, status=403)
 
         return await view_func(request, *args, **kwargs)
 

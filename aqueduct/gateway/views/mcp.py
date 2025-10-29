@@ -492,6 +492,26 @@ def parse_session_message(
         return jsonrpc_message.model_dump(exclude_none=True)
 
 
+def _validate_session(
+    session: ManagedMCPSession | None, session_id: str | None, name: str
+) -> JsonResponse | None:
+    if not session:
+        log.warning(f"Session {session_id} not found for MCP server '{name}'")
+        return JsonResponse({"error": "Session not found"}, status=404)
+    if session.terminated:
+        log.warning(f"Session {session_id} is terminated for MCP server '{name}'")
+        return JsonResponse({"error": "Session terminated"}, status=410)
+    if not session.is_ready():
+        log.warning(
+            f"Session {session_id} not ready for MCP server '{name}' (state: {session.state.value})"
+        )
+        return JsonResponse(
+            {"error": f"Session not ready (state: {session.state.value})"}, status=503
+        )
+
+    return None
+
+
 async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenerator[str, None]:
     """Stream MCP messages via Server-Sent Events with lifecycle coordination."""
     log.info(f"SSE stream started for session {session_id}")
@@ -558,19 +578,9 @@ async def handle_get_request(
 
     session = await session_manager.get_session(session_id)
 
-    if not session:
-        log.warning(f"Session {session_id} not found for MCP server '{name}'")
-        return JsonResponse({"error": "Session not found"}, status=404)
-    if session.terminated:
-        log.warning(f"Session {session_id} is terminated for MCP server '{name}'")
-        return JsonResponse({"error": "Session terminated"}, status=410)
-    if not session.is_ready():
-        log.warning(
-            f"Session {session_id} not ready for MCP server '{name}' (state: {session.state.value})"
-        )
-        return JsonResponse(
-            {"error": f"Session not ready (state: {session.state.value})"}, status=503
-        )
+    err_response = _validate_session(session, request_id, name)
+    if err_response:
+        return err_response
 
     log.info(f"MCP GET {name} - SSE stream for existing session {session_id}")
     headers = {"Cache-Control": "no-cache", "Connection": "keep-alive"}
@@ -614,16 +624,10 @@ async def handle_post_request(
             return JsonResponse({"error": f"MCP server '{name}' not found: {str(e)}"}, status=404)
 
     session = await session_manager.get_session_with_retry(session_id)
-    if not session:
-        log.warning(f"Session {session_id} not found or not ready in POST request")
-        return JsonResponse({"error": "Session not found or not ready"}, status=404)
-    if not session.is_ready():
-        log.warning(
-            f"Session {session_id} not ready in POST request (state: {session.state.value})"
-        )
-        return JsonResponse(
-            {"error": f"Session not ready (state: {session.state.value})"}, status=503
-        )
+
+    err_response = _validate_session(session, request_id, name)
+    if err_response:
+        return err_response
 
     # Register operation for requests that expect responses
     operation_registered = False

@@ -15,7 +15,14 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from mcp.client.streamable_http import StreamableHTTPTransport
 from mcp.shared.message import SessionMessage
-from mcp.types import CONNECTION_CLOSED, JSONRPCMessage, JSONRPCNotification, JSONRPCRequest
+from mcp.types import (
+    CONNECTION_CLOSED,
+    ErrorData,
+    JSONRPCError,
+    JSONRPCMessage,
+    JSONRPCNotification,
+    JSONRPCRequest,
+)
 
 from gateway.config import get_mcp_config
 from gateway.views.decorators import (
@@ -436,25 +443,45 @@ class MCPSessionManager:
         log.info("All MCP sessions shutdown complete")
 
 
-async def _mcp_sse_stream(session_id: str) -> AsyncGenerator[str, None]:
+def parse_session_message(
+    received_message: SessionMessage | Exception,
+    reqeust_id: str | int,
+    session_id: str,
+    json: bool = False,
+) -> dict | str:
+    if isinstance(received_message, Exception):
+        log.error(f"Session {session_id} returned exception: {str(received_message)}")
+        jsonrpc_message = JSONRPCError(
+            jsonrpc="2.0",
+            id=reqeust_id,
+            error=ErrorData(code=CONNECTION_CLOSED, message=str(received_message)),
+        )
+    else:
+        jsonrpc_message = received_message.message
+
+    if json:
+        return jsonrpc_message.model_dump_json(exclude_none=True)
+    else:
+        return jsonrpc_message.model_dump(exclude_none=True)
+
+
+async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenerator[str, None]:
     """Stream MCP messages via Server-Sent Events with lifecycle coordination."""
     log.info(f"SSE stream started for session {session_id}")
-    # Use retry logic to handle brief initialization gaps
     session = await session_manager.get_session_with_retry(session_id)
     if not session or not session.is_ready():
         log.error(
             f"SSE stream cannot start - session {session_id} not ready (state: {session.state.value if session else 'None'})"
         )
-        error_msg = JSONRPCMessage(
-            root=JSONRPCNotification(
-                jsonrpc="2.0",
-                method="stream_error",
-                params={
-                    "code": CONNECTION_CLOSED,
-                    "message": f"Session not ready (state: {session.state.value if session else 'None'})",
-                },
-            )
+        error_msg = JSONRPCError(
+            jsonrpc="2.0",
+            id=request_id,
+            error=ErrorData(
+                code=CONNECTION_CLOSED,
+                message=f"Session not ready (state: {session.state.value if session else 'None'})",
+            ),
         )
+
         yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
         return
 
@@ -462,84 +489,33 @@ async def _mcp_sse_stream(session_id: str) -> AsyncGenerator[str, None]:
     session.register_operation_start()
     log.debug(f"SSE stream registered as active operation for session {session_id}")
 
-    try:
-        while True:
-            try:
-                message: SessionMessage | Exception = await session_manager.receive_message(
-                    session_id
-                )
-                if isinstance(message, Exception):
-                    log.error(
-                        f"SSE stream for session {session_id} received exception: {str(message)}"
-                    )
-                    # Convert exception to JSONRPCNotification
-                    error_msg = JSONRPCMessage(
-                        root=JSONRPCNotification(
-                            jsonrpc="2.0",
-                            method="stream_error",
-                            params={"code": CONNECTION_CLOSED, "message": str(message)},
-                        )
-                    )
-                    yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
-                    continue  # Keep streaming
-                else:
-                    message_json = message.message.model_dump_json(exclude_none=True)
-                    yield f"data: {message_json}\n\n"
-            except ValueError as e:
-                if "terminated" in str(e).lower() or "not found" in str(e).lower():
-                    log.info(f"SSE stream for session {session_id} ended: {str(e)}")
-                    # Send proper session end notification
-                    end_msg = JSONRPCMessage(
-                        root=JSONRPCNotification(
-                            jsonrpc="2.0", method="session_ended", params={"reason": str(e)}
-                        )
-                    )
-                    yield f"data: {end_msg.model_dump_json(exclude_none=True)}\n\n"
-                    break  # Session is gone, stop the stream
-                else:
-                    log.error(f"SSE stream for session {session_id} ValueError: {str(e)}")
-                    error_msg = JSONRPCMessage(
-                        root=JSONRPCNotification(
-                            jsonrpc="2.0",
-                            method="stream_error",
-                            params={"code": CONNECTION_CLOSED, "message": str(e)},
-                        )
-                    )
-                    yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
-                    continue  # Keep streaming for recoverable errors
-            except Exception as e:
-                log.error(f"SSE stream for session {session_id} unexpected error: {str(e)}")
-                try:
-                    error_msg = JSONRPCMessage(
-                        root=JSONRPCNotification(
-                            jsonrpc="2.0",
-                            method="stream_error",
-                            params={"code": CONNECTION_CLOSED, "message": str(e)},
-                        )
-                    )
-                    yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
-                    continue  # Keep streaming
-                except Exception as send_error:
-                    log.debug(f"Could not send error to stream: {send_error}")
-                    break  # Exit if we can't send messages
-
-    except Exception as e:
-        log.error(f"SSE stream for session {session_id} failed: {str(e)}")
+    while True:
         try:
-            error_msg = JSONRPCMessage(
-                root=JSONRPCNotification(
-                    jsonrpc="2.0",
-                    method="stream_error",
-                    params={"code": CONNECTION_CLOSED, "message": f"Stream failed: {str(e)}"},
-                )
+            message: SessionMessage | Exception = await session_manager.receive_message(session_id)
+            message_json = parse_session_message(message, request_id, session_id, json=True)
+            yield f"data: {message_json}\n\n"
+        except ValueError as e:
+            # TODO: raise new error type in session_manager.receive_message to catch cleanly and no if else
+            log.info(f"SSE stream for session {session_id} ended: {str(e)}")
+            # Send proper session end notification
+            end_msg = JSONRPCNotification(
+                jsonrpc="2.0", method="session_ended", params={"reason": str(e)}
+            )
+            yield f"data: {end_msg.model_dump_json(exclude_none=True)}\n\n"
+            break  # Session is gone, stop the stream
+        except Exception as e:
+            log.error(f"SSE stream for session {session_id} unexpected error: {str(e)}")
+            error_msg = JSONRPCNotification(
+                jsonrpc="2.0",
+                method="stream_error",
+                params={"code": CONNECTION_CLOSED, "message": str(e)},
             )
             yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
-        except Exception as send_error:
-            log.debug(f"Could not send error to stream: {send_error}")
-    finally:
-        # Signal that this operation is done
-        session.register_operation_done()
-        log.debug(f"SSE stream completed for session {session_id}, operation unregistered")
+            continue  # Keep streaming
+        finally:
+            # Signal that this operation is done
+            session.register_operation_done()
+            log.debug(f"SSE stream completed for session {session_id}, operation deregistered")
 
 
 session_manager = MCPSessionManager()
@@ -552,7 +528,7 @@ async def _ensure_session_manager_started():
 
 
 async def handle_get_request(
-    name: str, session_id: str | None = None
+    name: str, request_id: str | int, session_id: str | None = None
 ) -> JsonResponse | StreamingHttpResponse:
     """Return SSE stream for an existing session.
 
@@ -561,10 +537,10 @@ async def handle_get_request(
     await _ensure_session_manager_started()
 
     session = await session_manager.get_session(session_id)
+
     if not session:
         log.warning(f"Session {session_id} not found for MCP server '{name}'")
         return JsonResponse({"error": "Session not found"}, status=404)
-
     if session.terminated:
         log.warning(f"Session {session_id} is terminated for MCP server '{name}'")
         return JsonResponse({"error": "Session terminated"}, status=410)
@@ -579,14 +555,18 @@ async def handle_get_request(
     log.info(f"MCP GET {name} - SSE stream for existing session {session_id}")
     headers = {"Cache-Control": "no-cache", "Connection": "keep-alive"}
     return StreamingHttpResponse(
-        streaming_content=_mcp_sse_stream(session_id),
+        streaming_content=_mcp_sse_stream(request_id, session_id),
         content_type="text/event-stream",
         headers=headers,
     )
 
 
 async def handle_post_request(
-    name: str, json_rpc_message: JSONRPCMessage | None, session_id: str | None, is_initialize: bool
+    name: str,
+    json_rpc_message: JSONRPCMessage | None,
+    request_id: str | int,
+    session_id: str | None,
+    is_initialize: bool,
 ) -> JsonResponse:
     """Send a message to MCP session or initialize new session when it is an initialization request.
 
@@ -639,63 +619,31 @@ async def handle_post_request(
         # Only wait for response if this is a request (not a notification)
         # Per MCP spec: "The server MUST NOT send a response to notifications"
         if isinstance(json_rpc_message.root, JSONRPCRequest):
-            log.debug(f"Waiting for response from session {session_id}")
             received_message = await session_manager.receive_message(session_id)
-            log.debug(f"Received response from session {session_id}")
-
-            if isinstance(received_message, Exception):
-                log.error(f"Session {session_id} returned exception: {str(received_message)}")
-                # Convert exception to JSON-RPC error instead of HTTP error
-                error_data = {"code": CONNECTION_CLOSED, "message": str(received_message)}
-                error_response = {
-                    "jsonrpc": "2.0",
-                    "id": json_rpc_message.root.id,
-                    "error": error_data,
-                }
-                response = JsonResponse(error_response)
-                if session_id:
-                    response.headers["mcp-session-id"] = session_id
-                return response
-
-            response_data = received_message.message.model_dump(exclude_none=True)
+            response_data = parse_session_message(
+                received_message, request_id, session_id, json=False
+            )
             response = JsonResponse(response_data)
         else:
             # If the request was a notification, return 202
             response = JsonResponse({"status": "accepted"}, status=202)
 
-        response.headers["mcp-session-id"] = session_id
-        return response
     except (ClosedResourceError, httpx.HTTPStatusError) as e:
         # Transport errors should be converted to JSON-RPC errors
         log.error(f"Transport error for MCP server '{name}': {str(e)}")
         error_data = {"code": CONNECTION_CLOSED, "message": f"Transport error: {str(e)}"}
         # If this was a request, return error with ID, else as notification
         if isinstance(json_rpc_message.root, JSONRPCRequest):
-            error_response = {"jsonrpc": "2.0", "id": json_rpc_message.root.id, "error": error_data}
-            response = JsonResponse(error_response, status=200)  # 200 for JSON-RPC errors
+            error_response = {"jsonrpc": "2.0", "id": request_id, "error": error_data}
         else:
             error_response = {"jsonrpc": "2.0", "method": "stream_error", "params": error_data}
-            response = JsonResponse(error_response, status=200)
-
-        if session_id:
-            response.headers["mcp-session-id"] = session_id
-        return response
-    except Exception as e:
-        log.error(f"Error handling MCP request for server '{name}': {str(e)}")
-        # Try to convert to JSON-RPC error if possible
-        if isinstance(json_rpc_message.root, JSONRPCRequest):
-            error_data = {"code": CONNECTION_CLOSED, "message": str(e)}
-            error_response = {"jsonrpc": "2.0", "id": json_rpc_message.root.id, "error": error_data}
-            response = JsonResponse(error_response, status=200)
-        else:
-            response = JsonResponse({"error": str(e)}, status=400)
-
-        if session_id:
-            response.headers["mcp-session-id"] = session_id
-        return response
+        response = JsonResponse(error_response, status=200)  # 200 for JSON-RPC errors
     finally:
         if operation_registered:
             session.register_operation_done()
+
+    response.headers["mcp-session-id"] = session_id
+    return response
 
 
 async def handle_delete_request(name: str, session_id: str | None = None) -> JsonResponse:
@@ -738,12 +686,18 @@ async def mcp_server(
         f"Headers: {dict(request.headers)}"
     )
 
+    try:
+        request_id = json_rpc_message.root.id
+    except AttributeError:
+        request_id = 0
+
     if request.method == "GET":
-        return await handle_get_request(name, session_id=session_id)
+        return await handle_get_request(name, request_id=request_id, session_id=session_id)
     elif request.method == "POST":
         return await handle_post_request(
             name,
             json_rpc_message=json_rpc_message,
+            request_id=request_id,
             session_id=session_id,
             is_initialize=is_initialize,
         )

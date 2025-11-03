@@ -1,8 +1,10 @@
+import json
 import os
 import socket
 import subprocess
 import time
 from contextlib import asynccontextmanager
+from copy import deepcopy
 
 from asgiref.sync import sync_to_async
 from channels.testing import ChannelsLiveServerTestCase
@@ -60,8 +62,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     @property
     def headers(self):
-        # ChannelsLiveServerTestCase really hates if I try to access model classes (through import)
-        # -> stops raising AppRegistryNotReady
+        # ChannelsLiveServerTestCase raises AppRegistryNotReady if I try to access model classes (through import)
+        # -> so we hard-code the headers here again
         return {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
 
     @property
@@ -87,17 +89,13 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     @classmethod
     def _write_mcp_config(cls):
-        import json
-
         os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
         with open(MCP_CONFIG_PATH, "w") as f:
             json.dump(MCP_TEST_CONFIG, f)
 
     @classmethod
     def _update_mcp_config_port(cls, port: int):
-        import json
-
-        config = MCP_TEST_CONFIG.copy()
+        config = deepcopy(MCP_TEST_CONFIG)
         config["mcpServers"]["test-server"]["url"] = f"http://localhost:{port}/mcp"
 
         os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
@@ -128,40 +126,38 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 env=env,
                 cwd=os.path.dirname(MCP_CONFIG_PATH),
             )
-
-            # Wait for server to be ready by checking if it accepts connections
-            print(f"Waiting for MCP server to accept connections on port {port}...")
-            start_time = time.time()
-            timeout = 30
-            last_error = None
-
-            while time.time() - start_time < timeout:
-                # Check if process is still running
-                if cls.mcp_server_process.poll() is not None:
-                    stdout, _ = cls.mcp_server_process.communicate()
-                    raise RuntimeError(f"MCP server failed to start. stdout: {stdout}")
-
-                # Try to connect to the server
-                try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                        sock.settimeout(1.0)
-                        sock.connect(("localhost", port))
-                        print(f"✓ MCP everything server started successfully on port {port}")
-                        return
-                except (socket.error, ConnectionRefusedError, OSError) as e:
-                    last_error = e
-                    time.sleep(0.5)
-
-            # If we get here, timeout occurred
-            raise RuntimeError(
-                f"MCP server did not accept connections within {timeout} seconds. Last error: {last_error}"
-            )
         except FileNotFoundError:
             raise RuntimeError(
                 "npx command not found. Please ensure Node.js and npm are installed."
             )
-        except Exception as e:
-            raise RuntimeError(f"Failed to start MCP server: {e}") from e
+
+        # Wait for server to be ready by checking if it accepts connections
+        print(f"Waiting for MCP server to accept connections on port {port}...")
+        start_time = time.time()
+        timeout = 30
+        last_error = None
+
+        while time.time() - start_time < timeout:
+            # Check if process is still running
+            if cls.mcp_server_process.poll() is not None:
+                stdout, _ = cls.mcp_server_process.communicate()
+                raise RuntimeError(f"MCP server failed to start. stdout: {stdout}")
+
+            # Try to connect to the server
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.settimeout(1.0)
+                    sock.connect(("localhost", port))
+                    print(f"✓ MCP everything server started successfully on port {port}")
+                    return
+            except (socket.error, ConnectionRefusedError, OSError) as e:
+                last_error = e
+                time.sleep(0.5)
+
+        # If we get here, timeout occurred
+        raise RuntimeError(
+            f"MCP server did not accept connections within {timeout} seconds. Last error: {last_error}"
+        )
 
     @classmethod
     def _stop_mcp_server(cls):

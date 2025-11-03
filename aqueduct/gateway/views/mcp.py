@@ -673,12 +673,8 @@ async def handle_delete_request(name: str, session_id: str | None = None) -> Jso
     await _ensure_session_manager_started()
 
     log.info(f"MCP DELETE {name} - Closing session {session_id}")
-    try:
-        await session_manager.terminate_session(session_id)
-        return JsonResponse({"status": "session_terminated"})
-    except Exception as e:
-        log.error(f"Error terminating session {session_id}: {str(e)}")
-        return JsonResponse({"error": str(e)}, status=400)
+    await session_manager.terminate_session(session_id)
+    return JsonResponse({"status": "session_terminated"})
 
 
 @csrf_exempt

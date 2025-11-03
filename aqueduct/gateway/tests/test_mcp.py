@@ -1,6 +1,9 @@
 import logging
 from datetime import timedelta
+from urllib.parse import urlparse
 
+import httpx
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from pydantic.networks import AnyUrl
 
@@ -132,9 +135,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsNotNone(templates)
             self.assertIsInstance(templates.resourceTemplates, list)
             # Resource templates may be empty, but response should be valid
-            if templates.resourceTemplates:
-                for template in templates.resourceTemplates:
-                    self.assertIsInstance(template.uriTemplate, str)
+            for template in templates.resourceTemplates:
+                self.assertIsInstance(template.uriTemplate, str)
 
         await self.assertRequestLogged()
 
@@ -143,19 +145,18 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
         async with self.client_session() as session:
             await session.initialize()
             templates = await session.list_resource_templates()
-            if templates.resourceTemplates:
-                template = templates.resourceTemplates[0]
-                from mcp.types import ResourceTemplateReference
+            template = templates.resourceTemplates[0]
 
-                ref = ResourceTemplateReference(type="ref/resource", uri=template.uriTemplate)
-                argument = {"name": "test", "value": "argument"}
-                result = await session.complete(ref, argument)
+            from mcp.types import ResourceTemplateReference
 
-                self.assertIsNotNone(result)
-                self.assertIsNotNone(result.completion)
-                self.assertIsInstance(result.completion.values, list)
-            else:
-                self.skipTest("No resource templates available for completion test")
+            ref = ResourceTemplateReference(type="ref/resource", uri=template.uriTemplate)
+
+            argument = {"name": "test", "value": "argument"}
+            result = await session.complete(ref, argument)
+
+            self.assertIsNotNone(result)
+            self.assertIsNotNone(result.completion)
+            self.assertIsInstance(result.completion.values, list)
 
         await self.assertRequestLogged()
 
@@ -164,19 +165,18 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
         async with self.client_session() as session:
             await session.initialize()
             prompts = await session.list_prompts()
-            if prompts.prompts:
-                prompt = prompts.prompts[0]
-                from mcp.types import PromptReference
+            prompt = prompts.prompts[0]
 
-                ref = PromptReference(type="ref/prompt", name=prompt.name)
-                argument = {"name": "test", "value": "argument"}
-                result = await session.complete(ref, argument)
+            from mcp.types import PromptReference
 
-                self.assertIsNotNone(result)
-                self.assertIsNotNone(result.completion)
-                self.assertIsInstance(result.completion.values, list)
-            else:
-                self.skipTest("No prompts available for completion test")
+            ref = PromptReference(type="ref/prompt", name=prompt.name)
+
+            argument = {"name": "test", "value": "argument"}
+            result = await session.complete(ref, argument)
+
+            self.assertIsNotNone(result)
+            self.assertIsNotNone(result.completion)
+            self.assertIsInstance(result.completion.values, list)
 
         await self.assertRequestLogged()
 
@@ -292,7 +292,10 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
         """Test error handling for invalid resource URI."""
         async with self.client_session() as session:
             await session.initialize()
-            with self.assertRaises(Exception) as context:
+
+            from mcp.shared.exceptions import McpError
+
+            with self.assertRaises(McpError) as context:
                 invalid_uri = AnyUrl("invalid://not-a-real-uri")
                 await session.read_resource(invalid_uri)
 
@@ -342,6 +345,17 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 class MCPTransportSecurityTest(MCPLiveServerTestCase):
     """Test MCP transport security (DNS rebinding protection)."""
 
+    custom_validation_init_payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"},
+        },
+    }
+
     async def test_valid_host_allowed(self):
         """Test that valid hosts are allowed."""
         # The normal client_session should work with valid hosts (localhost:*)
@@ -354,8 +368,6 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
     async def test_invalid_host_rejected(self):
         """Test that invalid Host header is rejected with 421."""
-        import httpx
-
         # We need to test with a host that's valid for Django's ALLOWED_HOSTS
         # but invalid for our MCP security settings.
         # Since the test server runs on a random port, we use a different port on localhost
@@ -364,23 +376,14 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             "Content-Type": "application/json",
         }
 
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "1.0"},
-            },
-        }
-
         # Create a custom request with a host not in our allowed list
         # Use a specific port that's not in localhost:* pattern would be caught,
         # but our test allows localhost:*, so we need to use a completely different host
         # that Django would allow (testserver) but our security wouldn't
         async with httpx.AsyncClient() as client:
-            request = client.build_request("POST", self.mcp_url, json=payload, headers=headers)
+            request = client.build_request(
+                "POST", self.mcp_url, json=self.custom_validation_init_payload, headers=headers
+            )
             # Use a host that would fail our security check
             # Django test server allows 'testserver' by default
             request.headers["host"] = "evil.testserver:8000"
@@ -394,10 +397,6 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
     async def test_invalid_origin_rejected(self):
         """Test that invalid Origin header is rejected with 403."""
-        from urllib.parse import urlparse
-
-        import httpx
-
         # Extract the actual host from the live server URL
         parsed_url = urlparse(self.live_server_url)
         valid_host = parsed_url.netloc
@@ -409,19 +408,10 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             "Origin": "https://evil.com",
         }
 
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "1.0"},
-            },
-        }
-
         async with httpx.AsyncClient() as client:
-            response = await client.post(self.mcp_url, json=payload, headers=headers)
+            response = await client.post(
+                self.mcp_url, json=self.custom_validation_init_payload, headers=headers
+            )
 
             # Should return 403 for invalid Origin header
             self.assertEqual(response.status_code, 403)
@@ -445,19 +435,10 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             "Host": valid_host,
         }
 
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "1.0"},
-            },
-        }
-
         async with httpx.AsyncClient() as client:
-            response = await client.post(self.mcp_url, json=payload, headers=headers)
+            response = await client.post(
+                self.mcp_url, json=self.custom_validation_init_payload, headers=headers
+            )
 
             # Should return 400 for invalid Content-Type
             self.assertEqual(response.status_code, 400)
@@ -491,19 +472,10 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             "Host": valid_host,
         }
 
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "1.0"},
-            },
-        }
-
         async with httpx.AsyncClient() as client:
-            response = await client.post(self.mcp_url, json=payload, headers=headers)
+            response = await client.post(
+                self.mcp_url, json=self.custom_validation_init_payload, headers=headers
+            )
 
             # Should succeed because localhost:* is in allowed hosts
             self.assertEqual(response.status_code, 200)
@@ -525,8 +497,6 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
     async def test_org_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at org level."""
-        from asgiref.sync import sync_to_async
-
         from management.models import Org
 
         # Get org and add exclusion
@@ -534,21 +504,12 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         await sync_to_async(org.add_excluded_mcp_server)("test-server")
 
         # Try to access the MCP server - should get 404
-        import httpx
-
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "1.0"},
-            },
-        }
-
         async with httpx.AsyncClient() as client:
-            response = await client.post(self.mcp_url, json=payload, headers=self.headers)
+            response = await client.post(
+                self.mcp_url,
+                json=MCPTransportSecurityTest.custom_validation_init_payload,
+                headers=self.headers,
+            )
             self.assertEqual(response.status_code, 404)
 
         # Clean up
@@ -556,8 +517,6 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
     async def test_team_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at team level."""
-        from asgiref.sync import sync_to_async
-
         from management.models import ServiceAccount, Team, Token
 
         # Get team and add exclusion
@@ -578,22 +537,12 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         token.service_account = service_account
         await sync_to_async(token.save)()
 
-        # Try to access the MCP server - should get 404
-        import httpx
-
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "1.0"},
-            },
-        }
-
         async with httpx.AsyncClient() as client:
-            response = await client.post(self.mcp_url, json=payload, headers=self.headers)
+            response = await client.post(
+                self.mcp_url,
+                json=MCPTransportSecurityTest.custom_validation_init_payload,
+                headers=self.headers,
+            )
             self.assertEqual(response.status_code, 404)
 
         # Clean up
@@ -604,7 +553,6 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
     async def test_user_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at user profile level."""
-        from asgiref.sync import sync_to_async
         from django.contrib.auth import get_user_model
 
         User = get_user_model()
@@ -617,21 +565,12 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         await sync_to_async(profile.add_excluded_mcp_server)("test-server")
 
         # Try to access the MCP server - should get 404
-        import httpx
-
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "1.0"},
-            },
-        }
-
         async with httpx.AsyncClient() as client:
-            response = await client.post(self.mcp_url, json=payload, headers=self.headers)
+            response = await client.post(
+                self.mcp_url,
+                json=MCPTransportSecurityTest.custom_validation_init_payload,
+                headers=self.headers,
+            )
             self.assertEqual(response.status_code, 404)
 
         # Clean up
@@ -639,7 +578,6 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
     async def test_merged_exclusion_lists(self):
         """Test that exclusion lists merge correctly across hierarchy."""
-        from asgiref.sync import sync_to_async
         from django.contrib.auth import get_user_model
 
         from gateway.tests.utils.base import GatewayIntegrationTestCase
@@ -690,23 +628,14 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
     async def test_nonexistent_mcp_server(self):
         """Test that accessing a non-existent MCP server returns 404."""
-        import httpx
-
         nonexistent_url = f"{self.live_server_url}/mcp-servers/nonexistent-server/mcp"
 
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "1.0"},
-            },
-        }
-
         async with httpx.AsyncClient() as client:
-            response = await client.post(nonexistent_url, json=payload, headers=self.headers)
+            response = await client.post(
+                nonexistent_url,
+                json=MCPTransportSecurityTest.custom_validation_init_payload,
+                headers=self.headers,
+            )
             self.assertEqual(response.status_code, 404)
 
         await self.assertRequestLogged(n=1)

@@ -91,16 +91,6 @@ class UserProfileAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm)
         model = UserProfile
         fields = "__all__"
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["excluded_models"].choices = [(m, m) for m in get_model_choices()]
-        if self.instance and getattr(self.instance, "excluded_models", None):
-            self.initial["excluded_models"] = self.instance.excluded_models
-
-        self.fields["excluded_mcp_servers"].choices = [(s, s) for s in get_mcp_server_choices()]
-        if self.instance and getattr(self.instance, "excluded_mcp_servers", None):
-            self.initial["excluded_mcp_servers"] = self.instance.excluded_mcp_servers
-
 
 # Define an inline admin descriptor for UserProfile model
 # which acts a bit like a singleton
@@ -209,15 +199,6 @@ class TeamAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        from .admin import get_mcp_server_choices, get_model_choices
-
-        self.fields["excluded_models"].choices = [(m, m) for m in get_model_choices()]
-        if self.instance and getattr(self.instance, "excluded_models", None):
-            self.initial["excluded_models"] = self.instance.excluded_models
-
-        self.fields["excluded_mcp_servers"].choices = [(s, s) for s in get_mcp_server_choices()]
-        if self.instance and getattr(self.instance, "excluded_mcp_servers", None):
-            self.initial["excluded_mcp_servers"] = self.instance.excluded_mcp_servers
 
 
 # Customize Team Admin
@@ -250,15 +231,6 @@ class OrgAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        from .admin import get_mcp_server_choices, get_model_choices
-
-        self.fields["excluded_models"].choices = [(m, m) for m in get_model_choices()]
-        if self.instance and getattr(self.instance, "excluded_models", None):
-            self.initial["excluded_models"] = self.instance.excluded_models
-
-        self.fields["excluded_mcp_servers"].choices = [(s, s) for s in get_mcp_server_choices()]
-        if self.instance and getattr(self.instance, "excluded_mcp_servers", None):
-            self.initial["excluded_mcp_servers"] = self.instance.excluded_mcp_servers
 
 
 @admin.register(Org)

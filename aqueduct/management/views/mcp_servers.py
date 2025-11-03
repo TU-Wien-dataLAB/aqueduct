@@ -22,7 +22,7 @@ class MCPServersView(LoginRequiredMixin, TemplateView):
             context["mcp_servers"] = mcp_config
             # Add the current site's domain for constructing full URLs
             context["site_host"] = f"{self.request.scheme}://{self.request.get_host()}"
-        except Exception as e:
+        except RuntimeError as e:
             context["mcp_servers"] = {}
             context["error"] = str(e)
 

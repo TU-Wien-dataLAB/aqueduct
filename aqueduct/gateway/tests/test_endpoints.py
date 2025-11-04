@@ -1,9 +1,12 @@
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TransactionTestCase, override_settings
+from litellm.types.utils import ImageObject, ImageResponse, ModelResponse
+from openai.types.audio import Transcription
 from openai.types.chat import ChatCompletion
 
 from gateway.config import get_router_config
@@ -1337,9 +1340,10 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
     These tests check that aliases are correctly resolved to model names.
     """
 
-    from litellm.types.utils import ModelResponse
-
     mock_response = ModelResponse()
+    tts_model = "gpt-4o-mini-tts"
+    stt_model = "whisper-1"
+    image_gen_model = "dall-e-2"
 
     def test_chat_completion_with_alias(self):
         """
@@ -1396,6 +1400,147 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 self.assertIsNotNone(chat_completion)
                 self.assertTrue(chat_completion.choices)
 
+    def test_speech_endpoint_with_alias(self):
+        """Test that TTS endpoint correctly resolves model aliases."""
+        from gateway.config import get_router, get_router_config
+
+        # Mock config with alias for TTS model
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": self.tts_model,
+                    "litellm_params": {
+                        "model": f"openai/{self.tts_model}",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"mode": "audio_speech", "aliases": ["tts", "voice"]},
+                }
+            ]
+        }
+
+        # Clear both caches to ensure fresh state
+        get_router_config.cache_clear()
+        get_router.cache_clear()
+
+        with patch("gateway.config.get_router_config", return_value=mock_config):
+            with patch("gateway.config.get_router") as mock_get_router:
+                mock_router = AsyncMock()
+                mock_router.aspeech = AsyncMock(return_value=self.mock_response)
+                mock_get_router.return_value = mock_router
+
+                headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+                payload = {
+                    "model": "tts",  # Using alias instead of actual model name
+                    "input": "Testing alias resolution for text-to-speech.",
+                    "voice": "alloy",
+                    "response_format": "mp3",
+                }
+
+                response = self.client.post(
+                    "/audio/speech",
+                    data=json.dumps(payload),
+                    headers=headers,
+                    content_type="application/json",
+                )
+
+                # Should return 200 with alias resolution
+                self.assertEqual(
+                    response.status_code,
+                    200,
+                    f"Alias resolution not working for TTS. Expected 200, got {response.status_code}",
+                )
+
+                # Check that the database contains one request
+                requests = list(Request.objects.all())
+                self.assertEqual(
+                    len(requests), 1, "There should be exactly one request after speech generation."
+                )
+
+    def test_transcriptions_endpoint_with_alias(self):
+        """Test that STT endpoint correctly resolves model aliases."""
+        from gateway.config import get_openai_client, get_router, get_router_config
+
+        # Mock config with alias for STT model
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": self.stt_model,
+                    "litellm_params": {
+                        "model": f"openai/{self.stt_model}",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"mode": "audio_transcription", "aliases": ["stt", "transcribe"]},
+                }
+            ]
+        }
+
+        # Clear all caches to ensure fresh state
+        get_router_config.cache_clear()
+        get_router.cache_clear()
+        get_openai_client.cache_clear()
+
+        # Create a simple audio file for testing (using a small mock file)
+        test_audio_content = b"mock audio data"
+        test_audio_file = SimpleUploadedFile(
+            "test.mp3", test_audio_content, content_type="audio/mp3"
+        )
+
+        # Mock the router and its deployment
+        mock_router = MagicMock()
+        mock_deployment = MagicMock()
+        mock_deployment.litellm_params.model = f"openai/{self.stt_model}"
+        mock_router.get_deployment.return_value = mock_deployment
+
+        # Mock the OpenAI client
+        mock_client = MagicMock()
+
+        mock_transcription = Transcription(text="Mock transcription text")
+
+        # Create an async mock for the transcription creation
+        async def mock_create(**kwargs):
+            return mock_transcription
+
+        mock_client.audio.transcriptions.create = mock_create
+
+        with patch("gateway.config.get_router_config", return_value=mock_config):
+            with patch("gateway.views.transcriptions.get_router", return_value=mock_router):
+                with patch(
+                    "gateway.views.transcriptions.get_openai_client", return_value=mock_client
+                ):
+                    with patch(
+                        "litellm.get_llm_provider", return_value=(self.stt_model, "openai", "", "")
+                    ):
+                        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+                        # Remove Content-Type for multipart form data
+                        headers.pop("Content-Type", None)
+
+                        response = self.client.post(
+                            "/audio/transcriptions",
+                            {
+                                "file": test_audio_file,
+                                "model": "stt",
+                            },  # Using alias instead of actual model name
+                            headers=headers,
+                        )
+
+                        # Should return 200 with alias resolution
+                        self.assertEqual(
+                            response.status_code,
+                            200,
+                            f"Alias resolution not working for STT. Expected 200, got {response.status_code}: {response.content}",
+                        )
+
+                        response_json = response.json()
+                        self.assertIn("text", response_json, "Response should contain 'text' field")
+
+                        # Check that the database contains one request
+                        requests = list(Request.objects.all())
+                        self.assertEqual(
+                            len(requests),
+                            1,
+                            "There should be exactly one request after transcription.",
+                        )
+
     def test_chat_completion_with_nonexistent_alias(self):
         """
         Test that requests with non-existent aliases return appropriate errors.
@@ -1423,9 +1568,6 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         """
         Test that embedding requests using an alias are routed correctly.
         """
-        if INTEGRATION_TEST_BACKEND == "vllm":
-            self.skipTest("Embeddings test not adapted for vLLM yet")
-
         from gateway.config import get_router, get_router_config
 
         # Mock config with alias for embedding model
@@ -1473,6 +1615,73 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 self.assertIn("data", response_json)
                 self.assertIsInstance(response_json["data"], list)
                 self.assertGreater(len(response_json["data"]), 0)
+
+    def test_image_generation_with_alias(self):
+        """Test that image generation endpoint correctly resolves model aliases."""
+        from gateway.config import get_router, get_router_config
+
+        # Mock config with alias for image generation model
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": self.image_gen_model,
+                    "litellm_params": {
+                        "model": f"openai/{self.image_gen_model}",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"mode": "image_generation", "aliases": ["image", "dalle"]},
+                }
+            ]
+        }
+
+        # Clear both caches to ensure fresh state
+        get_router_config.cache_clear()
+        get_router.cache_clear()
+
+        mock_image_object = ImageObject(
+            url="https://example.com/mock-image.png",
+            revised_prompt="A beautiful landscape with mountains and a lake",
+        )
+        mock_image_response = ImageResponse(data=[mock_image_object])
+
+        with patch("gateway.config.get_router_config", return_value=mock_config):
+            with patch("gateway.views.image_generation.get_router") as mock_get_router:
+                # Mock the router to return our mock image response
+                mock_router = MagicMock()
+                mock_router.image_generation.return_value = mock_image_response
+                mock_get_router.return_value = mock_router
+
+                payload = {
+                    "model": "image",  # Using alias instead of actual model name
+                    "prompt": "A beautiful landscape with mountains and a lake",
+                    "size": "256x256",
+                }
+
+                response = self.client.post(
+                    "/images/generations",
+                    data=json.dumps(payload),
+                    headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN),
+                    content_type="application/json",
+                )
+
+                # Should return 200 with alias resolution
+                self.assertEqual(response.status_code, 200)
+
+                response_json = response.json()
+                self.assertIn("data", response_json, "Response should contain 'data' field")
+                self.assertIsInstance(response_json["data"], list, "Data should be a list")
+                self.assertGreater(len(response_json["data"]), 0, "Data should not be empty")
+
+                # Check first image object structure
+                img_data = response_json["data"][0]
+                self.assertIn("url", img_data, "Image data should contain 'url' field")
+                self.assertIn("https://", img_data["url"], "Image data should contain a valid url")
+
+                # Check that the database contains one request
+                requests = list(Request.objects.all())
+                self.assertEqual(
+                    len(requests), 1, "There should be exactly one request after image generation."
+                )
 
     def test_multiple_aliases_same_model(self):
         """

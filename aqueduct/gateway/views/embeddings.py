@@ -6,7 +6,7 @@ from django.views.decorators.http import require_POST
 from litellm.types.utils import EmbeddingResponse
 from pydantic import TypeAdapter
 
-from gateway.router import get_router
+from gateway.config import get_router
 from management.models import Request
 
 from .decorators import (

@@ -6,7 +6,7 @@ from django.views.decorators.http import require_POST
 from openai import HttpxBinaryResponseContent
 from pydantic import TypeAdapter
 
-from gateway.router import get_router
+from gateway.config import get_router
 
 from .decorators import (
     catch_router_exceptions,

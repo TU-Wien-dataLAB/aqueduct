@@ -1,0 +1,100 @@
+{% extends "management/base.html" %}
+{% load static %}
+
+{% block title %}MCP Servers{% endblock %}
+
+{% block content %}
+<div class="container mx-auto p-6">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold mb-2">MCP Servers</h1>
+        <p class="text-lg text-base-content/70">
+            Model Context Protocol (MCP) servers available through Aqueduct.
+        </p>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>Error loading MCP servers: {{ error }}</span>
+    </div>
+    {% endif %}
+
+    {% if mcp_servers %}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for server_name, server_config in mcp_servers.items %}
+        <div class="card bg-base-100 border border-base-300 hover:border-primary/50 transition-all duration-200">
+            <div class="card-body">
+                <div class="flex items-start gap-3">
+                    <img src="{{ server_config.icon_url }}" alt="{{ server_name }}" 
+                         class="h-10 w-10 object-contain flex-shrink-0 mt-1" 
+                         onerror="this.src='{% static 'icons/mcp.svg' %}'">
+                    <div class="flex-1 min-w-0">
+                        <h2 class="card-title text-lg capitalize mb-1">
+                            {{ server_name|title }}
+                        </h2>
+                        <p class="text-xs text-base-content/50 font-mono">{{ server_name }}</p>
+                        {% if server_config.description %}
+                        <p class="text-sm text-base-content/70 line-clamp-2">{{ server_config.description }}</p>
+                        {% else %}
+                        <p class="text-sm text-base-content/50 italic">No description available</p>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="flex justify-between items-center mt-4 pt-4 border-t border-base-300">
+                    <div class="flex flex-wrap gap-1">
+                        {% if server_config.tags %}
+                        {% for tag in server_config.tags %}
+                        <span class="badge badge-soft badge-info badge-sm">{{ tag }}</span>
+                        {% endfor %}
+                        {% else %}
+                        <span class="badge badge-ghost badge-sm">untagged</span>
+                        {% endif %}
+                    </div>
+                    <div class="tooltip tooltip-left" data-tip="Copy URL">
+                        <button class="btn btn-ghost btn-sm btn-square" onclick="navigator.clipboard.writeText('{{ site_host }}/mcp-servers/{{ server_name }}/mcp')">
+                            <span class="h-4 w-4 inline-flex">
+                                <img src="{% static 'icons/copy.svg' %}" alt="Copy" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="flex flex-col items-center justify-center py-16">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/30 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+        <h3 class="text-xl font-semibold text-base-content/70 mb-2">No MCP Servers Available</h3>
+        <p class="text-base-content/50 text-center max-w-md">
+            No MCP servers are currently configured. Please check your MCP configuration file.
+        </p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const successIconSrc = "{% static 'icons/check.svg' %}";
+    const copyIconSrc = "{% static 'icons/copy.svg' %}";
+
+    // Add copy feedback
+    document.querySelectorAll('button').forEach(button => {
+        if (button.onclick && button.onclick.toString().includes('clipboard')) {
+            button.addEventListener('click', function() {
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<span class="h-4 w-4 inline-flex"><img src="' + successIconSrc + '" alt="Copied" class="w-4 h-4 [[data-theme=dark]_&]:invert"></span>';
+                setTimeout(() => {
+                    this.innerHTML = originalHTML;
+                }, 2000);
+            });
+        }
+    });
+});
+</script>
+{% endblock %}

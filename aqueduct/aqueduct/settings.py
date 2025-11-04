@@ -9,7 +9,9 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
+
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -19,7 +21,7 @@ from django.core.exceptions import ImproperlyConfigured
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 USE_TZ = True
 
 # Quick-start development settings - unsuitable for production
@@ -30,68 +32,67 @@ SECRET_KEY = os.getenv("SECRET_KEY", "insecure-secret-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
+TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split()
 
 # Application definition
 
 INSTALLED_APPS = [
-    'daphne',
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.humanize',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'mozilla_django_oidc',
-    'django_celery_beat',
-    'django.contrib.sites',
-    'tos',
-    'management.apps.AqueductManagementConfig',
-    'gateway.apps.GatewayConfig'
+    "daphne",
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.humanize",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "mozilla_django_oidc",
+    "django_celery_beat",
+    "django.contrib.sites",
+    "tos",
+    "management.apps.AqueductManagementConfig",
+    "gateway.apps.GatewayConfig",
 ]
 
 MIDDLEWARE = [
-    'management.middleware.HealthCheckMiddleware',
-    'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'mozilla_django_oidc.middleware.SessionRefresh',
+    "management.middleware.HealthCheckMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "mozilla_django_oidc.middleware.SessionRefresh",
 ]
 
 AUTHENTICATION_BACKENDS = (
     # Add the Token backend - tries this first for API requests
-    'gateway.authentication.TokenAuthenticationBackend',
-
+    "gateway.authentication.TokenAuthenticationBackend",
     # Keep the custom OIDC backend for web login
-    'management.auth.OIDCBackend',
-
+    "management.auth.OIDCBackend",
     # Keep the default ModelBackend for Django admin login, etc.
-    'django.contrib.auth.backends.ModelBackend',
+    "django.contrib.auth.backends.ModelBackend",
 )
 
 # OIDC Settings
 
 OIDC_RP_SCOPES = "openid email profile"
-OIDC_RP_SIGN_ALGO = os.environ.get('OIDC_RP_SIGN_ALGO', 'RS256')
-OIDC_OP_JWKS_ENDPOINT = os.environ.get('OIDC_OP_JWKS_ENDPOINT')
+OIDC_RP_SIGN_ALGO = os.environ.get("OIDC_RP_SIGN_ALGO", "RS256")
+OIDC_OP_JWKS_ENDPOINT = os.environ.get("OIDC_OP_JWKS_ENDPOINT")
 
-OIDC_RP_CLIENT_ID = os.environ.get('OIDC_RP_CLIENT_ID')
-OIDC_RP_CLIENT_SECRET = os.environ.get('OIDC_RP_CLIENT_SECRET')
+OIDC_RP_CLIENT_ID = os.environ.get("OIDC_RP_CLIENT_ID")
+OIDC_RP_CLIENT_SECRET = os.environ.get("OIDC_RP_CLIENT_SECRET")
 
-OIDC_OP_AUTHORIZATION_ENDPOINT = os.environ.get('OIDC_OP_AUTHORIZATION_ENDPOINT')
-OIDC_OP_TOKEN_ENDPOINT = os.environ.get('OIDC_OP_TOKEN_ENDPOINT')
-OIDC_OP_USER_ENDPOINT = os.environ.get('OIDC_OP_USER_ENDPOINT')
+OIDC_OP_AUTHORIZATION_ENDPOINT = os.environ.get("OIDC_OP_AUTHORIZATION_ENDPOINT")
+OIDC_OP_TOKEN_ENDPOINT = os.environ.get("OIDC_OP_TOKEN_ENDPOINT")
+OIDC_OP_USER_ENDPOINT = os.environ.get("OIDC_OP_USER_ENDPOINT")
 
-LOGIN_REDIRECT_URL = '/'  # Where to redirect after successful login
-LOGOUT_REDIRECT_URL = '/login/'  # Where to redirect after successful logout
-LOGIN_URL = '/login/'  # Where to redirect if user is not logged in
+LOGIN_REDIRECT_URL = "/"  # Where to redirect after successful login
+LOGOUT_REDIRECT_URL = "/login/"  # Where to redirect after successful logout
+LOGIN_URL = "/login/"  # Where to redirect if user is not logged in
 
 # Aqueduct Settings ------------------------------------------------------
 
@@ -101,7 +102,7 @@ MAX_SERVICE_ACCOUNTS_PER_TEAM = 10
 MAX_USER_BATCHES = 3
 MAX_TEAM_BATCHES = 10
 
-OIDC_PROVIDER = 'SSO'
+OIDC_PROVIDER = "SSO"
 
 
 def my_org_name_extractor(groups: list[str]) -> str | None:
@@ -117,8 +118,8 @@ ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
 ADMIN_GROUP = "default"  # all users are admins
 
 EXTRA_NAV_LINKS = {
-    'Bug Report': 'https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md',
-    'Documentation': 'https://tu-wien-datalab.github.io/aqueduct/'
+    "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",
+    "Documentation": "https://tu-wien-datalab.github.io/aqueduct/",
     # 'API Status': '/status/',  # Example internal path
     # 'About Us': 'about_page',  # Example named URL (assuming you have url(..., name='about_page'))
 }
@@ -132,25 +133,38 @@ REQUEST_RETENTION_SCHEDULE = os.environ.get("REQUEST_RETENTION_SCHEDULE", "0 4 *
 LITELLM_ROUTER_CONFIG_FILE_PATH = os.environ.get("LITELLM_ROUTER_CONFIG_FILE_PATH")
 
 AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST: list[str] = []
+AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST: list[str] = []
 
 AQUEDUCT_FILES_API_ROOT = os.environ.get("AQUEDUCT_FILES_API_ROOT", "/tmp")
 AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB", 8))
-AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 1024))
+AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(
+    os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 1024)
+)
 AQUEDUCT_FILES_API_EXPIRY_DAYS = int(os.environ.get("AQUEDUCT_FILES_API_EXPIRY_DAYS", 7))
 
-AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES", 15))
+AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(
+    os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES", 15)
+)
 assert AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES > 10
 AQUEDUCT_BATCH_PROCESSING_CRONTAB = crontab(minute=f"*/{AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES}")
-AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS", 5 * 60))
-AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS = int(os.environ.get("AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS", 30))
+AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS = int(
+    os.environ.get("AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS", 5 * 60)
+)
+AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS = int(
+    os.environ.get("AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS", 30)
+)
 
-AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", 16)
-AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY = os.environ.get("AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY", 4)
+AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY = os.environ.get(
+    "AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", 16
+)
+AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY = os.environ.get(
+    "AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY", 4
+)
 
 
 def batch_processing_concurrency():
-    """ Is called when starting a batch processing run and returns the size of the concurrency queue,
-    so how many requests run in parallel. """
+    """Is called when starting a batch processing run and returns the size of the concurrency queue,
+    so how many requests run in parallel."""
     dt = datetime.now()
     min_c = AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY
     max_c = AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY
@@ -161,44 +175,57 @@ AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
 
 TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")
 
+MCP_CONFIG_FILE_PATH = os.environ.get("MCP_CONFIG_FILE_PATH", "mcp.json")
+
+# MCP Transport Security Settings
+MCP_ENABLE_DNS_REBINDING_PROTECTION = (
+    os.getenv("MCP_ENABLE_DNS_REBINDING_PROTECTION", "True").lower() == "true"
+)
+
+MCP_ALLOWED_HOSTS = os.getenv("MCP_ALLOWED_HOSTS", "localhost:8000,localhost:*").split(",")
+
+MCP_ALLOWED_ORIGINS = os.getenv(
+    "MCP_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:*"
+).split(",")
+
 # TOS Settings
 
 TOS_ENABLED = os.getenv("TOS_ENABLED", "False").lower() == "true"
 if TOS_ENABLED:
-    TOS_CACHE_NAME = 'default'  # set explicitly
+    TOS_CACHE_NAME = "default"  # set explicitly
     # has to come after session middleware
-    MIDDLEWARE.append('management.middleware.UserAgreementMiddleware')
+    MIDDLEWARE.append("management.middleware.UserAgreementMiddleware")
 TOS_GATEWAY_VALIDATION = os.getenv("TOS_GATEWAY_VALIDATION", "True").lower() == "true"
 
 # Celery Settings -------------------------------------------------------
 
-CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == "true"
-CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-CELERY_WORKER_CONCURRENCY = os.environ.get('CELERY_WORKER_CONCURRENCY', 1)
-CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_WORKER_CONCURRENCY = os.environ.get("CELERY_WORKER_CONCURRENCY", 1)
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
-CELERY_ACCEPT_CONTENT = ['application/json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ["application/json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
 
 CELERY_BEAT_SCHEDULE = {
-    'delete-old-requests': {
-        'task': 'aqueduct.celery.delete_old_requests',
-        'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    "delete-old-requests": {
+        "task": "aqueduct.celery.delete_old_requests",
+        "schedule": crontab.from_string(REQUEST_RETENTION_SCHEDULE),
     },
-    'delete-expired-files-and-batches': {
-        'task': 'aqueduct.celery.delete_expired_files_and_batches',
-        'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    "delete-expired-files-and-batches": {
+        "task": "aqueduct.celery.delete_expired_files_and_batches",
+        "schedule": crontab.from_string(REQUEST_RETENTION_SCHEDULE),
     },
-    'process-batches': {
-        'task': 'aqueduct.celery.process_batches',
-        'schedule': AQUEDUCT_BATCH_PROCESSING_CRONTAB,
-    }
+    "process-batches": {
+        "task": "aqueduct.celery.process_batches",
+        "schedule": AQUEDUCT_BATCH_PROCESSING_CRONTAB,
+    },
 }
 
 # Django Silk profiling configuration --------------------------------------------------
@@ -218,28 +245,28 @@ if SILKY_ENABLED:
     SILKY_MAX_REQUEST_BODY_SIZE = 0
     SILKY_MAX_RESPONSE_BODY_SIZE = 0
 
-    CELERY_BEAT_SCHEDULE['delete-silk-logs'] = {
-        'task': 'aqueduct.celery.delete_silk_models',
-        'schedule': crontab.from_string(REQUEST_RETENTION_SCHEDULE),
+    CELERY_BEAT_SCHEDULE["delete-silk-logs"] = {
+        "task": "aqueduct.celery.delete_silk_models",
+        "schedule": crontab.from_string(REQUEST_RETENTION_SCHEDULE),
     }
 
-ROOT_URLCONF = 'aqueduct.urls'
+ROOT_URLCONF = "aqueduct.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [BASE_DIR / "templates"],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
                 # Aqueduct processors
-                'management.context_processors.settings'
-            ],
+                "management.context_processors.settings",
+            ]
         },
-    },
+    }
 ]
 
 # WSGI_APPLICATION = 'aqueduct.wsgi.application'
@@ -249,26 +276,26 @@ ASGI_APPLICATION = "aqueduct.asgi.application"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 # 1. First, get which database engine you want
-DATABASE_ENGINE = os.getenv('DATABASE_ENGINE', 'django.db.backends.sqlite3')
+DATABASE_ENGINE = os.getenv("DATABASE_ENGINE", "django.db.backends.sqlite3")
 
 # 2. Set up DATABASES based on the engine
-DATABASES = {
-    'default': {
-        'ENGINE': DATABASE_ENGINE,
-    }
-}
+DATABASES = {"default": {"ENGINE": DATABASE_ENGINE}}
 
 # 3. If it's SQLite, fill in the NAME for the file
-if DATABASE_ENGINE == 'django.db.backends.sqlite3':
-    DATABASES['default']['NAME'] = str(BASE_DIR / 'db.sqlite3')
-elif DATABASE_ENGINE == 'django.db.backends.postgresql':
-    DATABASES['default'].update({
-        'NAME': os.getenv('POSTGRES_DB', 'aqueduct'),
-        'USER': os.getenv('POSTGRES_USER', 'aqueduct'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'aqueduct'),
-        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
-        'PORT': os.getenv('POSTGRES_PORT', '5432'),
-    })
+if DATABASE_ENGINE == "django.db.backends.sqlite3":
+    DATABASES["default"]["NAME"] = str(BASE_DIR / "db.sqlite3")
+    if TESTING:
+        DATABASES["default"]["TEST"] = {"NAME": str(BASE_DIR / "db_test.sqlite3")}
+elif DATABASE_ENGINE == "django.db.backends.postgresql":
+    DATABASES["default"].update(
+        {
+            "NAME": os.getenv("POSTGRES_DB", "aqueduct"),
+            "USER": os.getenv("POSTGRES_USER", "aqueduct"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "aqueduct"),
+            "HOST": os.getenv("POSTGRES_HOST", "localhost"),
+            "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        }
+    )
 else:
     raise ImproperlyConfigured(f"Unsupported database engine: {DATABASE_ENGINE}")
 
@@ -283,62 +310,45 @@ CACHES = {
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 USE_I18N = True
 
 STORAGES = {
     # ...
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"}
 }
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = "static/"
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {
+        "aqueduct": {  # Replace with your app name
+            "handlers": ["console"],
+            "level": os.getenv("DJANGO_LOG_LEVEL", "WARNING"),
+            "propagate": False,
+        }
     },
-    'loggers': {
-        'aqueduct': {  # Replace with your app name
-            'handlers': ['console'],
-            'level': os.getenv("DJANGO_LOG_LEVEL", "WARNING"),
-            'propagate': False,
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': os.getenv("DJANGO_LOG_LEVEL", "WARNING"),
-    },
+    "root": {"handlers": ["console"], "level": os.getenv("DJANGO_LOG_LEVEL", "WARNING")},
 }

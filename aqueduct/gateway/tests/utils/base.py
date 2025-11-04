@@ -7,7 +7,6 @@ from typing import Literal, Optional
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
 from django.test import TransactionTestCase, override_settings
 
 from management.models import Org, Token, UserProfile
@@ -16,7 +15,7 @@ INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
     "INTEGRATION_TEST_BACKEND", "openai"
 )
 if INTEGRATION_TEST_BACKEND not in ["vllm", "openai"]:
-    raise ValueError("Integration test backend must be one of 'vllm' or 'openai‘.")
+    raise ValueError("Integration test backend must be one of 'vllm' or 'openai'.")
 
 ROUTER_CONFIG_PATH = f"/tmp/aqueduct/{INTEGRATION_TEST_BACKEND}-router-config.yaml"
 ROUTER_CONFIG_VLLM = dedent("""
@@ -52,7 +51,6 @@ if START_VLLM_SERVER:
     except ImportError as e:
         get_openai_server, stop_openai_server = None, None
         _VLLM_IMPORT_ERROR = e
-
 
 User = get_user_model()
 
@@ -126,6 +124,8 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     def create_new_user() -> tuple[str, int]:
         # Create a new user and a new token for that user
         new_user = User.objects.create_user(username="OtherUser", email="other@example.com")
+        from django.contrib.auth.models import Group
+
         new_user.groups.add(Group.objects.get(name="user"))
         org = Org.objects.get(name="E060")
         profile = UserProfile.objects.create(user=new_user, org=org)

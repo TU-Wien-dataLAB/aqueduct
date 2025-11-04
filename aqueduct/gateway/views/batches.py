@@ -16,9 +16,9 @@ from litellm import Router
 from openai.types.batch_create_params import BatchCreateParams
 from pydantic import TypeAdapter, ValidationError
 
+from gateway.config import get_router
 from management.models import Batch, BatchStatus, FileObject
 
-from ..router import get_router
 from .decorators import log_request, token_authenticated, tos_accepted
 from .utils import cache_lock
 

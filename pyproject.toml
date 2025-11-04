@@ -1,19 +1,20 @@
 [project]
 name = "aqueduct"
 version = "0.1.6"
-description = "A simple yet fully-featured AI gateway built on top of the LiteLLM Router SDK."
+description = "A simple yet fully-featured AI gateway built on top of the LiteLLM Router SDK with MCP server support."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "asgiref>=3.8.1",
     "celery[redis]>=5.5.2",
-    "daphne>=4.1.2",
-    "django>=5.2",
+    "daphne>=4.2.1",
+    "django>=5.2.7",
     "django-celery-beat>=2.8.1",
     "django-silk>=5.4.0",
     "django-tos>=1.1.0",
     "httpx>=0.28.1, <1",
     "litellm==1.72.0",
+    "mcp>=1.16.0",
     "mozilla-django-oidc>=4.0.1",
     "openai>=1.95.0",
     "whitenoise>=6.9.0",
@@ -29,6 +30,7 @@ vllm = [
 
 [dependency-groups]
 dev = [
+    "channels[daphne]>=4.3.1",
     "pre-commit>=4.2.0",
     "ruff>=0.13.3",
     "tbump>=6.11.0",

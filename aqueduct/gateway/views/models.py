@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
-from gateway.router import get_router_config
+from gateway.config import get_router_config
 from management.models import Token
 
 from .decorators import log_request, token_authenticated, tos_accepted

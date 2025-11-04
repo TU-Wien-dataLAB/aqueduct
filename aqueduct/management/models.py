@@ -123,7 +123,39 @@ class ModelExclusionMixin(models.Model):
         abstract = True  # Important: Makes this a mixin, no DB table created
 
 
-class Org(LimitMixin, ModelExclusionMixin, models.Model):
+class MCPServerExclusionMixin(models.Model):
+    """
+    An abstract base model providing an MCP server exclusion list.
+    Add MCP server names to the list to indicate which servers should be excluded for the specific object.
+    """
+
+    excluded_mcp_servers = JSONField(
+        default=list, help_text="MCP servers to exclude from the config."
+    )
+
+    merge_mcp_server_exclusion_lists = BooleanField(
+        default=True,
+        null=False,
+        help_text="When enabled, this object's MCP server exclusion list will be combined with the exclusion "
+        "list from its parent in the hierarchy (such as combining a User's and an Org's lists). "
+        "Disable to use only this object's exclusions.",
+    )
+
+    def add_excluded_mcp_server(self, server_name: str):
+        if server_name not in self.excluded_mcp_servers:
+            self.excluded_mcp_servers.append(server_name)
+            self.save(update_fields=["excluded_mcp_servers"])
+
+    def remove_excluded_mcp_server(self, server_name: str):
+        if server_name in self.excluded_mcp_servers:
+            self.excluded_mcp_servers.remove(server_name)
+            self.save(update_fields=["excluded_mcp_servers"])
+
+    class Meta:
+        abstract = True  # Important: Makes this a mixin, no DB table created
+
+
+class Org(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Model):
     """Represents an Organization."""
 
     name = models.CharField(verbose_name="Org name", max_length=255, unique=True)
@@ -132,7 +164,7 @@ class Org(LimitMixin, ModelExclusionMixin, models.Model):
         return self.name
 
 
-class Team(LimitMixin, ModelExclusionMixin, models.Model):
+class Team(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Model):
     """Represents a Team within an Organization."""
 
     name = models.CharField(verbose_name="Team name", max_length=255)
@@ -147,7 +179,7 @@ class Team(LimitMixin, ModelExclusionMixin, models.Model):
         return f"{self.name} ({self.org.name})"
 
 
-class UserProfile(LimitMixin, ModelExclusionMixin, models.Model):
+class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Model):
     """
     Holds additional information related to the built-in Django User model.
     Each Django User should have one corresponding UserProfile.
@@ -520,6 +552,42 @@ class Token(models.Model):
 
     def model_excluded(self, model: str):
         return model in self.model_exclusion_list()
+
+    @classmethod
+    def _mcp_server_exclusion_list_from_objects(
+        cls,
+        specific_exclusion: Optional["MCPServerExclusionMixin"],
+        org_exclusion: Optional["MCPServerExclusionMixin"],
+    ) -> list[str]:
+        exclusion_list: list[str] = (
+            specific_exclusion.excluded_mcp_servers if specific_exclusion else []
+        )
+        if specific_exclusion and specific_exclusion.merge_mcp_server_exclusion_lists:
+            org_exclusion_list: list[str] = (
+                org_exclusion.excluded_mcp_servers if org_exclusion else []
+            )
+            exclusion_list = exclusion_list + org_exclusion_list
+            if org_exclusion and org_exclusion.merge_mcp_server_exclusion_lists:
+                settings_exclusion_list: list[str] = getattr(
+                    settings, "AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST", []
+                )
+                exclusion_list = exclusion_list + settings_exclusion_list
+
+        return list(set(exclusion_list))
+
+    def mcp_server_exclusion_list(self) -> list[str]:
+        """
+        Determines if an MCP server is excluded for this token, returning a list of excluded servers.
+        Assumes database integrity for related objects.
+
+        Hierarchy Rules:
+        - Service Account Token: Uses the Team exclusion list, falls back to the Org exclusion list.
+        - User Token: Uses the UserProfile exclusion list, falls back to the Org exclusion list.
+        """
+        return self._get_from_hierarchy(Token._mcp_server_exclusion_list_from_objects)
+
+    def mcp_server_excluded(self, server_name: str):
+        return server_name in self.mcp_server_exclusion_list()
 
     @classmethod
     def find_by_key(cls, key_value: str) -> Optional["Token"]:

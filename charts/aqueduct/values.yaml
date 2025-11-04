@@ -76,6 +76,9 @@ settingsPy:
 # Router configuration for litellm router
 routerConfig: { }
 
+# MCP configuration
+mcpConfig: { }
+
 service:
   type: ClusterIP
   port: 8000

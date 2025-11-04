@@ -7,7 +7,7 @@ from litellm import TextCompletionStreamWrapper
 from litellm.types.utils import TextCompletionResponse
 from pydantic import TypeAdapter
 
-from gateway.router import get_router
+from gateway.config import get_router
 from management.models import Request
 
 from .decorators import (

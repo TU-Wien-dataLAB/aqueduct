@@ -10,6 +10,8 @@ Usage:
 {{- if .Values.ingress.enabled }}
 - name: ALLOWED_HOSTS
   value: {{ .Values.ingress.host | quote }}
+- name: MCP_ALLOWED_HOSTS
+  value: {{ .Values.ingress.host | quote }}
 {{- end }}
 - name: SECRET_KEY
   {{- if .Values.djangoSecretKey.value }}
@@ -89,6 +91,8 @@ Usage:
 - name: TIKA_SERVER_URL
   value: http://{{ .Release.Name }}-tika:9998
 {{- end }}
+- name: MCP_CONFIG_FILE_PATH
+  value: "/etc/aqueduct/mcp.json"
 - name: TOS_ENABLED
 {{- if .Values.tos.enabled }}
   value: "True"

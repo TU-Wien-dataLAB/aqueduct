@@ -5,7 +5,7 @@ from django.contrib.auth.models import Group, User
 from django.urls import reverse
 from django.utils.html import format_html
 
-from gateway.router import get_router_config
+from gateway.config import get_router_config
 
 from .models import (
     Batch,
@@ -23,6 +23,16 @@ from .models import (
 def get_model_choices() -> list[str]:
     config = get_router_config()
     return [m["model_name"] for m in config.get("model_list", [])]
+
+
+def get_mcp_server_choices() -> list[str]:
+    from gateway.config import get_mcp_config
+
+    try:
+        config = get_mcp_config()
+        return list(config.keys())
+    except RuntimeError:
+        return []
 
 
 class ExcludedModelsAdminForm(forms.ModelForm):
@@ -52,7 +62,31 @@ class ExcludedModelsAdminForm(forms.ModelForm):
         return self.cleaned_data["excluded_models"]
 
 
-class UserProfileAdminForm(ExcludedModelsAdminForm):
+class ExcludedMCPServersAdminForm(forms.ModelForm):
+    class Meta:
+        model = None  # To be specified by subclass
+        fields = "__all__"
+
+    excluded_mcp_servers = forms.MultipleChoiceField(
+        choices=[],
+        required=False,
+        widget=forms.CheckboxSelectMultiple(),
+        label="Excluded MCP Servers",
+        help_text="Choose MCP servers to be excluded.",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["excluded_mcp_servers"].choices = [(s, s) for s in get_mcp_server_choices()]
+        if self.instance and getattr(self.instance, "excluded_mcp_servers", None):
+            self.initial["excluded_mcp_servers"] = self.instance.excluded_mcp_servers
+
+    def clean_excluded_mcp_servers(self):
+        # Store as list/JSON, not string
+        return self.cleaned_data["excluded_mcp_servers"]
+
+
+class UserProfileAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
     class Meta(ExcludedModelsAdminForm.Meta):
         model = UserProfile
         fields = "__all__"
@@ -158,10 +192,13 @@ class TeamMembershipInline(admin.TabularInline):  # or admin.StackedInline for a
     readonly_fields = ("date_added",)  # Make date_joined read-only as it's auto-set
 
 
-class TeamAdminForm(ExcludedModelsAdminForm):
+class TeamAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
     class Meta(ExcludedModelsAdminForm.Meta):
         model = Team
         fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
 
 # Customize Team Admin
@@ -187,10 +224,13 @@ class TeamAdmin(admin.ModelAdmin):
     org_link.short_description = "Org"
 
 
-class OrgAdminForm(ExcludedModelsAdminForm):
+class OrgAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
     class Meta(ExcludedModelsAdminForm.Meta):
         model = Org
         fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
 
 @admin.register(Org)

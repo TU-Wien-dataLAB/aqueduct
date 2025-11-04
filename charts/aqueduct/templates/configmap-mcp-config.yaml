@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-mcp-config
+data:
+  mcp.json: |
+    {{- if .Values.mcpConfig }}
+    {{ toJson .Values.mcpConfig | nindent 4 }}
+    {{- else }}
+    {{ "{}" | nindent 4 }}
+    {{- end }}

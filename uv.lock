@@ -180,8 +180,8 @@ dev = [
 requires-dist = [
     { name = "asgiref", specifier = ">=3.8.1" },
     { name = "celery", extras = ["redis"], specifier = ">=5.5.2" },
-    { name = "daphne", specifier = "==4.2.1" },
-    { name = "django", specifier = "==5.2.7" },
+    { name = "daphne", specifier = ">=4.2.1" },
+    { name = "django", specifier = ">=5.2.7" },
     { name = "django-celery-beat", specifier = ">=2.8.1" },
     { name = "django-silk", specifier = ">=5.4.0" },
     { name = "django-tos", specifier = ">=1.1.0" },

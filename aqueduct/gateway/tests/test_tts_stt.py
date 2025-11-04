@@ -152,9 +152,11 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         super().setUp()
         # Create a simple audio file for testing
         audio_url = "https://upload.wikimedia.org/wikipedia/commons/9/90/David_Lynch_-_Nuart_Theatre_trailer_for_Eraserhead.ogg"
-        self.test_audio_content = httpx.get(audio_url).content
+        self.test_audio_content = httpx.get(
+            audio_url, headers={"User-Agent": "Mozilla/5.0"}
+        ).content
         self.test_audio_file = SimpleUploadedFile(
-            "lynch.mp3", self.test_audio_content, content_type="audio/mpeg"
+            "lynch.oga", self.test_audio_content, content_type="audio/ogg"
         )
 
     def test_transcriptions_endpoint_basic(self):

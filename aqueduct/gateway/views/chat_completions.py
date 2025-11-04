@@ -18,6 +18,7 @@ from .decorators import (
     log_request,
     parse_body,
     process_file_content,
+    resolve_alias,
     token_authenticated,
     tos_accepted,
 )
@@ -33,6 +34,7 @@ from .utils import _get_token_usage, _openai_stream
 @process_file_content
 @ensure_usage
 @log_request
+@resolve_alias
 @check_model_availability
 @catch_router_exceptions
 async def chat_completions(

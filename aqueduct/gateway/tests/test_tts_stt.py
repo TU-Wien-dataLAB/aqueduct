@@ -1,5 +1,6 @@
 import io
 import json
+from unittest.mock import patch
 
 import httpx
 from asgiref.sync import sync_to_async
@@ -496,4 +497,225 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
                 )
                 self.assertEqual(
                     len(stt_requests), 1, f"There should be one STT request for voice {voice}"
+                )
+
+
+class TTSSTTAliasTest(GatewayTTSSTTestCase):
+    """Test model alias resolution for TTS and STT endpoints."""
+
+    async def test_speech_endpoint_with_alias(self):
+        """Test that TTS endpoint correctly resolves model aliases."""
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest("TTS tests require OpenAI backend")
+
+        from gateway.config import get_router, get_router_config
+
+        # Mock config with alias for TTS model
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": self.tts_model,
+                    "litellm_params": {
+                        "model": f"openai/{self.tts_model}",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"mode": "audio_speech", "aliases": ["tts", "voice"]},
+                }
+            ]
+        }
+
+        # Clear both caches to ensure fresh state
+        get_router_config.cache_clear()
+        get_router.cache_clear()
+
+        with patch("gateway.config.get_router_config", return_value=mock_config):
+            headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+            payload = {
+                "model": "tts",  # Using alias instead of actual model name
+                "input": "Testing alias resolution for text-to-speech.",
+                "voice": "alloy",
+                "response_format": "mp3",
+            }
+
+            response = await self.async_client.post(
+                "/audio/speech",
+                data=json.dumps(payload),
+                headers=headers,
+                content_type="application/json",
+            )
+
+            # Should return 200 with alias resolution
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Alias resolution not working for TTS. Expected 200, got {response.status_code}",
+            )
+
+            # Collect the streamed content
+            audio_data = b""
+            async for chunk in response.streaming_content:
+                audio_data += chunk
+
+            self.assertGreater(len(audio_data), 0, "Should receive audio data with alias")
+
+            # Check that the database contains one request
+            requests = await sync_to_async(list)(Request.objects.all())
+            self.assertEqual(
+                len(requests), 1, "There should be exactly one request after speech generation."
+            )
+
+    def test_transcriptions_endpoint_with_alias(self):
+        """Test that STT endpoint correctly resolves model aliases."""
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest("STT tests require OpenAI backend")
+
+        from unittest.mock import MagicMock
+
+        from gateway.config import get_openai_client, get_router, get_router_config
+
+        # Mock config with alias for STT model
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": self.stt_model,
+                    "litellm_params": {
+                        "model": f"openai/{self.stt_model}",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"mode": "audio_transcription", "aliases": ["stt", "transcribe"]},
+                }
+            ]
+        }
+
+        # Clear all caches to ensure fresh state
+        get_router_config.cache_clear()
+        get_router.cache_clear()
+        get_openai_client.cache_clear()
+
+        # Create a simple audio file for testing
+        audio_url = "https://upload.wikimedia.org/wikipedia/commons/9/90/David_Lynch_-_Nuart_Theatre_trailer_for_Eraserhead.ogg"
+        test_audio_content = httpx.get(audio_url, headers={"User-Agent": "Mozilla/5.0"}).content
+        test_audio_file = SimpleUploadedFile(
+            "lynch.oga", test_audio_content, content_type="audio/ogg"
+        )
+
+        # Mock router and client
+        mock_router = MagicMock()
+        mock_deployment = MagicMock()
+        mock_deployment.litellm_params.model = f"openai/{self.stt_model}"
+        mock_router.get_deployment.return_value = mock_deployment
+
+        mock_client = MagicMock()
+
+        # Create a proper OpenAI transcription object
+        from openai.types.audio.transcription import Transcription
+
+        mock_transcription = Transcription(text="Mock transcription text")
+
+        # Create an async mock for the transcription creation
+        async def mock_create(**kwargs):
+            return mock_transcription
+
+        mock_client.audio.transcriptions.create = mock_create
+
+        # Patch everything needed
+        with patch("gateway.config.get_router_config", return_value=mock_config):
+            with patch("gateway.views.transcriptions.get_router", return_value=mock_router):
+                with patch(
+                    "gateway.views.transcriptions.get_openai_client", return_value=mock_client
+                ):
+                    with patch(
+                        "litellm.get_llm_provider", return_value=("whisper-1", "openai", "", "")
+                    ):
+                        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+                        # Remove Content-Type for multipart form data
+                        headers.pop("Content-Type", None)
+
+                        response = self.client.post(
+                            "/audio/transcriptions",
+                            {
+                                "file": test_audio_file,
+                                "model": "stt",
+                            },  # Using alias instead of actual model name
+                            headers=headers,
+                        )
+
+                        # Should return 200 with alias resolution
+                        self.assertEqual(
+                            response.status_code,
+                            200,
+                            f"Alias resolution not working for STT. Expected 200, got {response.status_code}: {response.content}",
+                        )
+
+                        response_json = response.json()
+                        self.assertIn("text", response_json, "Response should contain 'text' field")
+
+                        # Check that the database contains one request
+                        requests = list(Request.objects.all())
+                        self.assertEqual(
+                            len(requests),
+                            1,
+                            "There should be exactly one request after transcription.",
+                        )
+
+    async def test_speech_endpoint_with_multiple_aliases(self):
+        """Test that TTS endpoint works with multiple aliases for the same model."""
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest("TTS tests require OpenAI backend")
+
+        from gateway.config import get_router, get_router_config
+
+        # Mock config with multiple aliases for TTS model
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": self.tts_model,
+                    "litellm_params": {
+                        "model": f"openai/{self.tts_model}",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"mode": "audio_speech", "aliases": ["tts", "voice", "speech"]},
+                }
+            ]
+        }
+
+        # Clear both caches to ensure fresh state
+        get_router_config.cache_clear()
+        get_router.cache_clear()
+
+        with patch("gateway.config.get_router_config", return_value=mock_config):
+            aliases_to_test = ["tts", "voice", "speech"]
+
+            for alias in aliases_to_test:
+                # Clear requests for each iteration
+                await Request.objects.all().adelete()
+
+                headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+                payload = {
+                    "model": alias,
+                    "input": f"Testing alias {alias}.",
+                    "voice": "alloy",
+                    "response_format": "mp3",
+                }
+
+                response = await self.async_client.post(
+                    "/audio/speech",
+                    data=json.dumps(payload),
+                    headers=headers,
+                    content_type="application/json",
+                )
+
+                self.assertEqual(
+                    response.status_code,
+                    200,
+                    f"Alias '{alias}' should work. Got {response.status_code}",
+                )
+
+                # Collect the streamed content
+                audio_data = b""
+                async for chunk in response.streaming_content:
+                    audio_data += chunk
+
+                self.assertGreater(
+                    len(audio_data), 0, f"Should receive audio data for alias '{alias}'"
                 )

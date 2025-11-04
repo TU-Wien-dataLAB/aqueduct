@@ -1,3 +1,4 @@
+import datetime
 import json
 from datetime import timedelta
 
@@ -7,33 +8,32 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from gateway.config import get_router_config
+from management.models import Org, Request, Token
+from management.views.base import BaseAqueductView
 
-from ..models import Org, Request, Token
-from .base import BaseAqueductView
 
-
-def get_all_buckets(start_time, now, freq_label):
+def get_all_buckets(
+    start_time: datetime.datetime, now: datetime.datetime, freq_label: str
+) -> list[int]:
     points = []
     if freq_label == "1h":
         # one point per minute
         delta = timedelta(minutes=1)
-        get_next = lambda d: d + delta  # noqa: E731
         round_time = lambda d: d.replace(second=0, microsecond=0)  # noqa: E731
     elif freq_label == "1d":
         # one point per hour
         delta = timedelta(hours=1)
-        get_next = lambda d: d + delta  # noqa: E731
         round_time = lambda d: d.replace(minute=0, second=0, microsecond=0)  # noqa: E731
     else:
         # one point per day
         delta = timedelta(days=1)
-        get_next = lambda d: d + delta  # noqa: E731
         round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)  # noqa: E731
+
     d = round_time(start_time)
     end_time = round_time(now)
     while d <= end_time:
         points.append(int(d.timestamp() * 1000))
-        d = get_next(d)
+        d = d + delta
     return points
 
 
@@ -134,39 +134,38 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
 
         # Top entities: tokens per org or orgs global
         if selected_org is None:
-            # Top orgs by request count (up to 100)
-            agg = (
+            # Top orgs sorted by request count (up to 100)
+            top_items = (
                 reqs_span.annotate(
-                    org_id=Coalesce(
-                        F("token__user__profile__org_id"), F("token__service_account__team__org_id")
+                    name=Coalesce(
+                        F("token__user__profile__org__name"),
+                        F("token__service_account__team__org__name"),
                     )
                 )
-                .values("org_id")
+                .values("name")
                 .annotate(count=Count("id"))
                 .order_by("-count")[:100]
             )
-            org_ids = [o["org_id"] for o in agg if o["org_id"] is not None]
-            org_objs = {org.id: org for org in Org.objects.filter(id__in=org_ids)}
-            top_items = [
-                {"object": org_objs.get(o["org_id"]), "count": o["count"]}
-                for o in agg
-                if o["org_id"] in org_objs
-            ]
-        else:
-            # Top tokens by request count
-            agg = reqs_span.values("token__id").annotate(count=Count("id")).order_by("-count")[:100]
-            token_ids = [t["token__id"] for t in agg if t["token__id"] is not None]
-            token_objs = {
-                tok.id: tok
-                for tok in Token.objects.filter(id__in=token_ids).select_related(
-                    "user", "service_account"
+        elif selected_token is None:
+            # Top tokens for the selected org by request count
+            top_items = (
+                reqs_span.annotate(
+                    name=F("token__name"),
+                    user_email=F("token__user__email"),
+                    service_account_name=F("token__service_account__name"),
                 )
-            }
-            top_items = [
-                {"object": token_objs.get(t["token__id"]), "count": t["count"]}
-                for t in agg
-                if t["token__id"] in token_objs
-            ]
+                .values("token_id", "name", "user_email", "service_account_name")
+                .annotate(count=Count("id"))
+                .order_by("-count")[:100]
+            )
+        else:
+            # Top user IDs for the selected token by request count
+            top_items = (
+                reqs_span.annotate(name=F("token__name"))
+                .values("name", "user_id")
+                .annotate(count=Count("user_id"))
+                .order_by("-count")[:100]
+            )
 
         # Simple statistics
         total_requests = reqs_span.count()

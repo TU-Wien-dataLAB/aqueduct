@@ -114,15 +114,17 @@
         <!-- RIGHT: REQUESTS TABLE (50% width, full height) -->
         <div class="w-full lg:w-1/2 flex-shrink-0 flex flex-col" style="min-width:600px;">
             <h2 class="text-xl font-semibold mb-2">Request Counts by
-                {% if selected_org %}Token{% else %}Organization{% endif %}</h2>
+                {% if selected_token %}User ID{% elif selected_org %}Token{% else %}Organization{% endif %}</h2>
             <div class="flex-1 overflow-y-auto" style="max-height: 600px;">
                 <table class="table w-full table-zebra">
                     <thead>
                     <tr>
                         <th>#</th>
-                        <th>{% if selected_org %}Token Name{% else %}Organization{% endif %}</th>
+                        <th>{% if selected_token %}User ID{% elif selected_org %}Token Name{% else %}Organization{% endif %}</th>
                         <th>Requests</th>
-                        {% if selected_org %}
+                        {% if selected_token %}
+                            <th>Token Name</th>
+                        {% elif selected_org %}
                             <th>User</th>
                             <th>Service Account</th>
                         {% endif %}
@@ -134,30 +136,34 @@
                             <tr>
                                 <td>{{ forloop.counter }}</td>
                                 <td>
-                                    {% if selected_org %}
-                                        <a href="?org={{ selected_org.id }}&span={{ selected_span }}&token={{ item.object.id }}"
+                                    {% if selected_token %}
+                                        <span class="font-bold">
+                                            {{ item.user_id|default:"N/A" }}
+                                        </span>
+                                    {% elif selected_org %}
+                                        <a href="?org={{ selected_org.id }}&span={{ selected_span }}&token={{ item.token_id }}"
                                            class="font-bold link link-hover text-primary">
-                                            {{ item.object.name|default:"N/A" }}
+                                            {{ item.name|default:"N/A" }}
                                         </a>
                                     {% else %}
                                         <span class="font-bold">
-                                            {{ item.object.name|default:"N/A" }}
+                                            {{ item.name|default:"N/A" }}
                                         </span>
                                     {% endif %}
                                 </td>
-                                <td class="font-bold text-primary">
+                                <td class="font-bold">
                                     {{ item.count|intcomma }}
                                 </td>
-                                {% if selected_org %}
+                                {% if selected_token %}
                                     <td>
-                                        {{ item.object.user.email }}
+                                        {{ item.name }}
+                                    </td>
+                                {% elif selected_org %}
+                                    <td>
+                                        {{ item.user_email }}
                                     </td>
                                     <td>
-                                        {% if item.object.service_account %}
-                                            {{ item.object.service_account.name }}
-                                        {% else %}
-                                            -
-                                        {% endif %}
+                                        {{ item.service_account_name|default:"-" }}
                                     </td>
                                 {% endif %}
                             </tr>

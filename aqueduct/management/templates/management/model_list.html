@@ -41,8 +41,8 @@
                         <tr>
                             <td class="font-mono">{{ model.model_name }}</td>
                             <td>
-                                {% if model.model_info.alias %}
-                                    {% for alias in model.model_info.alias %}
+                                {% if model.model_info.aliases %}
+                                    {% for alias in model.model_info.aliases %}
                                         <span class="badge badge-sm badge-soft badge-primary mr-1 mb-1">{{ alias }}</span>
                                     {% endfor %}
                                 {% else %}

@@ -1159,7 +1159,6 @@ class TokenLimitTest(ChatCompletionsIntegrationTest):
         )
 
 
-@override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH="/tmp/test-alias-config.yaml")
 class ModelAliasConfigValidationTest(TransactionTestCase):
     """
     Tests for model alias configuration validation.
@@ -1192,23 +1191,24 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        # Patch yaml.safe_load to return our mock config
-        with patch("yaml.safe_load", return_value=mock_config):
-            from gateway.config import get_router_config
+        with patch("builtins.open"):
+            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
+                from gateway.config import get_router_config
 
-            get_router_config.cache_clear()
+                get_router_config.cache_clear()
 
-            loaded_config = get_router_config()
+                loaded_config = get_router_config()
 
-            # Config should load without errors
-            self.assertIsInstance(loaded_config, dict)
-            self.assertIn("model_list", loaded_config)
+                # Config should load without errors
+                self.assertIsInstance(loaded_config, dict)
+                self.assertIn("model_list", loaded_config)
 
-            # Verify aliases are in the config
-            first_model = loaded_config["model_list"][0]
-            self.assertIn("model_info", first_model)
-            self.assertIn("aliases", first_model["model_info"])
-            self.assertEqual(first_model["model_info"]["aliases"], ["main", "coding"])
+                # Verify aliases are in the config
+                first_model = loaded_config["model_list"][0]
+                self.assertIn("model_info", first_model)
+                self.assertIn("aliases", first_model["model_info"])
+                self.assertEqual(first_model["model_info"]["aliases"], ["main", "coding"])
+                mock_load.assert_called_once()
 
     def test_config_load_with_duplicate_aliases_raises_error(self):
         """
@@ -1238,18 +1238,20 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("yaml.safe_load", return_value=mock_config):
-            from gateway.config import get_router_config
+        with patch("builtins.open"):
+            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
+                from gateway.config import get_router_config
 
-            get_router_config.cache_clear()
+                get_router_config.cache_clear()
 
-            # Should raise RuntimeError due to duplicate aliases
-            with self.assertRaises(RuntimeError) as context:
-                get_router_config()
+                # Should raise RuntimeError due to duplicate aliases
+                with self.assertRaises(RuntimeError) as context:
+                    get_router_config()
 
-            # Verify the error message mentions the duplicate alias
-            self.assertIn("Duplicate alias", str(context.exception))
-            self.assertIn("main", str(context.exception))
+                # Verify the error message mentions the duplicate alias
+                self.assertIn("Duplicate alias", str(context.exception))
+                self.assertIn("main", str(context.exception))
+                mock_load.assert_called_once()
 
     def test_config_load_with_multiple_aliases_per_model(self):
         """
@@ -1268,19 +1270,21 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("yaml.safe_load", return_value=mock_config):
-            from gateway.config import get_router_config
+        with patch("builtins.open"):
+            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
+                from gateway.config import get_router_config
 
-            get_router_config.cache_clear()
+                get_router_config.cache_clear()
 
-            loaded_config = get_router_config()
+                loaded_config = get_router_config()
 
-            # Config should load without errors
-            self.assertIsInstance(loaded_config, dict)
-            model = loaded_config["model_list"][0]
-            self.assertEqual(len(model["model_info"]["aliases"]), 4)
-            self.assertIn("main", model["model_info"]["aliases"])
-            self.assertIn("primary", model["model_info"]["aliases"])
+                # Config should load without errors
+                self.assertIsInstance(loaded_config, dict)
+                model = loaded_config["model_list"][0]
+                self.assertEqual(len(model["model_info"]["aliases"]), 4)
+                self.assertIn("main", model["model_info"]["aliases"])
+                self.assertIn("primary", model["model_info"]["aliases"])
+                mock_load.assert_called_once()
 
     def test_alias_case_sensitivity(self):
         """
@@ -1312,26 +1316,28 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("yaml.safe_load", return_value=mock_config):
-            from gateway.config import get_router_config
+        with patch("builtins.open"):
+            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
+                from gateway.config import get_router_config
 
-            get_router_config.cache_clear()
+                get_router_config.cache_clear()
 
-            loaded_config = get_router_config()
+                loaded_config = get_router_config()
 
-            # Should load successfully since "Main" and "main" are different
-            self.assertIsInstance(loaded_config, dict)
+                # Should load successfully since "Main" and "main" are different
+                self.assertIsInstance(loaded_config, dict)
 
-            # Collect all aliases
-            all_aliases = []
-            for model in loaded_config["model_list"]:
-                if "model_info" in model and "aliases" in model["model_info"]:
-                    all_aliases.extend(model["model_info"]["aliases"])
+                # Collect all aliases
+                all_aliases = []
+                for model in loaded_config["model_list"]:
+                    if "model_info" in model and "aliases" in model["model_info"]:
+                        all_aliases.extend(model["model_info"]["aliases"])
 
-            # Both should be present and distinct
-            self.assertIn("Main", all_aliases)
-            self.assertIn("main", all_aliases)
-            self.assertEqual(len([a for a in all_aliases if a.lower() == "main"]), 2)
+                # Both should be present and distinct
+                self.assertIn("Main", all_aliases)
+                self.assertIn("main", all_aliases)
+                self.assertEqual(len([a for a in all_aliases if a.lower() == "main"]), 2)
+                mock_load.assert_called_once()
 
 
 class ModelAliasRoutingTest(GatewayIntegrationTestCase):

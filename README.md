@@ -79,6 +79,11 @@ For other installation methods, check out the [Getting Started Guide](https://tu
 
 ## Testing
 
+> **NOTE:**
+> In order to run MCP tests, you need to install the
+> [`@modelcontextprotocol/server-everything`](https://www.npmjs.com/package/@modelcontextprotocol/server-everything)
+> Node.js package!
+
 ```bash
 cd aqueduct && python manage.py test
 ```

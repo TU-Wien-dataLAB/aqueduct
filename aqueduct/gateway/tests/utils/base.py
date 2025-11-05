@@ -1,6 +1,6 @@
+import logging
 import os
 import shutil
-import sys
 from pathlib import Path
 from textwrap import dedent
 from typing import Literal, Optional
@@ -60,6 +60,9 @@ TEST_FILES_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "file
 os.makedirs(TEST_FILES_ROOT, exist_ok=True)
 
 
+logger = logging.getLogger(__name__)
+
+
 # --- Django Test Class ---
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
@@ -97,7 +100,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
                     f"vLLM integration tests require vllm to be installed. "
                     f"Import error: {_VLLM_IMPORT_ERROR}"
                 )
-            print(f"\nStarting vLLM server for {cls.__name__}...")
+            logger.info("\nStarting vLLM server for %s...", cls.__name__)
             try:
                 MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
                 vllm_args = ["--host", "0.0.0.0", "--port", "8009"]
@@ -108,12 +111,12 @@ class GatewayIntegrationTestCase(TransactionTestCase):
                     auto_port=False,
                     max_wait_seconds=300,
                 )
-                print(f"vLLM server started on: {cls.vllm_server.url_root}")
+                logger.info("vLLM server started on: %s", cls.vllm_server.url_root)
             except Exception as e:
                 import traceback
 
                 traceback.print_exc()
-                print(f"ERROR starting vLLM server: {e}", file=sys.stderr)
+                logger.error("ERROR starting vLLM server: %s", e)
                 cls.vllm_server = None
                 raise AssertionError(f"Failed to set up vLLM server: {e}") from e
         elif INTEGRATION_TEST_BACKEND == "openai":

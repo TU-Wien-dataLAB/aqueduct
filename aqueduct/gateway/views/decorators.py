@@ -298,7 +298,7 @@ def _get_user_id_from_body(request: ASGIRequest) -> str:
             user_id = json.loads(request.body.decode("utf-8")).get("user_id", "")
             return str(user_id)
         except Exception as err:
-            logger.info(f"Cound not retrieve user_id from request body: {err}")
+            log.info(f"Cound not retrieve user_id from request body: {err}")
             return ""
     else:
         return ""

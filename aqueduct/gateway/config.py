@@ -79,14 +79,17 @@ def resolve_model_alias(model_or_alias: str) -> str:
     config = get_router_config()
     model_list = config.get("model_list", [])
 
-    # Build alias→model mapping
+    # Build alias - model mapping
     for model in model_list:
         model_name = model.get("model_name")
+        if model_name == model_or_alias:
+            return model_name
+
         aliases = model.get("model_info", {}).get("aliases", [])
         if model_or_alias in aliases:
             return model_name
 
-    # Not an alias, return as-is (could be actual model name)
+    # Not an alias or a model; still return as-is to return standard error down the line
     return model_or_alias
 
 

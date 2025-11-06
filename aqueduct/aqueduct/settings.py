@@ -230,7 +230,11 @@ CELERY_BEAT_SCHEDULE = {
 
 # Django Silk profiling configuration --------------------------------------------------
 # Silk can be disabled via the SILKY_ENABLED env var.
-SILKY_ENABLED = os.getenv("SILKY_ENABLED", "True").lower() == "true"
+if TESTING:
+    SILKY_ENABLED = False
+else:
+    SILKY_ENABLED = os.getenv("SILKY_ENABLED", "True").lower() == "true"
+
 if SILKY_ENABLED:
     INSTALLED_APPS.append("silk")
     # insert Silk middleware first to capture all requests

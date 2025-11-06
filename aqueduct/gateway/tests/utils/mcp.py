@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -20,11 +21,13 @@ MCP_TEST_CONFIG = {
     "mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}
 }
 
+logger = logging.getLogger(__name__)
+
 
 class MCPDaphneProcess(DaphneProcess):
     def run(self):
         settings.MCP_CONFIG_FILE_PATH = MCP_CONFIG_PATH
-        print(f"Updating MCP_CONFIG_FILE_PATH: {settings.MCP_CONFIG_FILE_PATH}")
+        logger.info(f"Updating MCP_CONFIG_FILE_PATH: {settings.MCP_CONFIG_FILE_PATH}")
 
         # Configure MCP security settings for testing
         settings.MCP_ENABLE_DNS_REBINDING_PROTECTION = True
@@ -42,8 +45,9 @@ class MCPDaphneProcess(DaphneProcess):
         if "malicious.com" not in settings.ALLOWED_HOSTS:
             settings.ALLOWED_HOSTS.append("malicious.com")
 
-        print(
-            f"MCP Security: Protection={settings.MCP_ENABLE_DNS_REBINDING_PROTECTION}, Hosts={settings.MCP_ALLOWED_HOSTS}"
+        logger.info(
+            f"MCP Security: Protection={settings.MCP_ENABLE_DNS_REBINDING_PROTECTION}, "
+            f"Hosts={settings.MCP_ALLOWED_HOSTS}"
         )
 
         super().run()
@@ -83,8 +87,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     async def assertRequestLogged(self, n: int = 1):
         # Check that (only) initialize request was logged
-        mcp_requests = await sync_to_async(list)(Request.objects.all())
-        self.assertEqual(len(mcp_requests), n, f"There should be exactly {n} logged MCP request.")
+        mcp_requests_count = await sync_to_async(Request.objects.count)()
+        self.assertEqual(mcp_requests_count, n, f"There should be exactly {n} logged MCP request.")
 
     @classmethod
     def _write_mcp_config(cls):
@@ -113,7 +117,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         cls.mcp_server_port = port
         cls._update_mcp_config_port(port)
 
-        print(f"\nStarting MCP everything server on port {port}...")
+        logger.info(f"\nStarting MCP everything server on port {port}...")
         try:
             env = os.environ.copy()
             env["PORT"] = str(port)
@@ -131,7 +135,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             )
 
         # Wait for server to be ready by checking if it accepts connections
-        print(f"Waiting for MCP server to accept connections on port {port}...")
+        logger.info(f"Waiting for MCP server to accept connections on port {port}...")
         start_time = time.time()
         timeout = 30
         last_error = None
@@ -147,7 +151,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                     sock.settimeout(1.0)
                     sock.connect(("localhost", port))
-                    print(f"✓ MCP everything server started successfully on port {port}")
+                    logger.info(f"✓ MCP everything server started successfully on port {port}")
                     return
             except (socket.error, ConnectionRefusedError, OSError) as e:
                 last_error = e
@@ -162,13 +166,13 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     def _stop_mcp_server(cls):
         """Stop the MCP everything server."""
         if cls.mcp_server_process and cls.mcp_server_process.poll() is None:
-            print("Stopping MCP everything server...")
+            logger.info("Stopping MCP everything server...")
             cls.mcp_server_process.terminate()
             try:
                 cls.mcp_server_process.wait(timeout=10)
-                print("MCP server stopped successfully")
+                logger.info("MCP server stopped successfully")
             except subprocess.TimeoutExpired:
-                print("MCP server did not stop gracefully, forcing kill")
+                logger.info("MCP server did not stop gracefully, forcing kill")
                 cls.mcp_server_process.kill()
                 cls.mcp_server_process.wait()
             cls.mcp_server_process = None

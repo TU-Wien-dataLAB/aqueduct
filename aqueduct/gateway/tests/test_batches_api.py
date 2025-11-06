@@ -13,10 +13,7 @@ from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.base import GatewayBatchesTestCase
 from management.models import Token
 
-if settings.TESTING:
-    logger = logging.getLogger("aqueduct")
-    logging.disable(logging.NOTSET)
-    logger.setLevel(logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 def mock_router():

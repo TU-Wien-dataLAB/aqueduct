@@ -9,7 +9,7 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
-
+import logging
 import os
 import sys
 from datetime import datetime
@@ -346,9 +346,19 @@ LOGGING = {
     "loggers": {
         "aqueduct": {  # Replace with your app name
             "handlers": ["console"],
-            "level": os.getenv("DJANGO_LOG_LEVEL", "WARNING"),
+            "level": os.getenv("DJANGO_LOG_LEVEL", logging.WARNING),
             "propagate": False,
-        }
+        },
+        "gateway.tests": {
+            "handlers": ["console"],
+            "level": logging.DEBUG,
+            "propagate": False,
+        },
     },
-    "root": {"handlers": ["console"], "level": os.getenv("DJANGO_LOG_LEVEL", "WARNING")},
+    "root": {"handlers": ["console"], "level": os.getenv("DJANGO_LOG_LEVEL", logging.WARNING)},
 }
+
+if TESTING:
+    logger = logging.getLogger("aqueduct")
+    logging.disable(logging.NOTSET)
+    logger.setLevel(logging.DEBUG)

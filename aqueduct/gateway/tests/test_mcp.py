@@ -4,7 +4,6 @@ from urllib.parse import urlparse
 
 import httpx
 from asgiref.sync import sync_to_async
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from mcp import ClientSession, McpError
 from mcp.client.streamable_http import streamablehttp_client
@@ -17,10 +16,7 @@ from management.models import Org, ServiceAccount, Team, Token
 
 User = get_user_model()
 
-if settings.TESTING:
-    logger = logging.getLogger("aqueduct")
-    logging.disable(logging.NOTSET)
-    logger.setLevel(logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 class MCPLiveClientTest(MCPLiveServerTestCase):

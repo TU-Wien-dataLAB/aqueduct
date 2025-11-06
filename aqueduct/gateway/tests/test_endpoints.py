@@ -26,7 +26,7 @@ from management.models import Org, Request, ServiceAccount, Team, Token, UserPro
 
 User = get_user_model()
 
-logger = logging.getLogger("aqueduct")
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingTest(GatewayIntegrationTestCase):

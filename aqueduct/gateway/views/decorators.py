@@ -669,11 +669,11 @@ def parse_jsonrpc_message(view_func):
 
             return await view_func(request, request_log=None, *args, **kwargs)
 
+        body = request.body
+        if body is None:
+            log.error("Request body is None")
+            return JsonResponse({"error": "Missing request body"}, status=400)
         try:
-            body = request.body
-            if body is None:
-                log.error("Request body is None")
-                return JsonResponse({"error": "Missing request body"}, status=400)
             data = json.loads(body)
         except json.JSONDecodeError as e:
             log.error(f"JSON decode error: {str(e)}, body was: {request.body!r}")

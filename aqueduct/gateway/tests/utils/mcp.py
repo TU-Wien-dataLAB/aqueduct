@@ -9,8 +9,11 @@ from copy import deepcopy
 from asgiref.sync import sync_to_async
 from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
+from django.conf import settings
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+
+from management.models import Request
 
 MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {
@@ -20,8 +23,6 @@ MCP_TEST_CONFIG = {
 
 class MCPDaphneProcess(DaphneProcess):
     def run(self):
-        from django.conf import settings
-
         settings.MCP_CONFIG_FILE_PATH = MCP_CONFIG_PATH
         print(f"Updating MCP_CONFIG_FILE_PATH: {settings.MCP_CONFIG_FILE_PATH}")
 
@@ -82,8 +83,6 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     async def assertRequestLogged(self, n: int = 1):
         # Check that (only) initialize request was logged
-        from management.models import Request
-
         mcp_requests = await sync_to_async(list)(Request.objects.all())
         self.assertEqual(len(mcp_requests), n, f"There should be exactly {n} logged MCP request.")
 

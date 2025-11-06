@@ -5,9 +5,17 @@ from urllib.parse import urlparse
 import httpx
 from asgiref.sync import sync_to_async
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from mcp import ClientSession, McpError
+from mcp.client.streamable_http import streamablehttp_client
+from mcp.types import PromptReference, ResourceTemplateReference
 from pydantic.networks import AnyUrl
 
+from gateway.tests.utils.base import GatewayIntegrationTestCase
 from gateway.tests.utils.mcp import MCPLiveServerTestCase
+from management.models import Org, ServiceAccount, Team, Token
+
+User = get_user_model()
 
 if settings.TESTING:
     logger = logging.getLogger("aqueduct")
@@ -147,8 +155,6 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             templates = await session.list_resource_templates()
             template = templates.resourceTemplates[0]
 
-            from mcp.types import ResourceTemplateReference
-
             ref = ResourceTemplateReference(type="ref/resource", uri=template.uriTemplate)
 
             argument = {"name": "test", "value": "argument"}
@@ -166,8 +172,6 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             await session.initialize()
             prompts = await session.list_prompts()
             prompt = prompts.prompts[0]
-
-            from mcp.types import PromptReference
 
             ref = PromptReference(type="ref/prompt", name=prompt.name)
 
@@ -281,10 +285,10 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
         """Test error handling for invalid tool name."""
         async with self.client_session() as session:
             await session.initialize()
-            with self.assertRaises(Exception) as context:
+            with self.assertRaises(McpError) as context:
                 await session.call_tool("nonexistent_tool", {})
 
-            self.assertIsNotNone(context.exception)
+            self.assertEqual("Unknown tool: nonexistent_tool", str(context.exception))
 
         await self.assertRequestLogged()
 
@@ -293,13 +297,11 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
         async with self.client_session() as session:
             await session.initialize()
 
-            from mcp.shared.exceptions import McpError
-
             with self.assertRaises(McpError) as context:
                 invalid_uri = AnyUrl("invalid://not-a-real-uri")
                 await session.read_resource(invalid_uri)
 
-            self.assertIsNotNone(context.exception)
+            self.assertEqual("Unknown resource: invalid://not-a-real-uri", str(context.exception))
 
         await self.assertRequestLogged()
 
@@ -317,9 +319,6 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
     async def test_session_creation(self):
         """Test that sessions have unique IDs."""
-        from mcp import ClientSession
-        from mcp.client.streamable_http import streamablehttp_client
-
         async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
             r,
             w,
@@ -421,9 +420,6 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
     async def test_invalid_content_type_rejected(self):
         """Test that invalid Content-Type is rejected with 400."""
-        from urllib.parse import urlparse
-
-        import httpx
 
         # Extract the actual host from the live server URL
         parsed_url = urlparse(self.live_server_url)
@@ -458,9 +454,6 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
     async def test_wildcard_port_allowed(self):
         """Test that wildcard port patterns work (localhost:*)."""
-        from urllib.parse import urlparse
-
-        import httpx
 
         # Extract the actual host from the live server URL (should match localhost:*)
         parsed_url = urlparse(self.live_server_url)
@@ -497,7 +490,6 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
     async def test_org_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at org level."""
-        from management.models import Org
 
         # Get org and add exclusion
         org = await sync_to_async(Org.objects.get)(name="E060")
@@ -517,7 +509,6 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
     async def test_team_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at team level."""
-        from management.models import ServiceAccount, Team, Token
 
         # Get team and add exclusion
         team = await sync_to_async(Team.objects.get)(name="Whale")
@@ -529,8 +520,6 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         )
 
         # Create a token for the service account
-        from gateway.tests.utils.base import GatewayIntegrationTestCase
-
         token = await sync_to_async(Token.objects.get)(
             key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
         )
@@ -553,10 +542,6 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
     async def test_user_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at user profile level."""
-        from django.contrib.auth import get_user_model
-
-        User = get_user_model()
-
         # Get user and their profile
         user = await sync_to_async(User.objects.get)(username="Me")
         profile = await sync_to_async(lambda: user.profile)()
@@ -578,13 +563,6 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
     async def test_merged_exclusion_lists(self):
         """Test that exclusion lists merge correctly across hierarchy."""
-        from django.contrib.auth import get_user_model
-
-        from gateway.tests.utils.base import GatewayIntegrationTestCase
-        from management.models import Org, Token
-
-        User = get_user_model()
-
         # Get the token to test exclusion list logic
         token = await sync_to_async(Token.objects.get)(
             key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)

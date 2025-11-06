@@ -7,8 +7,10 @@ from typing import Literal, Optional
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
+from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers
 from management.models import Org, Token, UserProfile
@@ -130,12 +132,10 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     def create_new_user() -> tuple[str, int]:
         # Create a new user and a new token for that user
         new_user = User.objects.create_user(username="OtherUser", email="other@example.com")
-        from django.contrib.auth.models import Group
 
         new_user.groups.add(Group.objects.get(name="user"))
         org = Org.objects.get(name="E060")
-        profile = UserProfile.objects.create(user=new_user, org=org)
-        new_user.profile = profile
+        _ = UserProfile.objects.create(user=new_user, org=org)
 
         # Create a new token for the different user
         new_token = Token(name="TestToken", user=new_user)
@@ -231,11 +231,6 @@ class TOSGatewayTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
 
     def accept_tos(self, user_id: int = 1):
-        from django.contrib.auth import get_user_model
-        from tos.models import TermsOfService, UserAgreement
-
-        User = get_user_model()
-
         # Create an active Terms of Service
         tos = TermsOfService.objects.create(active=True, content="Test Terms of Service content")
 

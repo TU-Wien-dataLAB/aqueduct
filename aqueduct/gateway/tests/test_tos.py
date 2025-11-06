@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 from django.core.cache import caches
 from django.test import override_settings
+from tos.models import TermsOfService
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import TOSGatewayTestCase
@@ -20,7 +21,6 @@ class TOSTestCase(TOSGatewayTestCase):
             # Call the /models endpoint
             response = self.client.get(
                 "/models",
-                data="",
                 content_type="application/json",
                 headers=_build_chat_headers(UPDATED_ACCESS_TOKEN),
             )
@@ -42,8 +42,6 @@ class TOSTestCase(TOSGatewayTestCase):
         Test that when a user has not accepted the TOS, they get a 403 error when accessing
         the /models endpoint.
         """
-        from tos.models import TermsOfService
-
         # non-admin user
         UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
 
@@ -54,7 +52,6 @@ class TOSTestCase(TOSGatewayTestCase):
             # Call the /models endpoint - user should be blocked because they haven't accepted TOS
             response = self.client.get(
                 "/models",
-                data="",
                 content_type="application/json",
                 headers=_build_chat_headers(UPDATED_ACCESS_TOKEN),
             )
@@ -77,15 +74,12 @@ class TOSTestCase(TOSGatewayTestCase):
         # set cache for user with id 1
         cache.set("django:tos:skip_tos_check:{}".format(1), True)
 
-        from tos.models import TermsOfService
-
         TermsOfService.objects.create(active=True, content="Test Terms of Service content")
 
         with patch("gateway.views.decorators.cache", caches["default"]):
             # Call the /models endpoint
             response = self.client.get(
                 "/models",
-                data="",
                 content_type="application/json",
                 headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN),
             )
@@ -107,8 +101,6 @@ class TOSTestCase(TOSGatewayTestCase):
         """
         Test that when a user has not accepted the TOS, but gateway validation is disabled, the request is handled.
         """
-        from tos.models import TermsOfService
-
         # non-admin user
         UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
 
@@ -118,7 +110,6 @@ class TOSTestCase(TOSGatewayTestCase):
         # Call the /models endpoint - user should be blocked because they haven't accepted TOS
         response = self.client.get(
             "/models",
-            data="",
             content_type="application/json",
             headers=_build_chat_headers(UPDATED_ACCESS_TOKEN),
         )

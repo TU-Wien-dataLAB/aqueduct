@@ -8,18 +8,10 @@ from django.conf import settings
 from litellm import Router
 
 
-@lru_cache(maxsize=1)
-def get_router_config() -> dict:
-    path = settings.LITELLM_ROUTER_CONFIG_FILE_PATH
-    try:
-        with open(path) as f:
-            data = yaml.safe_load(f)
-    except (FileNotFoundError, TypeError):
-        raise RuntimeError(f"Unable to load router config from {path}")
-
+def _validate_router_config(config: dict):
     # Validate alias uniqueness
     alias_to_model = {}
-    model_list = data.get("model_list", [])
+    model_list = config.get("model_list", [])
     for model in model_list:
         model_name = model.get("model_name")
         aliases = model.get("model_info", {}).get("aliases", [])
@@ -30,6 +22,18 @@ def get_router_config() -> dict:
                     f"Alias is used by both '{alias_to_model[alias]}' and '{model_name}'."
                 )
             alias_to_model[alias] = model_name
+
+
+@lru_cache(maxsize=1)
+def get_router_config() -> dict:
+    path = settings.LITELLM_ROUTER_CONFIG_FILE_PATH
+    try:
+        with open(path) as f:
+            data = yaml.safe_load(f)
+    except (FileNotFoundError, TypeError):
+        raise RuntimeError(f"Unable to load router config from {path}")
+
+    _validate_router_config(data)
 
     return data
 

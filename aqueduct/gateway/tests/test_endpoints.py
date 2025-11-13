@@ -9,7 +9,7 @@ from litellm.types.utils import ImageObject, ImageResponse, ModelResponse
 from openai.types.audio import Transcription
 from openai.types.chat import ChatCompletion
 
-from gateway.config import get_router_config
+from gateway.config import get_router, get_router_config
 from gateway.tests.utils import (
     _build_chat_headers,
     _build_chat_payload,
@@ -1408,7 +1408,6 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
 
     def test_speech_endpoint_with_alias(self):
         """Test that TTS endpoint correctly resolves model aliases."""
-        from gateway.config import get_router, get_router_config
 
         # Mock config with alias for TTS model
         mock_config = {
@@ -1508,44 +1507,40 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
 
         mock_client.audio.transcriptions.create = mock_create
 
-        with patch("gateway.config.get_router_config", return_value=mock_config):
-            with patch("gateway.views.transcriptions.get_router", return_value=mock_router):
-                with patch(
-                    "gateway.views.transcriptions.get_openai_client", return_value=mock_client
-                ):
-                    with patch(
-                        "litellm.get_llm_provider", return_value=(self.stt_model, "openai", "", "")
-                    ):
-                        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-                        # Remove Content-Type for multipart form data
-                        headers.pop("Content-Type", None)
+        with (
+            patch("gateway.config.get_router_config", return_value=mock_config),
+            patch("gateway.views.transcriptions.get_router", return_value=mock_router),
+            patch("gateway.views.transcriptions.get_openai_client", return_value=mock_client),
+            patch("litellm.get_llm_provider", return_value=(self.stt_model, "openai", "", "")),
+        ):
+            headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+            # Remove Content-Type for multipart form data
+            headers.pop("Content-Type", None)
 
-                        response = self.client.post(
-                            "/audio/transcriptions",
-                            {
-                                "file": test_audio_file,
-                                "model": "stt",
-                            },  # Using alias instead of actual model name
-                            headers=headers,
-                        )
+            response = self.client.post(
+                "/audio/transcriptions",
+                {
+                    "file": test_audio_file,
+                    "model": "stt",
+                },  # Using alias instead of actual model name
+                headers=headers,
+            )
 
-                        # Should return 200 with alias resolution
-                        self.assertEqual(
-                            response.status_code,
-                            200,
-                            f"Alias resolution not working for STT. Expected 200, got {response.status_code}: {response.content}",
-                        )
+            # Should return 200 with alias resolution
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Alias resolution not working for STT. Expected 200, got {response.status_code}: {response.content}",
+            )
 
-                        response_json = response.json()
-                        self.assertIn("text", response_json, "Response should contain 'text' field")
+            response_json = response.json()
+            self.assertIn("text", response_json, "Response should contain 'text' field")
 
-                        # Check that the database contains one request
-                        requests = list(Request.objects.all())
-                        self.assertEqual(
-                            len(requests),
-                            1,
-                            "There should be exactly one request after transcription.",
-                        )
+            # Check that the database contains one request
+            requests = list(Request.objects.all())
+            self.assertEqual(
+                len(requests), 1, "There should be exactly one request after transcription."
+            )
 
     def test_chat_completion_with_nonexistent_alias(self):
         """
@@ -1563,12 +1558,7 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        # Should return 400 (Bad Request) or 404 (Model not found)
-        self.assertIn(
-            response.status_code,
-            [400, 404],
-            f"Expected 400 or 404 for nonexistent alias, got {response.status_code}: {response.content}",
-        )
+        self.assertEqual(response.status_code, 400)
 
     def test_embeddings_with_alias(self):
         """

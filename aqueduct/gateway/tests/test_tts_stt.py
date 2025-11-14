@@ -150,7 +150,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         self.test_audio_file = SimpleUploadedFile(
             "lynch.mp3",
             self.test_audio_content,
-            content_type="audio/mpeg"
+            content_type="audio/ogg"
         )
 
     def test_transcriptions_endpoint_basic(self):

@@ -150,7 +150,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
     def setUp(self):
         super().setUp()
-        with open(Path(__file__).parent / "resources" / "eraserhead.mp3", "rb") as f:
+        with open(Path(__file__).parent / "resources" / "Eraserhead.mp3", "rb") as f:
             self.test_audio_content = f.read()
 
         self.test_audio_file = SimpleUploadedFile(

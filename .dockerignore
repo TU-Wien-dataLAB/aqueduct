@@ -17,6 +17,8 @@ venv
 dump.rdb
 aqueduct/staticfiles
 **/fixtures/.*.json
+aqueduct/gateway/tests
+aqueduct/management/tests
 charts
 docs
 examples

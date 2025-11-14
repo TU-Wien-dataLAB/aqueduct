@@ -159,9 +159,9 @@ def parse_body(model: TypeAdapter):
                     {"error": f"Unsupported Content-Type: {content_type}"}, status=415
                 )
 
-            # "user_id" can be sent in the body for statistical purposes (it is
-            # saved in the request log), but we do not want to leave it in pydantic_model.
-            data.pop("user_id", None)
+            # "user_id" can be sent in the body (it is saved in the request log),
+            # but we do not want to leave it in pydantic_model.
+            kwargs["user_id"] = data.pop("user_id", "")
 
             try:
                 model.validate_python(data)
@@ -288,22 +288,6 @@ def check_limits(view_func):
     return wrapper
 
 
-def _get_user_id_from_body(request: ASGIRequest) -> str:
-    """Extract user ID from request body."""
-    if request.content_type == "multipart/form-data":
-        return request.POST.get("user_id", "")
-
-    elif request.content_type == "application/json":
-        try:
-            user_id = json.loads(request.body.decode("utf-8")).get("user_id", "")
-            return str(user_id)
-        except Exception as err:
-            log.info(f"Cound not retrieve user_id from request body: {err}")
-            return ""
-    else:
-        return ""
-
-
 def log_request(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
@@ -323,7 +307,7 @@ def log_request(view_func):
             method=request.method,
             user_agent=request.headers.get("User-Agent", ""),
             ip_address=request.META.get("REMOTE_ADDR"),
-            user_id=_get_user_id_from_body(request),
+            user_id=kwargs.get("user_id", ""),
             # path, Status, time, usage set later in the view or processing steps
         )
         # Calculate and set path (ensure leading slash)

@@ -74,59 +74,112 @@ def token_authenticated(token_auth_only: bool):
     return decorator
 
 
+class FileSizeError(Exception):
+    """Raised when file size limits are exceeded."""
+
+    pass
+
+
+def _parse_multipart_body(request: ASGIRequest) -> dict:
+    """
+    Parse the body of a "multipart/form-data" POST request into a Python dict.
+    Validate file sizes of the files attached to the request.
+
+    Raises:
+        `FileSizeError`: if any file exceeds the `AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB`
+          setting, or if the total size of the files exceeds 32 MB.
+
+    Returns:
+        dict with request's body items and files.
+    """
+    data = {}
+    for key, value in request.POST.items():
+        try:
+            data[key] = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            data[key] = value
+
+    max_file_bytes = int(settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024)
+
+    max_total_size_mb = 32
+    max_total_size_bytes = max_total_size_mb * 1024 * 1024
+    total_file_size_bytes = 0
+
+    for key, file in request.FILES.items():
+        if file.size > max_file_bytes:
+            log.error("File in request too large")
+            raise FileSizeError(
+                f"File '{key}' exceeds maximum size of "
+                f"{settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB} MB"
+            )
+
+        total_file_size_bytes += file.size
+        if total_file_size_bytes > max_total_size_bytes:
+            log.error("Files in request too large")
+            raise FileSizeError(f"Total file size exceeds maximum of {max_total_size_mb} MB")
+
+        data[key] = file.read()
+
+    return data
+
+
 def parse_body(model: TypeAdapter):
+    """
+    Decorator that parses and validates HTTP request bodies for async view functions.
+
+    Handles requests with "application/json" and "multipart/form-data" content types.
+    The "pydantic_model" dict with parsed and validated data is passed in the kwargs
+    to the view function.
+    If the body contains the field "user_id", it is removed from the parsed data.
+    Additionally, the timeout for the router is added to the parsed data.
+
+    Args:
+        model: `TypeAdapter` of the pydantic model used for request body validation.
+    Returns:
+        Decorator function that wraps async view functions.
+    """
+
     def decorator(view_func):
         @wraps(view_func)
         async def wrapper(request: ASGIRequest, *args, **kwargs):
+            content_type = request.headers.get("content-type", "")
+
+            if content_type.startswith("application/json"):
+                body = request.body.decode("utf-8")
+                data = json.loads(body)
+            elif content_type.startswith("multipart/form-data"):
+                try:
+                    data = _parse_multipart_body(request)
+                except FileSizeError as e:
+                    return JsonResponse({"error": str(e)}, status=413)
+            else:
+                log.error(f"Unsupported Content-Type: {content_type}")
+                return JsonResponse(
+                    {"error": f"Unsupported Content-Type: {content_type}"}, status=415
+                )
+
+            # "user_id" can be sent in the body for statistical purposes (it is
+            # saved in the request log), but we do not want to leave it in pydantic_model.
+            data.pop("user_id", None)
+
             try:
-                content_type = request.headers.get("content-type", "")
-
-                if content_type.startswith("application/json"):
-                    body = request.body.decode("utf-8")
-                    data = json.loads(body)
-                    model.validate_python(data)
-
-                elif content_type.startswith("multipart/form-data"):
-                    data = {}
-                    for key, value in request.POST.items():
-                        try:
-                            data[key] = json.loads(value)
-                        except (TypeError, json.JSONDecodeError):
-                            data[key] = value
-
-                    max_file_bytes = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024
-                    total_file_size_bytes = 0
-                    for key, file in request.FILES.items():
-                        data[key] = file.read()
-                        if len(data[key]) > max_file_bytes:
-                            log.error("File in request too large")
-                            return JsonResponse({"error": "File too large"}, status=413)
-                        total_file_size_bytes += len(data[key])
-                        if total_file_size_bytes > 32 * 1024 * 1024:
-                            log.error("Files in request too large")
-                            return JsonResponse({"error": "Files too large"}, status=413)
-
-                    model.validate_python(data)
-
-                    # Update bytes to BytesIO because pydantic TypeAdapter has problems with BytesIO.
-                    # OpenAI usually expects a name for the file object (not just bytes).
-                    # This only works if the field is also typed as bytes.
-                    for key, file in request.FILES.items():
-                        buffer: io.BytesIO = io.BytesIO(data[key])
-                        buffer.name = file.name
-                        data[key] = buffer
-                else:
-                    log.error(f"Unsupported Content-Type: {content_type}")
-                    return JsonResponse(
-                        {"error": f"Unsupported Content-Type: {content_type}"}, status=415
-                    )
-
-                kwargs["pydantic_model"] = data
-                kwargs["pydantic_model"]["timeout"] = settings.RELAY_REQUEST_TIMEOUT
-                return await view_func(request, *args, **kwargs)
+                model.validate_python(data)
             except ValidationError as e:
                 log.error(f"Validation error: {e}")
                 return JsonResponse({"error": str(e)}, status=400)
+
+            # If there are files sent with the request (i.e. content type is "multipart/form-data"),
+            # update bytes to BytesIO because pydantic TypeAdapter has problems with BytesIO.
+            # OpenAI usually expects a name for the file object (not just bytes).
+            # This only works if the field is also typed as bytes.
+            for key, file in request.FILES.items():
+                buffer: io.BytesIO = io.BytesIO(data[key])
+                buffer.name = file.name
+                data[key] = buffer
+
+            kwargs["pydantic_model"] = data
+            kwargs["pydantic_model"]["timeout"] = settings.RELAY_REQUEST_TIMEOUT
+            return await view_func(request, *args, **kwargs)
 
         return wrapper
 
@@ -234,6 +287,22 @@ def check_limits(view_func):
     return wrapper
 
 
+def _get_user_id_from_body(request: ASGIRequest) -> str:
+    """Extract user ID from request body."""
+    if request.content_type == "multipart/form-data":
+        return request.POST.get("user_id", "")
+
+    elif request.content_type == "application/json":
+        try:
+            user_id = json.loads(request.body.decode("utf-8")).get("user_id", "")
+            return str(user_id)
+        except Exception as err:
+            log.info(f"Cound not retrieve user_id from request body: {err}")
+            return ""
+    else:
+        return ""
+
+
 def log_request(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
@@ -253,6 +322,7 @@ def log_request(view_func):
             method=request.method,
             user_agent=request.headers.get("User-Agent", ""),
             ip_address=request.META.get("REMOTE_ADDR"),
+            user_id=_get_user_id_from_body(request),
             # path, Status, time, usage set later in the view or processing steps
         )
         # Calculate and set path (ensure leading slash)
@@ -473,20 +543,21 @@ def catch_router_exceptions(view_func):
         except (litellm.Timeout, openai.APITimeoutError) as e:
             log.error(f"Timeout - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=504)
-        except litellm.ServiceUnavailableError as e:
+        except (
+            litellm.ServiceUnavailableError,
+            litellm.APIConnectionError,
+            openai.APIConnectionError,
+        ) as e:
             log.error(f"Service unavailable - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
             log.error(f"Internal server error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=500)
-        except (
-            litellm.APIConnectionError,
-            litellm.APIError,
-            openai.APIConnectionError,
-            openai.APIError,
-        ) as e:
+        except (litellm.APIError, openai.APIError) as e:
+            # APIError is raised e.g. when user sends extra kwargs in the request body,
+            # so we return a 400 Bad request.
             log.error(f"API error - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=500)
+            return JsonResponse({"error": _r(e)}, status=400)
         except Exception as e:
             log.error(f"Unexpected error - {_r(e)}")
             return JsonResponse({"error": _r(e)}, status=500)

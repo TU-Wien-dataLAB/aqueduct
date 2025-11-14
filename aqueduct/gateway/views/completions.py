@@ -17,6 +17,7 @@ from .decorators import (
     ensure_usage,
     log_request,
     parse_body,
+    resolve_alias,
     token_authenticated,
     tos_accepted,
 )
@@ -31,6 +32,7 @@ from .utils import _get_token_usage, _openai_stream
 @parse_body(model=TypeAdapter(openai.types.CompletionCreateParams))
 @ensure_usage
 @log_request
+@resolve_alias
 @check_model_availability
 @catch_router_exceptions
 async def completions(

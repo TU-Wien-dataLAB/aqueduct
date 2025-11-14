@@ -24,7 +24,7 @@ The request body should be a JSON object compatible with the OpenAI [ChatComplet
 
 | Parameter               | Type               | Description                                                  |
 |-------------------------| ------------------ | ------------------------------------------------------------ |
-| `model`                 | string             | The name of the model to use.                                |
+| `model`                 | string             | The name of the model to use. You can also use a [model alias](../user-guide/models.md). |
 | `messages`              | array              | List of messages with roles (`system`, `user`, `assistant`). |
 | `max_completion_tokens` | integer            | Maximum number of tokens to generate.                        |
 | `temperature`           | number             | Sampling temperature to use.                                 |

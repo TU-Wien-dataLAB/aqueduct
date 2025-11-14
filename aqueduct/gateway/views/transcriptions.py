@@ -15,6 +15,7 @@ from .decorators import (
     check_model_availability,
     log_request,
     parse_body,
+    resolve_alias,
     token_authenticated,
     tos_accepted,
 )
@@ -33,6 +34,7 @@ class TranscriptionCreateParams(RootModel):
 @tos_accepted
 @check_limits
 @parse_body(model=TypeAdapter(TranscriptionCreateParams))
+@resolve_alias
 @log_request
 @check_model_availability
 @catch_router_exceptions

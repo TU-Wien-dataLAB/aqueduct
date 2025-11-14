@@ -27,7 +27,7 @@ The request should be sent as `multipart/form-data` and is compatible with the O
 | Parameter                   | Type   | Description                                            |
 |-----------------------------|--------|--------------------------------------------------------|
 | `file`                      | file   | The audio file to transcribe.                          |
-| `model`                     | string | The name of the speech-to-text model to use.           |
+| `model`                     | string | The name of the speech-to-text model to use. You can also use a [model alias](../user-guide/models.md). |
 | `language`                  | string | (Optional) The language of the audio file.             |
 | `prompt`                    | string | (Optional) Text to guide the model's style.            |
 | `response_format`           | string | (Optional) The format of the output. Default: `json`.  |

@@ -16,6 +16,7 @@ from .decorators import (
     check_model_availability,
     log_request,
     parse_body,
+    resolve_alias,
     token_authenticated,
 )
 from .utils import _get_token_usage
@@ -27,6 +28,7 @@ from .utils import _get_token_usage
 @check_limits
 @parse_body(model=TypeAdapter(openai.types.ImageGenerateParams))
 @log_request
+@resolve_alias
 @check_model_availability
 @catch_router_exceptions
 async def image_generation(

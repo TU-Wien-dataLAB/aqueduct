@@ -61,3 +61,7 @@ print(models.data)
   "object": "list"
 }
 ```
+
+## Model Aliases
+
+Model aliases are resolved before model validation. If you use an alias in the `model` parameter, it will be resolved to the actual model name before checking if the model is available for your token. See the [Models user guide](../user-guide/models.md) for more information about aliases.

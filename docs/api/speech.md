@@ -25,7 +25,7 @@ The request body should be a JSON object compatible with the OpenAI [SpeechCreat
 
 | Parameter         | Type   | Description                                                   |
 |-------------------| ------ |---------------------------------------------------------------|
-| `model`           | string | The name of the text-to-speech model to use.                  |
+| `model`           | string | The name of the text-to-speech model to use. You can also use a [model alias](../user-guide/models.md). |
 | `voice`           | string | The voice to use for generation.                              |
 | `input`           | string | The text to generate audio for.                               |
 | `instructions`    | string | (Optional) Instructions for how to generate the audio.        |

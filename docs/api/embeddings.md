@@ -24,7 +24,7 @@ The request body should be a JSON object compatible with the OpenAI [EmbeddingCr
 
 | Parameter | Type               | Description                                      |
 | --------- | ------------------ | ------------------------------------------------ |
-| `model`   | string             | The name of the model to use.                    |
+| `model`   | string             | The name of the model to use. You can also use a [model alias](../user-guide/models.md). |
 | `input`   | string or [string] | The input text or array of texts to embed.       |
 
 See the OpenAI documentation for a full list of parameters.

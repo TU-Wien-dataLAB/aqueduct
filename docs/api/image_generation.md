@@ -25,7 +25,7 @@ The request body should be a JSON object compatible with the OpenAI [ImageGenera
 
 | Parameter         | Type   | Description                                                                   |
 |-------------------|--------|-------------------------------------------------------------------------------|
-| `model`           | string | (Optional) The model to use for image generation.                             |
+| `model`           | string | (Optional) The model to use for image generation. You can also use a [model alias](../user-guide/models.md). |
 | `prompt`          | string | The text description of the desired image(s).                                 |
 | `n`               | int    | (Optional) The number of images to generate. Default: `1`.                    |
 | `size`            | string | (Optional) The size of the generated images.                                  |

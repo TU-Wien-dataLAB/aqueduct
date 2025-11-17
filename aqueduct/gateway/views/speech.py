@@ -15,6 +15,7 @@ from .decorators import (
     ensure_usage,
     log_request,
     parse_body,
+    resolve_alias,
     token_authenticated,
     tos_accepted,
 )
@@ -26,6 +27,7 @@ from .decorators import (
 @tos_accepted
 @check_limits
 @parse_body(model=TypeAdapter(openai.types.audio.SpeechCreateParams))
+@resolve_alias
 @ensure_usage
 @log_request
 @check_model_availability

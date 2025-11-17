@@ -1,7 +1,7 @@
 import io
 import json
+from pathlib import Path
 
-import httpx
 from asgiref.sync import sync_to_async
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -150,13 +150,11 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
     def setUp(self):
         super().setUp()
-        # Create a simple audio file for testing
-        audio_url = "https://upload.wikimedia.org/wikipedia/commons/9/90/David_Lynch_-_Nuart_Theatre_trailer_for_Eraserhead.ogg"
-        self.test_audio_content = httpx.get(
-            audio_url, headers={"User-Agent": "Mozilla/5.0"}
-        ).content
+        with open(Path(__file__).parent / "resources" / "Eraserhead.mp3", "rb") as f:
+            self.test_audio_content = f.read()
+
         self.test_audio_file = SimpleUploadedFile(
-            "lynch.oga", self.test_audio_content, content_type="audio/ogg"
+            "Eraserhead.mp3", self.test_audio_content, content_type="audio/mp3"
         )
 
     def test_transcriptions_endpoint_basic(self):

@@ -28,26 +28,30 @@
                     <thead>
                     <tr class="bg-base-200">
                         <th>Model Name</th>
+                        <th>Aliases</th>
                         <th>Supports Vision</th>
                         <th>Default TPM</th>
                         <th>Default RPM</th>
                         <th>Timeout</th>
-                        <th>litellm_params</th>
                     </tr>
                     </thead>
                     <tbody>
                     {% for model in model_list %}
                         <tr>
                             <td class="font-mono">{{ model.model_name }}</td>
+                            <td>
+                                {% if model.model_info.aliases %}
+                                    {% for alias in model.model_info.aliases %}
+                                        <span class="badge badge-sm badge-soft badge-primary mr-1 mb-1">{{ alias }}</span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-gray-400 text-sm">-</span>
+                                {% endif %}
+                            </td>
                             <td>{% if model.model_info.supports_vision %} Yes {% endif %}</td>
                             <td>{{ model.litellm_params.tpm }}</td>
                             <td>{{ model.litellm_params.rpm }}</td>
                             <td>{% if model.litellm_params.timeout %}{{ model.litellm_params.timeout }} second{{ model.litellm_params.timeout | pluralize }}{% endif %}</td>
-                            <td>
-                                <pre class="bg-base-200 rounded px-2 py-1 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
-{{ model.litellm_params | pprint }}
-                                </pre>
-                            </td>
                         </tr>
                     {% endfor %}
                     </tbody>

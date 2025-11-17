@@ -18,6 +18,8 @@ from django.db import models
 from django.db.models import BooleanField, JSONField
 from django.utils import timezone
 
+from gateway.config import resolve_model_alias
+
 log = logging.getLogger("aqueduct")
 
 
@@ -550,8 +552,10 @@ class Token(models.Model):
         """
         return self._get_from_hierarchy(Token._exclusion_list_from_objects)
 
-    def model_excluded(self, model: str):
-        return model in self.model_exclusion_list()
+    def model_excluded(self, model: str) -> bool:
+        # Resolve alias to actual model name before checking exclusion
+        resolved_model = resolve_model_alias(model)
+        return resolved_model in self.model_exclusion_list()
 
     @classmethod
     def _mcp_server_exclusion_list_from_objects(

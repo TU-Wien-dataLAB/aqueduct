@@ -8,6 +8,22 @@ from django.conf import settings
 from litellm import Router
 
 
+def _validate_router_config(config: dict):
+    # Validate alias uniqueness
+    alias_to_model = {}
+    model_list = config.get("model_list", [])
+    for model in model_list:
+        model_name = model.get("model_name")
+        aliases = model.get("model_info", {}).get("aliases", [])
+        for alias in aliases:
+            if alias in alias_to_model:
+                raise RuntimeError(
+                    f"Duplicate alias '{alias}' found in router config. "
+                    f"Alias is used by both '{alias_to_model[alias]}' and '{model_name}'."
+                )
+            alias_to_model[alias] = model_name
+
+
 @lru_cache(maxsize=1)
 def get_router_config() -> dict:
     path = settings.LITELLM_ROUTER_CONFIG_FILE_PATH
@@ -16,6 +32,9 @@ def get_router_config() -> dict:
             data = yaml.safe_load(f)
     except (FileNotFoundError, TypeError):
         raise RuntimeError(f"Unable to load router config from {path}")
+
+    _validate_router_config(data)
+
     return data
 
 
@@ -48,6 +67,34 @@ class MCPServerConfig(TypedDict):
     description: NotRequired[str]
     tags: NotRequired[list[str]]
     icon_url: NotRequired[str]
+
+
+def resolve_model_alias(model_or_alias: str) -> str:
+    """
+    Resolve a model alias to its actual model name.
+    If the input is already a model name (not an alias), return it unchanged.
+
+    Args:
+        model_or_alias: Either a model alias or a model name
+
+    Returns:
+        The actual model name
+    """
+    config = get_router_config()
+    model_list = config.get("model_list", [])
+
+    # Build alias - model mapping
+    for model in model_list:
+        model_name = model.get("model_name")
+        if model_name == model_or_alias:
+            return model_name
+
+        aliases = model.get("model_info", {}).get("aliases", [])
+        if model_or_alias in aliases:
+            return model_name
+
+    # Not an alias or a model; still return as-is to return standard error down the line
+    return model_or_alias
 
 
 @lru_cache(maxsize=1)

@@ -25,6 +25,7 @@ from tos.middleware import cache
 from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
+from gateway.config import resolve_model_alias
 from gateway.views.utils import in_wildcard
 from management.models import FileObject, Request, Token
 
@@ -270,6 +271,27 @@ def log_request(view_func):
 
         await request_log.asave()
         return result
+
+    return wrapper
+
+
+def resolve_alias(view_func):
+    """Resolve model aliases to actual model names before processing."""
+
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        pydantic_model: dict | None = kwargs.get("pydantic_model", None)
+        if not pydantic_model:
+            return await view_func(request, *args, **kwargs)
+
+        model_or_alias: str | None = pydantic_model.get("model", None)
+        if model_or_alias:
+            # Resolve alias to actual model name
+            resolved_model = resolve_model_alias(model_or_alias)
+            pydantic_model["model"] = resolved_model
+            log.debug(f"Resolved model '{model_or_alias}' to '{resolved_model}'")
+
+        return await view_func(request, *args, **kwargs)
 
     return wrapper
 

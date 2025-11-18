@@ -12,7 +12,10 @@ from gateway.tests.utils.base import get_mock_router
 from management.models import Request
 
 
-@override_settings(OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/")
+@override_settings(
+    OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/",
+    LITELLM_ROUTER_CONFIG_FILE_PATH="/tmp/aqueduct/openai-router-config.yaml",
+)
 class TestUserId(TestCase):
     fixtures = ["gateway_data.json"]
 

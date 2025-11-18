@@ -1,36 +1,15 @@
 import json
 from http import HTTPStatus
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
-from litellm import Router
-from litellm.types.llms.openai import HttpxBinaryResponseContent
-from litellm.types.router import Deployment
-from litellm.types.utils import (
-    EmbeddingResponse,
-    ImageResponse,
-    ModelResponse,
-    TextCompletionResponse,
-)
 from openai.types.audio import Transcription
 
 from gateway.tests.utils import _build_chat_headers
+from gateway.tests.utils.base import get_mock_router
 from management.models import Request
-
-
-def get_mock_router():
-    router = MagicMock(spec=Router)
-    router.acompletion = AsyncMock(return_value=ModelResponse())
-    router.atext_completion = AsyncMock(return_value=TextCompletionResponse())
-    router.aembedding = AsyncMock(return_value=EmbeddingResponse())
-    router.image_generation = MagicMock(return_value=ImageResponse())
-    router.aspeech = AsyncMock(return_value=HttpxBinaryResponseContent(response=MagicMock()))
-    router.get_deployment = MagicMock(
-        return_value=Deployment("test-model", {"model": "test-model"})
-    )
-    return router
 
 
 @override_settings(OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/")

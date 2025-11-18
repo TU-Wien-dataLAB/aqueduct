@@ -560,7 +560,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         batch2, n2 = make_batch(3)
         logger.debug("created batch %s with %s requests", batch2, n2)
         # Process both batches in same run
-        router = mock_router().mock_router()
+        router = mock_router()
         with patch("gateway.views.batches.get_router", return_value=router):
             self.run_batch_processing_loop()
 

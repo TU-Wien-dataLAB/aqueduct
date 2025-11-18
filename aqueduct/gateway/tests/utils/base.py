@@ -4,11 +4,23 @@ import shutil
 from pathlib import Path
 from textwrap import dedent
 from typing import Literal, Optional
+from unittest.mock import AsyncMock, MagicMock
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
+from litellm import Router
+from litellm.types.llms.openai import HttpxBinaryResponseContent
+from litellm.types.router import Deployment
+from litellm.types.utils import (
+    EmbeddingResponse,
+    ImageResponse,
+    ModelResponse,
+    TextCompletionResponse,
+)
+from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers
 from management.models import Org, Token, UserProfile
@@ -63,6 +75,19 @@ os.makedirs(TEST_FILES_ROOT, exist_ok=True)
 logger = logging.getLogger(__name__)
 
 
+def get_mock_router():
+    router = MagicMock(spec=Router)
+    router.acompletion = AsyncMock(return_value=ModelResponse())
+    router.atext_completion = AsyncMock(return_value=TextCompletionResponse())
+    router.aembedding = AsyncMock(return_value=EmbeddingResponse())
+    router.image_generation = MagicMock(return_value=ImageResponse())
+    router.aspeech = AsyncMock(return_value=HttpxBinaryResponseContent(response=MagicMock()))
+    router.get_deployment = MagicMock(
+        return_value=Deployment("test-model", {"model": "test-model"})
+    )
+    return router
+
+
 # --- Django Test Class ---
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
@@ -113,10 +138,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
                 )
                 logger.info("vLLM server started on: %s", cls.vllm_server.url_root)
             except Exception as e:
-                import traceback
-
-                traceback.print_exc()
-                logger.error("ERROR starting vLLM server: %s", e)
+                logger.exception("ERROR starting vLLM server: %s", e)
                 cls.vllm_server = None
                 raise AssertionError(f"Failed to set up vLLM server: {e}") from e
         elif INTEGRATION_TEST_BACKEND == "openai":
@@ -130,12 +152,10 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     def create_new_user() -> tuple[str, int]:
         # Create a new user and a new token for that user
         new_user = User.objects.create_user(username="OtherUser", email="other@example.com")
-        from django.contrib.auth.models import Group
 
         new_user.groups.add(Group.objects.get(name="user"))
         org = Org.objects.get(name="E060")
-        profile = UserProfile.objects.create(user=new_user, org=org)
-        new_user.profile = profile
+        _ = UserProfile.objects.create(user=new_user, org=org)
 
         # Create a new token for the different user
         new_token = Token(name="TestToken", user=new_user)
@@ -231,11 +251,6 @@ class TOSGatewayTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
 
     def accept_tos(self, user_id: int = 1):
-        from django.contrib.auth import get_user_model
-        from tos.models import TermsOfService, UserAgreement
-
-        User = get_user_model()
-
         # Create an active Terms of Service
         tos = TermsOfService.objects.create(active=True, content="Test Terms of Service content")
 

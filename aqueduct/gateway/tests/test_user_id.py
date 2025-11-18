@@ -47,12 +47,7 @@ class TestUserId(TestCase):
     def test_completions_with_user_id(self):
         url = reverse("gateway:completions")
         user_id = "testuser"
-        payload = {
-            "model": self.model,
-            "prompt": "Hello",
-            "max_completion_tokens": 2,
-            "user_id": user_id,
-        }
+        payload = {"model": self.model, "prompt": "Hello", "user_id": user_id}
         with patch("gateway.views.completions.get_router", return_value=get_mock_router()):
             resp = self.client.post(
                 url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
@@ -185,3 +180,25 @@ class TestUserId(TestCase):
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
         self.assertEqual(req.user_id, user_id)
+
+    def test_valid_user_id_values(self):
+        url = reverse("gateway:completions")
+        user_ids = [
+            42,  # int will be converted to str
+            "42",
+            "Emmy Noether",
+            "emmy.noether@example.com",
+            "",
+        ]
+        for i, user_id in enumerate(user_ids):
+            with self.subTest(user_id=user_id, i=i):
+                data = json.dumps({"model": self.model, "prompt": "Hello", "user_id": user_id})
+                with patch("gateway.views.completions.get_router", return_value=get_mock_router()):
+                    resp = self.client.post(
+                        url, data=data, headers=self.headers, content_type="application/json"
+                    )
+
+                self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+                self.assertIsNotNone(Request.objects.filter(user_id=user_id))
+
+        self.assertEqual(Request.objects.filter(user_id="42").count(), 2)

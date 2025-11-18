@@ -1,18 +1,11 @@
-import logging
 from datetime import timedelta
 from urllib.parse import urlparse
 
 import httpx
 from asgiref.sync import sync_to_async
-from django.conf import settings
 from pydantic.networks import AnyUrl
 
 from gateway.tests.utils.mcp import MCPLiveServerTestCase
-
-if settings.TESTING:
-    logger = logging.getLogger("aqueduct")
-    logging.disable(logging.NOTSET)
-    logger.setLevel(logging.DEBUG)
 
 
 class MCPLiveClientTest(MCPLiveServerTestCase):

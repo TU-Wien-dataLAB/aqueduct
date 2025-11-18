@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from asgiref.sync import async_to_sync
@@ -12,11 +11,6 @@ from django.urls import reverse
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.base import GatewayBatchesTestCase
 from management.models import Token
-
-if settings.TESTING:
-    logger = logging.getLogger("aqueduct")
-    logging.disable(logging.NOTSET)
-    logger.setLevel(logging.DEBUG)
 
 
 def mock_router():
@@ -556,9 +550,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             return resp.json()["id"], n
 
         batch1, n1 = make_batch(2)
-        logger.debug("created batch %s with %s requests", batch1, n1)
+        # print(f"created batch {batch1} with {n1} requests")
         batch2, n2 = make_batch(3)
-        logger.debug("created batch %s with %s requests", batch2, n2)
+        # print(f"created batch {batch2} with {n2} requests")
         # Process both batches in same run
         router = mock_router()
         with patch("gateway.views.batches.get_router", return_value=router):
@@ -752,7 +746,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             from gateway.views.batches import run_batch_processing
 
             async def run_batch_processing_loop_concurrently():
-                logger.debug("Running two batch processing loops concurrently.")
+                # print("Running two batch processing loops concurrently.")
                 await asyncio.gather(run_batch_processing(), run_batch_processing())
 
             async_to_sync(run_batch_processing_loop_concurrently)()
@@ -829,7 +823,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         batch_data = resp.json()
 
         counts = batch_data["request_counts"]
-        logger.debug("Request counts: %s", counts)
+        # print(f"Request counts: {counts}")
         self.assertEqual(
             counts["total"],
             num_requests,
@@ -849,7 +843,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertEqual(resp.status_code, 200)
         output_lines = resp.content.splitlines()
 
-        logger.debug("Output file has %s lines (expected %s)", len(output_lines), num_requests)
+        # print(f"Output file has {len(output_lines)} lines (expected {num_requests})")
 
         self.assertEqual(
             len(output_lines),

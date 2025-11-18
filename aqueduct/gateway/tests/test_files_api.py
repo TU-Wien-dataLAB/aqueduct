@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from aqueduct.celery import delete_expired_files_and_batches
 from gateway.tests.utils.base import GatewayFilesTestCase
-from management.models import FileObject, Request
+from management.models import FileObject
 
 
 class TestFilesAPI(GatewayFilesTestCase):
@@ -53,18 +53,6 @@ class TestFilesAPI(GatewayFilesTestCase):
         list_data = response.json()
         self.assertEqual(len(list_data["data"]), 0)
         self.assertNotIn(file_id, [f["id"] for f in list_data["data"]])
-
-    def test_file_upload_with_user_id(self):
-        file = SimpleUploadedFile(
-            "test.jsonl", b'{"custom_id": "bar"}\n', content_type="application/json"
-        )
-        response = self.client.post(
-            self.url_files, {"file": file, "purpose": "batch", "user_id": 42}, headers=self.headers
-        )
-        self.assertEqual(response.status_code, 200, f"Upload failed: {response.json()}")
-
-        req = Request.objects.get()
-        self.assertEqual(req.user_id, "42")
 
     def test_validation_errors(self):
         """Missing or bad parameters should return 400."""

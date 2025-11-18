@@ -52,31 +52,6 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         req = requests[0]
         self.assertIn("speech", req.path, "Request endpoint should be for speech.")
         self.assertIsNotNone(req.token_usage)
-        self.assertEqual(req.user_id, "")
-
-    async def test_speech_with_user_id_in_body(self):
-        """Test speech generation with "user_id" posted in the request body."""
-        if INTEGRATION_TEST_BACKEND == "vllm":
-            self.skipTest("TTS tests require OpenAI backend")
-
-        payload = {
-            "model": self.tts_model,
-            "input": "Hello, this is a test of the text-to-speech system.",
-            "voice": "alloy",
-            "response_format": "mp3",
-            "user_id": "Jane Doe",
-        }
-
-        response = await self.async_client.post(
-            self.url_tts,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
-
-        self.assertEqual(response.status_code, 200)
-        req = await sync_to_async(Request.objects.last)()
-        self.assertEqual(req.user_id, "Jane Doe")
 
     def test_speech_endpoint_invalid_model(self):
         """Test speech endpoint with invalid model."""
@@ -204,21 +179,6 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         req = requests[0]
         self.assertIn("transcriptions", req.path, "Request endpoint should be for transcriptions.")
         self.assertIsNotNone(req.token_usage)
-
-    def test_transcriptions_with_user_id_in_body(self):
-        """Test transcription with "user_id" posted in the request body."""
-        if INTEGRATION_TEST_BACKEND == "vllm":
-            self.skipTest("STT tests require OpenAI backend")
-
-        response = self.client.post(
-            self.url_stt,
-            {"file": self.test_audio_file, "model": self.stt_model, "user_id": "Jane Doe"},
-            headers=self.multipart_headers,
-        )
-
-        self.assertEqual(response.status_code, 200)
-        req = Request.objects.last()
-        self.assertEqual(req.user_id, "Jane Doe")
 
     def test_transcriptions_endpoint_invalid_model(self):
         """Test transcriptions endpoint with invalid model."""

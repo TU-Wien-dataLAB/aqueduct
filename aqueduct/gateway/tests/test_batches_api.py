@@ -353,12 +353,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             resp = self.client.post(
                 "/batches",
                 data=json.dumps(
-                    {
-                        "input_file_id": fid,
-                        "completion_window": "24h",
-                        "endpoint": endpoint,
-                        "user_id": 42,
-                    }
+                    {"input_file_id": fid, "completion_window": "24h", "endpoint": endpoint}
                 ),
                 headers=self.headers,
                 content_type="application/json",

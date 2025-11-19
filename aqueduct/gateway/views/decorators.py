@@ -6,6 +6,7 @@ import re
 import time
 from datetime import timedelta
 from functools import wraps
+from http import HTTPStatus
 
 import httpx
 import litellm
@@ -128,6 +129,7 @@ def parse_body(model: TypeAdapter):
     """
     Decorator that parses and validates HTTP request bodies for async view functions.
 
+    Only attempts to parse the body of POST requests, otherwise does nothing.
     Handles requests with "application/json" and "multipart/form-data" content types.
     The "pydantic_model" dict with parsed and validated data is passed in the kwargs
     to the view function.
@@ -143,6 +145,9 @@ def parse_body(model: TypeAdapter):
     def decorator(view_func):
         @wraps(view_func)
         async def wrapper(request: ASGIRequest, *args, **kwargs):
+            if request.method != "POST":
+                return await view_func(request, *args, **kwargs)
+
             content_type = request.headers.get("content-type", "")
 
             if content_type.startswith("application/json"):
@@ -152,11 +157,14 @@ def parse_body(model: TypeAdapter):
                 try:
                     data = _parse_multipart_body(request)
                 except FileSizeError as e:
-                    return JsonResponse({"error": str(e)}, status=413)
+                    return JsonResponse(
+                        {"error": str(e)}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+                    )
             else:
                 log.error(f"Unsupported Content-Type: {content_type}")
                 return JsonResponse(
-                    {"error": f"Unsupported Content-Type: {content_type}"}, status=415
+                    {"error": f"Unsupported Content-Type: {content_type}"},
+                    status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 )
 
             # "user_id" can be sent in the body (it is saved in the request log),
@@ -167,15 +175,17 @@ def parse_body(model: TypeAdapter):
                 model.validate_python(data)
             except ValidationError as e:
                 log.error(f"Validation error: {e}")
-                return JsonResponse({"error": str(e)}, status=400)
+                return JsonResponse({"error": str(e)}, status=HTTPStatus.BAD_REQUEST)
 
             # If there are files sent with the request (i.e. content type is "multipart/form-data"),
             # update bytes to BytesIO because pydantic TypeAdapter has problems with BytesIO.
             # OpenAI usually expects a name for the file object (not just bytes).
             # This only works if the field is also typed as bytes.
+            # Additionally, add the size information - for convenience.
             for key, file in request.FILES.items():
                 buffer: io.BytesIO = io.BytesIO(data[key])
                 buffer.name = file.name
+                buffer.size = file.size
                 data[key] = buffer
 
             kwargs["pydantic_model"] = data
@@ -675,11 +685,11 @@ def parse_jsonrpc_message(view_func):
 
             return await view_func(request, request_log=None, *args, **kwargs)
 
+        body = request.body
+        if body is None:
+            log.error("Request body is None")
+            return JsonResponse({"error": "Missing request body"}, status=400)
         try:
-            body = request.body
-            if body is None:
-                log.error("Request body is None")
-                return JsonResponse({"error": "Missing request body"}, status=400)
             data = json.loads(body)
         except json.JSONDecodeError as e:
             log.error(f"JSON decode error: {str(e)}, body was: {request.body!r}")

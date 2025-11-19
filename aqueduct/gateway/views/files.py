@@ -1,4 +1,5 @@
 import json
+from typing import Literal, Optional
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -8,10 +9,11 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 
-from management.models import FileObject
+from management.models import FileObject, Token
 
-from .decorators import log_request, token_authenticated, tos_accepted
+from .decorators import log_request, parse_body, token_authenticated, tos_accepted
 
 
 def validate_batch_file(data: bytes):
@@ -20,23 +22,37 @@ def validate_batch_file(data: bytes):
     for i, line in enumerate(lines):
         try:
             d = json.loads(line)
-            custom_id = d.get("custom_id")
-            if not custom_id:
-                raise ValueError(f"No custom_id found at line {i + 1}")
-            elif custom_id in custom_ids:
-                raise ValueError(f"Duplicate custom_id found at line {i + 1}")
-            else:
-                custom_ids.add(custom_id)
         except json.decoder.JSONDecodeError:
             raise ValueError(f"Invalid JSON at line {i + 1}")
+        custom_id = d.get("custom_id")
+        if not custom_id:
+            raise ValueError(f"No custom_id found at line {i + 1}")
+        elif custom_id in custom_ids:
+            raise ValueError(f"Duplicate custom_id found at line {i + 1}")
+        else:
+            custom_ids.add(custom_id)
+
+
+class FilesCreateParams(BaseModel):
+    file: bytes
+    purpose: Literal["batch", "user_data"]
+    # `File` type requires arbitrary_types_allowed for model settings
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 @token_authenticated(token_auth_only=True)
 @tos_accepted
+@parse_body(model=TypeAdapter(FilesCreateParams))
 @log_request
-async def files(request: ASGIRequest, token, *args, **kwargs):
+async def files(
+    request: ASGIRequest,
+    token: Token,
+    pydantic_model: Optional[FilesCreateParams] = None,
+    *args,
+    **kwargs,
+):
     if request.method == "GET":
         file_objs = await sync_to_async(list)(FileObject.objects.filter(token__user=token.user))
         openai_files = [f.model for f in file_objs]
@@ -48,37 +64,23 @@ async def files(request: ASGIRequest, token, *args, **kwargs):
             status=200,
         )
     # POST /files
-    uploaded = request.FILES.get("file")
-    purpose = request.POST.get("purpose")
-    if not uploaded or not purpose:
-        return JsonResponse({"error": "Both 'file' and 'purpose' are required."}, status=400)
-    if purpose not in ["batch", "user_data"]:
-        return JsonResponse(
-            {"error": f"Purpose '{purpose}' is currently not supported."}, status=400
-        )
+    # Note: For POST requests, `pydantic_model` is set by `@parse_body`, so it is not None.
+    uploaded = pydantic_model["file"]
+    purpose = pydantic_model["purpose"]
     filename = uploaded.name
     if purpose == "batch" and not filename.endswith(".jsonl"):
         return JsonResponse(
             {"error": "Only .jsonl files are currently supported for purpose 'batch'."}, status=400
         )
     data = uploaded.read()
-    # Enforce per-file size limit from settings
-    max_file_bytes = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024
-    if len(data) > max_file_bytes:
-        return JsonResponse(
-            {
-                "error": f"File too large. Individual file must be "
-                f"<= {settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB}MB."
-            },
-            status=400,
-        )
+
+    # Enforce per-token total storage limit from settings
     sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(
         sum_bytes=Sum("bytes")
     )
     current_total = sum_res.get("sum_bytes") or 0
-    # Enforce per-token total storage limit from settings
     max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB * 1024 * 1024
-    if current_total + len(data) > max_total_bytes:
+    if current_total + uploaded.size > max_total_bytes:
         return JsonResponse(
             {
                 "error": f"Total files size exceeds "

@@ -155,7 +155,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertTrue(hasattr(first_choice.message, "content"))
         self.assertIsNotNone(first_choice.message.content)
 
-        response_text = first_choice.message.content.strip()
+        # response_text = first_choice.message.content.strip()
         # print(response_text)
 
         # Check that the database contains one request and endpoint matches

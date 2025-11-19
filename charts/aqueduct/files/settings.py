@@ -360,4 +360,4 @@ LOGGING = {
 if TESTING:
     logger = logging.getLogger("aqueduct")
     logging.disable(logging.NOTSET)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.CRITICAL)

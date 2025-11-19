@@ -1,5 +1,6 @@
 import json
 from http import HTTPStatus
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -11,10 +12,12 @@ from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import get_mock_router
 from management.models import Request
 
+ROOT_DIR = Path(__file__).parent.parent.parent.parent
+
 
 @override_settings(
     OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/",
-    LITELLM_ROUTER_CONFIG_FILE_PATH="/tmp/aqueduct/openai-router-config.yaml",
+    LITELLM_ROUTER_CONFIG_FILE_PATH=Path(ROOT_DIR / "example_router_config.yaml"),
 )
 class TestUserId(TestCase):
     fixtures = ["gateway_data.json"]

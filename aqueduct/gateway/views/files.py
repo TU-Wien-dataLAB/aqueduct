@@ -86,7 +86,7 @@ async def files(
                 "error": f"Total files size exceeds "
                 f"{settings.AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB}MB limit."
             },
-            status=400,
+            status=413,
         )
 
     if purpose == "batch":

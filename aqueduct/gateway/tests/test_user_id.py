@@ -104,21 +104,18 @@ class TestUserId(TestCase):
         req = Request.objects.get()
         self.assertEqual(req.user_id, user_id)
 
-    # def test_file_upload_with_user_id(self):
-    #     url = reverse("gateway:files")
-    #     user_id = "testuser"
-    #     file = SimpleUploadedFile(
-    #         "test.jsonl", b'{"custom_id": "bar"}\n', content_type="application/json"
-    #     )
-    #     payload = {"file": file, "purpose": "batch", "user_id": user_id}
-    #     resp = self.client.post(
-    #         url, data=json.dumps(payload), headers=self.multipart_headers
-    #     )
-    #
-    #     self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
-    #     req = Request.objects.get()
-    #     TODO: the files endpoints don't use the `parse_body` decorator!
-    #     self.assertEqual(req.user_id, user_id)
+    def test_file_upload_with_user_id(self):
+        url = reverse("gateway:files")
+        user_id = "testuser"
+        file = SimpleUploadedFile(
+            "test.jsonl", b'{"custom_id": "bar"}\n', content_type="application/jsonl"
+        )
+        payload = {"file": file, "purpose": "batch", "user_id": user_id}
+        resp = self.client.post(url, data=payload, headers=self.multipart_headers)
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.get()
+        self.assertEqual(req.user_id, user_id)
 
     def test_image_generation_with_user_id(self):
         url = reverse("gateway:image_generation")

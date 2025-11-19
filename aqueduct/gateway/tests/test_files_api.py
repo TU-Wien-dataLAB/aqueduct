@@ -67,7 +67,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         resp = self.client.post(self.url_files, {"file": f}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
 
-    def test_unsupported_and_bad_extension(self):
+    def test_unsupported_purpose_and_bad_extension(self):
         """Unsupported purpose or wrong file extension yields 400."""
         good = SimpleUploadedFile("ok.jsonl", b"{}\n", content_type="application/json")
         # unsupported purpose
@@ -99,7 +99,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         resp = self.client.post(
             self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers
         )
-        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.status_code, 413)
 
     def test_not_found_cases(self):
         """GET/DELETE on nonexistent file returns 404."""

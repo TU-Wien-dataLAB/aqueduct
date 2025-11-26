@@ -43,7 +43,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           INTEGRATION_TEST_BACKEND: ${{ matrix.backend }}
           START_VLLM_SERVER: ${{ matrix.start }}
-          DJANGO_LOG_LEVEL: INFO
+          DJANGO_LOG_LEVEL: WARNING
           OIDC_OP_JWKS_ENDPOINT: https://example.com/application/o/example/jwks/
         run: uv run ${{ matrix.start == 'true' && '--extra vllm' || '' }} python aqueduct/manage.py test gateway
 

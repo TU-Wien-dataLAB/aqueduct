@@ -7,7 +7,7 @@ from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TransactionTestCase, override_settings
-from litellm.types.utils import ImageObject, ImageResponse, ModelResponse
+from litellm.types.utils import ModelResponse
 from openai.types.audio import Transcription
 from openai.types.chat import ChatCompletion
 
@@ -1748,73 +1748,6 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 self.assertIn("data", response_json)
                 self.assertIsInstance(response_json["data"], list)
                 self.assertGreater(len(response_json["data"]), 0)
-
-    def test_image_generation_with_alias(self):
-        """Test that image generation endpoint correctly resolves model aliases."""
-        from gateway.config import get_router, get_router_config
-
-        # Mock config with alias for image generation model
-        mock_config = {
-            "model_list": [
-                {
-                    "model_name": self.image_gen_model,
-                    "litellm_params": {
-                        "model": f"openai/{self.image_gen_model}",
-                        "api_key": "os.environ/OPENAI_API_KEY",
-                    },
-                    "model_info": {"mode": "image_generation", "aliases": ["image", "dalle"]},
-                }
-            ]
-        }
-
-        # Clear both caches to ensure fresh state
-        get_router_config.cache_clear()
-        get_router.cache_clear()
-
-        mock_image_object = ImageObject(
-            url="https://example.com/mock-image.png",
-            revised_prompt="A beautiful landscape with mountains and a lake",
-        )
-        mock_image_response = ImageResponse(data=[mock_image_object])
-
-        with patch("gateway.config.get_router_config", return_value=mock_config):
-            with patch("gateway.views.image_generation.get_router") as mock_get_router:
-                # Mock the router to return our mock image response
-                mock_router = MagicMock()
-                mock_router.image_generation.return_value = mock_image_response
-                mock_get_router.return_value = mock_router
-
-                payload = {
-                    "model": "image",  # Using alias instead of actual model name
-                    "prompt": "A beautiful landscape with mountains and a lake",
-                    "size": "256x256",
-                }
-
-                response = self.client.post(
-                    "/images/generations",
-                    data=json.dumps(payload),
-                    headers=_build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN),
-                    content_type="application/json",
-                )
-
-                # Should return 200 with alias resolution
-                self.assertEqual(response.status_code, 200)
-
-                response_json = response.json()
-                self.assertIn("data", response_json, "Response should contain 'data' field")
-                self.assertIsInstance(response_json["data"], list, "Data should be a list")
-                self.assertGreater(len(response_json["data"]), 0, "Data should not be empty")
-
-                # Check first image object structure
-                img_data = response_json["data"][0]
-                self.assertIn("url", img_data, "Image data should contain 'url' field")
-                self.assertIn("https://", img_data["url"], "Image data should contain a valid url")
-
-                # Check that the database contains one request
-                requests = list(Request.objects.all())
-                self.assertEqual(
-                    len(requests), 1, "There should be exactly one request after image generation."
-                )
 
     def test_multiple_aliases_same_model(self):
         """

@@ -523,6 +523,68 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}",
         )
 
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
+    def test_chat_completion_timeout_is_logged(self):
+        """
+        Test that timeout requests ARE logged to the database.
+
+        This test verifies the bug fix where timeout requests were not appearing
+        in the usage dashboard because they weren't being saved to the Request table.
+
+        Bug scenario:
+        - User makes request that times out
+        - Request should still be logged with status_code=504
+        - Request should appear in usage dashboard
+        """
+        # Clear any existing requests
+        Request.objects.all().delete()
+
+        response = self._send_chat_completion(self.MESSAGES)
+
+        # Verify we get a timeout response
+        self.assertEqual(
+            response.status_code,
+            504,
+            f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}",
+        )
+
+        # THIS IS THE CRITICAL CHECK: Verify request was logged despite timeout
+        requests = list(Request.objects.all())
+        self.assertEqual(
+            len(requests),
+            1,
+            f"Expected 1 request to be logged even on timeout, but found {len(requests)}. "
+            "Timeout requests MUST be logged for usage tracking!",
+        )
+
+        # Verify the logged request has correct information
+        req = requests[0]
+        self.assertEqual(
+            req.status_code,
+            504,
+            f"Logged streaming timeout request should have status_code=504, got {req.status_code}",
+        )
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            f"Request path should be /chat/completions, got {req.path}",
+        )
+        self.assertIsNotNone(
+            req.response_time_ms, "Response time should be recorded even for streaming timeout"
+        )
+        self.assertGreater(
+            req.response_time_ms,
+            0,
+            f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}",
+        )
+        # Access token_id instead of token to avoid async issues
+        self.assertIsNotNone(req.token_id, "Token should be recorded for streaming timeout")
+        self.assertEqual(
+            req.model,
+            self.model,
+            f"Model should be {self.model} for streaming timeout, got {req.model}",
+        )
+
     @override_settings(STREAM_REQUEST_TIMEOUT=5)
     @async_to_sync
     async def test_chat_completion_streaming(self):
@@ -591,6 +653,76 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
 
         self.assertEqual(
             response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}"
+        )
+
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
+    @async_to_sync
+    async def test_chat_completion_streaming_timeout_is_logged(self):
+        """
+        Test that streaming timeout requests are also logged to the database.
+
+        This test verifies that even when streaming requests time out,
+        they are still logged to the Request table for usage tracking.
+
+        Bug scenario:
+        - User makes streaming request that times out
+        - Request should still be logged with status_code=504
+        - Request should appear in usage dashboard
+        """
+        # Clear existing requests
+        await sync_to_async(Request.objects.all().delete)()
+
+        # Authenticate
+        await sync_to_async(
+            lambda: self.async_client.force_login(
+                User.objects.get_or_create(username="Me", email="me@example.com")[0]
+            )
+        )()
+
+        response = await self._send_chat_completion_streaming(self.MESSAGES)
+
+        # Verify we get a timeout response
+        self.assertEqual(
+            response.status_code,
+            504,
+            f"Expected 504 Gateway Timeout for streaming, got {response.status_code}",
+        )
+
+        # THIS IS THE CRITICAL CHECK: Verify streaming timeout request was logged
+        requests = await sync_to_async(lambda: list(Request.objects.all()))()
+        self.assertGreater(
+            len(requests),
+            0,
+            f"Expected at least 1 request to be logged for streaming timeout, but found {len(requests)}. "
+            "Streaming timeout requests MUST be logged for usage tracking!",
+        )
+
+        # Verify the logged request has correct information
+        req = requests[0]
+        self.assertEqual(
+            req.status_code,
+            504,
+            f"Logged streaming timeout request should have status_code=504, got {req.status_code}",
+        )
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            f"Request path should be /chat/completions, got {req.path}",
+        )
+        self.assertIsNotNone(
+            req.response_time_ms, "Response time should be recorded even for streaming timeout"
+        )
+        self.assertGreater(
+            req.response_time_ms,
+            0,
+            f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}",
+        )
+        # Access token_id instead of token to avoid async issues
+        self.assertIsNotNone(req.token_id, "Token should be recorded for streaming timeout")
+        self.assertEqual(
+            req.model,
+            self.model,
+            f"Model should be {self.model} for streaming timeout, got {req.model}",
         )
 
     def test_chat_completion_excluded_model(self):

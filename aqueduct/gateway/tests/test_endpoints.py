@@ -1,4 +1,6 @@
+import base64
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from asgiref.sync import async_to_sync, sync_to_async
@@ -823,11 +825,11 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
             )
 
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        image_url = (
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/"
-            "Gfp-wisconsin-madison-the-nature-boardwalk.jpg/"
-            "2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-        )
+
+        with open(
+            Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg", "rb"
+        ) as image_file:
+            img_b64 = base64.b64encode(image_file.read()).decode("utf-8")
 
         payload = {
             "model": self.model,
@@ -836,7 +838,10 @@ class ChatCompletionsIntegrationTest(GatewayIntegrationTestCase):
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "What’s in this image?"},
-                        {"type": "image_url", "image_url": {"url": image_url}},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                        },
                     ],
                 }
             ],

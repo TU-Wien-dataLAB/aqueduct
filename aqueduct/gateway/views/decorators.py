@@ -148,11 +148,19 @@ def parse_body(model: TypeAdapter):
             if request.method != "POST":
                 return await view_func(request, *args, **kwargs)
 
+            if request.body is None:
+                log.error("Request body is None")
+                return JsonResponse({"error": "Missing request body"}, status=400)
+
             content_type = request.headers.get("content-type", "")
 
             if content_type.startswith("application/json"):
                 body = request.body.decode("utf-8")
-                data = json.loads(body)
+                try:
+                    data = json.loads(body)
+                except json.JSONDecodeError as e:
+                    log.error(f"JSON decode error: {str(e)}, body was: {request.body!r}")
+                    return JsonResponse({"error": f"Invalid JSON: {str(e)}"}, status=400)
             elif content_type.startswith("multipart/form-data"):
                 try:
                     data = _parse_multipart_body(request)
@@ -176,6 +184,11 @@ def parse_body(model: TypeAdapter):
             except ValidationError as e:
                 log.error(f"Validation error: {e}")
                 return JsonResponse({"error": str(e)}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as e:
+                log.error(f"Request body parse error: {str(e)}, data was: {data!r}")
+                return JsonResponse(
+                    {"error": f"Failed to parse the request body: {str(e)}"}, status=400
+                )
 
             # If there are files sent with the request (i.e. content type is "multipart/form-data"),
             # update bytes to BytesIO because pydantic TypeAdapter has problems with BytesIO.
@@ -685,27 +698,10 @@ def parse_jsonrpc_message(view_func):
 
             return await view_func(request, request_log=None, *args, **kwargs)
 
-        body = request.body
-        if body is None:
-            log.error("Request body is None")
-            return JsonResponse({"error": "Missing request body"}, status=400)
-        try:
-            data = json.loads(body)
-        except json.JSONDecodeError as e:
-            log.error(f"JSON decode error: {str(e)}, body was: {request.body!r}")
-            return JsonResponse({"error": f"Invalid JSON: {str(e)}"}, status=400)
-
-        try:
-            json_rpc_message = JSONRPCMessage.model_validate(data)
-        except ValidationError as e:
-            log.error(f"JSON-RPC validation error: {str(e)}, data was: {data!r}")
-            return JsonResponse({"error": f"Invalid JSON-RPC message: {str(e)}"}, status=400)
-        except Exception as e:
-            log.error(f"JSON-RPC parse error: {str(e)}, data was: {data!r}")
-            return JsonResponse(
-                {"error": f"Failed to parse JSON-RPC message: {str(e)}"}, status=400
-            )
-
+        data = kwargs["pydantic_model"]
+        # For mcp requests, timeout should not be passed to the JSON RPC Message
+        data.pop("timeout", None)
+        json_rpc_message = JSONRPCMessage.model_validate(data)
         is_initialize = (
             hasattr(json_rpc_message.root, "method")
             and json_rpc_message.root.method == "initialize"

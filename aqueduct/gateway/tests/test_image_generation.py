@@ -41,11 +41,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
 
         # Check first image object structure
         img_data = response_json["data"][0]
-        self.assertIn("url", img_data, "Image data should contain 'url' field")
-        self.assertIn("https://", img_data["url"], "Image data should contain a valid url")
-        self.assertIn(
-            "revised_prompt", img_data, "Image data should contain 'revised_prompt' field"
-        )
+        self.assertIn("b64_json", img_data, "Image data should contain 'b64_json' data")
 
         # Check that the database contains one request
         requests = list(Request.objects.all())
@@ -145,7 +141,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Invalid value: 'gpt-4.1-nano'", response.json()["error"])
+        self.assertIn("Incompatible model 'gpt-4.1-nano'!", response.json()["error"])
 
     def test_image_generation_endpoint_with_multiple_images(self):
         """Test image generation endpoint with multiple images (n parameter)."""
@@ -172,10 +168,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
 
         # Each image should have required fields
         for image in response_json["data"]:
-            self.assertIn("url", image, "Each image should contain 'url' field")
-            self.assertIn(
-                "revised_prompt", image, "Each image should contain 'revised_prompt' field"
-            )
+            self.assertIn("b64_json", image, "Each image should contain 'b64_json' data")
 
     def test_image_generation_endpoint_invalid_size(self):
         """Test image generation endpoint with invalid size parameter."""

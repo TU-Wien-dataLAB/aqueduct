@@ -5,12 +5,14 @@ import subprocess
 import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
+from functools import wraps
+from unittest.mock import patch
 
 from asgiref.sync import sync_to_async
 from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_client
 
 MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {
@@ -18,7 +20,24 @@ MCP_TEST_CONFIG = {
 }
 
 
+# patch: https://github.com/modelcontextprotocol/python-sdk/pull/1670
+def patch_mcp_sse_issue(view_func):
+    @wraps(view_func)
+    async def wrapper(*args, **kwargs):
+        sse = args[1]
+        if not sse.data:
+            return False
+        else:
+            return await view_func(*args, **kwargs)
+
+    return wrapper
+
+
 class MCPDaphneProcess(DaphneProcess):
+    @patch(
+        "mcp.client.streamable_http.StreamableHTTPTransport._handle_sse_event",
+        new=patch_mcp_sse_issue(StreamableHTTPTransport._handle_sse_event),
+    )
     def run(self):
         from django.conf import settings
 
@@ -119,7 +138,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             env = os.environ.copy()
             env["PORT"] = str(port)
             cls.mcp_server_process = subprocess.Popen(
-                ["npx", "@modelcontextprotocol/server-everything", "streamableHttp"],
+                ["npx", "@modelcontextprotocol/server-everything@2025.11.25", "streamableHttp"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

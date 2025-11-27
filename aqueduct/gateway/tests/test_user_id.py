@@ -2,14 +2,17 @@ import json
 from http import HTTPStatus
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlparse
 
+import httpx
+from asgiref.sync import sync_to_async
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import override_settings
 from django.urls import reverse
 from openai.types.audio import Transcription
 
-from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import get_mock_router
+from gateway.tests.utils.mcp import MCPLiveServerTestCase
 from management.models import Request
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
@@ -19,15 +22,12 @@ ROOT_DIR = Path(__file__).parent.parent.parent.parent
     OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/",
     LITELLM_ROUTER_CONFIG_FILE_PATH=Path(ROOT_DIR / "example_router_config.yaml"),
 )
-class TestUserId(TestCase):
-    fixtures = ["gateway_data.json"]
-
+class TestUserId(MCPLiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         cls.AQUEDUCT_ACCESS_TOKEN = "sk-123abc"
         cls.model = "test-model"
-        cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
         cls.multipart_headers = {"Authorization": f"Bearer {cls.AQUEDUCT_ACCESS_TOKEN}"}
 
     # def test_batches_with_user_id(self):
@@ -135,6 +135,30 @@ class TestUserId(TestCase):
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
+        self.assertEqual(req.user_id, user_id)
+
+    async def test_mcp_with_user_id_in_body(self):
+        user_id = "testuser"
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "1.0"},
+            },
+            "user_id": user_id,
+        }
+        parsed_url = urlparse(self.live_server_url)
+        valid_host = parsed_url.netloc
+        headers = {"Host": valid_host, **self.headers}
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(self.mcp_url, json=payload, headers=headers)
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = await sync_to_async(Request.objects.get)()
         self.assertEqual(req.user_id, user_id)
 
     def test_speech_with_user_id_in_body(self):

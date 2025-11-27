@@ -128,6 +128,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid 'prompt': empty string", response.json()["error"])
 
     def test_image_generation_endpoint_non_image_model(self):
         """Test image generation endpoint with a model that doesn't support image generation."""
@@ -201,7 +202,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         self.assertIn("Aqueduct does not support image streaming.", response.json()["error"])
 
     def test_image_generation_with_extra_fields_in_body(self):
-        """Extra fields in the request body."""
+        """Extra fields in the request body are not allowed."""
 
         payload = {"model": self.model, "prompt": "A test image", "sth_extra": "Oh yeah"}
 
@@ -213,4 +214,4 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
-        self.assertIn("got an unexpected keyword argument 'sth_extra'", response.json()["error"])
+        self.assertIn("Unexpected argument in request body", response.json()["error"])

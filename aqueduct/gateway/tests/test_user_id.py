@@ -121,15 +121,18 @@ class TestUserId(MCPLiveServerTestCase):
     def test_image_generation_with_user_id(self):
         url = reverse("gateway:image_generation")
         user_id = "testuser"
+        img_model = "dall-e-2"
 
         payload = {
-            "model": self.model,
+            "model": img_model,
             "prompt": "A beautiful landscape with mountains and a lake",
             "size": "256x256",
             "user_id": user_id,
         }
 
-        with patch("gateway.views.image_generation.get_router", return_value=get_mock_router()):
+        with patch(
+            "gateway.views.image_generation.get_router", return_value=get_mock_router(img_model)
+        ):
             resp = self.client.post(
                 url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
             )

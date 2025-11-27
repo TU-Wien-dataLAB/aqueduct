@@ -26,6 +26,7 @@ from gateway.views.decorators import (
     parse_body,
     parse_jsonrpc_message,
     token_authenticated,
+    tos_accepted,
 )
 
 log = logging.getLogger("aqueduct")
@@ -679,11 +680,11 @@ async def handle_delete_request(name: str, session_id: str | None = None) -> Jso
 
 
 @csrf_exempt
-@parse_body(model=TypeAdapter(JSONRPCMessage))
-@parse_jsonrpc_message
 @require_http_methods(["GET", "POST", "DELETE"])
 @token_authenticated(token_auth_only=True)
-# @tos_accepted
+@tos_accepted
+@parse_body(model=TypeAdapter(JSONRPCMessage))
+@parse_jsonrpc_message
 @check_mcp_server_availability
 @mcp_transport_security
 @log_request

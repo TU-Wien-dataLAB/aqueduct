@@ -72,7 +72,7 @@ TEST_FILES_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "file
 os.makedirs(TEST_FILES_ROOT, exist_ok=True)
 
 
-def get_mock_router():
+def get_mock_router(model: str = "test-model"):
     router = MagicMock(spec=Router)
     router.acompletion = AsyncMock(return_value=ModelResponse())
     router.atext_completion = AsyncMock(return_value=TextCompletionResponse())
@@ -80,7 +80,7 @@ def get_mock_router():
     router.image_generation = MagicMock(return_value=ImageResponse())
     router.aspeech = AsyncMock(return_value=HttpxBinaryResponseContent(response=MagicMock()))
     router.get_deployment = MagicMock(
-        return_value=Deployment("test-model", {"model": "test-model"})
+        return_value=Deployment("test-model", {"model": f"openai/{model}"})
     )
     return router
 

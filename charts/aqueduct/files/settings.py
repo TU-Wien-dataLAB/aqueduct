@@ -141,6 +141,8 @@ AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(
     os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 1024)
 )
 AQUEDUCT_FILES_API_EXPIRY_DAYS = int(os.environ.get("AQUEDUCT_FILES_API_EXPIRY_DAYS", 7))
+# For now, set it to the (hard-coded) limit enforced in the code
+DATA_UPLOAD_MAX_MEMORY_SIZE = 32 * 1024 * 1024
 
 AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(
     os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES", 15)
@@ -360,4 +362,4 @@ LOGGING = {
 if TESTING:
     logger = logging.getLogger("aqueduct")
     logging.disable(logging.NOTSET)
-    logger.setLevel(logging.CRITICAL)
+    logger.setLevel(logging.DEBUG)

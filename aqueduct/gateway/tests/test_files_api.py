@@ -100,6 +100,7 @@ class TestFilesAPI(GatewayFilesTestCase):
             self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers
         )
         self.assertEqual(resp.status_code, 413)
+        self.assertIn("exceeds maximum size", resp.json()["error"])
 
     def test_not_found_cases(self):
         """GET/DELETE on nonexistent file returns 404."""

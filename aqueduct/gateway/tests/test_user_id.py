@@ -13,7 +13,7 @@ from openai.types.audio import Transcription
 
 from gateway.tests.utils.base import get_mock_router
 from gateway.tests.utils.mcp import MCPLiveServerTestCase
-from management.models import Request
+from management.models import FileObject, Request, Token
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
@@ -30,25 +30,26 @@ class TestUserId(MCPLiveServerTestCase):
         cls.model = "test-model"
         cls.multipart_headers = {"Authorization": f"Bearer {cls.AQUEDUCT_ACCESS_TOKEN}"}
 
-    # def test_batches_with_user_id(self):
-    #     token = Token.objects.first()
-    #     file_obj = FileObject.objects.create(bytes=1, created_at=42, token=token, purpose="batch")
-    #
-    #     url = reverse("gateway:batches")
-    #     user_id = "testuser"
-    #     payload = {
-    #         "input_file_id": file_obj.id,
-    #         "completion_window": "24h",
-    #         "endpoint": reverse("gateway:v1_completions"), "user_id": user_id}
-    #     # with patch("gateway.views.batches.TypeAdapter"), patch("gateway.views.batches.BatchService.create_batch"):
-    #     resp = self.client.post(
-    #         url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
-    #     )
-    #
-    #     self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
-    #     req = Request.objects.last()
-    #     TODO: the batches endpoints don't use the `parse_body` decorator!
-    #     self.assertEqual(req.user_id, user_id)
+    def test_batches_with_user_id(self):
+        token = Token.objects.first()
+        file_obj = FileObject.objects.create(bytes=1, created_at=42, token=token, purpose="batch")
+
+        url = reverse("gateway:batches")
+        user_id = "testuser"
+        payload = {
+            "input_file_id": file_obj.id,
+            "completion_window": "24h",
+            "endpoint": reverse("gateway:v1_completions"),
+            "user_id": user_id,
+        }
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.last()
+        self.assertEqual(req.user_id, user_id)
 
     def test_completions_with_user_id(self):
         url = reverse("gateway:completions")

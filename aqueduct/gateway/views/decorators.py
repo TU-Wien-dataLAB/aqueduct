@@ -190,26 +190,6 @@ def parse_body(model: TypeAdapter):
                     {"error": f"Failed to parse the request body: {str(e)}"}, status=400
                 )
 
-            # try:
-            #     expected_fields = set(validated_data.keys())
-            # except AttributeError:
-            #     expected_fields = set(validated_data.model_fields.keys())
-            # extra_fields = set(data.keys()) - expected_fields
-            # if extra_fields:
-            #     # Sending additional kwargs would cause an exception, so we prevent this
-            #     log.error(
-            #         f"{model} got unexpected kwargs from request body: {', '.join(extra_fields)}."
-            #     )
-            #    # Transcriptions: language, model, file - these are sent in (some of?) the tests;
-            #    #   also: response_format, language in some of the tests;
-            #    # Images cannot handle extra fields;
-            #    # MCP gets extra fields, but it cannot handle pdb breakpoints, I didn't investigate
-
-            #    # return JsonResponse(
-            #    #     {"error": f"Got unexpected kwargs in request body: {', '.join(extra_fields)}."},
-            #    #     status=400,
-            #    # )
-
             # If there are files sent with the request (i.e. content type is "multipart/form-data"),
             # update bytes to BytesIO because pydantic TypeAdapter has problems with BytesIO.
             # OpenAI usually expects a name for the file object (not just bytes).

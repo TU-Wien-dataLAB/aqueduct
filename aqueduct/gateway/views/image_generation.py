@@ -57,18 +57,6 @@ async def image_generation(
     # update if it was None
     pydantic_model["response_format"] = response_format
 
-    # data = TypeAdapter(ImageGenerateParamsNonStreaming).validate_python(pydantic_model)
-    # expected_fields = set(data.keys())
-    # extra_fields = set(pydantic_model.keys()) - expected_fields
-    # if extra_fields:
-    #     # Sending additional kwargs would cause an exception
-    #     raise BadRequestError(
-    #         f"Got unexpected kwargs in request body: {', '.join(extra_fields)}.",
-    #         pydantic_model.get("model"),
-    #         llm_provider=None,
-    #     )
-    # # -> will fail because we set "timeout" in `parse_body`
-
     model: str = pydantic_model.get("model", "unknown")
     try:
         client: openai.AsyncClient = get_openai_client(model)

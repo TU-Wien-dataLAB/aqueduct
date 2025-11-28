@@ -1,11 +1,12 @@
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from aqueduct.celery import delete_expired_files_and_batches
 from gateway.tests.utils.base import GatewayFilesTestCase
-from management.models import FileObject
+from management.models import FileObject, Token
 
 
 class TestFilesAPI(GatewayFilesTestCase):
@@ -91,8 +92,9 @@ class TestFilesAPI(GatewayFilesTestCase):
         )
         self.assertEqual(resp.status_code, 200)
 
+    @override_settings(AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB=1)
     def test_oversize_file(self):
-        """File >8MB should be rejected."""
+        """File bigger than `AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB` should be rejected."""
         max_mb = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB
         big = b"a" * (max_mb * 1024 * 1024 + 1)
         f = SimpleUploadedFile("big.jsonl", big, content_type="application/json")
@@ -101,6 +103,29 @@ class TestFilesAPI(GatewayFilesTestCase):
         )
         self.assertEqual(resp.status_code, 413)
         self.assertIn("exceeds maximum size", resp.json()["error"])
+
+    @override_settings(AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB=1)
+    def test_exceeded_storage_per_token(self):
+        """Uploading a file when total storage per token is exceeded should fail."""
+        token = Token.objects.first()
+
+        # Setup: Create some files assigned to the token; 1 MB in total
+        FileObject.objects.bulk_create(
+            [
+                FileObject(bytes=512 * 1024, created_at=42, token=token, purpose="batch"),
+                FileObject(bytes=512 * 1024, created_at=43, token=token, purpose="batch"),
+            ]
+        )
+
+        content = b"a" * 1024  # 1 kB
+        upload_file = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
+        # Upload file
+        resp = self.client.post(
+            self.url_files, {"file": upload_file, "purpose": "user_data"}, headers=self.headers
+        )
+
+        self.assertEqual(resp.status_code, 413, resp.json())
+        self.assertIn("Total files size exceeds 1MB limit", resp.json()["error"])
 
     def test_not_found_cases(self):
         """GET/DELETE on nonexistent file returns 404."""

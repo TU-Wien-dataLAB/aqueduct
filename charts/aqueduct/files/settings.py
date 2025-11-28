@@ -36,11 +36,6 @@ TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split()
 
-# For now, set it to the (hard-coded) limit enforced in the code
-# DATA_UPLOAD_MAX_MEMORY_SIZE = 32 * 1024 * 1024 + 1024  # 32 MB + 1 MB buffer
-# For now, disable max body size check
-DATA_UPLOAD_MAX_MEMORY_SIZE = None
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -151,6 +146,10 @@ AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB = int(os.environ.get("AQUEDUCT_CHAT_C
 AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB = int(
     os.environ.get("AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB", 32)
 )
+# This variable is in bytes, unlike the Aqueduct-specific size limits!
+DATA_UPLOAD_MAX_MEMORY_SIZE = max(
+    AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB, AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB,
+) * 1024 * 1024
 
 AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(
     os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES", 15)

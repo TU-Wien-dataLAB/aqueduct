@@ -106,7 +106,7 @@ class TestFilesAPI(GatewayFilesTestCase):
 
     @override_settings(AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB=1)
     def test_exceeded_total_files_size(self):
-        """..."""
+        """Uploading files with total size bigger than `AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB` should fail."""
         content = b"a" * (600 * 1024)  # 600 kB => two such files exceed the limit of 1 MB
         data = {
             "test_file_1": SimpleUploadedFile("test_file_1.txt", content),

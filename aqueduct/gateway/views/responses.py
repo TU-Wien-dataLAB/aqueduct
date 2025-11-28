@@ -19,7 +19,13 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import _get_token_usage, _openai_stream, oai_client_from_body
+from .utils import (
+    ResponseRegistrationWrapper,
+    _get_token_usage,
+    _openai_stream,
+    oai_client_from_body,
+    register_response_in_cache,
+)
 
 
 @csrf_exempt
@@ -47,10 +53,15 @@ async def create_response(
 
     if isinstance(resp, AsyncStream):
         return StreamingHttpResponse(
-            streaming_content=_openai_stream(stream=resp, request_log=request_log),
+            streaming_content=ResponseRegistrationWrapper(
+                streaming_content=_openai_stream(stream=resp, request_log=request_log),
+                model=model_relay,
+                email=token.user.email,
+            ),
             content_type="text/event-stream",
         )
     elif isinstance(resp, Response):
+        register_response_in_cache(resp.id, model=model_relay, email=token.user.email)
         data = resp.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)
         return JsonResponse(data=data, status=200)

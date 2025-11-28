@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from contextlib import contextmanager
 from typing import Any, AsyncGenerator
@@ -6,7 +7,7 @@ from typing import Any, AsyncGenerator
 import httpx
 import litellm
 import openai
-from django.core.cache import cache
+from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
 from litellm import TextCompletionStreamWrapper
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
@@ -14,6 +15,8 @@ from openai import AsyncStream
 
 from gateway.config import get_openai_client, get_router
 from management.models import Request, Usage
+
+log = logging.getLogger("aqueduct")
 
 
 def _get_token_usage(content: bytes | dict) -> Usage:
@@ -133,3 +136,73 @@ def oai_client_from_body(
 
     model_relay, provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
     return client, model_relay
+
+
+class ResponseRegistrationWrapper:
+    """Wraps streaming content to register response on first chunk."""
+
+    def __init__(self, streaming_content, model: str, email: str):
+        self.streaming_content = streaming_content
+        self.model_name = model
+        self.user_email = email
+        self._registered = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            # Iterate through the streaming content
+            if hasattr(self.streaming_content, "__anext__"):
+                chunk = await self.streaming_content.__anext__()
+            else:
+                # Handle iterator-like objects
+                chunk = next(self.streaming_content)
+
+            if not self._registered and chunk:
+                response_id = self.extract_response_id_from_chunk(chunk)
+                if response_id:
+                    register_response_in_cache(response_id, self.model_name, self.user_email)
+                    self._registered = True
+
+            return chunk
+        except StopAsyncIteration:
+            raise
+        except StopIteration:
+            raise StopAsyncIteration
+
+    @staticmethod
+    def extract_response_id_from_chunk(chunk: bytes) -> str | None:
+        """Extract response ID from SSE chunk containing 'response.created' event."""
+        try:
+            chunk_str = chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)
+            # Parse SSE format: "data: {json}"
+            for line in chunk_str.split("\n"):
+                if line.startswith("data: ") and "response.created" in line:
+                    json_data = json.loads(line[6:])  # Remove "data: " prefix
+                    if json_data.get("type") == "response.created":
+                        return json_data.get("response", {}).get("id")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            pass
+        return None
+
+
+def register_response_in_cache(response_id: str | None, model: str, email: str):
+    """Registers a response in the cache for later retrieval."""
+    if not response_id:
+        log.warning(f"Missing response data: id={response_id}, model={model}")
+        raise ValueError("Missing response_id")
+
+    cache_key = f"response:{response_id}"
+    cache_value = {"model": model, "email": email}
+
+    response_cache = caches["default"]
+    response_cache.set(cache_key, cache_value, timeout=3600)
+    log.debug(f"Registered response {response_id} for user {email} with model {model}")
+
+
+def get_response_from_cache(response_id: str) -> dict | None:
+    """Retrieves a response from the cache."""
+    cache_key = f"response:{response_id}"
+    response_cache = caches["default"]
+    return response_cache.get(cache_key)

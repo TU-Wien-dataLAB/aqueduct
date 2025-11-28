@@ -13,6 +13,7 @@ import openai
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib import auth
+from django.core.cache import cache
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Sum
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
@@ -21,7 +22,6 @@ from mcp.types import JSONRPCMessage
 from openai.types.chat import ChatCompletionStreamOptionsParam
 from openai.types.chat.chat_completion_content_part_param import FileFile
 from pydantic import TypeAdapter, ValidationError
-from tos.middleware import cache
 from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request

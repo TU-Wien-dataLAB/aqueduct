@@ -203,3 +203,10 @@ def get_response_from_cache(response_id: str) -> dict | None:
     cache_key = f"response:{response_id}"
     response_cache = caches["default"]
     return response_cache.get(cache_key)
+
+
+def delete_response_from_cache(response_id: str):
+    """Deletes a response from the cache."""
+    cache_key = f"response:{response_id}"
+    response_cache = caches["default"]
+    response_cache.delete(cache_key)

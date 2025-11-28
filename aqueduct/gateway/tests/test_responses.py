@@ -65,17 +65,56 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         # Check cache for response registration
         cache_key = f"response:{response_id}"
         cached_data = caches["default"].get(cache_key)
-        if cached_data is not None:
-            self.assertEqual(
-                cached_data.get("model"), self.model, "Cached model name should match request model"
-            )
-            self.assertEqual(
-                cached_data.get("email"),
-                "me@example.com",
-                "Cached user email should match current user",
-            )
-        else:
-            self.fail(f"Response {response_id} should be registered in cache with key {cache_key}")
+        self.assertEqual(
+            cached_data.get("model"), self.model, "Cached model name should match request model"
+        )
+        self.assertEqual(
+            cached_data.get("email"),
+            "me@example.com",
+            "Cached user email should match current user",
+        )
+
+        # Test GET response endpoint
+        get_response = self.client.get(f"/v1/responses/{response_id}", headers=headers)
+        self.assertEqual(
+            get_response.status_code,
+            200,
+            f"GET response should return 200, got {get_response.status_code}: {get_response.content}",
+        )
+        get_data = get_response.json()
+        self.assertIn("id", get_data)
+        self.assertEqual(get_data["id"], response_id)
+        self.assertEqual(get_data["object"], "response")
+
+        # Test GET response input_items endpoint
+        input_items_response = self.client.get(
+            f"/v1/responses/{response_id}/input_items", headers=headers
+        )
+        self.assertEqual(
+            input_items_response.status_code,
+            200,
+            f"GET input_items should return 200, got {input_items_response.status_code}: {input_items_response.content}",
+        )
+        input_items_data = input_items_response.json()
+        self.assertIsInstance(input_items_data, dict)
+        self.assertIn("data", input_items_data)
+        self.assertIsInstance(input_items_data["data"], list)
+
+        # Test DELETE response endpoint
+        delete_response = self.client.delete(f"/v1/responses/{response_id}", headers=headers)
+        self.assertEqual(
+            delete_response.status_code,
+            200,
+            f"DELETE response should return 200, got {delete_response.status_code}: {delete_response.content}",
+        )
+
+        # Verify response is deleted - GET should now return 404
+        verify_get_response = self.client.get(f"/v1/responses/{response_id}", headers=headers)
+        self.assertEqual(
+            verify_get_response.status_code,
+            404,
+            f"GET after DELETE should return 404, got {verify_get_response.status_code}: {verify_get_response.content}",
+        )
 
     @async_to_sync
     async def test_create_response_streaming(self):
@@ -173,3 +212,70 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
             )
         else:
             self.fail(f"Response {response_id} should be registered in cache with key {cache_key}")
+
+        # Test GET response endpoint for streaming response
+        get_response = await self.async_client.get(f"/v1/responses/{response_id}", headers=headers)
+        self.assertEqual(
+            get_response.status_code,
+            200,
+            f"GET response should return 200, got {get_response.status_code}: {get_response.content}",
+        )
+        get_data = get_response.json()
+        self.assertIn("id", get_data)
+        self.assertEqual(get_data["id"], response_id)
+        self.assertEqual(get_data["object"], "response")
+
+        # Test GET response input_items endpoint for streaming response
+        input_items_response = await self.async_client.get(
+            f"/v1/responses/{response_id}/input_items", headers=headers
+        )
+        self.assertEqual(
+            input_items_response.status_code,
+            200,
+            f"GET input_items should return 200, got {input_items_response.status_code}: {input_items_response.content}",
+        )
+        input_items_data = input_items_response.json()
+        self.assertIsInstance(input_items_data, dict)
+        self.assertIn("data", input_items_data)
+        self.assertIsInstance(input_items_data["data"], list)
+
+        # Test DELETE response endpoint for streaming response
+        delete_response = await self.async_client.delete(
+            f"/v1/responses/{response_id}", headers=headers
+        )
+        self.assertEqual(
+            delete_response.status_code,
+            200,
+            f"DELETE response should return 200, got {delete_response.status_code}: {delete_response.content}",
+        )
+
+        # Verify streaming response is deleted - GET should now return 404
+        verify_get_response = await self.async_client.get(
+            f"/v1/responses/{response_id}", headers=headers
+        )
+        self.assertEqual(
+            verify_get_response.status_code,
+            404,
+            f"GET after DELETE should return 404, got {verify_get_response.status_code}: {verify_get_response.content}",
+        )
+
+    def test_get_response_invalid_id(self):
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        response = self.client.get("/v1/responses/invalid-id", headers=headers)
+        self.assertEqual(
+            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
+        )
+
+    def test_delete_response_invalid_id(self):
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        response = self.client.delete("/v1/responses/invalid-id", headers=headers)
+        self.assertEqual(
+            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
+        )
+
+    def test_input_items_response_invalid_id(self):
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        response = self.client.get("/v1/responses/invalid-id/input_items", headers=headers)
+        self.assertEqual(
+            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
+        )

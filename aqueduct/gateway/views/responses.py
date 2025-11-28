@@ -24,6 +24,7 @@ from .utils import (
     ResponseRegistrationWrapper,
     _get_token_usage,
     _openai_stream,
+    delete_response_from_cache,
     get_response_from_cache,
     oai_client_from_body,
     register_response_in_cache,
@@ -86,9 +87,17 @@ async def response(request: ASGIRequest, response_id: str, token: Token, *args, 
     client, model_relay = oai_client_from_body(model, request)
 
     if request.method == "GET":
-        return await client.responses.retrieve(response_id=response_id)
+        resp = await client.responses.retrieve(response_id=response_id)
+        data = resp.model_dump(exclude_none=True, exclude_unset=True)
+        return JsonResponse(data=data, status=200)
     elif request.method == "DELETE":
-        return await client.responses.delete(response_id=response_id)
+        resp = await client.responses.delete(response_id=response_id)
+        delete_response_from_cache(response_id=response_id)
+        if resp is None:
+            # BUG in openai python sdk: https://github.com/openai/openai-openapi/issues/490
+            return JsonResponse({"deleted": True}, status=200)
+        data = resp.model_dump(exclude_none=True, exclude_unset=True)
+        return JsonResponse(data=data, status=200)
 
 
 @csrf_exempt
@@ -105,4 +114,6 @@ async def get_response_input_items(
     response = get_response_from_cache(response_id)
     model = response["model"]
     client, model_relay = oai_client_from_body(model, request)
-    return await client.responses.input_items.list(response_id=response_id)
+    resp = await client.responses.input_items.list(response_id=response_id)
+    data = resp.model_dump(exclude_none=True, exclude_unset=True)
+    return JsonResponse(data=data, status=200)

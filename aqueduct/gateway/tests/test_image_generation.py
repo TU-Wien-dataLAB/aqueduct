@@ -233,10 +233,8 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         mock_image_response = ImagesResponse(data=[mock_image_object], created=123456789)
 
         with patch("gateway.config.get_router_config", return_value=mock_config):
-            with patch("gateway.views.image_generation.get_router") as mock_router:
-                with patch(
-                    "gateway.views.image_generation.litellm.get_llm_provider"
-                ) as mock_get_llm_provider:
+            with patch("gateway.views.utils.get_router") as mock_router:
+                with patch("gateway.views.utils.litellm.get_llm_provider") as mock_get_llm_provider:
                     deployment_mock = MagicMock()
                     deployment_mock.litellm_params.model = f"openai/{self.model}"
                     mock_router.get_deployment = MagicMock(return_value=deployment_mock)
@@ -244,7 +242,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
                     # Mock litellm.get_llm_provider to return the relay model and provider
                     mock_get_llm_provider.return_value = (self.model, "openai", None, None)
 
-                    with patch("gateway.views.image_generation.get_openai_client") as mock_client:
+                    with patch("gateway.views.utils.get_openai_client") as mock_client:
                         # Mock the client's images.generate method to return our mock response
                         mock_openai_client = AsyncMock()
                         mock_openai_client.images.generate.return_value = mock_image_response

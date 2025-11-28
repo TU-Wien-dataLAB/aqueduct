@@ -133,11 +133,12 @@ def parse_body(model: TypeAdapter):
     Handles requests with "application/json" and "multipart/form-data" content types.
     The "pydantic_model" dict with parsed and validated data is passed in the kwargs
     to the view function.
-    If the body contains the field "user_id", it is removed from the parsed data.
-    Additionally, the timeout for the router is added to the parsed data.
+    Additionally, the timeout for the router is added to the parsed data dict.
+    If the body contains the field "user_id", it is removed from the parsed data
+    and added to kwargs instead.
 
     Args:
-        model: `TypeAdapter` of the pydantic model used for request body validation.
+        model: The pydantic model used for request body validation.
     Returns:
         Decorator function that wraps async view functions.
     """

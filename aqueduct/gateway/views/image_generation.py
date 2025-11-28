@@ -8,7 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from litellm import BadRequestError
 from openai.types import ImageGenerateParams, ImagesResponse
-from pydantic import TypeAdapter
+from pydantic import ConfigDict, TypeAdapter
 
 from gateway.config import get_openai_client, get_router
 from management.models import Request
@@ -31,7 +31,7 @@ log = logging.getLogger("aqueduct")
 @require_POST
 @token_authenticated(token_auth_only=True)
 @check_limits
-@parse_body(model=TypeAdapter(ImageGenerateParams))
+@parse_body(model=TypeAdapter(ImageGenerateParams, config=ConfigDict(extra="forbid")))
 @log_request
 @resolve_alias
 @check_model_availability

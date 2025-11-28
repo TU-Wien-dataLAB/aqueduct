@@ -214,4 +214,4 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
-        self.assertIn("Unexpected argument in request body", response.json()["error"])
+        self.assertIn("Extra inputs are not permitted", response.json()["error"])

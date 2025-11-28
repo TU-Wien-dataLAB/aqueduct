@@ -72,23 +72,23 @@ async def files(
         return JsonResponse(
             {"error": "Only .jsonl files are currently supported for purpose 'batch'."}, status=400
         )
-    data = uploaded.read()
 
     # Enforce per-token total storage limit from settings
     sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(
         sum_bytes=Sum("bytes")
     )
     current_total = sum_res.get("sum_bytes") or 0
-    max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB * 1024 * 1024
+    max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB * 1024 * 1024
     if current_total + uploaded.size > max_total_bytes:
         return JsonResponse(
             {
                 "error": f"Total files size exceeds "
-                f"{settings.AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB}MB limit."
+                f"{settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB}MB limit."
             },
             status=413,
         )
 
+    data = uploaded.read()
     if purpose == "batch":
         try:
             validate_batch_file(data)

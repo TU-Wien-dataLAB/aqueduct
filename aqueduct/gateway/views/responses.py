@@ -26,7 +26,7 @@ from .utils import _get_token_usage, _openai_stream, oai_client_from_body
 @require_POST
 @token_authenticated(token_auth_only=True)
 @check_limits
-@parse_body(model=TypeAdapter(openai.types.responses.response_create_params.ResponseCreateParams))
+@parse_body(model=TypeAdapter(openai.types.responses.ResponseCreateParams))
 @tos_accepted
 @log_request
 @resolve_alias
@@ -35,9 +35,12 @@ from .utils import _get_token_usage, _openai_stream, oai_client_from_body
 async def create_response(
     request: ASGIRequest, pydantic_model: dict, request_log: Request, token: Token, *args, **kwargs
 ):
-    """Dummy handler for POST /v1/responses"""
+    """Handler for POST /v1/responses - Creates a new response via OpenAI's responses API
 
-    client, model_relay = oai_client_from_body(pydantic_model)
+    This endpoint forwards requests to the OpenAI responses API, handling both streaming
+    and non-streaming responses."""
+
+    client, model_relay = oai_client_from_body(pydantic_model, request)
     pydantic_model["model"] = model_relay
 
     resp: Response | AsyncStream = await client.responses.create(**pydantic_model)

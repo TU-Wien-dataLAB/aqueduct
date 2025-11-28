@@ -3,9 +3,11 @@ import time
 from contextlib import contextmanager
 from typing import Any, AsyncGenerator
 
+import httpx
 import litellm
 import openai
 from django.core.cache import cache
+from django.core.handlers.asgi import ASGIRequest
 from litellm import TextCompletionStreamWrapper
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from openai import AsyncStream
@@ -99,12 +101,21 @@ def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
     return valid
 
 
-def oai_client_from_body(pydantic_model: dict) -> tuple[openai.AsyncClient, str]:
+def oai_client_from_body(
+    pydantic_model: dict, request: ASGIRequest
+) -> tuple[openai.AsyncClient, str]:
     model: str = pydantic_model.get("model", "unknown")
     try:
         client: openai.AsyncClient = get_openai_client(model)
     except ValueError:
-        raise openai.NotFoundError({f"Incompatible model '{model}'!"})
+        raise openai.NotFoundError(
+            message=f"Incompatible model '{model}'!",
+            response=httpx.Response(
+                request=httpx.Request(method=request.method, url=request.build_absolute_uri()),
+                status_code=404,
+            ),
+            body=None,
+        )
 
     router = get_router()
     deployment: litellm.Deployment = router.get_deployment(model_id=model)

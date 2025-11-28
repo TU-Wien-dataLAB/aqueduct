@@ -3,6 +3,8 @@ model_list:
   litellm_params:
     model: openai/gpt-4.1-nano
     api_key: "os.environ/OPENAI_API_KEY"
+  model_info:
+    id: gpt-4.1-nano
 - model_name: text-embedding-ada-002
   litellm_params:
     model: openai/text-embedding-ada-002

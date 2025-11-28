@@ -39,7 +39,7 @@ class TranscriptionCreateParams(RootModel):
 async def transcriptions(
     request: ASGIRequest, pydantic_model: dict, request_log: Request, *args, **kwargs
 ):
-    client, model_relay = oai_client_from_body(pydantic_model, request)
+    client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay
 
     transcription = await client.audio.transcriptions.create(**pydantic_model)

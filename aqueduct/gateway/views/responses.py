@@ -18,11 +18,13 @@ from .decorators import (
     resolve_alias,
     token_authenticated,
     tos_accepted,
+    validate_response_id,
 )
 from .utils import (
     ResponseRegistrationWrapper,
     _get_token_usage,
     _openai_stream,
+    get_response_from_cache,
     oai_client_from_body,
     register_response_in_cache,
 )
@@ -46,7 +48,8 @@ async def create_response(
     This endpoint forwards requests to the OpenAI responses API, handling both streaming
     and non-streaming responses."""
 
-    client, model_relay = oai_client_from_body(pydantic_model, request)
+    model = pydantic_model.get("model")
+    client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay
 
     resp: Response | AsyncStream = await client.responses.create(**pydantic_model)
@@ -55,13 +58,13 @@ async def create_response(
         return StreamingHttpResponse(
             streaming_content=ResponseRegistrationWrapper(
                 streaming_content=_openai_stream(stream=resp, request_log=request_log),
-                model=model_relay,
+                model=model,
                 email=token.user.email,
             ),
             content_type="text/event-stream",
         )
     elif isinstance(resp, Response):
-        register_response_in_cache(resp.id, model=model_relay, email=token.user.email)
+        register_response_in_cache(resp.id, model=model, email=token.user.email)
         data = resp.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)
         return JsonResponse(data=data, status=200)
@@ -74,32 +77,18 @@ async def create_response(
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
+@validate_response_id
 @catch_router_exceptions
 async def response(request: ASGIRequest, response_id: str, token: Token, *args, **kwargs):
     """Combined handler for GET and DELETE /v1/responses/{response_id}"""
+    response = get_response_from_cache(response_id)
+    model = response["model"]
+    client, model_relay = oai_client_from_body(model, request)
+
     if request.method == "GET":
-        return JsonResponse(
-            data={
-                "id": response_id,
-                "object": "response",
-                "created_at": 1700000000,
-                "status": "completed",
-                "model": "gpt-4o",
-                "output": [{"type": "text", "text": f"Dummy response for {response_id}."}],
-                "error": None,
-                "parallel_tool_calls": {"enabled": True},
-                "temperature": 1.0,
-                "max_output_tokens": 1000,
-                "top_p": 1.0,
-                "user": "dummy_user",
-                "metadata": {"dummy_key": "dummy_value"},
-            },
-            status=200,
-        )
+        return await client.responses.retrieve(response_id=response_id)
     elif request.method == "DELETE":
-        return JsonResponse(
-            data={"id": response_id, "object": "response.deleted", "deleted": True}, status=200
-        )
+        return await client.responses.delete(response_id=response_id)
 
 
 @csrf_exempt
@@ -107,24 +96,13 @@ async def response(request: ASGIRequest, response_id: str, token: Token, *args, 
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
+@validate_response_id
 @catch_router_exceptions
 async def get_response_input_items(
     request: ASGIRequest, response_id: str, token: Token, *args, **kwargs
 ):
-    """Dummy handler for GET /v1/responses/{response_id}/input_items"""
-    return JsonResponse(
-        data={
-            "object": "list",
-            "data": [
-                {
-                    "id": f"item_{response_id}_1",
-                    "object": "input_item",
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "text", "text": f"Dummy input for {response_id}."}],
-                    "created_at": 1700000000,
-                }
-            ],
-        },
-        status=200,
-    )
+    """Handler for GET /v1/responses/{response_id}/input_items"""
+    response = get_response_from_cache(response_id)
+    model = response["model"]
+    client, model_relay = oai_client_from_body(model, request)
+    return await client.responses.input_items.list(response_id=response_id)

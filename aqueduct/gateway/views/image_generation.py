@@ -51,7 +51,7 @@ async def image_generation(
     # update if it was None
     pydantic_model["response_format"] = response_format
 
-    client, model_relay = oai_client_from_body(pydantic_model, request)
+    client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay
 
     resp: ImagesResponse = await client.images.generate(**pydantic_model)

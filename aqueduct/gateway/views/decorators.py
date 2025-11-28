@@ -26,7 +26,7 @@ from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
 from gateway.config import resolve_model_alias
-from gateway.views.utils import in_wildcard
+from gateway.views.utils import get_response_from_cache, in_wildcard
 from management.models import FileObject, Request, Token
 
 log = logging.getLogger("aqueduct")
@@ -654,5 +654,24 @@ def parse_jsonrpc_message(view_func):
         kwargs["is_initialize"] = is_initialize
 
         return await view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+def validate_response_id(view_func):
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs):
+        token = kwargs.get("token", None)
+        if not token:
+            return JsonResponse({"error": "Invalid request"}, status=400)
+
+        response = get_response_from_cache(response_id)
+        if not response:
+            return JsonResponse({"error": "Response not found"}, status=404)
+
+        if response["email"] != token.user.email:
+            return JsonResponse({"error": "Response not found"}, status=404)
+
+        return await view_func(request, response_id, *args, **kwargs)
 
     return wrapper

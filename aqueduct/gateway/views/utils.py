@@ -115,10 +115,7 @@ def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
     return valid
 
 
-def oai_client_from_body(
-    pydantic_model: dict, request: ASGIRequest
-) -> tuple[openai.AsyncClient, str]:
-    model: str = pydantic_model.get("model", "unknown")
+def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.AsyncClient, str]:
     try:
         client: openai.AsyncClient = get_openai_client(model)
     except ValueError:

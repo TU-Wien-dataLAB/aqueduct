@@ -101,24 +101,22 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
         except (TypeError, json.JSONDecodeError):
             data[key] = value
 
+    max_file_size_mb = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB
     max_file_bytes = int(settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024)
 
-    max_total_size_mb = 32
+    max_total_size_mb = settings.AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB
     max_total_size_bytes = max_total_size_mb * 1024 * 1024
     total_file_size_bytes = 0
 
     for key, file in request.FILES.items():
         if file.size > max_file_bytes:
             log.error("File in request too large")
-            raise FileSizeError(
-                f"File '{key}' exceeds maximum size of "
-                f"{settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB} MB"
-            )
+            raise FileSizeError(f"File '{key}' exceeds maximum size of {max_file_size_mb}MB")
 
         total_file_size_bytes += file.size
         if total_file_size_bytes > max_total_size_bytes:
             log.error("Files in request too large")
-            raise FileSizeError(f"Total file size exceeds maximum of {max_total_size_mb} MB")
+            raise FileSizeError(f"Total file size exceeds maximum of {max_total_size_mb}MB")
 
         data[key] = file.read()
 

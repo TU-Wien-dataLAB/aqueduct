@@ -44,6 +44,21 @@ urlpatterns = [
     path("v1/batches/<str:batch_id>", views.batch, name="v1_batch"),
     path("batches/<str:batch_id>/cancel", views.batch_cancel, name="batch_cancel"),
     path("v1/batches/<str:batch_id>/cancel", views.batch_cancel, name="v1_batch_cancel"),
+    # Responses endpoints
+    path("responses", views.create_response, name="responses"),
+    path("v1/responses", views.create_response, name="v1_responses"),
+    path("responses/<str:response_id>", views.response, name="response"),
+    path("v1/responses/<str:response_id>", views.response, name="v1_response"),
+    path(
+        "responses/<str:response_id>/input_items",
+        views.get_response_input_items,
+        name="response_input_items",
+    ),
+    path(
+        "v1/responses/<str:response_id>/input_items",
+        views.get_response_input_items,
+        name="v1_response_input_items",
+    ),
     # MCP server endpoints
     path("mcp-servers/<str:name>/mcp", mcp_views.mcp_server, name="mcp_server"),
 ]

@@ -3,11 +3,14 @@ import time
 from contextlib import contextmanager
 from typing import Any, AsyncGenerator
 
+import litellm
+import openai
 from django.core.cache import cache
 from litellm import TextCompletionStreamWrapper
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from openai import AsyncStream
 
+from gateway.config import get_openai_client, get_router
 from management.models import Request, Usage
 
 
@@ -94,3 +97,17 @@ def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
                 if value.startswith(base_origin + ":"):
                     return True
     return valid
+
+
+def oai_client_from_body(pydantic_model: dict) -> tuple[openai.AsyncClient, str]:
+    model: str = pydantic_model.get("model", "unknown")
+    try:
+        client: openai.AsyncClient = get_openai_client(model)
+    except ValueError:
+        raise openai.NotFoundError({f"Incompatible model '{model}'!"})
+
+    router = get_router()
+    deployment: litellm.Deployment = router.get_deployment(model_id=model)
+
+    model_relay, provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
+    return client, model_relay

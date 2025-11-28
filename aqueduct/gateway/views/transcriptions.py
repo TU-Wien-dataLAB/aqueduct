@@ -1,4 +1,3 @@
-import litellm
 import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
@@ -6,7 +5,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from pydantic import ConfigDict, RootModel, TypeAdapter
 
-from gateway.config import get_openai_client, get_router
 from management.models import Request
 
 from .decorators import (
@@ -19,7 +17,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import _get_token_usage, _openai_stream
+from .utils import _get_token_usage, _openai_stream, oai_client_from_body
 
 
 class TranscriptionCreateParams(RootModel):
@@ -39,22 +37,9 @@ class TranscriptionCreateParams(RootModel):
 @check_model_availability
 @catch_router_exceptions
 async def transcriptions(
-    request: ASGIRequest,
-    pydantic_model: openai.types.audio.TranscriptionCreateParams,
-    request_log: Request,
-    *args,
-    **kwargs,
+    request: ASGIRequest, pydantic_model: dict, request_log: Request, *args, **kwargs
 ):
-    model: str = pydantic_model.get("model", "unknown")
-    try:
-        client: openai.AsyncClient = get_openai_client(model)
-    except ValueError:
-        return JsonResponse({"error": f"Incompatible model '{model}'!"}, status=400)
-
-    router = get_router()
-    deployment: litellm.Deployment = router.get_deployment(model_id=model)
-
-    model_relay, provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
+    client, model_relay = oai_client_from_body(pydantic_model)
     pydantic_model["model"] = model_relay
 
     transcription = await client.audio.transcriptions.create(**pydantic_model)

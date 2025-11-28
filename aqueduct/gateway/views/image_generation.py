@@ -1,4 +1,3 @@
-import litellm
 import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
@@ -8,7 +7,6 @@ from litellm import BadRequestError
 from openai.types import ImagesResponse
 from pydantic import TypeAdapter
 
-from gateway.config import get_openai_client, get_router
 from management.models import Request
 
 from .decorators import (
@@ -20,7 +18,7 @@ from .decorators import (
     resolve_alias,
     token_authenticated,
 )
-from .utils import _get_token_usage
+from .utils import _get_token_usage, oai_client_from_body
 
 
 @csrf_exempt
@@ -33,11 +31,7 @@ from .utils import _get_token_usage
 @check_model_availability
 @catch_router_exceptions
 async def image_generation(
-    request: ASGIRequest,
-    pydantic_model: openai.types.ImageGenerateParams,
-    request_log: Request,
-    *args,
-    **kwargs,
+    request: ASGIRequest, pydantic_model: dict, request_log: Request, *args, **kwargs
 ):
     if pydantic_model.get("stream"):
         # LiteLLM cannot parse a Stream response, so we don't support streaming for now
@@ -57,16 +51,7 @@ async def image_generation(
     # update if it was None
     pydantic_model["response_format"] = response_format
 
-    model: str = pydantic_model.get("model", "unknown")
-    try:
-        client: openai.AsyncClient = get_openai_client(model)
-    except ValueError:
-        return JsonResponse({"error": f"Incompatible model '{model}'!"}, status=400)
-
-    router = get_router()
-    deployment: litellm.Deployment = router.get_deployment(model_id=model)
-
-    model_relay, provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
+    client, model_relay = oai_client_from_body(pydantic_model)
     pydantic_model["model"] = model_relay
 
     resp: ImagesResponse = await client.images.generate(**pydantic_model)

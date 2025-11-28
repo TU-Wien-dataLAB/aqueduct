@@ -79,6 +79,13 @@ For other installation methods, check out the [Getting Started Guide](https://tu
 
 ## Testing
 
+> **NOTE:**  
+> In order to run MCP tests, you need the
+> [`@modelcontextprotocol/server-everything`](https://www.npmjs.com/package/@modelcontextprotocol/server-everything)
+> Node.js package.  
+> It will be automatically installed on first run of the tests! It also means you need to have Node.js
+> and npm installed.
+
 ```bash
 cd aqueduct && python manage.py test
 ```

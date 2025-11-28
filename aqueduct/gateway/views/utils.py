@@ -30,13 +30,17 @@ def _get_token_usage(content: bytes | dict) -> Usage:
     """
 
     if isinstance(content, dict):
-        usage_dict = content.get("usage", None)
+        data = content
     else:
         try:
-            usage_dict = json.loads(content).get("usage", None)
+            data = json.loads(content)
         except json.JSONDecodeError:
             return Usage(input_tokens=0, output_tokens=0)
 
+    # Handle responses API format (top-level usage or in response field)
+    usage_dict = data.get("usage", None)
+    if not usage_dict and "response" in data:
+        usage_dict = data["response"].get("usage", None)
     if isinstance(usage_dict, dict):
         input_tokens = usage_dict.get("prompt_tokens") or usage_dict.get("input_tokens", 0)
         output_tokens = usage_dict.get("completion_tokens") or usage_dict.get("output_tokens", 0)
@@ -54,7 +58,14 @@ def _openai_stream(
         token_usage = Usage(0, 0)
         async for chunk in stream:
             chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
-            token_usage += _get_token_usage(chunk_str.encode("utf-8"))
+
+            # Extract token usage from this chunk
+            chunk_usage = _get_token_usage(chunk_str.encode("utf-8"))
+
+            # Only update if we got actual usage data (non-zero tokens)
+            if chunk_usage.input_tokens > 0 or chunk_usage.output_tokens > 0:
+                token_usage = chunk_usage
+
             try:
                 yield f"data: {chunk_str}\n\n"
             except Exception as e:

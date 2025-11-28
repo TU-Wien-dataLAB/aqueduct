@@ -1,4 +1,5 @@
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
@@ -6,7 +7,8 @@ from django.core.cache import caches
 
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from management.models import Request
+from gateway.views.utils import register_response_in_cache
+from management.models import Request, Token
 
 User = get_user_model()
 
@@ -279,3 +281,88 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(
             response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
         )
+
+    def test_user_response_isolation_via_id(self):
+        """
+        Test that two distinct users cannot access each other's responses via ID.
+        Tests both GET, DELETE and input_items endpoints.
+        Follows the flow: user1 creates response -> user1 accesses -> user2 tries and fails
+        """
+        # Mock OpenAI client for response creation
+        with patch("gateway.views.utils.get_openai_client") as mock_client:
+            mock_openai_client = AsyncMock()
+
+            response_id = "resp_test123"
+            register_response_in_cache(response_id, model=self.model, email="me@example.com")
+
+            # Mock response for retrieve/delete/input_items
+            mock_retrieve_response = MagicMock()
+            mock_retrieve_response.model_dump.return_value = {
+                "id": "resp_test123",
+                "status": "completed",
+            }
+            mock_openai_client.responses.retrieve.return_value = mock_retrieve_response
+            mock_openai_client.responses.delete.return_value = mock_retrieve_response
+            mock_openai_client.responses.input_items.list.return_value = mock_retrieve_response
+
+            mock_client.return_value = mock_openai_client
+
+            # Step 1: User1 (me@example.com) can access their own response
+            headers_me = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+
+            # Step 2: User1 can access their own response
+            get_response_me = self.client.get(f"/v1/responses/{response_id}", headers=headers_me)
+            self.assertEqual(
+                get_response_me.status_code,
+                200,
+                f"User me@example.com should access their own response, got {get_response_me.status_code}",
+            )
+
+            # Step 3: User2 (someone@example.com) cannot access User1's response
+            # Create a token for someone@example.com
+            user_someone = User.objects.get(email="someone@example.com")
+            token_someone = Token(name="TestToken", user=user_someone)
+            token_someone_key = token_someone._set_new_key()
+            token_someone.save()
+
+            headers_someone = _build_chat_headers(token_someone_key)
+
+            # Test GET endpoint isolation
+            get_response_someone = self.client.get(
+                f"/v1/responses/{response_id}", headers=headers_someone
+            )
+            self.assertEqual(
+                get_response_someone.status_code,
+                404,
+                f"User someone@example.com should not access me@example.com's response, got {get_response_someone.status_code}",
+            )
+
+            # Test DELETE endpoint isolation
+            delete_response_someone = self.client.delete(
+                f"/v1/responses/{response_id}", headers=headers_someone
+            )
+            self.assertEqual(
+                delete_response_someone.status_code,
+                404,
+                f"User someone@example.com should not delete me@example.com's response, got {delete_response_someone.status_code}",
+            )
+
+            # Test input_items endpoint isolation
+            input_items_response = self.client.get(
+                f"/v1/responses/{response_id}/input_items", headers=headers_someone
+            )
+            self.assertEqual(
+                input_items_response.status_code,
+                404,
+                f"User someone@example.com should not access me@example.com's input_items, got {input_items_response.status_code}",
+            )
+
+            # Clean up - User1 should be able to delete their own response
+            delete_response_me = self.client.delete(
+                f"/v1/responses/{response_id}", headers=headers_me
+            )
+            self.assertEqual(
+                delete_response_me.status_code,
+                200,
+                "User1 should be able to delete their own response",
+            )

@@ -16,16 +16,18 @@ from django.views.decorators.http import require_http_methods
 from mcp.client.streamable_http import StreamableHTTPTransport
 from mcp.shared.message import SessionMessage
 from mcp.types import CONNECTION_CLOSED, ErrorData, JSONRPCError, JSONRPCMessage, JSONRPCRequest
+from pydantic import TypeAdapter
 
 from gateway.config import get_mcp_config
 from gateway.views.decorators import (
     check_mcp_server_availability,
     log_request,
     mcp_transport_security,
+    parse_body,
     parse_jsonrpc_message,
     token_authenticated,
+    tos_accepted,
 )
-from management.models import Request, Token
 
 log = logging.getLogger("aqueduct")
 
@@ -678,20 +680,22 @@ async def handle_delete_request(name: str, session_id: str | None = None) -> Jso
 
 
 @csrf_exempt
-@parse_jsonrpc_message
 @require_http_methods(["GET", "POST", "DELETE"])
 @token_authenticated(token_auth_only=True)
+@tos_accepted
+@parse_body(model=TypeAdapter(JSONRPCMessage))
+@parse_jsonrpc_message
 @check_mcp_server_availability
 @mcp_transport_security
 @log_request
 async def mcp_server(
     request: ASGIRequest,
-    token: Token,
-    request_log: Request | None,
-    name,
+    name: str | None,
     json_rpc_message: JSONRPCMessage | None = None,
     session_id: str | None = None,
     is_initialize: bool = False,
+    *args,
+    **kwargs,
 ):
     """
     Handles GET, POST and DELETE requests for /mcp-servers/{name}/mcp path.

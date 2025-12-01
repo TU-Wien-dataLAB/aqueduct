@@ -11,8 +11,11 @@ from unittest.mock import patch
 from asgiref.sync import sync_to_async
 from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
+from django.test import override_settings
 from mcp import ClientSession
 from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_client
+
+from management.models import Request
 
 MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {
@@ -61,12 +64,14 @@ class MCPDaphneProcess(DaphneProcess):
             settings.ALLOWED_HOSTS.append("malicious.com")
 
         print(
-            f"MCP Security: Protection={settings.MCP_ENABLE_DNS_REBINDING_PROTECTION}, Hosts={settings.MCP_ALLOWED_HOSTS}"
+            f"MCP Security: Protection={settings.MCP_ENABLE_DNS_REBINDING_PROTECTION}, "
+            f"Hosts={settings.MCP_ALLOWED_HOSTS}"
         )
 
         super().run()
 
 
+@override_settings(OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/")
 class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     """
     Live server test case for MCP endpoints using Django's LiveServerTestCase.
@@ -101,10 +106,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     async def assertRequestLogged(self, n: int = 1):
         # Check that (only) initialize request was logged
-        from management.models import Request
-
-        mcp_requests = await sync_to_async(list)(Request.objects.all())
-        self.assertEqual(len(mcp_requests), n, f"There should be exactly {n} logged MCP request.")
+        mcp_requests = await sync_to_async(Request.objects.count)()
+        self.assertEqual(mcp_requests, n, f"There should be exactly {n} logged MCP request.")
 
     @classmethod
     def _write_mcp_config(cls):
@@ -138,7 +141,12 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             env = os.environ.copy()
             env["PORT"] = str(port)
             cls.mcp_server_process = subprocess.Popen(
-                ["npx", "@modelcontextprotocol/server-everything@2025.11.25", "streamableHttp"],
+                [
+                    "npx",
+                    "-y",
+                    "@modelcontextprotocol/server-everything@2025.11.25",
+                    "streamableHttp",
+                ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -197,7 +205,16 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls._write_mcp_config()
-        cls._start_mcp_server()
+        try:
+            cls._start_mcp_server()
+        except RuntimeError as err:
+            print(err)
+            print(f"Failed to connect to the MCP server! Interrupting the {cls.__name__}")
+            # In case of any errors during setup, `tearDownClass` is not called, which means that
+            # the Daphne process (child process of the main test process) is *not* terminated and
+            # continues to run in the background even after the test process exists.
+            cls.tearDownClass()
+            raise
 
     @classmethod
     def tearDownClass(cls):

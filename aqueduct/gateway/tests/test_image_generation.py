@@ -1,6 +1,8 @@
 import json
+from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from django.urls import reverse
 from openai.types.image import Image
 from openai.types.images_response import ImagesResponse
 
@@ -14,12 +16,12 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
     """Test the image generation endpoint."""
 
     model = "dall-e-2"
-    url = "/images/generations"
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+        cls.url = reverse("gateway:image_generation")
 
     def test_image_generation_endpoint_defaults(self):
         """Test basic image generation with valid parameters."""
@@ -37,7 +39,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
         response_json = response.json()
         self.assertIn("data", response_json, "Response should contain 'data' field")
@@ -76,7 +78,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
         response_json = response.json()
         self.assertIn("data", response_json, "Response should contain 'data' field")
@@ -112,7 +114,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_image_generation_endpoint_empty_prompt(self):
         """Test image generation endpoint with empty prompt."""
@@ -131,7 +133,8 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid 'prompt': empty string", response.json()["error"])
 
     def test_image_generation_endpoint_non_image_model(self):
         """Test image generation endpoint with a model that doesn't support image generation."""
@@ -145,8 +148,8 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Incompatible model 'gpt-4.1-nano'!", response.json()["error"])
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid value: 'gpt-4.1-nano'", response.json()["error"])
 
     def test_image_generation_endpoint_with_multiple_images(self):
         """Test image generation endpoint with multiple images (n parameter)."""
@@ -165,7 +168,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
         response_json = response.json()
         self.assertIn("data", response_json, "Response should contain 'data' field")
@@ -187,7 +190,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_image_generation_endpoint_stream(self):
         """Test image generation endpoint with `stream=True`."""
@@ -201,8 +204,23 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.assertIn("Aqueduct does not support image streaming.", response.json()["error"])
+
+    def test_image_generation_with_extra_fields_in_body(self):
+        """Extra fields in the request body are not allowed."""
+
+        payload = {"model": self.model, "prompt": "A test image", "sth_extra": "Oh yeah"}
+
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Extra inputs are not permitted", response.json()["error"])
 
     def test_image_generation_with_alias(self):
         """Test that image generation endpoint correctly resolves model aliases."""
@@ -262,7 +280,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
                         )
 
                         # Should return 200 with alias resolution
-                        self.assertEqual(response.status_code, 200)
+                        self.assertEqual(response.status_code, HTTPStatus.OK)
 
                         response_json = response.json()
                         self.assertIn("data", response_json, "Response should contain 'data' field")

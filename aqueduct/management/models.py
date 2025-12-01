@@ -692,6 +692,14 @@ class Request(models.Model):
         help_text="The specific API path requested after the base endpoint URL "
         "(e.g., '/chat/completions')",
     )
+    user_id = models.CharField(
+        max_length=256,
+        blank=True,
+        db_index=True,
+        help_text="A string (user ID, email address, username, etc.) identifying "
+        "the particular user who made the request, "
+        "and who may be a different user than the token owner.",
+    )
 
     class Meta:
         # Crucial for the rate limit query!

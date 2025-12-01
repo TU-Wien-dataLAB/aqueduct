@@ -9,7 +9,7 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
-
+import logging
 import os
 import sys
 from datetime import datetime
@@ -141,6 +141,8 @@ AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(
     os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 1024)
 )
 AQUEDUCT_FILES_API_EXPIRY_DAYS = int(os.environ.get("AQUEDUCT_FILES_API_EXPIRY_DAYS", 7))
+# For now, set it to the (hard-coded) limit enforced in the code
+DATA_UPLOAD_MAX_MEMORY_SIZE = 32 * 1024 * 1024
 
 AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(
     os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES", 15)
@@ -233,7 +235,11 @@ CELERY_BEAT_SCHEDULE = {
 
 # Django Silk profiling configuration --------------------------------------------------
 # Silk can be disabled via the SILKY_ENABLED env var.
-SILKY_ENABLED = os.getenv("SILKY_ENABLED", "True").lower() == "true"
+if TESTING:
+    SILKY_ENABLED = False
+else:
+    SILKY_ENABLED = os.getenv("SILKY_ENABLED", "True").lower() == "true"
+
 if SILKY_ENABLED:
     INSTALLED_APPS.append("silk")
     # insert Silk middleware first to capture all requests
@@ -362,3 +368,8 @@ LOGGING = {
     },
     "root": {"handlers": ["console"], "level": os.getenv("DJANGO_LOG_LEVEL", "WARNING")},
 }
+
+if TESTING:
+    logger = logging.getLogger("aqueduct")
+    logging.disable(logging.NOTSET)
+    logger.setLevel(logging.DEBUG)

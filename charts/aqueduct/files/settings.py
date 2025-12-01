@@ -189,6 +189,7 @@ MCP_ALLOWED_ORIGINS = os.getenv(
 ).split(",")
 
 RESPONSES_API_TTL_SECONDS = int(os.getenv("RESPONSES_API_TTL_SECONDS", f"{60 * 60 * 24 * 30}")) # 30-day default
+RESPONSES_API_ALLOWED_NATIVE_TOOLS = os.getenv("RESPONSES_API_ALLOWED_NATIVE_TOOLS", "").split(",")
 
 # TOS Settings
 

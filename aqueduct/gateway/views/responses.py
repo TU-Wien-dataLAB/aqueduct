@@ -13,6 +13,7 @@ from .decorators import (
     catch_router_exceptions,
     check_limits,
     check_model_availability,
+    check_tool_availability,
     log_request,
     parse_body,
     resolve_alias,
@@ -40,6 +41,7 @@ from .utils import (
 @log_request
 @resolve_alias
 @check_model_availability
+@check_tool_availability
 @catch_router_exceptions
 async def create_response(
     request: ASGIRequest, pydantic_model: dict, request_log: Request, token: Token, *args, **kwargs

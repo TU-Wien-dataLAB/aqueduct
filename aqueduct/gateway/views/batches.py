@@ -14,12 +14,12 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from litellm import Router
 from openai.types.batch_create_params import BatchCreateParams
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
 from gateway.config import get_router
-from management.models import Batch, BatchStatus, FileObject
+from management.models import Batch, BatchStatus, FileObject, Token
 
-from .decorators import log_request, token_authenticated, tos_accepted
+from .decorators import log_request, parse_body, token_authenticated, tos_accepted
 from .utils import cache_lock
 
 log = logging.getLogger("aqueduct")
@@ -92,21 +92,8 @@ async def _list_batches(token):
     )
 
 
-async def _create_batch(request: ASGIRequest, token):
+async def _create_batch(token: Token, params: BatchCreateParams):
     """Create a new batch."""
-    can_create, limit = await BatchService.check_batch_limit(token)
-    if not can_create:
-        return JsonResponse({"error": f"Batch limit reached ({limit})"}, status=403)
-
-    try:
-        body = request.body.decode("utf-8")
-        TypeAdapter(BatchCreateParams).validate_json(body)
-        params = json.loads(body)
-    except ValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON."}, status=400)
-
     try:
         batch_obj = await BatchService.create_batch(token.user, params)
         return JsonResponse(
@@ -122,8 +109,15 @@ async def _create_batch(request: ASGIRequest, token):
 @require_http_methods(["GET", "POST"])
 @token_authenticated(token_auth_only=True)
 @tos_accepted
+@parse_body(TypeAdapter(BatchCreateParams))
 @log_request
-async def batches(request: ASGIRequest, token, *args, **kwargs):
+async def batches(
+    request: ASGIRequest,
+    token: Token,
+    pydantic_model: BatchCreateParams | None = None,
+    *args,
+    **kwargs,
+):
     """
     GET /batches - list batches for this token
     POST /batches - create a new batch from an uploaded JSONL file
@@ -131,7 +125,11 @@ async def batches(request: ASGIRequest, token, *args, **kwargs):
     if request.method == "GET":
         return await _list_batches(token)
     else:
-        return await _create_batch(request, token)
+        can_create, limit = await BatchService.check_batch_limit(token)
+        if not can_create:
+            return JsonResponse({"error": f"Batch limit reached ({limit})"}, status=403)
+
+        return await _create_batch(token, pydantic_model)
 
 
 @csrf_exempt

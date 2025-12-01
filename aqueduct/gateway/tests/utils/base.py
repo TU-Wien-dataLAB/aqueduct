@@ -4,11 +4,25 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 from typing import Literal, Optional
+from unittest.mock import AsyncMock, MagicMock
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.test import TransactionTestCase, override_settings
+from django.urls import reverse
+from litellm import Router
+from litellm.types.llms.openai import HttpxBinaryResponseContent
+from litellm.types.router import Deployment
+from litellm.types.utils import (
+    EmbeddingResponse,
+    ImageResponse,
+    ModelResponse,
+    TextCompletionResponse,
+)
+from tos.models import TermsOfService, UserAgreement
 
+from gateway.tests.utils import _build_chat_headers
 from management.models import Org, Token, UserProfile
 
 INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
@@ -56,6 +70,19 @@ User = get_user_model()
 
 TEST_FILES_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "files_root")
 os.makedirs(TEST_FILES_ROOT, exist_ok=True)
+
+
+def get_mock_router(model: str = "test-model"):
+    router = MagicMock(spec=Router)
+    router.acompletion = AsyncMock(return_value=ModelResponse())
+    router.atext_completion = AsyncMock(return_value=TextCompletionResponse())
+    router.aembedding = AsyncMock(return_value=EmbeddingResponse())
+    router.image_generation = MagicMock(return_value=ImageResponse())
+    router.aspeech = AsyncMock(return_value=HttpxBinaryResponseContent(response=MagicMock()))
+    router.get_deployment = MagicMock(
+        return_value=Deployment("test-model", {"model": f"openai/{model}"})
+    )
+    return router
 
 
 # --- Django Test Class ---
@@ -119,17 +146,16 @@ class GatewayIntegrationTestCase(TransactionTestCase):
                 raise RuntimeError(
                     "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
                 )
+        cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
 
     @staticmethod
     def create_new_user() -> tuple[str, int]:
         # Create a new user and a new token for that user
         new_user = User.objects.create_user(username="OtherUser", email="other@example.com")
-        from django.contrib.auth.models import Group
 
         new_user.groups.add(Group.objects.get(name="user"))
         org = Org.objects.get(name="E060")
-        profile = UserProfile.objects.create(user=new_user, org=org)
-        new_user.profile = profile
+        _ = UserProfile.objects.create(user=new_user, org=org)
 
         # Create a new token for the different user
         new_token = Token(name="TestToken", user=new_user)
@@ -146,6 +172,16 @@ class GatewayFilesTestCase(TransactionTestCase):
     # Load default fixture (includes test Token) and set test access token
     fixtures = ["gateway_data.json"]
     AQUEDUCT_ACCESS_TOKEN = GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Prepare auth headers for file API
+        headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+        # Remove Content-Type header to allow multipart file upload
+        headers.pop("Content-Type", None)
+        cls.headers = headers
+        cls.url_files = reverse("gateway:files")
 
     def tearDown(self):
         super().tearDown()
@@ -190,6 +226,19 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
     tts_model = "gpt-4o-mini-tts"
     stt_model = "whisper-1"
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+
+        # Remove Content-Type header to allow multipart file upload
+        multipart_headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+        multipart_headers.pop("Content-Type", None)
+        cls.multipart_headers = multipart_headers
+
+        cls.url_tts = reverse("gateway:speech")
+        cls.url_stt = reverse("gateway:transcriptions")
+
 
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
@@ -202,11 +251,6 @@ class TOSGatewayTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
 
     def accept_tos(self, user_id: int = 1):
-        from django.contrib.auth import get_user_model
-        from tos.models import TermsOfService, UserAgreement
-
-        User = get_user_model()
-
         # Create an active Terms of Service
         tos = TermsOfService.objects.create(active=True, content="Test Terms of Service content")
 

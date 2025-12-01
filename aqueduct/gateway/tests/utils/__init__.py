@@ -1,9 +1,7 @@
-import functools
 import json
 import warnings
 from typing import List
 
-import httpx
 from openai.types.chat import ChatCompletionChunk
 
 

@@ -6,7 +6,6 @@ from asgiref.sync import sync_to_async
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
-from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import INTEGRATION_TEST_BACKEND, GatewayTTSSTTestCase
 from management.models import Request
 
@@ -19,7 +18,6 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("TTS tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         payload = {
             "model": self.tts_model,
             "input": "Hello, this is a test of the text-to-speech system.",
@@ -28,9 +26,9 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         }
 
         response = await self.async_client.post(
-            "/audio/speech",
+            self.url_tts,
             data=json.dumps(payload),
-            headers=headers,
+            headers=self.headers,
             content_type="application/json",
         )
 
@@ -60,7 +58,6 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("TTS tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         payload = {
             "model": "invalid-tts-model",
             "input": "Hello, this is a test.",
@@ -68,9 +65,9 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         }
 
         response = self.client.post(
-            "/audio/speech",
+            self.url_tts,
             data=json.dumps(payload),
-            headers=headers,
+            headers=self.headers,
             content_type="application/json",
         )
 
@@ -83,7 +80,6 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("TTS tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         payload = {
             "model": self.tts_model,
             # Missing 'input' field
@@ -91,9 +87,9 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         }
 
         response = self.client.post(
-            "/audio/speech",
+            self.url_tts,
             data=json.dumps(payload),
-            headers=headers,
+            headers=self.headers,
             content_type="application/json",
         )
 
@@ -106,7 +102,6 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("TTS tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         payload = {
             "model": self.model,  # This is a chat model, not TTS
             "input": "Hello, this is a test.",
@@ -114,9 +109,9 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         }
 
         response = self.client.post(
-            "/audio/speech",
+            self.url_tts,
             data=json.dumps(payload),
-            headers=headers,
+            headers=self.headers,
             content_type="application/json",
         )
 
@@ -130,13 +125,12 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("TTS tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         payload = {"model": self.tts_model, "input": "Hello, this is a test.", "voice": "alloy"}
 
         response = self.client.post(
-            "/audio/speech",
+            self.url_tts,
             data=json.dumps(payload),
-            headers=headers,
+            headers=self.headers,
             content_type="application/json",
         )
 
@@ -148,11 +142,14 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
 class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
     """Test the transcriptions (speech-to-text) endpoint."""
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        with open(Path(__file__).parent / "resources" / "Eraserhead.mp3", "rb") as f:
+            cls.test_audio_content = f.read()
+
     def setUp(self):
         super().setUp()
-        with open(Path(__file__).parent / "resources" / "Eraserhead.mp3", "rb") as f:
-            self.test_audio_content = f.read()
-
         self.test_audio_file = SimpleUploadedFile(
             "Eraserhead.mp3", self.test_audio_content, content_type="audio/mp3"
         )
@@ -162,14 +159,10 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        # Remove Content-Type for multipart form data
-        headers.pop("Content-Type", None)
-
         response = self.client.post(
-            "/audio/transcriptions",
+            self.url_stt,
             {"file": self.test_audio_file, "model": self.stt_model},
-            headers=headers,
+            headers=self.multipart_headers,
         )
 
         self.assertEqual(
@@ -195,13 +188,10 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        headers.pop("Content-Type", None)
-
         response = self.client.post(
-            "/audio/transcriptions",
+            self.url_stt,
             {"file": self.test_audio_file, "model": "invalid-stt-model"},
-            headers=headers,
+            headers=self.multipart_headers,
         )
 
         self.assertEqual(
@@ -214,13 +204,10 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        headers.pop("Content-Type", None)
-
         response = self.client.post(
-            "/audio/transcriptions",
+            self.url_stt,
             {"model": self.stt_model},  # Missing file
-            headers=headers,
+            headers=self.multipart_headers,
         )
 
         self.assertEqual(
@@ -232,13 +219,10 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        headers.pop("Content-Type", None)
-
         response = self.client.post(
-            "/audio/transcriptions",
+            self.url_stt,
             {"file": self.test_audio_file, "model": self.model},  # This is a chat model, not STT
-            headers=headers,
+            headers=self.multipart_headers,
         )
 
         self.assertEqual(
@@ -250,13 +234,10 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        headers.pop("Content-Type", None)
-
         response = self.client.post(
-            "/audio/transcriptions",
+            self.url_stt,
             {"file": self.test_audio_file, "model": self.stt_model, "language": "en"},
-            headers=headers,
+            headers=self.multipart_headers,
         )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
@@ -268,17 +249,14 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        headers.pop("Content-Type", None)
-
         response = self.client.post(
-            "/audio/transcriptions",
+            self.url_stt,
             {
                 "file": self.test_audio_file,
                 "model": self.stt_model,
                 "response_format": "verbose_json",
             },
-            headers=headers,
+            headers=self.multipart_headers,
         )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
@@ -291,13 +269,10 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        headers.pop("Content-Type", None)
-
         response = self.client.post(
-            "/audio/transcriptions",
+            self.url_stt,
             {"file": self.test_audio_file, "model": self.stt_model},
-            headers=headers,
+            headers=self.multipart_headers,
         )
 
         self.assertEqual(
@@ -321,7 +296,6 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
         )
 
         # Generate speech using TTS endpoint
-        tts_headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         tts_payload = {
             "model": self.tts_model,
             "input": original_text,
@@ -330,9 +304,9 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
         }
 
         tts_response = await self.async_client.post(
-            "/audio/speech",
+            self.url_tts,
             data=json.dumps(tts_payload),
-            headers=tts_headers,
+            headers=self.headers,
             content_type="application/json",
         )
 
@@ -353,14 +327,11 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
         tts_request = tts_requests[0]
         self.assertIsNotNone(tts_request.token_usage)
 
-        stt_headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        stt_headers.pop("Content-Type", None)  # Remove for multipart
-
         buffer = io.BytesIO(audio_data)
         buffer.name = "file.mp3"
 
         stt_response = await self.async_client.post(
-            "/audio/transcriptions", {"file": buffer, "model": self.stt_model}, headers=stt_headers
+            self.url_stt, {"file": buffer, "model": self.stt_model}, headers=self.multipart_headers
         )
 
         self.assertEqual(
@@ -418,7 +389,6 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
                 await Request.objects.all().adelete()
 
                 # Step 1: Generate speech with specific voice
-                tts_headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
                 tts_payload = {
                     "model": self.tts_model,
                     "input": original_text,
@@ -427,9 +397,9 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
                 }
 
                 tts_response = await self.async_client.post(
-                    "/audio/speech",
+                    self.url_tts,
                     data=json.dumps(tts_payload),
-                    headers=tts_headers,
+                    headers=self.headers,
                     content_type="application/json",
                 )
 
@@ -453,13 +423,10 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
                     f"generated_speech_{voice}.mp3", audio_data, content_type="audio/mpeg"
                 )
 
-                stt_headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-                stt_headers.pop("Content-Type", None)
-
                 stt_response = await self.async_client.post(
-                    "/audio/transcriptions",
+                    self.url_stt,
                     {"file": audio_file, "model": self.stt_model},
-                    headers=stt_headers,
+                    headers=self.multipart_headers,
                 )
 
                 self.assertEqual(

@@ -9,7 +9,7 @@
         <div class="flex items-baseline">
             <h1 class="text-3xl font-bold">{{ title }}</h1>
             {% if selected_token %}
-            <span class="text-lg text-base-content/50 font-normal ml-4">
+                <span class="text-lg text-base-content/50 font-normal ml-4">
                 for "{{ selected_token.name }}"
             </span>
             {% endif %}
@@ -128,8 +128,12 @@
                     <thead>
                     <tr>
                         <th>#</th>
-                        <th>{% if selected_token %}User ID{% elif selected_org %}Token Name{% else %}Organization{% endif %}</th>
+                        <th>{% if selected_token %}User ID{% elif selected_org %}Token Name{% else %}
+                            Organization{% endif %}</th>
                         <th>Requests</th>
+                        <th>Input<br>Tokens</th>
+                        <th>Output<br>Tokens</th>
+                        <th>Total<br>Tokens</th>
                         {% if selected_token %}
                             <th>Token Name</th>
                         {% elif selected_org %}
@@ -162,6 +166,15 @@
                                 </td>
                                 <td class="font-bold">
                                     {{ item.count|intcomma }}
+                                </td>
+                                <td class="font-bold">
+                                    {{ item.input_sum|intcomma }}
+                                </td>
+                                <td class="font-bold">
+                                    {{ item.output_sum|intcomma }}
+                                </td>
+                                <td class="font-bold">
+                                    {{ item.total_sum|intcomma }}
                                 </td>
                                 {% if selected_token %}
                                     <td>

@@ -1,7 +1,7 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from asgiref.sync import async_to_sync, sync_to_async
+from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.cache import caches
 
@@ -14,7 +14,7 @@ User = get_user_model()
 
 
 class ResponsesIntegrationTest(GatewayIntegrationTestCase):
-    def test_create_response_basic(self):
+    async def test_create_response_basic(self):
         """
         Tests basic response creation via POST /v1/responses.
         Verifies that the endpoint exists and returns a 200 status code.
@@ -28,7 +28,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
             "max_output_tokens": 50,
         }
 
-        response = self.client.post(
+        response = await self.async_client.post(
             "/v1/responses",
             data=json.dumps(payload),
             headers=headers,
@@ -48,7 +48,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertIn("output", response_json)
         self.assertIsInstance(response_json["output"], list)
 
-        requests = list(Request.objects.all())
+        requests = await sync_to_async(list)(Request.objects.all())
         self.assertEqual(
             len(requests), 1, "There should be exactly one request after response creation."
         )
@@ -77,7 +77,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         )
 
         # Test GET response endpoint
-        get_response = self.client.get(f"/v1/responses/{response_id}", headers=headers)
+        get_response = await self.async_client.get(f"/v1/responses/{response_id}", headers=headers)
         self.assertEqual(
             get_response.status_code,
             200,
@@ -89,7 +89,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(get_data["object"], "response")
 
         # Test GET response input_items endpoint
-        input_items_response = self.client.get(
+        input_items_response = await self.async_client.get(
             f"/v1/responses/{response_id}/input_items", headers=headers
         )
         self.assertEqual(
@@ -103,7 +103,9 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsInstance(input_items_data["data"], list)
 
         # Test DELETE response endpoint
-        delete_response = self.client.delete(f"/v1/responses/{response_id}", headers=headers)
+        delete_response = await self.async_client.delete(
+            f"/v1/responses/{response_id}", headers=headers
+        )
         self.assertEqual(
             delete_response.status_code,
             200,
@@ -111,14 +113,15 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         )
 
         # Verify response is deleted - GET should now return 404
-        verify_get_response = self.client.get(f"/v1/responses/{response_id}", headers=headers)
+        verify_get_response = await self.async_client.get(
+            f"/v1/responses/{response_id}", headers=headers
+        )
         self.assertEqual(
             verify_get_response.status_code,
             404,
             f"GET after DELETE should return 404, got {verify_get_response.status_code}: {verify_get_response.content}",
         )
 
-    @async_to_sync
     async def test_create_response_streaming(self):
         """
         Tests streaming response creation via POST /v1/responses with stream=True.

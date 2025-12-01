@@ -188,6 +188,8 @@ MCP_ALLOWED_ORIGINS = os.getenv(
     "MCP_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:*"
 ).split(",")
 
+RESPONSES_API_TTL_SECONDS = int(os.getenv("RESPONSES_API_TTL_SECONDS", f"{60 * 60 * 24 * 30}")) # 30-day default
+
 # TOS Settings
 
 TOS_ENABLED = os.getenv("TOS_ENABLED", "False").lower() == "true"

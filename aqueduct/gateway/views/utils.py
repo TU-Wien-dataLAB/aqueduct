@@ -7,6 +7,7 @@ from typing import Any, AsyncGenerator
 import httpx
 import litellm
 import openai
+from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
 from litellm import TextCompletionStreamWrapper
@@ -194,7 +195,7 @@ def register_response_in_cache(response_id: str | None, model: str, email: str):
     cache_value = {"model": model, "email": email}
 
     response_cache = caches["default"]
-    response_cache.set(cache_key, cache_value, timeout=3600)
+    response_cache.set(cache_key, cache_value, timeout=settings.RESPONSES_API_TTL_SECONDS)
     log.debug(f"Registered response {response_id} for user {email} with model {model}")
 
 

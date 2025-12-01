@@ -191,100 +191,105 @@
     </div>
 
     <script>
-      const timeseries = JSON.parse("{{ timeseries|escapejs }}");
-      const perModel = JSON.parse("{{ per_model_json|escapejs }}");
-      const chartHeight = perModel.length * 30 + 20;
-      document.getElementById("model-bar-chart").style.height = `${chartHeight}px`;
-      const selectedSpan = "{{ selected_span }}";
-      const color = window.getComputedStyle(document.body).getPropertyValue('--color-primary')
+        const timeseries = JSON.parse("{{ timeseries|escapejs }}");
+        const perModel = JSON.parse("{{ per_model_json|escapejs }}");
+        const chartHeight = perModel.length * 30 + 20;
+        document.getElementById("model-bar-chart").style.height = `${chartHeight}px`;
+        const selectedSpan = "{{ selected_span }}";
+        const color = window.getComputedStyle(document.body).getPropertyValue('--color-primary')
 
-      function onOrgChange() {
-        const sel = document.getElementById("org-select");
-        const val = sel.value;
-        const params = new URLSearchParams(window.location.search);
-        val === "all" ? params.set("org", "all") : params.set("org", val);
-        window.location.search = params.toString();
-      }
+        function onOrgChange() {
+            const sel = document.getElementById("org-select");
+            const val = sel.value;
+            const params = new URLSearchParams(window.location.search);
+            if (val === "all") {
+                params.set("org", "all");
+                params.delete("token");
+            } else {
+                params.set("org", val);
+            }
+            window.location.search = params.toString();
+        }
 
-      function onSpanChange(span) {
-        const params = new URLSearchParams(window.location.search);
-        params.set("span", span);
-        window.location.search = params.toString();
-      }
+        function onSpanChange(span) {
+            const params = new URLSearchParams(window.location.search);
+            params.set("span", span);
+            window.location.search = params.toString();
+        }
 
-      document.addEventListener("DOMContentLoaded", () => {
-        // span-tabs click handler
-        document.querySelectorAll("#span-tabs .tab").forEach((tab) => {
-          tab.addEventListener("click", () => {
-            document
-              .querySelectorAll("#span-tabs .tab")
-              .forEach((t) => t.classList.remove("tab-active"));
-            tab.classList.add("tab-active");
-            onSpanChange(tab.dataset.span);
-          });
+        document.addEventListener("DOMContentLoaded", () => {
+            // span-tabs click handler
+            document.querySelectorAll("#span-tabs .tab").forEach((tab) => {
+                tab.addEventListener("click", () => {
+                    document
+                        .querySelectorAll("#span-tabs .tab")
+                        .forEach((t) => t.classList.remove("tab-active"));
+                    tab.classList.add("tab-active");
+                    onSpanChange(tab.dataset.span);
+                });
+            });
+
+            // initialize ECharts for the selected time span
+            const chart = echarts.init(document.getElementById("usage-chart"), null, {renderer: "svg"});
+            chart.setOption({
+                useUTC: selectedSpan === '1w',
+                tooltip: {trigger: "axis"},
+                xAxis: {
+                    type: "time",
+                    min: timeseries.length > 0 ? timeseries[0][0] : undefined,
+                    max: timeseries.length > 0 ? timeseries[timeseries.length - 1][0] : undefined
+                },
+                yAxis: {type: "value"},
+                series: [
+                    {
+                        name: selectedSpan,
+                        type: "bar",
+                        data: timeseries,
+                        showSymbol: false,
+                        itemStyle: {
+                            color: color,
+                        },
+                        emphasis: {itemStyle: {color: 'inherit'}, areaStyle: {color: 'inherit'}},
+                    },
+                ],
+            });
+
+            // --- Requests by Model bar chart ---
+            const modelBarChart = echarts.init(
+                document.getElementById("model-bar-chart"),
+                null,
+                {renderer: "svg"},
+            );
+
+            // Prepare data
+            const modelNames = perModel.map((x) => x.model ?? "(none)");
+            const modelCounts = perModel.map((x) => x.count);
+
+            modelBarChart.setOption({
+                tooltip: {trigger: "axis"},
+                xAxis: {type: "value"},
+                yAxis: {
+                    type: "category",
+                    data: modelNames,
+                    inverse: true,
+                },
+                series: [
+                    {
+                        type: "bar",
+                        data: modelCounts,
+                        itemStyle: {
+                            color: color,
+                        },
+                        // https://github.com/apache/echarts/issues/20757
+                        emphasis: {itemStyle: {color: 'inherit'}, areaStyle: {color: 'inherit'}},
+                    },
+                ],
+            });
+
+            window.addEventListener('resize', function () {
+                chart.resize();
+                modelBarChart.resize();
+            });
         });
-
-        // initialize ECharts for the selected time span
-        const chart = echarts.init(document.getElementById("usage-chart"), null, {renderer: "svg"});
-        chart.setOption({
-          useUTC: selectedSpan === '1w',
-          tooltip: {trigger: "axis"},
-          xAxis: {
-            type: "time",
-            min: timeseries.length > 0 ? timeseries[0][0] : undefined,
-            max: timeseries.length > 0 ? timeseries[timeseries.length - 1][0] : undefined
-          },
-          yAxis: {type: "value"},
-          series: [
-            {
-              name: selectedSpan,
-              type: "bar",
-              data: timeseries,
-              showSymbol: false,
-              itemStyle: {
-                color: color,
-              },
-              emphasis: {itemStyle: {color: 'inherit'}, areaStyle: {color: 'inherit'}},
-            },
-          ],
-        });
-
-        // --- Requests by Model bar chart ---
-        const modelBarChart = echarts.init(
-          document.getElementById("model-bar-chart"),
-          null,
-          {renderer: "svg"},
-        );
-
-        // Prepare data
-        const modelNames = perModel.map((x) => x.model ?? "(none)");
-        const modelCounts = perModel.map((x) => x.count);
-
-        modelBarChart.setOption({
-          tooltip: {trigger: "axis"},
-          xAxis: {type: "value"},
-          yAxis: {
-            type: "category",
-            data: modelNames,
-            inverse: true,
-          },
-          series: [
-            {
-              type: "bar",
-              data: modelCounts,
-              itemStyle: {
-                color: color,
-              },
-              // https://github.com/apache/echarts/issues/20757
-              emphasis: {itemStyle: {color: 'inherit'}, areaStyle: {color: 'inherit'}},
-            },
-          ],
-        });
-
-        window.addEventListener('resize', function () {
-          chart.resize();
-          modelBarChart.resize();
-        });
-      });
     </script>
 {% endblock %}

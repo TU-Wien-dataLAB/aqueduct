@@ -14,11 +14,6 @@
             </span>
             {% endif %}
         </div>
-        {% if selected_token %}
-        <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
-            Show all
-        </a>
-        {% endif %}
     </div>
     <div class="flex items-center space-x-4 mb-6">
         {% if is_global_admin %}
@@ -113,8 +108,21 @@
 
         <!-- RIGHT: REQUESTS TABLE (50% width, full height) -->
         <div class="w-full lg:w-1/2 flex-shrink-0 flex flex-col" style="min-width:600px;">
-            <h2 class="text-xl font-semibold mb-2">Request Counts by
-                {% if selected_token %}User ID{% elif selected_org %}Token{% else %}Organization{% endif %}</h2>
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-xl font-semibold mb-2">Request Counts by
+                    {% if selected_token %}User ID{% elif selected_org %}Token{% else %}Organization{% endif %}
+                </h2>
+                {% if selected_token %}
+                    <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
+                        Show all tokens
+                    </a>
+                {% elif selected_org %}
+                    <a href="?org=all&span={{ selected_span }}" class="btn btn-sm btn-outline">
+                        Show all orgs
+                    </a>
+
+                {% endif %}
+            </div>
             <div class="flex-1 overflow-y-auto" style="max-height: 600px;">
                 <table class="table w-full table-zebra">
                     <thead>
@@ -146,9 +154,10 @@
                                             {{ item.name|default:"N/A" }}
                                         </a>
                                     {% else %}
-                                        <span class="font-bold">
+                                        <a href="?org={{ item.org_id }}&span={{ selected_span }}"
+                                           class="font-bold link link-hover text-primary">
                                             {{ item.name|default:"N/A" }}
-                                        </span>
+                                        </a>
                                     {% endif %}
                                 </td>
                                 <td class="font-bold">

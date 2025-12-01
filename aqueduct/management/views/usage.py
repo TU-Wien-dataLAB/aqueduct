@@ -140,9 +140,13 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                     name=Coalesce(
                         F("token__user__profile__org__name"),
                         F("token__service_account__team__org__name"),
-                    )
+                    ),
+                    org_id=Coalesce(
+                        F("token__user__profile__org__id"),
+                        F("token__service_account__team__org__id"),
+                    ),
                 )
-                .values("name")
+                .values("name", "org_id")
                 .annotate(count=Count("id"))
                 .order_by("-count")[:100]
             )

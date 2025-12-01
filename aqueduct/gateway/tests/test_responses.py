@@ -4,9 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.cache import caches
+from django.http import JsonResponse
 
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import GatewayIntegrationTestCase
+from gateway.views.decorators import check_tool_availability
 from gateway.views.utils import register_response_in_cache
 from management.models import Request, Token
 
@@ -369,3 +371,221 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
                 200,
                 "User1 should be able to delete their own response",
             )
+
+
+class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
+    """Tests for the check_tool_availability decorator."""
+
+    @patch("gateway.views.decorators.get_mcp_config")
+    async def test_check_tool_availability_success(self, mock_get_mcp_config):
+        """
+        Test check_tool_availability decorator with valid tools.
+        Should successfully call the decorated function.
+        """
+        # Mock the decorated view function
+        mock_view_func = AsyncMock()
+        mock_view_func.return_value = JsonResponse({"result": "success"})
+
+        # Create a mock request and token
+        request = AsyncMock()
+        response_id = "test_response_id"
+
+        token = Token(name="test_token")
+        pydantic_model = {"tools": [{"type": "function", "function": {"name": "test_function"}}]}
+
+        kwargs = {"token": token, "pydantic_model": pydantic_model}
+
+        # Apply the decorator
+        decorated_func = check_tool_availability(mock_view_func)
+
+        # Call the decorated function
+        result = await decorated_func(request, response_id, **kwargs)
+
+        # Verify the view function was called
+        mock_view_func.assert_called_once_with(request, response_id, **kwargs)
+        self.assertEqual(result.status_code, 200)
+
+    @patch("gateway.views.decorators.get_mcp_config")
+    async def test_check_tool_availability_mcp_server_success(self, mock_get_mcp_config):
+        """
+        Test check_tool_availability decorator with valid MCP server.
+        Should successfully call the decorated function with server_url added.
+        """
+        mock_view_func = AsyncMock()
+        mock_view_func.return_value = JsonResponse({"result": "success"})
+
+        # Mock MCP config
+        mock_get_mcp_config.return_value = {"test_mcp_server": {"url": "http://mcp-server:8080"}}
+
+        request = AsyncMock()
+        response_id = "test_response_id"
+
+        token = Token(name="test_token")
+        tool = {"type": "mcp", "server_label": "test_mcp_server"}
+        pydantic_model = {"tools": [tool]}
+
+        kwargs = {"token": token, "pydantic_model": pydantic_model}
+
+        # Mock the mcp_server_excluded method to return False
+        with patch.object(token, "mcp_server_excluded", return_value=False):
+            decorated_func = check_tool_availability(mock_view_func)
+            result = await decorated_func(request, response_id, **kwargs)
+
+        # Verify server_url was added to the tool
+        self.assertEqual(tool["server_url"], "http://mcp-server:8080")
+        mock_view_func.assert_called_once_with(request, response_id, **kwargs)
+        self.assertEqual(result.status_code, 200)
+
+    async def test_check_tool_availability_missing_token(self):
+        """
+        Test check_tool_availability decorator with missing token.
+        Should return 400 error.
+        """
+        mock_view_func = AsyncMock()
+
+        request = AsyncMock()
+        response_id = "test_response_id"
+        pydantic_model = {"tools": []}
+
+        kwargs = {"pydantic_model": pydantic_model}  # Missing token
+
+        decorated_func = check_tool_availability(mock_view_func)
+        result = await decorated_func(request, response_id, **kwargs)
+
+        # Should return 400 error without calling the view function
+        mock_view_func.assert_not_called()
+        self.assertEqual(result.status_code, 400)
+        data = json.loads(result.content)
+        self.assertEqual(data["error"], "Invalid request")
+
+    async def test_check_tool_availability_missing_pydantic_model(self):
+        """
+        Test check_tool_availability decorator with missing pydantic_model.
+        Should return 400 error.
+        """
+        mock_view_func = AsyncMock()
+
+        request = AsyncMock()
+        response_id = "test_response_id"
+        token = Token(name="test_token")
+
+        kwargs = {"token": token}  # Missing pydantic_model
+
+        decorated_func = check_tool_availability(mock_view_func)
+        result = await decorated_func(request, response_id, **kwargs)
+
+        # Should return 400 error without calling the view function
+        mock_view_func.assert_not_called()
+        self.assertEqual(result.status_code, 400)
+        data = json.loads(result.content)
+        self.assertEqual(data["error"], "Invalid request")
+
+    @patch("gateway.views.decorators.get_mcp_config")
+    async def test_check_tool_availability_mcp_server_excluded(self, mock_get_mcp_config):
+        """
+        Test check_tool_availability decorator with excluded MCP server.
+        Should return 404 error.
+        """
+        mock_view_func = AsyncMock()
+
+        request = AsyncMock()
+        response_id = "test_response_id"
+
+        token = Token(name="test_token")
+        tool = {"type": "mcp", "server_label": "excluded_server"}
+        pydantic_model = {"tools": [tool]}
+
+        kwargs = {"token": token, "pydantic_model": pydantic_model}
+
+        # Mock the mcp_server_excluded method to return True
+        with patch.object(token, "mcp_server_excluded", return_value=True):
+            decorated_func = check_tool_availability(mock_view_func)
+            result = await decorated_func(request, response_id, **kwargs)
+
+        # Should return 404 error without calling the view function
+        mock_view_func.assert_not_called()
+        self.assertEqual(result.status_code, 404)
+        data = json.loads(result.content)
+        self.assertIn("MCP server not found", data["error"])
+
+    @patch("gateway.views.decorators.get_mcp_config")
+    async def test_check_tool_availability_mcp_server_not_found(self, mock_get_mcp_config):
+        """
+        Test check_tool_availability decorator with MCP server not in config.
+        Should return 404 error.
+        """
+        mock_view_func = AsyncMock()
+        mock_get_mcp_config.return_value = {}  # Empty config
+
+        request = AsyncMock()
+        response_id = "test_response_id"
+
+        token = Token(name="test_token")
+        tool = {"type": "mcp", "server_label": "nonexistent_server"}
+        pydantic_model = {"tools": [tool]}
+
+        kwargs = {"token": token, "pydantic_model": pydantic_model}
+
+        # Mock the mcp_server_excluded method to return False
+        with patch.object(token, "mcp_server_excluded", return_value=False):
+            decorated_func = check_tool_availability(mock_view_func)
+            result = await decorated_func(request, response_id, **kwargs)
+
+        # Should return 404 error without calling the view function
+        mock_view_func.assert_not_called()
+        self.assertEqual(result.status_code, 404)
+        data = json.loads(result.content)
+        self.assertIn("MCP server not found", data["error"])
+
+    @patch("gateway.views.decorators.settings")
+    async def test_check_tool_availability_invalid_tool_type(self, mock_settings):
+        """
+        Test check_tool_availability decorator with invalid tool type.
+        Should return 400 error.
+        """
+        mock_view_func = AsyncMock()
+        mock_settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS = ["allowed_tool"]
+
+        request = AsyncMock()
+        response_id = "test_response_id"
+
+        token = Token(name="test_token")
+        tool = {"type": "invalid_tool_type"}
+        pydantic_model = {"tools": [tool]}
+
+        kwargs = {"token": token, "pydantic_model": pydantic_model}
+
+        decorated_func = check_tool_availability(mock_view_func)
+        result = await decorated_func(request, response_id, **kwargs)
+
+        # Should return 400 error without calling the view function
+        mock_view_func.assert_not_called()
+        self.assertEqual(result.status_code, 400)
+        data = json.loads(result.content)
+        self.assertEqual(data["error"], "Invalid tool type: invalid_tool_type")
+
+    @patch("gateway.views.decorators.settings")
+    async def test_check_tool_availability_allowed_native_tool(self, mock_settings):
+        """
+        Test check_tool_availability decorator with allowed native tool type.
+        Should successfully call the decorated function.
+        """
+        mock_view_func = AsyncMock()
+        mock_view_func.return_value = JsonResponse({"result": "success"})
+        mock_settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS = ["allowed_native_tool"]
+
+        request = AsyncMock()
+        response_id = "test_response_id"
+
+        token = Token(name="test_token")
+        tool = {"type": "allowed_native_tool"}
+        pydantic_model = {"tools": [tool]}
+
+        kwargs = {"token": token, "pydantic_model": pydantic_model}
+
+        decorated_func = check_tool_availability(mock_view_func)
+        result = await decorated_func(request, response_id, **kwargs)
+
+        # Should call the view function
+        mock_view_func.assert_called_once_with(request, response_id, **kwargs)
+        self.assertEqual(result.status_code, 200)

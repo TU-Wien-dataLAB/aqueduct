@@ -3,8 +3,8 @@ import json
 from datetime import timedelta
 from typing import Any
 
-from django.db.models import Avg, Count, F, Q, QuerySet, Sum
-from django.db.models.functions import Coalesce, TruncDay, TruncHour, TruncMinute
+from django.db.models import Avg, BooleanField, Count, ExpressionWrapper, F, Q, QuerySet, Sum, Value
+from django.db.models.functions import TruncDay, TruncHour, TruncMinute
 from django.utils import timezone
 from django.views.generic import TemplateView
 
@@ -68,11 +68,15 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                     | Q(token__service_account__team__org=selected_org)
                 )
             else:
-                # Standard user: restrict to own user tokens or service accounts in their teams
+                # Standard user: restrict to own tokens or service accounts' token in their teams;
+                # also include requests whose `user_id` value matches the user's email, even if
+                # the token does not belong to the user, but to another one from the same org.
                 user = profile.user
                 teams = self.get_teams_for_user()
                 reqs = Request.objects.filter(
-                    Q(token__user=user) | Q(token__service_account__team__in=teams)
+                    Q(token__user=user)
+                    | Q(token__service_account__team__in=teams)
+                    | (Q(user_id=user.email) & Q(token__user__profile__org=profile.org))
                 )
 
         # Only include requests for models configured in the router
@@ -210,32 +214,108 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
     ) -> dict[str, Any]:
         """Annotate the `Request` queryset and get the top entities as dicts"""
         if selected_org is None:
-            # Top orgs sorted by request count
-            top_items = reqs.annotate(
-                name=Coalesce(
-                    F("token__user__profile__org__name"),
-                    F("token__service_account__team__org__name"),
-                ),
-                org_id=Coalesce(
-                    F("token__user__profile__org__id"), F("token__service_account__team__org__id")
-                ),
-            ).values("name", "org_id")
+            # Top orgs sorted by request count - only available for global admins
+            top_items = (
+                reqs.annotate(
+                    name=F("token__user__profile__org__name"),
+                    org_id=F("token__user__profile__org__id"),
+                )
+                .values("name", "org_id")
+                .annotate(
+                    count=Count("id"),
+                    input_sum=Sum("input_tokens", default=0),
+                    output_sum=Sum("output_tokens", default=0),
+                    total_sum=Sum(F("input_tokens") + F("output_tokens")),
+                    user_is_token_owner=Value(True),
+                )
+            )
         elif selected_token is None:
             # Top tokens for the selected org by request count
+            user_is_org_admin = self.profile.is_org_admin(selected_org)
+            # if user_is_org_admin:
+            #     # (Org-)admins can see the details of all the organisation's tokens
+            #     top_items = reqs.values("token_id").annotate(
+            #         count=Count("id"),
+            #         name=F("token__name"),
+            #         user_email=F("token__user__email"),
+            #         service_account_name=F("token__service_account__name"),
+            #         input_sum=Sum("input_tokens", default=0),
+            #         output_sum=Sum("output_tokens", default=0),
+            #         total_sum=Sum(F("input_tokens") + F("output_tokens")),
+            #         user_is_token_owner=Value(True),
+            #     )
+            # else:  # Standard user
+            #     ...
+            teams = self.get_teams_for_user()  # TODO: pass this as arg?
+
             top_items = reqs.values("token_id").annotate(
+                count=Count("id"),
                 name=F("token__name"),
                 user_email=F("token__user__email"),
                 service_account_name=F("token__service_account__name"),
+                user_is_token_owner=ExpressionWrapper(
+                    Value(user_is_org_admin)
+                    | Q(token__user=self.profile.user)
+                    | Q(token__service_account__team__in=teams),
+                    output_field=BooleanField(),
+                ),
+                input_sum=Sum("input_tokens", default=0),
+                output_sum=Sum("output_tokens", default=0),
+                total_sum=Sum(F("input_tokens") + F("output_tokens")),
+                # input_sum=Case(
+                #     When(user_is_token_owner=True, then=Sum("input_tokens", default=0)),
+                #     default=Sum("input_tokens", filter=Q(user_id=self.profile.user.email), default=0)
+                # ),
+                # output_sum=Case(
+                #     When(user_is_token_owner=True, then=Sum("output_tokens", default=0)),
+                #     default=Sum("output_tokens", filter=Q(user_id=email), default=0)
+                # ),
+                # total_sum=Sum(F("input_tokens") + F("output_tokens")),
             )
         else:
             # Top user IDs for the selected token by request count
-            top_items = reqs.annotate(name=F("token__name")).values("name", "user_id")
+            user_is_org_admin = self.profile.is_org_admin(selected_org)
+            teams = self.get_teams_for_user()  # TODO: pass this as arg?
+
+            top_items = (
+                reqs.annotate(name=F("token__name"))
+                .values("name", "user_id")
+                .annotate(
+                    count=Count("id"),
+                    user_is_token_owner=ExpressionWrapper(
+                        Value(user_is_org_admin)
+                        | Q(token__user=self.profile.user)
+                        | Q(token__service_account__team__in=teams),
+                        output_field=BooleanField(),
+                    ),
+                    input_sum=Sum("input_tokens", default=0),
+                    output_sum=Sum("output_tokens", default=0),
+                    total_sum=Sum(F("input_tokens") + F("output_tokens")),
+                    # input_sum=Case(
+                    #     When(user_is_token_owner=True, then=Sum("input_tokens", default=0)),
+                    #     default=Sum("input_tokens", filter=Q(user_id=self.profile.user.email), default=0)
+                    # ),
+                    # output_sum=Case(
+                    #     When(user_is_token_owner=True, then=Sum("output_tokens", default=0)),
+                    #     default=Sum("output_tokens", filter=Q(user_id=self.profile.user.email), default=0)
+                    # ),
+                    # total_sum=Sum(F("input_tokens") + F("output_tokens")),
+                )
+            )
 
         # Add annotations and ordering common to all cases; limit the result to 100 items
-        top_items = top_items.annotate(
-            count=Count("id"),
-            input_sum=Sum("input_tokens", default=0),
-            output_sum=Sum("output_tokens", default=0),
-            total_sum=Sum(F("input_tokens") + F("output_tokens")),
-        ).order_by("-count")[:100]
-        return top_items
+        # top_items = top_items.annotate(
+        #     count=Count("id"),
+        #     input_sum=Sum("input_tokens", default=0),
+        #     output_sum=Sum("output_tokens", default=0),
+        #     total_sum=Sum(F("input_tokens") + F("output_tokens")),
+        #     user_is_token_owner=ExpressionWrapper(
+        #         Value(is_global_admin) | Q(token__user_id=self.profile.user.id),
+        #         output_field=BooleanField()
+        #     ),
+        # user_is_token_owner=Case(
+        #     When(Value(is_global_admin) | Q(token__user_id=self.profile.user.id), then=Value(True)),
+        #     default=Value(False),
+        # )
+        #  )
+        return top_items.order_by("-count")[:100]

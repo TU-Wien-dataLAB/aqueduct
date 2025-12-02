@@ -153,10 +153,16 @@
                                             {{ item.user_id|default:"N/A" }}
                                         </span>
                                     {% elif selected_org %}
-                                        <a href="?org={{ selected_org.id }}&span={{ selected_span }}&token={{ item.token_id }}"
-                                           class="font-bold link link-hover text-primary">
-                                            {{ item.name|default:"N/A" }}
-                                        </a>
+                                        {% if item.user_is_token_owner %}
+                                            <a href="?org={{ selected_org.id }}&span={{ selected_span }}&token={{ item.token_id }}"
+                                               class="font-bold link link-hover text-primary">
+                                                {{ item.name|default:"N/A" }}
+                                            </a>
+                                        {%  else %}
+                                            <span class="font-bold">
+                                                {{ item.name|default:"N/A" }}
+                                            </span>
+                                        {% endif %}
                                     {% else %}
                                         <a href="?org={{ item.org_id }}&span={{ selected_span }}"
                                            class="font-bold link link-hover text-primary">

@@ -135,37 +135,33 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         # Top entities: tokens per org or orgs global
         if selected_org is None:
             # Top orgs sorted by request count (up to 100)
-            top_items = (
-                reqs_span.annotate(
-                    name=Coalesce(
-                        F("token__user__profile__org__name"),
-                        F("token__service_account__team__org__name"),
-                    )
-                )
-                .values("name")
-                .annotate(count=Count("id"))
-                .order_by("-count")[:100]
-            )
+            top_items = reqs_span.annotate(
+                name=Coalesce(
+                    F("token__user__profile__org__name"),
+                    F("token__service_account__team__org__name"),
+                ),
+                org_id=Coalesce(
+                    F("token__user__profile__org__id"), F("token__service_account__team__org__id")
+                ),
+            ).values("name", "org_id")
         elif selected_token is None:
             # Top tokens for the selected org by request count
-            top_items = (
-                reqs_span.annotate(
-                    name=F("token__name"),
-                    user_email=F("token__user__email"),
-                    service_account_name=F("token__service_account__name"),
-                )
-                .values("token_id", "name", "user_email", "service_account_name")
-                .annotate(count=Count("id"))
-                .order_by("-count")[:100]
+            top_items = reqs_span.values("token_id").annotate(
+                name=F("token__name"),
+                user_email=F("token__user__email"),
+                service_account_name=F("token__service_account__name"),
             )
         else:
             # Top user IDs for the selected token by request count
-            top_items = (
-                reqs_span.annotate(name=F("token__name"))
-                .values("name", "user_id")
-                .annotate(count=Count("user_id"))
-                .order_by("-count")[:100]
-            )
+            top_items = reqs_span.annotate(name=F("token__name")).values("name", "user_id")
+
+        # Add annotations and ordering common to all cases
+        top_items = top_items.annotate(
+            count=Count("id"),
+            input_sum=Sum("input_tokens", default=0),
+            output_sum=Sum("output_tokens", default=0),
+            total_sum=Sum(F("input_tokens") + F("output_tokens")),
+        ).order_by("-count")[:100]
 
         # Simple statistics
         total_requests = reqs_span.count()

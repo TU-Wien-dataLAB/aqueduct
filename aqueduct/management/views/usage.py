@@ -214,7 +214,8 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
     ) -> dict[str, Any]:
         """Annotate the `Request` queryset and get the top-level entities as dicts"""
         if selected_org is None:
-            # Top orgs sorted by request count - only available for global admins
+            # Top orgs sorted by request count - only available for global admins.
+            # Note: service account tokens belong to the same org as the token's user.
             top_items = reqs.annotate(
                 name=F("token__user__profile__org__name"), org_id=F("token__user__profile__org__id")
             ).values("name", "org_id")

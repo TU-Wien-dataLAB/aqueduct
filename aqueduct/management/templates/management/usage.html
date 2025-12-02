@@ -116,7 +116,7 @@
                     <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
                         Show all tokens
                     </a>
-                {% elif selected_org %}
+                {% elif selected_org and is_global_admin %}
                     <a href="?org=all&span={{ selected_span }}" class="btn btn-sm btn-outline">
                         Show all orgs
                     </a>

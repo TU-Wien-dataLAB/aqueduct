@@ -8,6 +8,8 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
+from httpx import Request as HttpxRequest
+from httpx import Response
 from litellm.types.utils import ModelResponse
 from openai.types.audio import Transcription
 from openai.types.chat import ChatCompletion
@@ -409,12 +411,14 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             f"Expected 404 Not Found, got {response.status_code}: {response.content}",
         )
 
+    @override_settings(AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB=1)
     def test_chat_completion_base64_file_size_limit_individual(self):
         """
-        Tests that individual files uploaded via base64 are rejected if they exceed 10MB.
+        Tests that individual files uploaded via base64 are rejected if their size exceeds
+        `AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB`.
         """
-        # Create a file content that exceeds 10MB (10MB + 1 byte)
-        file_size = 10 * 1024 * 1024 + 1  # 10MB + 1 byte
+        # Create a file content that exceeds 1MB
+        file_size = 1024 * 1024 + 1  # 1MB + 1 byte
         file_content = b"x" * file_size
         file_base64 = base64.b64encode(file_content).decode("utf-8")
 
@@ -448,16 +452,19 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertEqual(
             response.status_code,
             400,
-            f"Expected 400 Bad Request for file size > 10MB, got {response.status_code}: {response.content}",
+            f"Expected 400 Bad Request for file size > 1MB, got {response.status_code}: {response.content}",
         )
+        self.assertIn(b"File too large", response.content)
 
+    @override_settings(AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB=1)
     def test_chat_completion_base64_file_size_limit_total(self):
         """
-        Tests that total files uploaded via base64 are rejected if they exceed 32MB in total.
+        Tests that files upload via base64 is rejected if their total size exceeds
+        `AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB`.
         """
-        # Create multiple files that together exceed 32MB
-        # Each file is 11MB, so 3 files = 33MB total
-        individual_file_size = 11 * 1024 * 1024  # 11MB each
+        # Create multiple files that together exceed 1MB
+        # Each file is 350 kB, so 3 files ~1 MB total
+        individual_file_size = 350 * 1024  # 350 kB each
         file_content = b"x" * individual_file_size
         file_base64 = base64.b64encode(file_content).decode("utf-8")
 
@@ -495,19 +502,72 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        response = self.client.post(
-            self.url,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+        with patch(
+            "gateway.views.decorators.extract_text_with_tika",
+            return_value="This is a test file content for base64 encoding.",
+        ):
+            response = self.client.post(
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         self.assertEqual(
             response.status_code,
             400,
-            f"Expected 400 Bad Request for total file size > 32MB, got {response.status_code}: "
+            f"Expected 400 Bad Request for total file size > 1MB, got {response.status_code}: "
             f"{response.content}",
         )
+        self.assertIn(b"Files too large in total", response.content)
+
+    def test_tika_error_response(self):
+        """Handle errors from tika requests (extract text from file) gracefully."""
+        # Create a simple text file content and encode it as base64
+        file_content = b"This is a test file content for base64 encoding."
+        file_base64 = base64.b64encode(file_content).decode("utf-8")
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What's in this file?"},
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": "test.txt",
+                                "file_data": f"data:text/plain;base64,{file_base64}",
+                            },
+                        },
+                    ],
+                }
+            ],
+            "max_completion_tokens": 50,
+        }
+        tika_response_mock = Response(
+            request=HttpxRequest(method="PUT", url="http://example.com/tika"),
+            json={"error": "Mocked Tika server error"},
+            status_code=500,
+        )
+
+        with patch(
+            "gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock
+        ):
+            response = self.client.post(
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
+
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400, got {response.status_code}: {response.content}",
+        )
+        self.assertIn("Tika error extracting text from file", response.json()["error"])
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     def test_chat_completion_timeout(self):

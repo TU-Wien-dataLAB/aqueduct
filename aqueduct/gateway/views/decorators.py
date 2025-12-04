@@ -103,24 +103,22 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
         except (TypeError, json.JSONDecodeError):
             data[key] = value
 
+    max_file_size_mb = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB
     max_file_bytes = int(settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024)
 
-    max_total_size_mb = 32
+    max_total_size_mb = settings.AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB
     max_total_size_bytes = max_total_size_mb * 1024 * 1024
     total_file_size_bytes = 0
 
     for key, file in request.FILES.items():
         if file.size > max_file_bytes:
             log.error("File in request too large")
-            raise FileSizeError(
-                f"File '{key}' exceeds maximum size of "
-                f"{settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB} MB"
-            )
+            raise FileSizeError(f"File '{key}' exceeds maximum size of {max_file_size_mb}MB")
 
         total_file_size_bytes += file.size
         if total_file_size_bytes > max_total_size_bytes:
             log.error("Files in request too large")
-            raise FileSizeError(f"Total file size exceeds maximum of {max_total_size_mb} MB")
+            raise FileSizeError(f"Total file size exceeds maximum of {max_total_size_mb}MB")
 
         data[key] = file.read()
 
@@ -480,6 +478,10 @@ def process_file_content(view_func):
 
         # Process messages to extract text from file content
         total_file_size_bytes = 0
+        max_total_size_mb = settings.AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB
+        max_total_size_bytes = settings.AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB * 1024 * 1024
+        max_file_mb = settings.AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB
+        max_file_bytes = settings.AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB * 1024 * 1024
         for message in messages:
             content = message.get("content", [])
             if not isinstance(content, list):
@@ -487,46 +489,9 @@ def process_file_content(view_func):
 
             for content_item in content:
                 if isinstance(content_item, dict) and content_item.get("type") == "file":
+                    file = FileFile(**content_item.get("file", {}))
                     try:
-                        file = FileFile(**content_item.get("file", {}))
                         file_bytes = await file_to_bytes(token, file)
-                        if len(file_bytes) > 10 * 1024 * 1024:
-                            log.error(
-                                "File processing error - File too large (individual file must be <= 10MB)"
-                            )
-                            return JsonResponse(
-                                {
-                                    "error": "Error processing file content: File too large. "
-                                    "Individual file must be <= 10MB."
-                                },
-                                status=400,
-                            )
-
-                        total_file_size_bytes += len(file_bytes)
-                        if total_file_size_bytes > 32 * 1024 * 1024:
-                            log.error(
-                                "File processing error - Files too large in total (all files must be <= 32MB)"
-                            )
-                            return JsonResponse(
-                                {
-                                    "error": "Error processing file content: Files too large in total. "
-                                    "All files must be <= 32MB."
-                                },
-                                status=400,
-                            )
-
-                        # Extract text using Tika
-                        extracted_text = await extract_text_with_tika(file_bytes)
-                        extracted_text = (
-                            f"Content of user-uploaded file '{file.get('filename', 'unknown filename')}':"
-                            f"\n---\n{extracted_text}\n---"
-                        )
-
-                        # Replace file content with extracted text
-                        content_item["type"] = "text"
-                        content_item["text"] = extracted_text
-                        del content_item["file"]
-
                     except FileObject.DoesNotExist:
                         log.error("File not found")
                         return JsonResponse({"error": "File not found"}, status=404)
@@ -536,6 +501,52 @@ def process_file_content(view_func):
                         return JsonResponse(
                             {"error": f"Error processing file: {str(e)}"}, status=400
                         )
+
+                    if len(file_bytes) > max_file_bytes:
+                        log.error(
+                            f"File processing error - File too large (individual file must be "
+                            f"<= {max_file_mb}MB)"
+                        )
+                        return JsonResponse(
+                            {
+                                "error": f"Error processing file content: File too large. "
+                                f"Individual file must be <= {max_file_mb}MB."
+                            },
+                            status=400,
+                        )
+                    total_file_size_bytes += len(file_bytes)
+                    if total_file_size_bytes > max_total_size_bytes:
+                        log.error(
+                            f"File processing error - Files too large in total "
+                            f"(all files must be <= {max_total_size_mb}MB)"
+                        )
+                        return JsonResponse(
+                            {
+                                "error": f"Error processing file content: Files too large in total. "
+                                f"All files must be <= {max_total_size_mb}MB."
+                            },
+                            status=400,
+                        )
+
+                    # Extract text using Tika
+                    try:
+                        extracted_text = await extract_text_with_tika(file_bytes)
+                    except httpx.HTTPStatusError as e:
+                        # return json response here if there was a tika request error
+                        log.error(f"Tika error extracting text from file - {str(e)}")
+                        return JsonResponse(
+                            {"error": f"Tika error extracting text from file: {str(e)}"}, status=400
+                        )
+
+                    extracted_text = (
+                        f"Content of user-uploaded file '{file.get('filename', 'unknown filename')}':"
+                        f"\n---\n{extracted_text}\n---"
+                    )
+
+                    # Replace file content with extracted text
+                    content_item["type"] = "text"
+                    content_item["text"] = extracted_text
+                    del content_item["file"]
 
         return await view_func(request, *args, **kwargs)
 

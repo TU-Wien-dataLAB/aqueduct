@@ -1,9 +1,10 @@
 import datetime
 import json
 from datetime import timedelta
+from typing import Any
 
-from django.db.models import Avg, Count, F, Q, Sum
-from django.db.models.functions import Coalesce, TruncDay, TruncHour, TruncMinute
+from django.db.models import Avg, BooleanField, Count, ExpressionWrapper, F, Q, QuerySet, Sum, Value
+from django.db.models.functions import TruncDay, TruncHour, TruncMinute
 from django.utils import timezone
 from django.views.generic import TemplateView
 
@@ -51,18 +52,8 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
 
         # Organization selection: 'all' for global, or org id
         orgs = Org.objects.all() if is_global_admin else Org.objects.filter(pk=profile.org_id)
-        sel = self.request.GET.get("org")
-        if sel == "all" and is_global_admin:
-            selected_org = None
-        else:
-            try:
-                selected_org = (
-                    Org.objects.get(pk=int(sel))
-                    if sel and sel.isdigit() and is_global_admin
-                    else profile.org
-                )
-            except Org.DoesNotExist:
-                selected_org = self.org
+
+        selected_org = self._get_selected_org(is_global_admin)
 
         # Base queryset of requests in scope
         # Global admins see all requests; org admins see all for the selected org;
@@ -77,11 +68,15 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                     | Q(token__service_account__team__org=selected_org)
                 )
             else:
-                # Standard user: restrict to own user tokens or service accounts in their teams
+                # Standard user: restrict to own tokens or service accounts' token in their teams;
+                # also include requests whose `user_id` value matches the user's email, even if
+                # the token does not belong to the user, but to another one from the same org.
                 user = profile.user
                 teams = self.get_teams_for_user()
                 reqs = Request.objects.filter(
-                    Q(token__user=user) | Q(token__service_account__team__in=teams)
+                    Q(token__user=user)
+                    | Q(token__service_account__team__in=teams)
+                    | (Q(user_id=user.email) & Q(token__user__profile__org=profile.org))
                 )
 
         # Only include requests for models configured in the router
@@ -89,21 +84,9 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         reqs = reqs.filter(model__in=allowed_models)
 
         # Optional token selection: filter to a single token if provided
-        token_param = self.request.GET.get("token")
-        selected_token = None
-        if token_param and token_param.isdigit():
-            try:
-                tok = Token.objects.get(pk=int(token_param))
-                # Ensure the token belongs to the selected_org if scoped
-                if selected_org is not None:
-                    tok_org_id = tok.user.profile.org_id if tok.user else None
-                    sa_org_id = tok.service_account.team.org_id if tok.service_account else None
-                    if tok_org_id != selected_org.id and sa_org_id != selected_org.id:
-                        raise Token.DoesNotExist
-                selected_token = tok
-                reqs = reqs.filter(token=selected_token)
-            except Token.DoesNotExist:
-                selected_token = None
+        selected_token = self._get_selected_token(selected_org)
+        if selected_token is not None:
+            reqs = reqs.filter(token=selected_token)
 
         # Time frame selection: 1 day, 1 week, or 1 month
         span_choices = {
@@ -116,56 +99,14 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             selected_span = "1d"
         span_cfg = span_choices[selected_span]
 
-        now = timezone.now()
+        # Build time-series data for chart
+        start_time, timeseries = self._get_timeseries(reqs, selected_span, span_cfg)
+
         # Filter requests based on selected time span
-        start_time = now - span_cfg["delta"]
         reqs_span = reqs.filter(timestamp__gte=start_time)
 
-        # Build time-series data for chart
-        qs = (
-            reqs_span.annotate(period=span_cfg["trunc"])
-            .values("period")
-            .annotate(count=Count("id"))
-            .order_by("period")
-        )
-        period_to_count = {int(item["period"].timestamp() * 1000): item["count"] for item in qs}
-        buckets = get_all_buckets(start_time, now, selected_span)
-        timeseries = [[b, period_to_count.get(b, 0)] for b in buckets]
-
-        # Top entities: tokens per org or orgs global
-        if selected_org is None:
-            # Top orgs sorted by request count (up to 100)
-            top_items = (
-                reqs_span.annotate(
-                    name=Coalesce(
-                        F("token__user__profile__org__name"),
-                        F("token__service_account__team__org__name"),
-                    )
-                )
-                .values("name")
-                .annotate(count=Count("id"))
-                .order_by("-count")[:100]
-            )
-        elif selected_token is None:
-            # Top tokens for the selected org by request count
-            top_items = (
-                reqs_span.annotate(
-                    name=F("token__name"),
-                    user_email=F("token__user__email"),
-                    service_account_name=F("token__service_account__name"),
-                )
-                .values("token_id", "name", "user_email", "service_account_name")
-                .annotate(count=Count("id"))
-                .order_by("-count")[:100]
-            )
-        else:
-            # Top user IDs for the selected token by request count
-            top_items = (
-                reqs_span.annotate(name=F("token__name"))
-                .values("name", "user_id")
-                .annotate(count=Count("user_id"))
-                .order_by("-count")[:100]
-            )
+        # Top entities: orgs global, or tokens per org, or user IDs per token
+        top_items = self._get_top_items(reqs_span, selected_org, selected_token)
 
         # Simple statistics
         total_requests = reqs_span.count()
@@ -215,3 +156,93 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             }
         )
         return context
+
+    def _get_selected_org(self, is_global_admin: bool) -> Org | None:
+        """Optional org selection based on the query param and user permissions"""
+        sel = self.request.GET.get("org")
+        if sel == "all" and is_global_admin:
+            selected_org = None
+        else:
+            try:
+                selected_org = (
+                    Org.objects.get(pk=int(sel))
+                    if sel and sel.isdigit() and is_global_admin
+                    else self.profile.org
+                )
+            except Org.DoesNotExist:
+                selected_org = self.org
+        return selected_org
+
+    def _get_selected_token(self, selected_org: Org | None) -> Token | None:
+        """Optional token selection based on the query param and user permissions"""
+        token_param = self.request.GET.get("token")
+        selected_token = None
+        if token_param and token_param.isdigit():
+            try:
+                tok = Token.objects.get(pk=int(token_param))
+                # Ensure the token belongs to the selected_org if scoped
+                if selected_org is not None:
+                    tok_org_id = tok.user.profile.org_id if tok.user else None
+                    sa_org_id = tok.service_account.team.org_id if tok.service_account else None
+                    if tok_org_id != selected_org.id and sa_org_id != selected_org.id:
+                        raise Token.DoesNotExist
+                selected_token = tok
+            except Token.DoesNotExist:
+                selected_token = None
+        return selected_token
+
+    def _get_timeseries(
+        self, reqs: QuerySet[Request], selected_span: str, span_cfg: dict
+    ) -> (datetime.datetime, list[tuple[int, int]]):
+        """Get the start time and the request count per time bucket of the timeseries."""
+        now = timezone.now()
+        start_time = now - span_cfg["delta"]
+        qs = (
+            reqs.filter(timestamp__gte=start_time)
+            .annotate(period=span_cfg["trunc"])
+            .values("period")
+            .annotate(count=Count("id"))
+            .order_by("period")
+        )
+        period_to_count = {int(item["period"].timestamp() * 1000): item["count"] for item in qs}
+        buckets = get_all_buckets(start_time, now, selected_span)
+        timeseries = [(b, period_to_count.get(b, 0)) for b in buckets]
+        return start_time, timeseries
+
+    def _get_top_items(
+        self, reqs: QuerySet[Request], selected_org: Org | None, selected_token: Token | None
+    ) -> dict[str, Any]:
+        """Annotate the `Request` queryset and get the top-level entities as dicts"""
+        if selected_org is None:
+            # Top orgs sorted by request count - only available for global admins.
+            # Note: service account tokens belong to the same org as the token's user.
+            top_items = reqs.annotate(
+                name=F("token__user__profile__org__name"), org_id=F("token__user__profile__org__id")
+            ).values("name", "org_id")
+        elif selected_token is None:
+            # Top tokens for the selected org by request count
+            top_items = reqs.values("token_id").annotate(
+                name=F("token__name"),
+                user_email=F("token__user__email"),
+                service_account_name=F("token__service_account__name"),
+            )
+        else:
+            # Top user IDs for the selected token by request count
+            top_items = reqs.annotate(name=F("token__name")).values("name", "user_id")
+
+        # Add annotations and ordering common to all cases; limit the result to 100 items
+        user_is_org_admin = self.profile.is_org_admin(selected_org)
+        teams = self.get_teams_for_user()
+        top_items = top_items.annotate(
+            count=Count("id"),
+            user_is_token_owner=ExpressionWrapper(
+                Value(user_is_org_admin)  # admin and org-admin users
+                | Q(token__user=self.profile.user)  # tokens belonging to the user
+                | Q(token__service_account__team__in=teams),  # tokens for user's teams
+                output_field=BooleanField(),
+            ),
+            input_sum=Sum("input_tokens", default=0),
+            output_sum=Sum("output_tokens", default=0),
+            total_sum=Sum(F("input_tokens") + F("output_tokens")),
+        )
+        return top_items.order_by("-count")[:100]

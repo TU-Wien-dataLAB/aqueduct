@@ -246,6 +246,7 @@ class OrgAdmin(admin.ModelAdmin):
 
 @admin.register(Request)
 class RequestAdmin(admin.ModelAdmin):
+    list_select_related = ["token"]
     list_display = (
         "id",
         "input_tokens",
@@ -253,8 +254,10 @@ class RequestAdmin(admin.ModelAdmin):
         "status_code",
         "response_time_ms",
         "model",
+        "token__name",
+        "user_id",
     )
-    list_filter = ["status_code", "model"]
+    list_filter = ["status_code", "model", "token"]
 
 
 @admin.register(ServiceAccount)

@@ -337,8 +337,8 @@ def log_request(view_func):
         # Calculate and set path (ensure leading slash)
         request_log.path = f"/{request.path.lstrip('/')}"
         kwargs["request_log"] = request_log
+        await request_log.asave()
         log.debug("Initial request log object created.")
-        # Note: The log is NOT saved here; it's saved later in the view after relaying.
 
         start_time = time.monotonic()
         result: HttpResponse | StreamingHttpResponse = await view_func(request, *args, **kwargs)

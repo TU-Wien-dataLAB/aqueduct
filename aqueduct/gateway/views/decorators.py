@@ -754,38 +754,41 @@ def validate_response_id(view_func):
 
 def check_tool_availability(view_func):
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         pydantic_model: ResponseCreateParams | None = kwargs.get("pydantic_model", None)
         if not token or not pydantic_model:
             return JsonResponse({"error": "Invalid request"}, status=400)
 
         tools: Iterable[ToolParam] = pydantic_model.get("tools", None)
-        for tool in tools:
-            match tool.get("type"):
-                case "function" | "custom":
-                    pass
-                case "mcp":
-                    server_name = tool.get("server_label")
-                    if await sync_to_async(token.mcp_server_excluded)(server_name):
-                        log.error(f"MCP server not found - {server_name}")
-                        return JsonResponse(
-                            {"error": f"MCP server not found - {server_name}"}, status=404
-                        )
+        if tools:
+            for tool in tools:
+                match tool.get("type"):
+                    case "function" | "custom":
+                        pass
+                    case "mcp":
+                        server_name = tool.get("server_label")
+                        if await sync_to_async(token.mcp_server_excluded)(server_name):
+                            log.error(f"MCP server not found - {server_name}")
+                            return JsonResponse(
+                                {"error": f"MCP server not found - {server_name}"}, status=404
+                            )
 
-                    try:
-                        mcp_config = get_mcp_config()
-                        server_config = mcp_config[server_name]
-                        tool["server_url"] = server_config["url"]
-                    except KeyError:
-                        log.error(f"MCP server not found - {server_name}")
-                        return JsonResponse(
-                            {"error": f"MCP server not found - {server_name}"}, status=404
-                        )
-                case other:
-                    if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
-                        return JsonResponse({"error": f"Invalid tool type: {other}"}, status=400)
+                        try:
+                            mcp_config = get_mcp_config()
+                            server_config = mcp_config[server_name]
+                            tool["server_url"] = server_config["url"]
+                        except KeyError:
+                            log.error(f"MCP server not found - {server_name}")
+                            return JsonResponse(
+                                {"error": f"MCP server not found - {server_name}"}, status=404
+                            )
+                    case other:
+                        if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
+                            return JsonResponse(
+                                {"error": f"Invalid tool type: {other}"}, status=400
+                            )
 
-        return await view_func(request, response_id, *args, **kwargs)
+        return await view_func(request, *args, **kwargs)
 
     return wrapper

@@ -7,6 +7,7 @@ import time
 from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
+from typing import Iterable
 
 import httpx
 import litellm
@@ -14,20 +15,22 @@ import openai
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib import auth
+from django.core.cache import cache
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Sum
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
+from django.urls import reverse
 from django.utils import timezone
 from mcp.types import JSONRPCMessage
 from openai.types.chat import ChatCompletionStreamOptionsParam
 from openai.types.chat.chat_completion_content_part_param import FileFile
+from openai.types.responses import ResponseCreateParams, ToolParam
 from pydantic import TypeAdapter, ValidationError
-from tos.middleware import cache
 from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
-from gateway.config import resolve_model_alias
-from gateway.views.utils import in_wildcard
+from gateway.config import get_mcp_config, resolve_model_alias
+from gateway.views.utils import get_response_from_cache, in_wildcard
 from management.models import FileObject, Request, Token
 
 log = logging.getLogger("aqueduct")
@@ -725,6 +728,84 @@ def parse_jsonrpc_message(view_func):
 
         kwargs["json_rpc_message"] = json_rpc_message
         kwargs["is_initialize"] = is_initialize
+
+        return await view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+def validate_response_id(view_func):
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs):
+        token = kwargs.get("token", None)
+        if not token:
+            return JsonResponse({"error": "Invalid request"}, status=400)
+
+        response = get_response_from_cache(response_id)
+        if not response:
+            return JsonResponse({"error": "Response not found"}, status=404)
+
+        if response["email"] != token.user.email:
+            return JsonResponse({"error": "Response not found"}, status=404)
+
+        return await view_func(request, response_id, *args, **kwargs)
+
+    return wrapper
+
+
+def check_tool_availability(view_func):
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
+        token: Token | None = kwargs.get("token", None)
+        pydantic_model: ResponseCreateParams | None = kwargs.get("pydantic_model", None)
+        if not token or not pydantic_model:
+            return JsonResponse({"error": "Invalid request"}, status=400)
+
+        tools: Iterable[ToolParam] = pydantic_model.get("tools", None)
+        if tools:
+            for tool in tools:
+                match tool.get("type"):
+                    case "function" | "custom":
+                        pass
+                    case "mcp":
+                        server_name = tool.get("server_label")
+                        if await sync_to_async(token.mcp_server_excluded)(server_name):
+                            log.error(f"MCP server not found - {server_name}")
+                            return JsonResponse(
+                                {"error": f"MCP server not found - {server_name}"}, status=404
+                            )
+
+                        try:
+                            mcp_config = get_mcp_config()
+                            server_config = mcp_config[server_name]
+                        except KeyError:
+                            # the user wants to access an externally managed MCP server
+                            if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
+                                log.error(f"MCP server not found - {server_name}")
+                                return JsonResponse(
+                                    {"error": f"MCP server not found - {server_name}"}, status=404
+                                )
+                        else:
+                            expected_url = request.build_absolute_uri(
+                                reverse("gateway:mcp_server", kwargs={"name": server_name})
+                            )
+                            if tool.get("server_url") != expected_url:
+                                log.error(
+                                    "The server_url of the tool does not match the Aqueduct MCP server url."
+                                )
+                                return JsonResponse(
+                                    {
+                                        "error": "The server_url of the tool does not match the Aqueduct MCP server url."
+                                    },
+                                    status=400,
+                                )
+
+                            tool["server_url"] = server_config["url"]
+                    case other:
+                        if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
+                            return JsonResponse(
+                                {"error": f"Invalid tool type: {other}"}, status=400
+                            )
 
         return await view_func(request, *args, **kwargs)
 

@@ -197,6 +197,10 @@ MCP_ALLOWED_ORIGINS = os.getenv(
     "MCP_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:*"
 ).split(",")
 
+RESPONSES_API_TTL_SECONDS = int(os.getenv("RESPONSES_API_TTL_SECONDS", f"{60 * 60 * 24 * 30}")) # 30-day default
+RESPONSES_API_ALLOWED_NATIVE_TOOLS = os.getenv("RESPONSES_API_ALLOWED_NATIVE_TOOLS", "").split(",")
+RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS = os.getenv("RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS", "False").lower() == "true"
+
 # TOS Settings
 
 TOS_ENABLED = os.getenv("TOS_ENABLED", "False").lower() == "true"
@@ -318,6 +322,13 @@ CACHES = {
         "LOCATION": CELERY_BROKER_URL,
     }
 }
+
+if TESTING:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

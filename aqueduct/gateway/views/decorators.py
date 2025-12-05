@@ -777,12 +777,15 @@ def check_tool_availability(view_func):
                         try:
                             mcp_config = get_mcp_config()
                             server_config = mcp_config[server_name]
-                            tool["server_url"] = server_config["url"]
                         except KeyError:
-                            log.error(f"MCP server not found - {server_name}")
-                            return JsonResponse(
-                                {"error": f"MCP server not found - {server_name}"}, status=404
-                            )
+                            # the user wants to access an externally managed MCP server
+                            if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
+                                log.error(f"MCP server not found - {server_name}")
+                                return JsonResponse(
+                                    {"error": f"MCP server not found - {server_name}"}, status=404
+                                )
+                        else:
+                            tool["server_url"] = server_config["url"]
                     case other:
                         if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
                             return JsonResponse(

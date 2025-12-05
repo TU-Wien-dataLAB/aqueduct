@@ -19,6 +19,7 @@ from django.core.cache import cache
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Sum
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
+from django.urls import reverse
 from django.utils import timezone
 from mcp.types import JSONRPCMessage
 from openai.types.chat import ChatCompletionStreamOptionsParam
@@ -785,6 +786,20 @@ def check_tool_availability(view_func):
                                     {"error": f"MCP server not found - {server_name}"}, status=404
                                 )
                         else:
+                            expected_url = request.build_absolute_uri(
+                                reverse("gateway:mcp_server", kwargs={"name": server_name})
+                            )
+                            if tool.get("server_url") != expected_url:
+                                log.error(
+                                    "The server_url of the tool does not match the Aqueduct MCP server url."
+                                )
+                                return JsonResponse(
+                                    {
+                                        "error": "The server_url of the tool does not match the Aqueduct MCP server url."
+                                    },
+                                    status=400,
+                                )
+
                             tool["server_url"] = server_config["url"]
                     case other:
                         if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:

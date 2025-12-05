@@ -418,10 +418,16 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         mock_get_mcp_config.return_value = {"test_mcp_server": {"url": "http://mcp-server:8080"}}
 
         request = AsyncMock()
+        # Mock build_absolute_uri as a regular (non-async) method
+        request.build_absolute_uri = MagicMock(side_effect=lambda path: f"http://testserver{path}")
         response_id = "test_response_id"
 
         token = Token(name="test_token")
-        tool = {"type": "mcp", "server_label": "test_mcp_server"}
+        tool = {
+            "type": "mcp",
+            "server_label": "test_mcp_server",
+            "server_url": "http://testserver/mcp-servers/test_mcp_server/mcp",
+        }
         pydantic_model = {"tools": [tool]}
 
         kwargs = {"token": token, "pydantic_model": pydantic_model}
@@ -431,7 +437,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
             decorated_func = check_tool_availability(mock_view_func)
             result = await decorated_func(request, response_id, **kwargs)
 
-        # Verify server_url was added to the tool
+        # Verify server_url was updated to the MCP server URL
         self.assertEqual(tool["server_url"], "http://mcp-server:8080")
         mock_view_func.assert_called_once_with(request, response_id, **kwargs)
         self.assertEqual(result.status_code, 200)

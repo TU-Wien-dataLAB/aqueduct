@@ -195,7 +195,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         )
 
         self.assertEqual(
-            response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
+            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
         )
         self.assertIn("Incompatible model", response.json()["error"])
 
@@ -226,7 +226,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         )
 
         self.assertEqual(
-            response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
+            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
         )
 
     def test_transcriptions_endpoint_with_language(self):

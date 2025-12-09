@@ -134,9 +134,7 @@
                         <th>Input<br>Tokens</th>
                         <th>Output<br>Tokens</th>
                         <th>Total<br>Tokens</th>
-                        {% if selected_token %}
-                            <th>Token Name</th>
-                        {% elif selected_org %}
+                        {% if selected_org and not selected_token %}
                             <th>Token Owner</th>
                             <th>Service Account</th>
                         {% endif %}
@@ -182,11 +180,7 @@
                                 <td class="font-bold">
                                     {{ item.total_sum|intcomma }}
                                 </td>
-                                {% if selected_token %}
-                                    <td>
-                                        {{ item.name }}
-                                    </td>
-                                {% elif selected_org %}
+                                {% if selected_org and not selected_token %}
                                     <td>
                                         {{ item.user_email }}
                                     </td>

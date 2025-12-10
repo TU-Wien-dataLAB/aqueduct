@@ -117,6 +117,9 @@ def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
 
 
 def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.AsyncClient, str]:
+    """Returns an OpenAI-compatible async client and provider-specific model name for proxying requests.
+    Used when direct OpenAI SDK client is needed instead of LiteLLM router (e.g., Responses API, Batches API).
+    """
     try:
         client: openai.AsyncClient = get_openai_client(model)
     except ValueError:
@@ -177,12 +180,11 @@ class ResponseRegistrationWrapper:
             # Parse SSE format: "data: {json}"
             for line in chunk_str.split("\n"):
                 if line.startswith("data: ") and "response.created" in line:
-                    json_data = json.loads(line[6:])  # Remove "data: " prefix
+                    json_data = json.loads(line.removeprefix("data: "))
                     if json_data.get("type") == "response.created":
                         return json_data.get("response", {}).get("id")
         except (json.JSONDecodeError, UnicodeDecodeError):
-            pass
-        return None
+            return None
 
 
 def register_response_in_cache(response_id: str | None, model: str, email: str):

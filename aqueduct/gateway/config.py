@@ -32,7 +32,6 @@ def get_router_config() -> dict:
     path = settings.LITELLM_ROUTER_CONFIG_FILE_PATH
     try:
         log.info(f"Loading router config from {path}")
-        print(f"Loading router config from {path}")
         with open(path) as f:
             data = yaml.safe_load(f)
     except (FileNotFoundError, TypeError):

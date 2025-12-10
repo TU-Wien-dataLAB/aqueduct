@@ -236,8 +236,8 @@ def check_limits(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
-            log.error("Token not found")
-            return JsonResponse({"error": "Token not found"}, status=404)
+            log.error("check_limits decorator used without @token_authenticated decorator")
+            return JsonResponse({"error": "Internal server error"}, status=500)
 
         try:
             # Get limits asynchronously
@@ -380,8 +380,10 @@ def check_model_availability(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
-            log.error("Token not found")
-            return JsonResponse({"error": "Token not found"}, status=404)
+            log.error(
+                "check_model_availability decorator used without @token_authenticated decorator"
+            )
+            return JsonResponse({"error": "Internal server error"}, status=500)
         body: dict | None = kwargs.get("pydantic_model", None)
         if not body:
             return await view_func(request, *args, **kwargs)
@@ -403,8 +405,10 @@ def check_mcp_server_availability(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
-            log.error("Token not found")
-            return JsonResponse({"error": "Token not found"}, status=404)
+            log.error(
+                "check_mcp_server_availability decorator used without @token_authenticated decorator"
+            )
+            return JsonResponse({"error": "Internal server error"}, status=500)
         server_name: str | None = kwargs.get("name", None)
         if not server_name:
             return await view_func(request, *args, **kwargs)
@@ -739,7 +743,8 @@ def validate_response_id(view_func):
     async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs):
         token = kwargs.get("token", None)
         if not token:
-            return JsonResponse({"error": "Invalid request"}, status=400)
+            log.error("validate_response_id decorator used without @token_authenticated decorator")
+            return JsonResponse({"error": "Internal server error"}, status=500)
 
         response = get_response_from_cache(response_id)
         if not response:
@@ -754,6 +759,18 @@ def validate_response_id(view_func):
 
 
 def check_tool_availability(view_func):
+    """
+    Validate tool availability and configuration for Responses API requests.
+
+    Checks that MCP server tools are accessible to the user's token and properly
+    configured. Validates server URLs for Aqueduct-managed MCP servers and ensures
+    native tools are allowed in settings. It prevents unauthorized access
+    to MCP servers and ensures tools are correctly configured.
+
+    Used on Responses API endpoints that accept tools in the request body.
+    Requires @token_authenticated and @parse_body decorators.
+    """
+
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
@@ -761,51 +778,48 @@ def check_tool_availability(view_func):
         if not token or not pydantic_model:
             return JsonResponse({"error": "Invalid request"}, status=400)
 
-        tools: Iterable[ToolParam] = pydantic_model.get("tools", None)
-        if tools:
-            for tool in tools:
-                match tool.get("type"):
-                    case "function" | "custom":
-                        pass
-                    case "mcp":
-                        server_name = tool.get("server_label")
-                        if await sync_to_async(token.mcp_server_excluded)(server_name):
+        tools: Iterable[ToolParam] = pydantic_model.get("tools") or []
+        for tool in tools:
+            match tool.get("type"):
+                case "function" | "custom":
+                    pass
+                case "mcp":
+                    server_name = tool.get("server_label")
+                    if await sync_to_async(token.mcp_server_excluded)(server_name):
+                        log.error(f"MCP server not found - {server_name}")
+                        return JsonResponse(
+                            {"error": f"MCP server not found - {server_name}"}, status=404
+                        )
+
+                    try:
+                        mcp_config = get_mcp_config()
+                        server_config = mcp_config[server_name]
+                    except KeyError:
+                        # the user wants to access an externally managed MCP server
+                        if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
                             log.error(f"MCP server not found - {server_name}")
                             return JsonResponse(
                                 {"error": f"MCP server not found - {server_name}"}, status=404
                             )
-
-                        try:
-                            mcp_config = get_mcp_config()
-                            server_config = mcp_config[server_name]
-                        except KeyError:
-                            # the user wants to access an externally managed MCP server
-                            if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-                                log.error(f"MCP server not found - {server_name}")
-                                return JsonResponse(
-                                    {"error": f"MCP server not found - {server_name}"}, status=404
-                                )
-                        else:
-                            expected_url = request.build_absolute_uri(
-                                reverse("gateway:mcp_server", kwargs={"name": server_name})
+                    else:
+                        expected_url = request.build_absolute_uri(
+                            reverse("gateway:mcp_server", kwargs={"name": server_name})
+                        )
+                        if tool.get("server_url") != expected_url:
+                            log.error(
+                                "The server_url of the tool does not match the Aqueduct MCP server url."
                             )
-                            if tool.get("server_url") != expected_url:
-                                log.error(
-                                    "The server_url of the tool does not match the Aqueduct MCP server url."
-                                )
-                                return JsonResponse(
-                                    {
-                                        "error": "The server_url of the tool does not match the Aqueduct MCP server url."
-                                    },
-                                    status=400,
-                                )
-
-                            tool["server_url"] = server_config["url"]
-                    case other:
-                        if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
                             return JsonResponse(
-                                {"error": f"Invalid tool type: {other}"}, status=400
+                                {
+                                    "error": "The server_url of the tool does not match the Aqueduct MCP server url."
+                                },
+                                status=400,
                             )
+
+                        tool["server_url"] = server_config["url"]
+                case other:
+                    if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
+                        return JsonResponse({"error": f"Invalid tool type: {other}"}, status=400)
 
         return await view_func(request, *args, **kwargs)
 

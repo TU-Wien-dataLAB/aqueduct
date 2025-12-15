@@ -46,7 +46,7 @@ The **Requests Over Time** chart displays a time-series of request counts for th
 ## Request Counts by Token / Organization / User ID
 
 The table on the right lists the top tokens (when scoped to an organization) or top organizations
-(when viewing all), or the top users (based on [`user_id`](#sending-user_id-in-api-requests),
+(when viewing all), or the top users (based on [`user_id`](../api/index.md#sending-user_id-in-api-request),
 when scoped to a token). Columns include:
 
 - **#**: Rank.
@@ -61,20 +61,3 @@ when scoped to a token). Columns include:
 ## Requests by Model
 
 The **Requests by Model** bar chart shows the request count for each model, including models with zero requests. This helps identify which models are used most frequently.
-
-
-## Sending `user_id` in API requests
-
-If you make a request to Aqueduct via the API, you can now send the additional `user_id` parameter
-in the body of the chat completion/embedding/... request to tell Aqueduct that the request
-was made by a specific user using your token.
-
-Why is this useful?
-
-You can now check the usage of your token per individual user, if you manage a service that calls Aqueduct.
-For this, go to the Usage page, click on your token in the list, and you will see the
-requests grouped by the value of `user_id` sent with the request.
-
-If the `user_id` of a request matches the email address of your user in Aqueduct,
-you see it in your Usage page, just as if you owned the token. This has been integrated
-in Open WebUI, so you can now see your usage of OpenWebUI in the Aqueduct Usage page.

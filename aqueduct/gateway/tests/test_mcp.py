@@ -276,10 +276,10 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
         """Test error handling for invalid tool name."""
         async with self.client_session() as session:
             await session.initialize()
-            with self.assertRaises(Exception) as context:
+            with self.assertRaises(McpError) as context:
                 await session.call_tool("nonexistent_tool", {})
 
-            self.assertIsNotNone(context.exception)
+            self.assertEqual("Unknown tool: nonexistent_tool", str(context.exception))
 
         await self.assertRequestLogged()
 
@@ -292,7 +292,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
                 invalid_uri = AnyUrl("invalid://not-a-real-uri")
                 await session.read_resource(invalid_uri)
 
-            self.assertIsNotNone(context.exception)
+            self.assertEqual("Unknown resource: invalid://not-a-real-uri", str(context.exception))
 
         await self.assertRequestLogged()
 

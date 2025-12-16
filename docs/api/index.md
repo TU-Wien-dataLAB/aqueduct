@@ -41,6 +41,38 @@ Click an endpoint below to learn more:
 
 ---
 
+
+## Sending `user_id` in API requests
+
+If you make a request to Aqueduct via the API, you can send the additional `user_id` parameter
+in the body of the chat completion/embedding/... request to tell Aqueduct that the request
+was made by a specific user using your token. An example chat completion request body could
+look like this:
+
+```json
+{
+      "model": "your-model-name",
+      "messages": [
+          {"role": "system", "content": "You are a helpful assistant."},
+          {"role": "user", "content": "Write me a short poem!"}
+      ],
+      "user_id": "janedoe@example.com"
+  }
+```
+Note that user ID can be anything: an email address, a UUID, a username, etc. Aqueduct does not validate
+whether a user with that ID exists.
+
+Why is this useful?
+
+You can check the usage of your token per individual user if you manage a service that calls Aqueduct.
+For this, go to the [Usage page](../user-guide/usage.md#request-counts-by-token--organization--user-id),
+click on your token in the list, and you will see the requests grouped by the value of `user_id`
+sent with the request.
+
+If the `user_id` of a request matches the email address of your user in Aqueduct,
+you see it in your Usage page, just as if you owned the token.
+
+
 ## Troubleshooting
 
 Here are some common errors and how to resolve them:

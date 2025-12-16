@@ -263,6 +263,108 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         response_json = response.json()
         self.assertIn("text", response_json, "Response should contain 'text' field")
 
+    def test_transcriptions_endpoint_with_vtt_format(self):
+        """Test transcriptions endpoint with VTT response format."""
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest("STT tests require OpenAI backend")
+
+        response = self.client.post(
+            self.url_stt,
+            {"file": self.test_audio_file, "model": self.stt_model, "response_format": "vtt"},
+            headers=self.multipart_headers,
+        )
+
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
+
+        # VTT format returns plain text (matching OpenAI's content-type), not JSON
+        self.assertEqual(response.get("Content-Type"), "text/plain; charset=utf-8")
+
+        # Decode the response content
+        vtt_content = response.content.decode("utf-8")
+
+        # VTT files should start with "WEBVTT"
+        self.assertTrue(
+            vtt_content.startswith("WEBVTT"),
+            f"VTT content should start with 'WEBVTT', got: {vtt_content[:50]}",
+        )
+
+        # Should contain some transcribed text
+        self.assertGreater(len(vtt_content), 10, "VTT content should not be empty")
+
+        # Check that the database contains one request
+        requests = list(Request.objects.all())
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after transcription."
+        )
+        req = requests[0]
+        self.assertIn("transcriptions", req.path, "Request endpoint should be for transcriptions.")
+
+    def test_transcriptions_endpoint_with_srt_format(self):
+        """Test transcriptions endpoint with SRT response format."""
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest("STT tests require OpenAI backend")
+
+        response = self.client.post(
+            self.url_stt,
+            {"file": self.test_audio_file, "model": self.stt_model, "response_format": "srt"},
+            headers=self.multipart_headers,
+        )
+
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
+
+        # SRT format returns plain text (matching OpenAI's content-type), not JSON
+        self.assertEqual(response.get("Content-Type"), "text/plain; charset=utf-8")
+
+        # Decode the response content
+        srt_content = response.content.decode("utf-8")
+
+        # SRT files should start with a number (subtitle index)
+        self.assertTrue(
+            srt_content.strip().startswith("1"),
+            f"SRT content should start with '1', got: {srt_content[:50]}",
+        )
+
+        # Should contain some transcribed text
+        self.assertGreater(len(srt_content), 10, "SRT content should not be empty")
+
+        # Check that the database contains one request
+        requests = list(Request.objects.all())
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after transcription."
+        )
+        req = requests[0]
+        self.assertIn("transcriptions", req.path, "Request endpoint should be for transcriptions.")
+
+    def test_transcriptions_endpoint_with_text_format(self):
+        """Test transcriptions endpoint with plain text response format."""
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest("STT tests require OpenAI backend")
+
+        response = self.client.post(
+            self.url_stt,
+            {"file": self.test_audio_file, "model": self.stt_model, "response_format": "text"},
+            headers=self.multipart_headers,
+        )
+
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
+
+        # Text format returns plain text (matching OpenAI's content-type), not JSON
+        self.assertEqual(response.get("Content-Type"), "text/plain; charset=utf-8")
+
+        # Decode the response content
+        text_content = response.content.decode("utf-8")
+
+        # Should contain some transcribed text
+        self.assertGreater(len(text_content), 10, "Text content should not be empty")
+
+        # Check that the database contains one request
+        requests = list(Request.objects.all())
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after transcription."
+        )
+        req = requests[0]
+        self.assertIn("transcriptions", req.path, "Request endpoint should be for transcriptions.")
+
     @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     def test_transcriptions_endpoint_timeout(self):
         """Test transcriptions endpoint timeout."""

@@ -9,9 +9,9 @@ from mcp.client.streamable_http import streamablehttp_client
 from mcp.types import PromptReference, ResourceTemplateReference
 from pydantic.networks import AnyUrl
 
-from gateway.tests.utils.base import GatewayIntegrationTestCase
+# Note: only MCPLiveServerTestCase imported here to avoid importing any Django models as this
+#  causes problems with LiveServerTestCase in PyCharm
 from gateway.tests.utils.mcp import MCPLiveServerTestCase
-from management.models import Org, ServiceAccount, Team, Token
 
 
 class MCPLiveClientTest(MCPLiveServerTestCase):
@@ -482,6 +482,8 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
     async def test_org_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at org level."""
         # Get org and add exclusion
+        from management.models import Org
+
         org = await sync_to_async(Org.objects.get)(name="E060")
         await sync_to_async(org.add_excluded_mcp_server)("test-server")
 
@@ -500,6 +502,8 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
     async def test_team_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at team level."""
         # Get team and add exclusion
+        from management.models import ServiceAccount, Team, Token
+
         team = await sync_to_async(Team.objects.get)(name="Whale")
         await sync_to_async(team.add_excluded_mcp_server)("test-server")
 
@@ -509,6 +513,8 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         )
 
         # Create a token for the service account
+        from gateway.tests.utils.base import GatewayIntegrationTestCase
+
         token = await sync_to_async(Token.objects.get)(
             key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
         )
@@ -555,9 +561,13 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
     async def test_merged_exclusion_lists(self):
         """Test that exclusion lists merge correctly across hierarchy."""
+        from management.models import Org, Token
+
         User = get_user_model()
 
         # Get the token to test exclusion list logic
+        from gateway.tests.utils.base import GatewayIntegrationTestCase
+
         token = await sync_to_async(Token.objects.get)(
             key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
         )

@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
 from litellm import Router
@@ -152,6 +151,8 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     def create_new_user() -> tuple[str, int]:
         # Create a new user and a new token for that user
         new_user = User.objects.create_user(username="OtherUser", email="other@example.com")
+
+        from django.contrib.auth.models import Group
 
         new_user.groups.add(Group.objects.get(name="user"))
         org = Org.objects.get(name="E060")

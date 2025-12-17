@@ -95,11 +95,16 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
         dict with request's body items and files.
     """
     data = {}
-    for key, value in dict(request.POST).items():
+    for key, value in request.POST.items():
         try:
             data[key] = json.loads(value)
         except (TypeError, json.JSONDecodeError):
-            data[key] = value
+            if key == "timestamp_granularities[]":
+                # OpenAI SKD turns timestamp_granularities into timestamp_granularities[] when sending HTTP request
+                # This has to be undone to avoid errors with the subsequent client.audio.transcriptions.create call
+                data["timestamp_granularities"] = request.POST.getlist(key)
+            else:
+                data[key] = value
 
     max_file_size_mb = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB
     max_file_bytes = int(settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024)
@@ -177,12 +182,6 @@ def parse_body(model: TypeAdapter):
             # "user_id" can be sent in the body (it is saved in the request log),
             # but we do not want to leave it in pydantic_model.
             kwargs["user_id"] = data.pop("user_id", "")
-
-            # OpenAI SKD turns timestamp_granularities into timestamp_granularities[] when sending HTTP request
-            # This has to be undone to avoid errors with the subsequent client.audio.transcriptions.create call
-            timestamp_granularity = data.pop("timestamp_granularities[]", None)
-            if timestamp_granularity:
-                data["timestamp_granularities"] = timestamp_granularity
 
             try:
                 model.validate_python(data)

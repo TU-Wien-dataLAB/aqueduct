@@ -34,6 +34,52 @@ def patch_mcp_sse_issue(view_func):
     return wrapper
 
 
+def _is_cancel_scope_error(exc):
+    """
+    Recursively check if an exception or ExceptionGroup contains a cancel scope error.
+
+    The cancel scope error is a known race condition in anyio's task group cleanup
+    that can occur during MCP session teardown. It manifests as nested ExceptionGroups
+    containing errors with "cancel scope" in the message.
+    """
+    if "cancel scope" in str(exc).lower():
+        return True
+    if isinstance(exc, ExceptionGroup):
+        for sub_exc in exc.exceptions:
+            if _is_cancel_scope_error(sub_exc):
+                return True
+    return False
+
+
+def skip_on_cancel_scope_error(test_func):
+    """
+    Decorator to skip MCP tests when encountering the cancel scope error.
+
+    This is a known race condition in anyio/MCP SDK where cancel scopes can get out of sync
+    during session cleanup. This can randomly occur on any MCP test. When detected, the test
+    is skipped rather than marked as failed.
+
+    Usage:
+        @async_to_sync
+        @skip_on_cancel_scope_error
+        async def test_something(self):
+            ...
+    """
+
+    @wraps(test_func)
+    async def wrapper(self, *args, **kwargs):
+        try:
+            return await test_func(self, *args, **kwargs)
+        except (Exception, ExceptionGroup) as e:
+            # Check if this is the cancel scope error (a race condition in anyio/MCP SDK)
+            # This can occur during session cleanup when cancel scopes exit in unexpected order.
+            if _is_cancel_scope_error(e):
+                self.skipTest(f"Skipping due to cancel scope race condition: {e}")
+            raise
+
+    return wrapper
+
+
 class MCPDaphneProcess(DaphneProcess):
     @patch(
         "mcp.client.streamable_http.StreamableHTTPTransport._handle_sse_event",

@@ -15,8 +15,6 @@ from django.test import override_settings
 from mcp import ClientSession
 from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_client
 
-from management.models import Request
-
 MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {
     "mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}
@@ -105,6 +103,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 yield session
 
     async def assertRequestLogged(self, n: int = 1):
+        from management.models import Request
+
         # Check that (only) initialize request was logged
         mcp_requests = await sync_to_async(Request.objects.count)()
         self.assertEqual(mcp_requests, n, f"There should be exactly {n} logged MCP request.")

@@ -1,7 +1,7 @@
 import litellm
 import openai
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from pydantic import ConfigDict, RootModel, TypeAdapter
@@ -65,6 +65,13 @@ async def transcriptions(
         data = transcription.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)
         return JsonResponse(data=data, status=200)
+    elif isinstance(transcription, str):
+        # Text-based formats (VTT, SRT, text) return plain strings
+        return HttpResponse(
+            content=transcription.encode("utf-8"),
+            content_type="text/plain; charset=utf-8",
+            status=200,
+        )
     elif isinstance(transcription, openai.AsyncStream):
         return StreamingHttpResponse(
             streaming_content=_openai_stream(stream=transcription, request_log=request_log),

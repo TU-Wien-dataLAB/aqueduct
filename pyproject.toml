@@ -16,7 +16,7 @@ dependencies = [
     "litellm==1.72.0",
     "mcp>=1.16.0",
     "mozilla-django-oidc>=4.0.1",
-    "openai>=1.95.0",
+    "openai>=2.13.0",
     "whitenoise>=6.9.0",
 ]
 

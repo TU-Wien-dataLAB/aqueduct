@@ -1,4 +1,3 @@
-import os
 import subprocess
 import time
 from contextlib import contextmanager
@@ -7,9 +6,9 @@ from typing import Any, Dict, Optional
 from unittest.mock import patch
 
 import requests
-from django.http import JsonResponse
 from django.test import TestCase
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from gateway.tests.utils.helpers import get_available_port
@@ -22,11 +21,11 @@ app = FastAPI()
 class MockConfig(BaseModel):
     status_code: int = 200
     response_data: Dict[str, Any] = {}
-    headers: Optional[Dict[str, str]] = None
+    headers: Optional[Dict[str, str]] = {"Content-Type": "application/json"}
 
 
 mock_responses = {
-    "GET:images/generations": MockConfig(
+    "POST:images/generations": MockConfig(
         response_data={
             "created": 1713833628,
             "data": [
@@ -40,15 +39,14 @@ mock_responses = {
                 "output_tokens": 50,
                 "input_tokens_details": {"text_tokens": 10, "image_tokens": 40},
             },
-        },
-        headers={"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"},
+        }
     )
 }
 
 
 @app.get("/health")
 async def health_check():
-    return JsonResponse({"status": "ok"})
+    return JSONResponse({"status": "ok"})
 
 
 @app.post("/configure/{method}/{path:path}")
@@ -61,15 +59,15 @@ async def configure_endpoint(method: str, path: str, config: MockConfig) -> Dict
 @app.get("/{path:path}")
 @app.post("/{path:path}")
 @app.delete("/{path:path}")
-async def mock_endpoint(path: str, request: Dict[str, Any] = None):
-    key = f"GET:{path}"
+async def mock_endpoint(path: str, request: Request, body: None | BaseModel = None):
+    key = f"{request.method}:{path}"
     if key not in mock_responses:
         raise HTTPException(status_code=404, detail=f"No mock configured for this endpoint: {key}")
 
     config = mock_responses[key]
 
-    return JsonResponse(
-        data=config.response_data, status_code=config.status_code, headers=config.headers
+    return JSONResponse(
+        content=config.response_data, status_code=config.status_code, headers=config.headers
     )
 
 
@@ -82,13 +80,6 @@ class MockAPIServer:
 
     def start(self) -> None:
         """Start the uvicorn mock server in a subprocess"""
-        # Prepare env variables
-        env = os.environ.copy()
-        # TODO: that's not a very robust way; maybe set the api_base in the litellm_params?
-        #  (see get_openai_client)
-        env["OPENAI_BASE_URL"] = self.base_url
-        env["OPENAI_API_KEY"] = "fake_openai_key"
-
         print(f"\nStarting a mock uvicorn server on port {self.port}...")
         cmd = [
             "uvicorn",
@@ -101,7 +92,7 @@ class MockAPIServer:
             "error",
         ]
         self.process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
 
         print(f"Waiting for the mock server to accept connections on port {self.port}...")
@@ -165,7 +156,7 @@ class MockAPIServer:
 
 
 class OpenAITestCase(TestCase):
-    """A test case using the mock server for external OpenAI requests."""
+    """A test case running the mock server for external OpenAI requests."""
 
     fixtures = ["gateway_data.json"]
     mock_server = None
@@ -190,6 +181,3 @@ class OpenAITestCase(TestCase):
     def tearDownClass(cls):
         cls.mock_server.stop()
         super().tearDownClass()
-
-
-# from openai.types.create_embedding_response import CreateEmbeddingResponse

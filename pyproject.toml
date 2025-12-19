@@ -31,6 +31,7 @@ vllm = [
 [dependency-groups]
 dev = [
     "channels[daphne]>=4.3.1",
+    "fastapi>=0.115.12",
     "pre-commit>=4.2.0",
     "ruff>=0.13.3",
     "tbump>=6.11.0",

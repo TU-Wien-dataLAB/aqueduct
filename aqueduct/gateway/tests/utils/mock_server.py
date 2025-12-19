@@ -21,11 +21,120 @@ app = FastAPI()
 class MockConfig(BaseModel):
     status_code: int = 200
     response_data: Dict[str, Any] = {}
-    headers: Optional[Dict[str, str]] = {"Content-Type": "application/json"}
+    headers: Dict[str, str] = {"Content-Type": "application/json"}
+
+
+class MockStreamingConfig(BaseModel):
+    status_code: int = 200
+    response_streaming_data: list[bytes] = []  # ??
+    headers: Dict[str, str] = {"Content-Type": "text/event-stream"}
 
 
 mock_responses = {
-    "POST:images/generations": MockConfig(
+    # TODO: test them all, they were generated or guessed
+    "audio/speech": MockStreamingConfig(response_streaming_data=[b"mock", b"audio", b"data"]),
+    "audio/transcriptions": MockConfig(
+        response_data={
+            "text": "This is a mock transcription",
+            "usage": {
+                "type": "tokens",
+                "input_tokens": 14,
+                "input_token_details": {"text_tokens": 0, "audio_tokens": 14},
+                "output_tokens": 45,
+                "total_tokens": 59,
+            },
+        }
+    ),
+    "batches": MockConfig(
+        response_data={
+            "id": "batch_123456789",
+            "object": "batch",
+            "endpoint": "/v1/chat/completions",
+            "errors": None,
+            "input_file_id": "file-123456789",
+            "completion_window": "24h",
+            "status": "validating",
+            "created_at": 1694268190,
+            "in_progress_at": None,
+            "expires_at": 1694354590,
+            "finalizing_at": None,
+            "completed_at": None,
+            "failed_at": None,
+            "cancelling_at": None,
+            "cancelled_at": None,
+            "error_file_id": None,
+            "results_file_id": None,
+            "metadata": {"custom_id": "my-batch"},
+        }
+    ),
+    "completions": MockConfig(
+        response_data={
+            "id": "cmpl-123456789",
+            "object": "text_completion",
+            "created": 1694268190,
+            "model": "text-davinci-003",
+            "choices": [
+                {
+                    "text": "This is a mock completion response.",
+                    "index": 0,
+                    "logprobs": None,
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 7, "total_tokens": 17},
+        }
+    ),
+    "chat/completions": MockConfig(
+        response_data={
+            "id": "chatcmpl-123456789",
+            "object": "chat.completion",
+            "created": 1694268190,
+            "model": "gpt-3.5-turbo",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "This is a mock chat completion response.",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 15,
+                "completion_tokens": 9,
+                "total_tokens": 24,
+                "prompt_tokens_details": {"cached_tokens": 0, "audio_tokens": 0},
+                "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "audio_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                },
+            },
+        }
+    ),
+    "embeddings": MockConfig(
+        response_data={
+            "object": "list",
+            "data": [
+                {"object": "embedding", "embedding": [0.1234, -0.5678, 0.9012, -0.3456], "index": 0}
+            ],
+            "model": "text-embedding-ada-002",
+            "usage": {"prompt_tokens": 8, "total_tokens": 8},
+        }
+    ),
+    "files": MockConfig(
+        response_data={
+            "id": "file-123456789",
+            "object": "file",
+            "bytes": 1024,
+            "created_at": 1694268190,
+            "filename": "uploaded_file.json",
+            "purpose": "fine-tune",
+        }
+    ),
+    "images/generations": MockConfig(
         response_data={
             "created": 1713833628,
             "data": [
@@ -40,7 +149,45 @@ mock_responses = {
                 "input_tokens_details": {"text_tokens": 10, "image_tokens": 40},
             },
         }
-    )
+    ),
+    # "files": MockConfig(
+    #     response_data={
+    #         "object": "list",
+    #         "data": [{
+    #             "id": "file-123456789",
+    #             "object": "file",
+    #             "bytes": 1024,
+    #             "created_at": 1694268190,
+    #             "filename": "mock_file.json",
+    #             "purpose": "fine-tune"
+    #         }]
+    #     }
+    # ),
+    # "batches": MockConfig(
+    #     response_data={
+    #         "object": "list",
+    #         "data": [{
+    #             "id": "batch_123456789",
+    #             "object": "batch",
+    #             "endpoint": "/v1/chat/completions",
+    #             "errors": None,
+    #             "input_file_id": "file-123456789",
+    #             "completion_window": "24h",
+    #             "status": "completed",
+    #             "created_at": 1694268190,
+    #             "in_progress_at": 1694268250,
+    #             "expires_at": 1694354590,
+    #             "finalizing_at": 1694350990,
+    #             "completed_at": 1694351090,
+    #             "failed_at": None,
+    #             "cancelling_at": None,
+    #             "cancelled_at": None,
+    #             "error_file_id": None,
+    #             "results_file_id": "file-987654321",
+    #             "metadata": {"custom_id": "my-batch"}
+    #         }]
+    #     }
+    # ),
 }
 
 
@@ -60,14 +207,16 @@ async def configure_endpoint(method: str, path: str, config: MockConfig) -> Dict
 @app.post("/{path:path}")
 @app.delete("/{path:path}")
 async def mock_endpoint(path: str, request: Request, body: None | BaseModel = None):
-    key = f"{request.method}:{path}"
-    if key not in mock_responses:
-        raise HTTPException(status_code=404, detail=f"No mock configured for this endpoint: {key}")
+    # key = f"{request.method}:{path}"
+    path = path.strip("/").removeprefix("v1/")
+    if path not in mock_responses:
+        raise HTTPException(status_code=404, detail=f"No mock configured for this endpoint: {path}")
 
-    config = mock_responses[key]
+    config = mock_responses[path]
 
     return JSONResponse(
-        content=config.response_data, status_code=config.status_code, headers=config.headers
+        content=config.response_data,
+        status_code=config.status_code,  # headers=config.headers
     )
 
 

@@ -23,6 +23,7 @@ from litellm.types.utils import (
 from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers
+from gateway.tests.utils.mock_server import OpenAITestCase
 from management.models import Org, Token, UserProfile
 
 INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
@@ -91,9 +92,9 @@ def get_mock_router(model: str = "test-model"):
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
 )
-class GatewayIntegrationTestCase(TransactionTestCase):
+class GatewayIntegrationTestCase(OpenAITestCase):
     """
-    Integration tests using the embedded RemoteOpenAIServer (with httpx).
+    Integration tests for gateway endpoints, using the mock OpenAI server.
     """
 
     vllm_server: Optional["RemoteOpenAIServer"] = None
@@ -142,6 +143,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
                 cls.vllm_server = None
                 raise AssertionError(f"Failed to set up vLLM server: {e}") from e
         elif INTEGRATION_TEST_BACKEND == "openai":
+            # TODO: it shouldn't be necessary!
             if not os.environ.get("OPENAI_API_KEY"):
                 raise RuntimeError(
                     "OPENAI_API_KEY environment variable has to be set for OpenAI integration."

@@ -43,14 +43,19 @@ Below the filters, the metrics bar shows aggregate statistics for the selected o
 
 The **Requests Over Time** chart displays a time-series of request counts for the selected period. It uses one-minute, one-hour, or one-day buckets for `1h`, `1d`, and `1w` spans, respectively.
 
-## Request Counts by Token / Organization
+## Request Counts by Token / Organization / User ID
 
-The table on the right lists the top tokens (when scoped to an organization) or top organizations (when viewing all). Columns include:
+The table on the right lists the top tokens (when scoped to an organization) or top organizations
+(when viewing all), or the top users (based on [`user_id`](../api/index.md#sending-user_id-in-api-request),
+when scoped to a token). Columns include:
 
 - **#**: Rank.
-- **Token Name / Organization**: Name of the token or organization.
+- **Token Name / Organization / User ID**: Name of the token or organization, or `user_id` value.
 - **Requests**: Number of requests.
-- **User**: User email (for tokens).
+- **Input Tokens**: Total input tokens consumed.
+- **Output Tokens**: Total output tokens returned.
+- **Total Tokens**: Sum of input and output tokens.
+- **Token Owner**: Token owner's email (for tokens).
 - **Service Account**: Service account name (for tokens).
 
 ## Requests by Model

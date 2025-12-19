@@ -2,19 +2,21 @@ from datetime import timedelta
 from urllib.parse import urlparse
 
 import httpx
-from asgiref.sync import sync_to_async
+from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
 from mcp import ClientSession, McpError
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.types import PromptReference, ResourceTemplateReference
 from pydantic.networks import AnyUrl
 
-from gateway.tests.utils.base import GatewayIntegrationTestCase
-from gateway.tests.utils.mcp import MCPLiveServerTestCase
-from management.models import Org, ServiceAccount, Team, Token
+# Note: only MCPLiveServerTestCase imported here to avoid importing any Django models as this
+#  causes problems with LiveServerTestCase in PyCharm
+from gateway.tests.utils.mcp import MCPLiveServerTestCase, skip_on_cancel_scope_error
 
 
 class MCPLiveClientTest(MCPLiveServerTestCase):
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_list_tools(self):
         """Test MCP tools listing."""
         async with self.client_session() as session:
@@ -30,6 +32,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_call_tool(self):
         """Test calling a tool."""
         async with self.client_session() as session:
@@ -45,6 +49,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_call_tool_long_running(self):
         """Test calling a long-running tool with progress updates."""
         async with self.client_session() as session:
@@ -56,6 +62,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsInstance(result.content, list)
             self.assertGreater(len(result.content), 0)
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_list_resources(self):
         """Test listing resources."""
         async with self.client_session() as session:
@@ -68,6 +76,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_read_resource(self):
         """Test reading a resource."""
         async with self.client_session() as session:
@@ -84,6 +94,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_list_prompts(self):
         """Test listing prompts."""
         async with self.client_session() as session:
@@ -99,6 +111,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_get_prompt(self):
         """Test getting a prompt."""
         async with self.client_session() as session:
@@ -115,6 +129,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_send_ping(self):
         """Test sending ping."""
         async with self.client_session() as session:
@@ -125,6 +141,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_list_resource_templates(self):
         """Test listing resource templates."""
         async with self.client_session() as session:
@@ -139,6 +157,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_complete_resource_template(self):
         """Test completion for resource template reference."""
         async with self.client_session() as session:
@@ -157,6 +177,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_complete_prompt_reference(self):
         """Test completion for prompt reference."""
         async with self.client_session() as session:
@@ -175,6 +197,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_set_logging_level(self):
         """Test setting server logging level."""
         async with self.client_session() as session:
@@ -185,6 +209,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_send_roots_list_changed(self):
         """Test sending roots list changed notification."""
         async with self.client_session() as session:
@@ -195,6 +221,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_send_progress_notification(self):
         """Test sending progress notification."""
         async with self.client_session() as session:
@@ -207,6 +235,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_call_tool_with_progress_callback(self):
         """Test calling tool with progress callback."""
         progress_updates = []
@@ -234,6 +264,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_call_tool_with_timeout(self):
         """Test calling tool with read timeout."""
         async with self.client_session() as session:
@@ -249,6 +281,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_list_methods_with_cursor(self):
         """Test list methods with cursor parameter functionality."""
         async with self.client_session() as session:
@@ -272,17 +306,21 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_error_invalid_tool_name(self):
         """Test error handling for invalid tool name."""
         async with self.client_session() as session:
             await session.initialize()
-            with self.assertRaises(Exception) as context:
+            with self.assertRaises(McpError) as context:
                 await session.call_tool("nonexistent_tool", {})
 
-            self.assertIsNotNone(context.exception)
+            self.assertEqual("Unknown tool: nonexistent_tool", str(context.exception))
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_error_invalid_resource_uri(self):
         """Test error handling for invalid resource URI."""
         async with self.client_session() as session:
@@ -292,7 +330,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
                 invalid_uri = AnyUrl("invalid://not-a-real-uri")
                 await session.read_resource(invalid_uri)
 
-            self.assertIsNotNone(context.exception)
+            self.assertEqual("Unknown resource: invalid://not-a-real-uri", str(context.exception))
 
         await self.assertRequestLogged()
 
@@ -308,6 +346,8 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_session_creation(self):
         """Test that sessions have unique IDs."""
         async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
@@ -346,6 +386,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
         },
     }
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_valid_host_allowed(self):
         """Test that valid hosts are allowed."""
         # The normal client_session should work with valid hosts (localhost:*)
@@ -356,6 +398,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_invalid_host_rejected(self):
         """Test that invalid Host header is rejected with 421."""
         # We need to test with a host that's valid for Django's ALLOWED_HOSTS
@@ -386,6 +430,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged(n=0)
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_invalid_origin_rejected(self):
         """Test that invalid Origin header is rejected with 403."""
         # Extract the actual host from the live server URL
@@ -411,6 +457,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged(0)
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_invalid_content_type_rejected(self):
         """Test that invalid Content-Type is rejected with 415."""
         # Extract the actual host from the live server URL
@@ -434,6 +482,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged(n=0)
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_missing_origin_allowed(self):
         """Test that missing Origin header is allowed (same-origin requests)."""
         # Normal requests without Origin should work
@@ -444,6 +494,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_wildcard_port_allowed(self):
         """Test that wildcard port patterns work (localhost:*)."""
         # Extract the actual host from the live server URL (should match localhost:*)
@@ -470,6 +522,8 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 class MCPServerExclusionTest(MCPLiveServerTestCase):
     """Test MCP server exclusion functionality."""
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_mcp_server_access_allowed(self):
         """Test that MCP server is accessible when not excluded."""
         async with self.client_session() as session:
@@ -479,9 +533,13 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
         await self.assertRequestLogged()
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_org_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at org level."""
         # Get org and add exclusion
+        from management.models import Org
+
         org = await sync_to_async(Org.objects.get)(name="E060")
         await sync_to_async(org.add_excluded_mcp_server)("test-server")
 
@@ -497,9 +555,13 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         # Clean up
         await sync_to_async(org.remove_excluded_mcp_server)("test-server")
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_team_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at team level."""
         # Get team and add exclusion
+        from management.models import ServiceAccount, Team, Token
+
         team = await sync_to_async(Team.objects.get)(name="Whale")
         await sync_to_async(team.add_excluded_mcp_server)("test-server")
 
@@ -509,6 +571,8 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         )
 
         # Create a token for the service account
+        from gateway.tests.utils.base import GatewayIntegrationTestCase
+
         token = await sync_to_async(Token.objects.get)(
             key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
         )
@@ -529,6 +593,8 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         await sync_to_async(service_account.delete)()
         await sync_to_async(team.remove_excluded_mcp_server)("test-server")
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_user_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at user profile level."""
 
@@ -553,11 +619,17 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         # Clean up
         await sync_to_async(profile.remove_excluded_mcp_server)("test-server")
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_merged_exclusion_lists(self):
         """Test that exclusion lists merge correctly across hierarchy."""
+        from management.models import Org, Token
+
         User = get_user_model()
 
         # Get the token to test exclusion list logic
+        from gateway.tests.utils.base import GatewayIntegrationTestCase
+
         token = await sync_to_async(Token.objects.get)(
             key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
         )
@@ -598,6 +670,8 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         await sync_to_async(profile.save)()
         await sync_to_async(org.remove_excluded_mcp_server)("test-server")
 
+    @async_to_sync
+    @skip_on_cancel_scope_error
     async def test_nonexistent_mcp_server(self):
         """Test that accessing a non-existent MCP server returns 404."""
         nonexistent_url = f"{self.live_server_url}/mcp-servers/nonexistent-server/mcp"

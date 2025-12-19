@@ -102,7 +102,12 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
         try:
             data[key] = json.loads(value)
         except (TypeError, json.JSONDecodeError):
-            data[key] = value
+            if key == "timestamp_granularities[]":
+                # OpenAI SKD turns timestamp_granularities into timestamp_granularities[] when sending HTTP request
+                # This has to be undone to avoid errors with the subsequent client.audio.transcriptions.create call
+                data["timestamp_granularities"] = request.POST.getlist(key)
+            else:
+                data[key] = value
 
     max_file_size_mb = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB
     max_file_bytes = int(settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB * 1024 * 1024)

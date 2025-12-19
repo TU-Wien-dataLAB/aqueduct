@@ -16,7 +16,7 @@ from openai.types.chat import ChatCompletion
 from openai.types.image import Image
 from openai.types.images_response import ImagesResponse
 
-from gateway.config import get_openai_client, get_router, get_router_config
+from gateway.config import get_router_config
 from gateway.tests.utils import (
     _build_chat_headers,
     _build_chat_payload,
@@ -27,7 +27,6 @@ from gateway.tests.utils.base import (
     INTEGRATION_TEST_BACKEND,
     ROUTER_CONFIG,
     GatewayIntegrationTestCase,
-    get_mock_router,
 )
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
 
@@ -1525,152 +1524,86 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
     stt_model = "whisper-1"
     image_gen_model = "dall-e-2"
 
+    def setUp(self):
+        super().setUp()
+        get_router_config.cache_clear()
+
     def test_chat_completion_with_alias(self):
         """
         Test that chat completion requests using an alias are routed correctly.
         """
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say hello!"},
+        ]
 
-        # Mock config with aliases
-        mock_config = {
-            "model_list": [
-                {
-                    "model_name": self.model,
-                    "litellm_params": {
-                        "model": f"openai/{self.model}",
-                        "api_key": "os.environ/OPENAI_API_KEY",
-                    },
-                    "model_info": {"aliases": ["main", "coding"]},
-                }
-            ]
-        }
+        # Try to use alias instead of model name
+        payload = {"model": "main", "messages": messages, "max_tokens": 10}
 
-        get_router_config.cache_clear()
+        response = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
-        with (
-            patch("gateway.config.get_router_config", return_value=mock_config),
-            patch("gateway.views.completions.get_router", return_value=get_mock_router()),
-        ):
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "Say hello!"},
-            ]
+        # Should return 200 with alias resolution
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Alias resolution not working. "
+            f"Expected 200, got {response.status_code}: {response.content}",
+        )
 
-            # Try to use alias instead of model name
-            payload = {"model": "main", "messages": messages, "max_tokens": 10}
-
-            response = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
-
-            # Should return 200 with alias resolution
-            self.assertEqual(
-                response.status_code,
-                200,
-                f"Alias resolution not working. "
-                f"Expected 200, got {response.status_code}: {response.content}",
-            )
-
-            response_json = response.json()
-            chat_completion = ChatCompletion.model_validate(response_json)
-            self.assertIsNotNone(chat_completion)
-            self.assertTrue(chat_completion.choices)
+        response_json = response.json()
+        chat_completion = ChatCompletion.model_validate(response_json)
+        self.assertIsNotNone(chat_completion)
+        self.assertTrue(chat_completion.choices)
 
     def test_speech_endpoint_with_alias(self):
         """Test that TTS endpoint correctly resolves model aliases."""
-
-        # Mock config with alias for TTS model
-        mock_config = {
-            "model_list": [
-                {
-                    "model_name": self.tts_model,
-                    "litellm_params": {
-                        "model": f"openai/{self.tts_model}",
-                        "api_key": "os.environ/OPENAI_API_KEY",
-                    },
-                    "model_info": {"mode": "audio_speech", "aliases": ["tts", "voice"]},
-                }
-            ]
+        payload = {
+            "model": "tts",  # Using alias instead of actual model name
+            "input": "Testing alias resolution for text-to-speech.",
+            "voice": "alloy",
+            "response_format": "mp3",
         }
 
-        # Clear both caches to ensure fresh state
-        get_router_config.cache_clear()
-        get_router.cache_clear()
+        response = self.client.post(
+            "/audio/speech",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
-        with (
-            patch("gateway.config.get_router_config", return_value=mock_config),
-            patch("gateway.config.get_router", return_value=get_mock_router()),
-        ):
-            payload = {
-                "model": "tts",  # Using alias instead of actual model name
-                "input": "Testing alias resolution for text-to-speech.",
-                "voice": "alloy",
-                "response_format": "mp3",
-            }
+        # Should return 200 with alias resolution
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Alias resolution not working for TTS. Expected 200, got {response.status_code}",
+        )
 
-            response = self.client.post(
-                "/audio/speech",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
-
-            # Should return 200 with alias resolution
-            self.assertEqual(
-                response.status_code,
-                200,
-                f"Alias resolution not working for TTS. Expected 200, got {response.status_code}",
-            )
-
-            # Check that the database contains one request
-            requests = list(Request.objects.all())
-            self.assertEqual(
-                len(requests), 1, "There should be exactly one request after speech generation."
-            )
+        # Check that the database contains one request
+        requests = list(Request.objects.all())
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after speech generation."
+        )
 
     def test_transcriptions_endpoint_with_alias(self):
         """Test that STT endpoint correctly resolves model aliases."""
-        # Mock config with alias for STT model
-        mock_config = {
-            "model_list": [
-                {
-                    "model_name": self.stt_model,
-                    "litellm_params": {
-                        "model": f"openai/{self.stt_model}",
-                        "api_key": "os.environ/OPENAI_API_KEY",
-                    },
-                    "model_info": {"mode": "audio_transcription", "aliases": ["stt", "transcribe"]},
-                }
-            ]
-        }
-
-        # Clear all caches to ensure fresh state
-        get_router_config.cache_clear()
-        get_router.cache_clear()
-        get_openai_client.cache_clear()
-
         # Create a simple audio file for testing (using a small mock file)
         test_audio_content = b"mock audio data"
         test_audio_file = SimpleUploadedFile(
             "test.mp3", test_audio_content, content_type="audio/mp3"
         )
 
-        # Mock the OpenAI client
-        mock_client = AsyncMock()
-        mock_client.audio.transcriptions.create.return_value = Transcription(
-            text="Mock transcription text"
-        )
+        with patch("gateway.views.utils.get_openai_client") as mock_client:
+            mock_openai_client = AsyncMock()
+            mock_openai_client.audio.transcriptions.create.return_value = Transcription(
+                text="How much is the fish?"
+            )
+            mock_client.return_value = mock_openai_client
 
-        with (
-            patch("gateway.config.get_router_config", return_value=mock_config),
-            patch(
-                "gateway.views.transcriptions.get_router",
-                return_value=get_mock_router(self.tts_model),
-            ),
-            patch("gateway.views.transcriptions.get_openai_client", return_value=mock_client),
-        ):
             headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
             # Remove Content-Type for multipart form data
             headers.pop("Content-Type", None)
@@ -1721,88 +1654,39 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         """
         Test that embedding requests using an alias are routed correctly.
         """
-        # Mock config with alias for embedding model
-        mock_config = {
-            "model_list": [
-                {
-                    "model_name": "text-embedding-ada-002",
-                    "litellm_params": {
-                        "model": "openai/text-embedding-ada-002",
-                        "api_key": "os.environ/OPENAI_API_KEY",
-                    },
-                    "model_info": {"mode": "embedding", "aliases": ["embedding", "embed"]},
-                }
-            ]
-        }
+        payload = {"model": "embedding", "input": ["The quick brown fox."]}
 
-        # Clear both caches to ensure fresh state
-        get_router_config.cache_clear()
-        get_router.cache_clear()
+        response = self.client.post(
+            "/embeddings",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
-        with (
-            patch("gateway.config.get_router_config", return_value=mock_config),
-            patch("gateway.config.get_router", return_value=get_mock_router()),
-        ):
-            payload = {"model": "embedding", "input": ["The quick brown fox."]}
+        # Should return 200 with alias resolution
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Alias resolution not working for embeddings. Expected 200, got {response.status_code}",
+        )
 
-            response = self.client.post(
-                "/embeddings",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
-
-            # Should return 200 with alias resolution
-            self.assertEqual(
-                response.status_code,
-                200,
-                f"Alias resolution not working for embeddings. Expected 200, got {response.status_code}",
-            )
-
-            response_json = response.json()
-            self.assertIn("data", response_json)
-            self.assertIsInstance(response_json["data"], list)
-            self.assertGreater(len(response_json["data"]), 0)
+        response_json = response.json()
+        self.assertIn("data", response_json)
+        self.assertIsInstance(response_json["data"], list)
+        self.assertGreater(len(response_json["data"]), 0)
 
     def test_image_generation_with_alias(self):
         """Test that image generation endpoint correctly resolves model aliases."""
-
-        # Mock config with alias for image generation model
-        mock_config = {
-            "model_list": [
-                {
-                    "model_name": self.model,
-                    "litellm_params": {
-                        "model": f"openai/{self.model}",
-                        "api_key": "os.environ/OPENAI_API_KEY",
-                    },
-                    "model_info": {"mode": "image_generation", "aliases": ["image", "dalle"]},
-                }
-            ]
-        }
-
-        # Clear all caches to ensure fresh state
-        get_router_config.cache_clear()
-        get_router.cache_clear()
-        get_openai_client.cache_clear()
-
         mock_image_object = Image(
             b64_json="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
             revised_prompt="A beautiful landscape with mountains and a lake",
         )
         mock_image_response = ImagesResponse(data=[mock_image_object], created=123456789)
 
-        with (
-            patch("gateway.config.get_router_config", return_value=mock_config),
-            patch(
-                "gateway.views.image_generation.get_router",
-                return_value=get_mock_router(self.model),
-            ),
-            patch("gateway.views.image_generation.get_openai_client") as mock_client,
-        ):
-            # Mock the client's images.generate method to return our mock response
+        with patch("gateway.views.utils.get_openai_client") as mock_client:
             mock_openai_client = AsyncMock()
             mock_openai_client.images.generate.return_value = mock_image_response
+
             mock_client.return_value = mock_openai_client
 
             payload = {
@@ -1841,51 +1725,32 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         """
         Test that multiple aliases for the same model all work correctly.
         """
-        mock_config = {
-            "model_list": [
-                {
-                    "model_name": self.model,
-                    "litellm_params": {
-                        "model": f"openai/{self.model}",
-                        "api_key": "os.environ/OPENAI_API_KEY",
-                    },
-                    "model_info": {"aliases": ["main", "coding", "default"]},
-                }
-            ]
-        }
+        messages = [{"role": "user", "content": "Test"}]
+        aliases_to_test = ["main", "coding"]
 
-        get_router_config.cache_clear()
+        first_status = None
+        for alias in aliases_to_test:
+            payload = {"model": alias, "messages": messages, "max_tokens": 5}
 
-        with (
-            patch("gateway.config.get_router_config", return_value=mock_config),
-            patch("gateway.config.get_router", return_value=get_mock_router()),
-        ):
-            messages = [{"role": "user", "content": "Test"}]
-            aliases_to_test = ["main", "coding", "default"]
+            response = self.client.post(
+                "/chat/completions",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
-            first_status = None
-            for alias in aliases_to_test:
-                payload = {"model": alias, "messages": messages, "max_tokens": 5}
-
-                response = self.client.post(
-                    "/chat/completions",
-                    data=json.dumps(payload),
-                    headers=self.headers,
-                    content_type="application/json",
+            # All should behave the same (either all work or all fail)
+            if first_status is None:
+                # Remember result for first alias
+                first_status = response.status_code
+            else:
+                # Others should match
+                self.assertEqual(
+                    response.status_code,
+                    first_status,
+                    f"Alias '{alias}' returned {response.status_code}, "
+                    f"but first alias returned {first_status}",
                 )
-
-                # All should behave the same (either all work or all fail)
-                if first_status is None:
-                    # Remember result for first alias
-                    first_status = response.status_code
-                else:
-                    # Others should match
-                    self.assertEqual(
-                        response.status_code,
-                        first_status,
-                        f"Alias '{alias}' returned {response.status_code}, "
-                        f"but first alias returned {first_status}",
-                    )
 
     def test_excluded_model_alias_rejected(self):
         """
@@ -1896,114 +1761,74 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         org.add_excluded_model(self.model)
         org.save()
 
-        mock_config = {
-            "model_list": [
-                {
-                    "model_name": self.model,
-                    "litellm_params": {
-                        "model": f"openai/{self.model}",
-                        "api_key": "os.environ/OPENAI_API_KEY",
-                    },
-                    "model_info": {"aliases": ["main"]},
-                }
-            ]
-        }
+        messages = [{"role": "user", "content": "Test"}]
 
-        get_router_config.cache_clear()
+        # Test with actual model name
+        payload = {"model": self.model, "messages": messages, "max_tokens": 5}
+        response_actual = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
-        with (
-            patch("gateway.config.get_router_config", return_value=mock_config),
-            patch("gateway.config.get_router", return_value=get_mock_router()),
-        ):
-            messages = [{"role": "user", "content": "Test"}]
+        # Test with alias
+        payload = {"model": "main", "messages": messages, "max_tokens": 5}
+        response_alias = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
-            # Test with actual model name
-            payload = {"model": self.model, "messages": messages, "max_tokens": 5}
-            response_actual = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        # Both should be rejected (404)
+        self.assertEqual(
+            response_actual.status_code,
+            404,
+            f"Expected 404 for excluded model, got {response_actual.status_code}",
+        )
 
-            # Test with alias
-            payload = {"model": "main", "messages": messages, "max_tokens": 5}
-            response_alias = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
-
-            # Both should be rejected (404)
-            self.assertEqual(
-                response_actual.status_code,
-                404,
-                f"Expected 404 for excluded model, got {response_actual.status_code}",
-            )
-
-            # Alias should also be rejected since it resolves to excluded model
-            self.assertEqual(
-                response_alias.status_code,
-                404,
-                f"Alias to excluded model should return 404, got {response_alias.status_code}",
-            )
+        # Alias should also be rejected since it resolves to excluded model
+        self.assertEqual(
+            response_alias.status_code,
+            404,
+            f"Alias to excluded model should return 404, got {response_alias.status_code}",
+        )
 
     def test_alias_case_sensitivity_in_requests(self):
         """
         Test that alias case sensitivity is preserved in actual requests.
         """
-        mock_config = {
-            "model_list": [
-                {
-                    "model_name": self.model,
-                    "litellm_params": {
-                        "model": f"openai/{self.model}",
-                        "api_key": "os.environ/OPENAI_API_KEY",
-                    },
-                    "model_info": {
-                        "aliases": ["main"]  # lowercase
-                    },
-                }
-            ]
-        }
+        messages = [{"role": "user", "content": "Test"}]
 
-        get_router_config.cache_clear()
+        # Test with correct case
+        payload = {"model": "main", "messages": messages, "max_tokens": 5}
+        response_lowercase = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
-        with (
-            patch("gateway.config.get_router_config", return_value=mock_config),
-            patch("gateway.config.get_router", return_value=get_mock_router()),
-        ):
-            messages = [{"role": "user", "content": "Test"}]
+        # Should return 200 with alias resolution
+        self.assertEqual(
+            response_lowercase.status_code,
+            200,
+            f"Alias resolution not working for lowercase. Expected 200, got {response_lowercase.status_code}",
+        )
 
-            # Test with correct case
-            payload = {"model": "main", "messages": messages, "max_tokens": 5}
-            response_lowercase = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        # Test with wrong case
+        payload = {"model": "Main", "messages": messages, "max_tokens": 5}
+        response_uppercase = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
-            # Should return 200 with alias resolution
-            self.assertEqual(
-                response_lowercase.status_code,
-                200,
-                f"Alias resolution not working for lowercase. Expected 200, got {response_lowercase.status_code}",
-            )
-
-            # Test with wrong case
-            payload = {"model": "Main", "messages": messages, "max_tokens": 5}
-            response_uppercase = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
-
-            # "Main" should fail since only "main" is defined (case-sensitive)
-            self.assertIn(
-                response_uppercase.status_code,
-                [400, 404],
-                f"Wrong case alias 'Main' should fail, got {response_uppercase.status_code}",
-            )
+        # "Main" should fail since only "main" is defined (case-sensitive)
+        self.assertIn(
+            response_uppercase.status_code,
+            [400, 404],
+            f"Wrong case alias 'Main' should fail, got {response_uppercase.status_code}",
+        )

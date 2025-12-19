@@ -21,6 +21,7 @@ from litellm.types.utils import (
 from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers
+from gateway.tests.utils.mock_server import OpenAITestCase
 from management.models import Org, Token, UserProfile
 
 INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
@@ -60,9 +61,9 @@ def get_mock_router(model: str = "test-model"):
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     API_MAX_RETRIES=5,  # for some reason the OpenAI API fails with 503 sometimes...
 )
-class GatewayIntegrationTestCase(TransactionTestCase):
+class GatewayIntegrationTestCase(OpenAITestCase):
     """
-    Integration tests using the embedded RemoteOpenAIServer (with httpx).
+    Integration tests for gateway endpoints, using the mock OpenAI server.
     """
 
     model = "gpt-4.1-nano"
@@ -84,6 +85,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
         cls._write_router_config()
         super().setUpClass()
         if INTEGRATION_TEST_BACKEND == "openai":
+            # TODO: the key shouldn't be necessary!
             if not os.environ.get("OPENAI_API_KEY"):
                 raise RuntimeError(
                     "OPENAI_API_KEY environment variable has to be set for OpenAI integration."

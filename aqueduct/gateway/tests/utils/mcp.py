@@ -15,6 +15,8 @@ from django.test import override_settings
 from mcp import ClientSession
 from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_client
 
+from gateway.tests.utils.helpers import get_available_port
+
 MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {
     "mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}
@@ -176,11 +178,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     @classmethod
     def _start_mcp_server(cls):
         """Start the MCP everything server on a random available port."""
-        # Find a random available port
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", 0))
-            s.listen(1)
-            port = s.getsockname()[1]
+        port = get_available_port()
 
         cls.mcp_server_port = port
         cls._update_mcp_config_port(port)

@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from unittest.mock import patch
 
 import requests
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -21,15 +21,14 @@ class MockConfig(BaseModel):
     headers: Dict[str, str] = {"Content-Type": "application/json"}
 
 
-class MockStreamingConfig(BaseModel):
-    status_code: int = 200
-    response_streaming_data: list[bytes] = []  # ??
+class MockStreamingConfig(MockConfig):
+    response_data: list[bytes] = []  # ??
     headers: Dict[str, str] = {"Content-Type": "text/event-stream"}
 
 
-mock_responses = {
+default_mock_post_responses = {
     # TODO: test them all, they were generated or guessed
-    "audio/speech": MockStreamingConfig(response_streaming_data=[b"mock", b"audio", b"data"]),
+    "audio/speech": MockStreamingConfig(response_data=[b"mock", b"audio", b"data"]),
     "audio/transcriptions": MockConfig(
         response_data={
             "text": "This is a mock transcription",
@@ -144,44 +143,34 @@ mock_responses = {
 }
 
 
+special_mock_responses: dict[str, MockConfig] = {}
+
+
 @app.get("/health")
 async def health_check():
     return JSONResponse({"status": "ok"})
 
 
-@app.post("/configure/{method}/{path:path}")
-async def configure_endpoint(method: str, path: str, config: MockConfig) -> Dict[str, str]:
-    key = f"{method}:{path}"
-    mock_responses[key] = config
-    return {"message": f"Configured {method} {path}"}
+@app.post("/configure/{path:path}")
+async def configure_endpoint(path: str, config: MockConfig):
+    special_mock_responses[path] = config
+    return {"message": f"Configured a special mock response for {path}"}
 
 
-@app.get("/{path:path}")
 @app.post("/{path:path}")
-@app.delete("/{path:path}")
-async def mock_endpoint(path: str, request: Request):
-    # key = f"{request.method}:{path}"
+async def mock_endpoint(path: str):
     path = path.strip("/").removeprefix("v1/")
-    if path not in mock_responses:
-        raise HTTPException(status_code=404, detail=f"No mock configured for this endpoint: {path}")
 
-    config = mock_responses[path]
+    if path in special_mock_responses:
+        config = special_mock_responses[path]
+    elif path in default_mock_post_responses:
+        config = default_mock_post_responses[path]
+    else:
+        raise HTTPException(status_code=404, detail=f"No mock configured for this endpoint: {path}")
 
     return JSONResponse(
         content=config.response_data, status_code=config.status_code, headers=config.headers
     )
-    # except Exception as e:
-    #     import traceback
-    #     logger.error(f"Error processing transcription: {str(e)}")
-    #     logger.error(f"Traceback: {traceback.format_exc()}")
-    #     return JSONResponse(
-    #         status_code=500,
-    #         content={
-    #             "error": str(e),
-    #             "detail": traceback.format_exc(),
-    #             "request_data": request.body()
-    #         }
-    #     )
 
 
 class MockAPIServer:
@@ -242,13 +231,13 @@ class MockAPIServer:
 
     def configure_endpoint(
         self,
-        method: str,
         path: str,
         status_code: int = 200,
         response_data: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
     ) -> None:
-        url = f"{self.base_url}/configure/{method}/{path}"
+        normalized_path = path.strip("/").removeprefix("v1/")
+        url = f"{self.base_url}/configure/{normalized_path}"
         config = {
             "status_code": status_code,
             "response_data": response_data or {},
@@ -258,7 +247,13 @@ class MockAPIServer:
         response.raise_for_status()
 
     @contextmanager
-    def patch_external_api(self):
+    def patch_external_api(self, url: str | None = None, config: MockConfig | None = None):
+        if (url is None) != (config is None):
+            raise ValueError("Both 'url' and 'config' must be provided.")
+
+        if config is not None:
+            self.configure_endpoint(url, config.status_code, config.response_data, config.headers)
+
         # TODO: make it more robust? Now it relies on the fact that AsyncOpenAI client
         #  tries to get the url from the env; maybe mock get_openai_client? or Router? like in `get_mock_router`?
         with patch.dict(
@@ -267,7 +262,8 @@ class MockAPIServer:
             try:
                 yield
             finally:
-                pass  # Cleanup handled by tearDown
+                special_mock_responses.clear()
+                # Further cleanup handled by tearDown
 
 
 def main():
@@ -280,6 +276,8 @@ def main():
         help="Port to run the server on. If not provided, a random unused port is chosen",
     )
     parser.add_argument("--log-level", type=str, default="error", help="Log level for uvicorn")
+    # TODO: add option to add delays to responses
+    # parser.add_argument("--delays", action="store_true", help="Add delays to responses")
     args = parser.parse_args()
     mock_server = MockAPIServer(port=args.port, log_level=args.log_level)
     try:

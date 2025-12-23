@@ -5,6 +5,7 @@ from django.urls import reverse
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayIntegrationTestCase
+from gateway.tests.utils.mock_server import MockConfig
 from management.models import Request, Usage
 
 
@@ -125,7 +126,13 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             "size": "256x256",
         }
 
-        with self.mock_server.patch_external_api():
+        with self.mock_server.patch_external_api(
+            self.url,
+            MockConfig(
+                status_code=HTTPStatus.BAD_REQUEST,
+                response_data={"error": "Invalid 'prompt': empty string"},
+            ),
+        ):
             response = self.client.post(
                 self.url,
                 data=json.dumps(payload),
@@ -133,7 +140,6 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
                 content_type="application/json",
             )
 
-        # TODO: returns 200
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.assertIn("Invalid 'prompt': empty string", response.json()["error"])
 
@@ -163,7 +169,29 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             "size": "256x256",
         }
 
-        with self.mock_server.patch_external_api():
+        with self.mock_server.patch_external_api(
+            self.url,
+            MockConfig(
+                status_code=HTTPStatus.OK,
+                response_data={
+                    "created": 1713833628,
+                    "data": [
+                        {
+                            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+                        },
+                        {
+                            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+                        },
+                    ],
+                    "usage": {
+                        "total_tokens": 100,
+                        "input_tokens": 50,
+                        "output_tokens": 50,
+                        "input_tokens_details": {"text_tokens": 10, "image_tokens": 40},
+                    },
+                },
+            ),
+        ):
             response = self.client.post(
                 self.url,
                 data=json.dumps(payload),

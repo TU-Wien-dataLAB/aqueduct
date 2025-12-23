@@ -1,26 +1,23 @@
+import argparse
 import subprocess
 import time
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Any, Dict, Optional
 from unittest.mock import patch
 
 import requests
-from django.test import TestCase
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from gateway.tests.utils.helpers import get_available_port
 
-ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent
-
-app = FastAPI()
+app = FastAPI(debug=True)
 
 
 class MockConfig(BaseModel):
     status_code: int = 200
-    response_data: Dict[str, Any] = {}
+    response_data: Dict[str, Any] | bytes = {}
     headers: Dict[str, str] = {"Content-Type": "application/json"}
 
 
@@ -36,13 +33,7 @@ mock_responses = {
     "audio/transcriptions": MockConfig(
         response_data={
             "text": "This is a mock transcription",
-            "usage": {
-                "type": "tokens",
-                "input_tokens": 14,
-                "input_token_details": {"text_tokens": 0, "audio_tokens": 14},
-                "output_tokens": 45,
-                "total_tokens": 59,
-            },
+            "usage": {"type": "duration", "seconds": 60},
         }
     ),
     "batches": MockConfig(
@@ -150,44 +141,6 @@ mock_responses = {
             },
         }
     ),
-    # "files": MockConfig(
-    #     response_data={
-    #         "object": "list",
-    #         "data": [{
-    #             "id": "file-123456789",
-    #             "object": "file",
-    #             "bytes": 1024,
-    #             "created_at": 1694268190,
-    #             "filename": "mock_file.json",
-    #             "purpose": "fine-tune"
-    #         }]
-    #     }
-    # ),
-    # "batches": MockConfig(
-    #     response_data={
-    #         "object": "list",
-    #         "data": [{
-    #             "id": "batch_123456789",
-    #             "object": "batch",
-    #             "endpoint": "/v1/chat/completions",
-    #             "errors": None,
-    #             "input_file_id": "file-123456789",
-    #             "completion_window": "24h",
-    #             "status": "completed",
-    #             "created_at": 1694268190,
-    #             "in_progress_at": 1694268250,
-    #             "expires_at": 1694354590,
-    #             "finalizing_at": 1694350990,
-    #             "completed_at": 1694351090,
-    #             "failed_at": None,
-    #             "cancelling_at": None,
-    #             "cancelled_at": None,
-    #             "error_file_id": None,
-    #             "results_file_id": "file-987654321",
-    #             "metadata": {"custom_id": "my-batch"}
-    #         }]
-    #     }
-    # ),
 }
 
 
@@ -206,7 +159,7 @@ async def configure_endpoint(method: str, path: str, config: MockConfig) -> Dict
 @app.get("/{path:path}")
 @app.post("/{path:path}")
 @app.delete("/{path:path}")
-async def mock_endpoint(path: str, request: Request, body: None | BaseModel = None):
+async def mock_endpoint(path: str, request: Request):
     # key = f"{request.method}:{path}"
     path = path.strip("/").removeprefix("v1/")
     if path not in mock_responses:
@@ -215,17 +168,29 @@ async def mock_endpoint(path: str, request: Request, body: None | BaseModel = No
     config = mock_responses[path]
 
     return JSONResponse(
-        content=config.response_data,
-        status_code=config.status_code,  # headers=config.headers
+        content=config.response_data, status_code=config.status_code, headers=config.headers
     )
+    # except Exception as e:
+    #     import traceback
+    #     logger.error(f"Error processing transcription: {str(e)}")
+    #     logger.error(f"Traceback: {traceback.format_exc()}")
+    #     return JSONResponse(
+    #         status_code=500,
+    #         content={
+    #             "error": str(e),
+    #             "detail": traceback.format_exc(),
+    #             "request_data": request.body()
+    #         }
+    #     )
 
 
 class MockAPIServer:
-    def __init__(self) -> None:
+    def __init__(self, port: int = None, log_level: str = "error") -> None:
         self.host: str = "localhost"
-        self.port: int = get_available_port()
+        self.port: int = port or get_available_port()
         self.base_url: str = f"http://{self.host}:{self.port}"
         self.process: Optional[subprocess.Popen] = None
+        self.log_level: str = log_level
 
     def start(self) -> None:
         """Start the uvicorn mock server in a subprocess"""
@@ -238,7 +203,7 @@ class MockAPIServer:
             "--port",
             str(self.port),
             "--log-level",
-            "error",
+            self.log_level,
         ]
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
@@ -247,31 +212,32 @@ class MockAPIServer:
         print(f"Waiting for the mock server to accept connections on port {self.port}...")
         start_time = time.time()
         timeout = 20
-        last_error = None
 
-        while time.time() - start_time < timeout:
+        while True:
             try:
                 response = requests.get(f"{self.base_url}/health", timeout=0.5)
                 if response.status_code == 200:
-                    print(f"✓ Mock server started successfully on port {self.port}")
-                    return
-            except requests.RequestException as e:
-                last_error = e
-                time.sleep(0.5)
-
-        raise RuntimeError(
-            f"Mock server failed to start within {timeout} s. Last error: {last_error}"
-        )
+                    print(f"✓ Mock server started successfully on port {self.port}.")
+                    break
+            except requests.RequestException as err:
+                if time.time() - start_time < timeout:
+                    time.sleep(0.5)
+                else:
+                    raise RuntimeError(
+                        f"Mock server failed to start within {timeout} s. Last error: {err}"
+                    )
 
     def stop(self):
         """Stop the mock server"""
         if self.process:
+            print("\nStopping mock server...")
             self.process.terminate()
             try:
                 self.process.communicate(timeout=5)
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 outs, errs = self.process.communicate()
+                print("Process did not terminate gracefully. Force killed.")
             self.process = None
 
     def configure_endpoint(
@@ -304,29 +270,29 @@ class MockAPIServer:
                 pass  # Cleanup handled by tearDown
 
 
-class OpenAITestCase(TestCase):
-    """A test case running the mock server for external OpenAI requests."""
+def main():
+    """Run the mock uvicorn server as a standalone script."""
+    parser = argparse.ArgumentParser(description="Run a mock API server")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Port to run the server on. If not provided, a random unused port is chosen",
+    )
+    parser.add_argument("--log-level", type=str, default="error", help="Log level for uvicorn")
+    args = parser.parse_args()
+    mock_server = MockAPIServer(port=args.port, log_level=args.log_level)
+    try:
+        mock_server.start()
+        print(f"Server running on {mock_server.base_url}. Press Ctrl+C to stop.")
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass  # Do not print out the traceback here, just exit cleanly
+    finally:
+        mock_server.stop()
+        print("Server stopped.")
 
-    fixtures = ["gateway_data.json"]
-    mock_server = None
 
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.mock_server = MockAPIServer()
-
-        try:
-            cls.mock_server.start()
-        except RuntimeError as err:
-            print(err)
-            print(f"Failed to connect to the mock server! Interrupting the {cls.__name__}")
-            # In case of any errors during setup, `tearDownClass` is not called, which means
-            # the uvicorn server subprocess is *not* terminated and continues to run
-            # in the background even after the test process exists.
-            cls.tearDownClass()
-            raise
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.mock_server.stop()
-        super().tearDownClass()
+if __name__ == "__main__":
+    main()

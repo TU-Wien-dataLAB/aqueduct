@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import TransactionTestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from litellm import Router
 from litellm.types.llms.openai import HttpxBinaryResponseContent
@@ -23,7 +23,7 @@ from litellm.types.utils import (
 from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers
-from gateway.tests.utils.mock_server import OpenAITestCase
+from gateway.tests.utils.mock_server import MockAPIServer
 from management.models import Org, Token, UserProfile
 
 INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
@@ -86,7 +86,34 @@ def get_mock_router(model: str = "test-model"):
     return router
 
 
-# --- Django Test Class ---
+class OpenAITestCase(TestCase):
+    """A test case running the mock server for external OpenAI requests."""
+
+    fixtures = ["gateway_data.json"]
+    mock_server = None
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.mock_server = MockAPIServer()
+
+        try:
+            cls.mock_server.start()
+        except RuntimeError as err:
+            print(err)
+            print(f"Failed to connect to the mock server! Interrupting the {cls.__name__}")
+            # In case of any errors during setup, `tearDownClass` is not called, which means
+            # the uvicorn server subprocess is *not* terminated and continues to run
+            # in the background even after the test process exists.
+            cls.tearDownClass()
+            raise
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.mock_server.stop()
+        super().tearDownClass()
+
+
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,

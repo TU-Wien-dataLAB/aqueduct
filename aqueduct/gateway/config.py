@@ -1,4 +1,5 @@
 import json
+import logging
 from functools import lru_cache
 from typing import Literal, NotRequired, TypedDict
 
@@ -6,6 +7,8 @@ import openai
 import yaml
 from django.conf import settings
 from litellm import Router
+
+log = logging.getLogger("aqueduct")
 
 
 def _validate_router_config(config: dict):
@@ -28,6 +31,7 @@ def _validate_router_config(config: dict):
 def get_router_config() -> dict:
     path = settings.LITELLM_ROUTER_CONFIG_FILE_PATH
     try:
+        log.info(f"Loading router config from {path}")
         with open(path) as f:
             data = yaml.safe_load(f)
     except (FileNotFoundError, TypeError):

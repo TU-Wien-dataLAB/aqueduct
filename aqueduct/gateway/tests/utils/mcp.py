@@ -152,6 +152,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         from management.models import Request
 
         # Check that (only) initialize request was logged
+
         mcp_requests = await sync_to_async(Request.objects.count)()
         self.assertEqual(mcp_requests, n, f"There should be exactly {n} logged MCP request.")
 

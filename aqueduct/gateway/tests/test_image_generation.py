@@ -3,6 +3,7 @@ from http import HTTPStatus
 
 from django.urls import reverse
 
+from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayIntegrationTestCase
 from management.models import Request, Usage
 
@@ -15,6 +16,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
         cls.url = reverse("gateway:image_generation")
 
     def test_image_generation_endpoint_defaults(self):
@@ -143,7 +145,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
-        self.assertIn("Incompatible model 'gpt-4.1-nano'!", response.json()["error"])
+        self.assertIn("Invalid value: 'gpt-4.1-nano'", response.json()["error"])
 
     def test_image_generation_endpoint_with_multiple_images(self):
         """Test image generation endpoint with multiple images (n parameter)."""

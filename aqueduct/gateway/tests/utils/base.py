@@ -1,9 +1,7 @@
 import os
 import shutil
-import sys
 from pathlib import Path
-from textwrap import dedent
-from typing import Literal, Optional
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
 from asgiref.sync import async_to_sync
@@ -31,40 +29,11 @@ INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
 if INTEGRATION_TEST_BACKEND not in ["vllm", "openai"]:
     raise ValueError("Integration test backend must be one of 'vllm' or 'openai'.")
 
-ROUTER_CONFIG_PATH = f"/tmp/aqueduct/{INTEGRATION_TEST_BACKEND}-router-config.yaml"
-ROUTER_CONFIG_VLLM = dedent("""
-model_list:
-- model_name: Qwen-0.5B
-  litellm_params:
-    model: openai/Qwen/Qwen2.5-0.5B-Instruct
-    api_key: "dummy-vllm-key"
-    api_base: http://localhost:8009/v1
-  tpm: 10000
-  rpm: 100
-""")
-
 ROOT = Path(__file__).parent.parent.parent.parent.parent
 
-with open(ROOT / "example_router_config.yaml") as f:
-    ROUTER_CONFIG_OPENAI = f.read()
-
-ROUTER_CONFIG = ROUTER_CONFIG_VLLM if INTEGRATION_TEST_BACKEND == "vllm" else ROUTER_CONFIG_OPENAI
-
-START_VLLM_SERVER = (
-    INTEGRATION_TEST_BACKEND == "vllm" and os.environ.get("START_VLLM_SERVER", "true") == "true"
-)
-
-# --- vLLM Internal Imports ---
-RemoteOpenAIServer = None
-_VLLM_AVAILABLE = False
-if START_VLLM_SERVER:
-    try:
-        from gateway.tests.utils.vllm import get_openai_server, stop_openai_server
-
-        _VLLM_AVAILABLE = True
-    except ImportError as e:
-        get_openai_server, stop_openai_server = None, None
-        _VLLM_IMPORT_ERROR = e
+ROUTER_CONFIG_PATH = str(ROOT / "example_router_config.yaml")
+with open(ROUTER_CONFIG_PATH) as f:
+    ROUTER_CONFIG = f.read()
 
 User = get_user_model()
 
@@ -96,14 +65,12 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     Integration tests using the embedded RemoteOpenAIServer (with httpx).
     """
 
-    vllm_server: Optional["RemoteOpenAIServer"] = None
-    model = "Qwen-0.5B" if INTEGRATION_TEST_BACKEND == "vllm" else "gpt-4.1-nano"
+    model = "gpt-4.1-nano"
 
     # Hash: 750a701272d7624a3e6f10d5e0d9efdf0e2c7e575803219081358db36bfd243a
     # Preview: k-...3abc
     AQUEDUCT_ACCESS_TOKEN = "sk-123abc"
 
-    VLLM_SEED = 42
     fixtures = ["gateway_data.json"]
 
     @classmethod
@@ -116,32 +83,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     def setUpClass(cls):
         cls._write_router_config()
         super().setUpClass()
-        if INTEGRATION_TEST_BACKEND == "vllm" and START_VLLM_SERVER:
-            if not _VLLM_AVAILABLE:
-                raise RuntimeError(
-                    f"vLLM integration tests require vllm to be installed. "
-                    f"Import error: {_VLLM_IMPORT_ERROR}"
-                )
-            print(f"\nStarting vLLM server for {cls.__name__}...")
-            try:
-                MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
-                vllm_args = ["--host", "0.0.0.0", "--port", "8009"]
-                cls.vllm_server = get_openai_server(
-                    model_name=MODEL_NAME,
-                    vllm_serve_args=vllm_args,
-                    seed=cls.VLLM_SEED,
-                    auto_port=False,
-                    max_wait_seconds=300,
-                )
-                print(f"vLLM server started on: {cls.vllm_server.url_root}")
-            except Exception as e:
-                import traceback
-
-                traceback.print_exc()
-                print(f"ERROR starting vLLM server: {e}", file=sys.stderr)
-                cls.vllm_server = None
-                raise AssertionError(f"Failed to set up vLLM server: {e}") from e
-        elif INTEGRATION_TEST_BACKEND == "openai":
+        if INTEGRATION_TEST_BACKEND == "openai":
             if not os.environ.get("OPENAI_API_KEY"):
                 raise RuntimeError(
                     "OPENAI_API_KEY environment variable has to be set for OpenAI integration."

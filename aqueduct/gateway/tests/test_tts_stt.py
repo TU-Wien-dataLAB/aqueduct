@@ -139,6 +139,7 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         )
 
 
+@override_settings(API_MAX_RETRIES=3)  # for some reason the whisper model fails with 503
 class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
     """Test the transcriptions (speech-to-text) endpoint."""
 
@@ -382,6 +383,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         )
 
 
+@override_settings(API_MAX_RETRIES=3)  # for some reason the whisper model fails with 503
 class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
     """Test the complete TTS -> STT lifecycle."""
 

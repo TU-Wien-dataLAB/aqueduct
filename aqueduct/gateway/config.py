@@ -47,7 +47,7 @@ def get_router() -> Router:
     config = get_router_config()
     if config is None:
         raise RuntimeError("Router config not found!")
-    return Router(**config)
+    return Router(**config, num_retries=0)
 
 
 @lru_cache(maxsize=32)
@@ -62,6 +62,7 @@ def get_openai_client(model: str) -> openai.AsyncClient:
         api_key=litellm_params.api_key,
         base_url=litellm_params.api_base,
         timeout=litellm_params.timeout,
+        max_retries=0,
     )
 
 

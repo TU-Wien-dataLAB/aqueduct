@@ -123,6 +123,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
     try:
         client: openai.AsyncClient = get_openai_client(model)
     except ValueError:
+        log.error(f"Incompatible model '{model}'! Is model id set in router config?")
         raise openai.NotFoundError(
             message=f"Incompatible model '{model}'!",
             response=httpx.Response(

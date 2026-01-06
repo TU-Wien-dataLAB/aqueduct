@@ -54,11 +54,11 @@ def get_mock_router(model: str = "test-model"):
     return router
 
 
-# --- Django Test Class ---
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
+    API_MAX_RETRIES=5,  # for some reason the OpenAI API fails with 503 sometimes...
 )
 class GatewayIntegrationTestCase(TransactionTestCase):
     """
@@ -109,6 +109,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
 @override_settings(
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
+    API_MAX_RETRIES=5,
 )
 class GatewayFilesTestCase(TransactionTestCase):
     # Load default fixture (includes test Token) and set test access token

@@ -1,6 +1,6 @@
 [project]
 name = "aqueduct"
-version = "0.1.10"
+version = "0.1.11"
 description = "A simple yet fully-featured AI gateway built on top of the LiteLLM Router SDK with MCP server support."
 readme = "README.md"
 requires-python = ">=3.11"

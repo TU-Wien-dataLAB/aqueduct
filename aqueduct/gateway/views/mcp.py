@@ -116,6 +116,15 @@ class MockCancelScope:
         pass
 
 
+MCP_SESSION_ID = "mcp-session-id"
+MCP_PROTOCOL_VERSION = "mcp-protocol-version"
+LAST_EVENT_ID = "last-event-id"
+CONTENT_TYPE = "content-type"
+ACCEPT = "accept"
+JSON = "application/json"
+SSE = "text/event-stream"
+
+
 class ManagedMCPSession:
     """MCP session that uses StreamableHTTPTransport directly without cancel scopes."""
 
@@ -169,6 +178,17 @@ class ManagedMCPSession:
         """Check if there are active operations on this session."""
         return self._active_operations > 0
 
+    def _mcp_headers(self) -> dict[str, str]:
+        """Build MCP-specific request headers."""
+        headers: dict[str, str] = {ACCEPT: f"{JSON}, {SSE}", CONTENT_TYPE: JSON}
+        # Add MCP protocol headers
+        # Add session headers if available
+        if self.transport.session_id:
+            headers[MCP_SESSION_ID] = self.transport.session_id
+        if self.transport.protocol_version:
+            headers[MCP_PROTOCOL_VERSION] = self.transport.protocol_version
+        return headers
+
     async def start(self):
         """Start the session by setting up streams and tasks."""
         log.info(f"Starting MCP session {self.session_id} for {self.url}")
@@ -184,8 +204,7 @@ class ManagedMCPSession:
 
         # Create httpx client
         self._httpx_client = httpx.AsyncClient(
-            headers=self.transport.request_headers,
-            timeout=httpx.Timeout(self.transport.timeout, read=self.transport.sse_read_timeout),
+            headers=self._mcp_headers(), timeout=httpx.Timeout(30, read=5 * 60)
         )
 
         # Create simple task group

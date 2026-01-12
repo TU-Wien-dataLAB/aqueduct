@@ -62,7 +62,7 @@ spec:
           command:
             - "sh"
             - "-c"
-            - "chown -R {{ .Values.securityContext.runAsUser }}:{{ .Values.securityContext.runAsGroup }} /var/lib/aqueduct/files"
+            - "chown -R {{ .Values.securityContext.runAsUser }}:{{ .Values.securityContext.runAsGroup }} {{ .Values.persistence.files.mountPath }}"
           securityContext:
             runAsUser: 0
           volumeMounts:

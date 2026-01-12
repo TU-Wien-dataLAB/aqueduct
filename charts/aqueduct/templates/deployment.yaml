@@ -17,9 +17,10 @@ spec:
         app: {{ .Release.Name }}
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: {{ .Values.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.securityContext.runAsGroup }}
+        fsGroup: {{ .Values.securityContext.fsGroup }}
+        fsGroupChangePolicy: OnRootMismatch
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

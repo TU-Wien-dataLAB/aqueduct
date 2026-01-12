@@ -18,6 +18,10 @@ spec:
         app: {{ .Release.Name }}
         component: celery-worker
     spec:
+      securityContext:
+        runAsUser: {{ .Values.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.securityContext.runAsGroup }}
+        fsGroup: {{ .Values.securityContext.fsGroup }}
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

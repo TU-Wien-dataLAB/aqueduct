@@ -16,6 +16,10 @@ spec:
       labels:
         app: {{ .Release.Name }}
     spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

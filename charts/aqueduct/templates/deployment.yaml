@@ -67,7 +67,7 @@ spec:
             runAsUser: 0
           volumeMounts:
             - name: files
-              mountPath: /var/lib/aqueduct/files
+              mountPath: {{ .Values.persistence.files.mountPath }}
         {{- end }}
         - name: collectstatic
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

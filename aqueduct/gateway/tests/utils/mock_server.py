@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import requests
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from gateway.tests.utils.helpers import get_available_port
@@ -168,6 +168,10 @@ async def mock_endpoint(path: str):
     else:
         raise HTTPException(status_code=404, detail=f"No mock configured for this endpoint: {path}")
 
+    if isinstance(config, MockStreamingConfig):
+        return StreamingResponse(
+            content=config.response_data, status_code=config.status_code, headers=config.headers
+        )
     return JSONResponse(
         content=config.response_data, status_code=config.status_code, headers=config.headers
     )

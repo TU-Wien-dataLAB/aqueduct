@@ -17,7 +17,7 @@ app = FastAPI(debug=True)
 
 class MockConfig(BaseModel):
     status_code: int = 200
-    response_data: Dict[str, Any] | bytes = {}
+    response_data: Dict[str, Any] = {}
     headers: Dict[str, str] = {"Content-Type": "application/json"}
 
 
@@ -152,7 +152,7 @@ async def health_check():
 
 
 @app.post("/configure/{path:path}")
-async def configure_endpoint(path: str, config: MockConfig):
+async def configure_endpoint(path: str, config: MockConfig | MockStreamingConfig):
     special_mock_responses[path] = config
     return {"message": f"Configured a special mock response for {path}"}
 
@@ -233,30 +233,33 @@ class MockAPIServer:
                 print("Process did not terminate gracefully. Force killed.")
             self.process = None
 
-    def configure_endpoint(
-        self,
-        path: str,
-        status_code: int = 200,
-        response_data: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> None:
+    def configure_endpoint(self, path: str, config: MockConfig) -> None:
         normalized_path = path.strip("/").removeprefix("v1/")
         url = f"{self.base_url}/configure/{normalized_path}"
-        config = {
-            "status_code": status_code,
-            "response_data": response_data or {},
-            "headers": headers,
-        }
-        response = requests.post(url, json=config, timeout=1)
+        if isinstance(config, MockConfig):
+            response = requests.post(url, json=config.model_dump(mode="json"), timeout=1)
+        else:
+            response = requests
         response.raise_for_status()
 
     @contextmanager
     def patch_external_api(self, url: str | None = None, config: MockConfig | None = None):
+        """Context manager to temporarily patch external OpenAI API calls.
+
+        If neither `url` nor `config` are provided, the default response from
+        `default_mock_post_responses` will be used. If both args are provided,
+        the response will be based on the `config`. Providing only one of the args
+        raises `ValueError`.
+
+        Args:
+            url: The path to patch, e.g. "chat/completions"
+            config: The mock configuration to use for creating the response
+        """
         if (url is None) != (config is None):
-            raise ValueError("Both 'url' and 'config' must be provided.")
+            raise ValueError("Both 'url' and 'config' must be provided - or neither of them.")
 
         if config is not None:
-            self.configure_endpoint(url, config.status_code, config.response_data, config.headers)
+            self.configure_endpoint(url, config)
 
         # TODO: make it more robust? Now it relies on the fact that AsyncOpenAI client
         #  tries to get the url from the env; maybe mock get_openai_client? or Router? like in `get_mock_router`?

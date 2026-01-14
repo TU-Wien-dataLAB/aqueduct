@@ -28,6 +28,7 @@ from gateway.tests.utils.base import (
     ROUTER_CONFIG,
     GatewayIntegrationTestCase,
 )
+from gateway.tests.utils.mock_server import MockConfig, MockStreamingConfig
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
 
 User = get_user_model()
@@ -56,12 +57,14 @@ class EmbeddingTest(GatewayIntegrationTestCase):
 
         assert self.model in ROUTER_CONFIG
         payload = {"model": self.model, "input": ["The quick brown fox jumps over the lazy dog."]}
-        response = self.client.post(
-            self.url,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+
+        with self.mock_server.patch_external_api():
+            response = self.client.post(
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         self.assertEqual(
             response.status_code,
@@ -123,7 +126,9 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
         Helper to send a streaming chat completion request using Django async test client.
         """
         request = self._build_chat_completion_request(messages, stream=True, **payload_kwargs)
-        response = await self.async_client.post(**request, content_type="application/json")
+
+        with self.mock_server.patch_external_api():
+            response = await self.async_client.post(**request, content_type="application/json")
         return response
 
 
@@ -134,7 +139,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
-        response = self._send_chat_completion(self.MESSAGES)
+
+        with self.mock_server.patch_external_api():
+            response = self._send_chat_completion(self.MESSAGES)
 
         self.assertEqual(
             response.status_code,
@@ -205,9 +212,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with patch(
-            "gateway.views.decorators.extract_text_with_tika",
-            return_value="This is a test file content for base64 encoding.",
+        with (
+            patch(
+                "gateway.views.decorators.extract_text_with_tika",
+                return_value="This is a test file content for base64 encoding.",
+            ),
+            self.mock_server.patch_external_api(),
         ):
             response = self.client.post(
                 self.url,
@@ -259,9 +269,10 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         headers.pop("Content-Type", None)
 
         # Upload the file
-        upload_response = self.client.post(
-            "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
-        )
+        with self.mock_server.patch_external_api():
+            upload_response = self.client.post(
+                "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
+            )
         self.assertEqual(
             upload_response.status_code, 200, f"File upload failed: {upload_response.json()}"
         )
@@ -283,9 +294,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with patch(
-            "gateway.views.decorators.extract_text_with_tika",
-            return_value="This is a test file content for base64 encoding.",
+        with (
+            patch(
+                "gateway.views.decorators.extract_text_with_tika",
+                return_value="This is a test file content for base64 encoding.",
+            ),
+            self.mock_server.patch_external_api(),
         ):
             response = self.client.post(
                 self.url,
@@ -341,12 +355,13 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        response = self.client.post(
-            self.url,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+        with self.mock_server.patch_external_api():
+            response = self.client.post(
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         self.assertEqual(
             response.status_code,
@@ -370,9 +385,10 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         headers.pop("Content-Type", None)
 
         # Upload the file
-        upload_response = self.client.post(
-            "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
-        )
+        with self.mock_server.patch_external_api():
+            upload_response = self.client.post(
+                "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
+            )
         self.assertEqual(
             upload_response.status_code, 200, f"File upload failed: {upload_response.json()}"
         )
@@ -396,9 +412,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with patch(
-            "gateway.views.decorators.extract_text_with_tika",
-            return_value="This is a test file content for base64 encoding.",
+        with (
+            patch(
+                "gateway.views.decorators.extract_text_with_tika",
+                return_value="This is a test file content for base64 encoding.",
+            ),
+            self.mock_server.patch_external_api(),
         ):
             response = self.client.post(
                 self.url, data=json.dumps(payload), headers=headers, content_type="application/json"
@@ -441,12 +460,13 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        response = self.client.post(
-            self.url,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+        with self.mock_server.patch_external_api():
+            response = self.client.post(
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         self.assertEqual(
             response.status_code,
@@ -501,9 +521,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with patch(
-            "gateway.views.decorators.extract_text_with_tika",
-            return_value="This is a test file content for base64 encoding.",
+        with (
+            patch(
+                "gateway.views.decorators.extract_text_with_tika",
+                return_value="This is a test file content for base64 encoding.",
+            ),
+            self.mock_server.patch_external_api(),
         ):
             response = self.client.post(
                 self.url,
@@ -551,8 +574,11 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             status_code=500,
         )
 
-        with patch(
-            "gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock
+        with (
+            patch(
+                "gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock
+            ),
+            self.mock_server.patch_external_api(),
         ):
             response = self.client.post(
                 self.url,
@@ -568,14 +594,15 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         )
         self.assertIn("Tika error extracting text from file", response.json()["error"])
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     def test_chat_completion_timeout(self):
         """
         Sends a simple chat completion request to the vLLM server using the Django test client.
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
-        response = self._send_chat_completion(self.MESSAGES)
+        with self.mock_server.patch_external_api():
+            response = self._send_chat_completion(self.MESSAGES)
 
         self.assertEqual(
             response.status_code,
@@ -583,7 +610,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}",
         )
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     def test_chat_completion_timeout_is_logged(self):
         """
         Test that timeout requests ARE logged to the database.
@@ -599,7 +626,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         # Clear any existing requests
         Request.objects.all().delete()
 
-        response = self._send_chat_completion(self.MESSAGES)
+        with self.mock_server.patch_external_api():
+            response = self._send_chat_completion(self.MESSAGES)
 
         # Verify we get a timeout response
         self.assertEqual(
@@ -660,7 +688,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             )
         )()
 
-        response = await self._send_chat_completion_streaming(self.MESSAGES)
+        with self.mock_server.patch_external_api():
+            response = await self._send_chat_completion_streaming(self.MESSAGES)
 
         # Should be a StreamingHttpResponse with status 200
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
@@ -692,7 +721,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming)")
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     @async_to_sync
     async def test_chat_completion_streaming_relay_request_timeout(self):
         """
@@ -707,13 +736,14 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             )
         )()
 
-        response = await self._send_chat_completion_streaming(self.MESSAGES)
+        with self.mock_server.patch_external_api():
+            response = await self._send_chat_completion_streaming(self.MESSAGES)
 
         self.assertEqual(
             response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}"
         )
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     @async_to_sync
     async def test_chat_completion_streaming_timeout_is_logged(self):
         """
@@ -737,7 +767,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             )
         )()
 
-        response = await self._send_chat_completion_streaming(self.MESSAGES)
+        with self.mock_server.patch_external_api():
+            response = await self._send_chat_completion_streaming(self.MESSAGES)
 
         # Verify we get a timeout response
         self.assertEqual(
@@ -789,7 +820,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         org.save()
         assert len(org.excluded_models) == 1
 
-        response = self._send_chat_completion(self.MESSAGES)
+        with self.mock_server.patch_external_api():
+            response = self._send_chat_completion(self.MESSAGES)
 
         self.assertEqual(
             response.status_code,
@@ -799,17 +831,20 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
 
     def test_chat_completion_unknown_model(self):
         payload = {"model": "unknown-model", "messages": self.MESSAGES}
-        response = self.client.post(
-            self.url,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+
+        with self.mock_server.patch_external_api():
+            response = self.client.post(
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
         self.assertEqual(
             response.status_code,
             400,
             f"Expected 400 Bad Request, got {response.status_code}: {response.content}",
         )
+        self.assertIn("There is no 'model_name' with this string", response.json()["error"])
 
     @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_chat_completion_schema_generation(self):
@@ -835,12 +870,45 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             },
             "max_completion_tokens": 50,
         }
-        response = self.client.post(
-            self.url,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
+
+        expected = MockConfig(
+            response_data={
+                "id": "chatcmpl-123456789",
+                "created": 1768397207,
+                "model": "gpt-4.1-nano-2025-04-14",
+                "object": "chat.completion",
+                "system_fingerprint": "fp_f0bc439dc3",
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "index": 0,
+                        "message": {
+                            "content": '{"greeting":"Hello, world!","count":1}',
+                            "role": "assistant",
+                        },
+                    }
+                ],
+                "usage": {
+                    "completion_tokens": 13,
+                    "prompt_tokens": 59,
+                    "total_tokens": 72,
+                    "completion_tokens_details": {
+                        "accepted_prediction_tokens": 0,
+                        "audio_tokens": 0,
+                        "reasoning_tokens": 0,
+                        "rejected_prediction_tokens": 0,
+                    },
+                    "prompt_tokens_details": {"audio_tokens": 0, "cached_tokens": 0},
+                },
+            }
         )
+        with self.mock_server.patch_external_api("chat/completions", expected):
+            response = self.client.post(
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         self.assertEqual(
             response.status_code,
@@ -899,12 +967,14 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             ],
             "max_completion_tokens": 50,
         }
-        response = self.client.post(
-            self.url,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+
+        with self.mock_server.patch_external_api():
+            response = self.client.post(
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         self.assertEqual(
             response.status_code,
@@ -960,12 +1030,21 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
             "stream": True,
         }
-        response = await self.async_client.post(
-            self.url,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+
+        expected_data = [
+            b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"{\\"greeting\\":","role":"assistant"}}],"stream_options":{"include_usage":true}}\n\n',
+            b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"\\"Hello, world!\\","}}],"stream_options":{"include_usage":true}}\n\n',
+            b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"\\"count\\":1}"}}],"stream_options":{"include_usage":true}}\n\n',
+        ]
+        expected = MockStreamingConfig(response_data=expected_data)
+
+        with self.mock_server.patch_external_api("chat/completions", expected):
+            response = await self.async_client.post(
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
         streamed_lines = await _read_streaming_response_lines(response)
@@ -1161,9 +1240,10 @@ class TokenLimitTest(ChatCompletionsBase):
         # Set the limit
         self._setup_limits(kind, field, value)
 
-        response1 = self._send_chat_completion(
-            messages, max_completion_tokens=max_completion_tokens
-        )
+        with self.mock_server.patch_external_api():
+            response1 = self._send_chat_completion(
+                messages, max_completion_tokens=max_completion_tokens
+            )
         self.assertEqual(
             response1.status_code,
             200,
@@ -1190,9 +1270,10 @@ class TokenLimitTest(ChatCompletionsBase):
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
         # Second request should fail with 429
-        response2 = self._send_chat_completion(
-            messages, max_completion_tokens=max_completion_tokens
-        )
+        with self.mock_server.patch_external_api():
+            response2 = self._send_chat_completion(
+                messages, max_completion_tokens=max_completion_tokens
+            )
         self.assertEqual(
             response2.status_code,
             429,
@@ -1410,9 +1491,7 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
                         "model": "openai/text-embedding-ada-002",
                         "api_key": "os.environ/OPENAI_API_KEY",
                     },
-                    "model_info": {
-                        "aliases": ["main"]  # Duplicate!
-                    },
+                    "model_info": {"aliases": ["main"]},  # Duplicate!
                 },
             ]
         }
@@ -1474,9 +1553,7 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
                         "model": "openai/gpt-4.1-nano",
                         "api_key": "os.environ/OPENAI_API_KEY",
                     },
-                    "model_info": {
-                        "aliases": ["Main"]  # Capital M
-                    },
+                    "model_info": {"aliases": ["Main"]},  # Capital M
                 },
                 {
                     "model_name": "text-embedding-ada-002",
@@ -1484,9 +1561,7 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
                         "model": "openai/text-embedding-ada-002",
                         "api_key": "os.environ/OPENAI_API_KEY",
                     },
-                    "model_info": {
-                        "aliases": ["main"]  # Lowercase m
-                    },
+                    "model_info": {"aliases": ["main"]},  # Lowercase m
                 },
             ]
         }
@@ -1540,12 +1615,13 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         # Try to use alias instead of model name
         payload = {"model": "main", "messages": messages, "max_tokens": 10}
 
-        response = self.client.post(
-            "/chat/completions",
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+        with self.mock_server.patch_external_api():
+            response = self.client.post(
+                "/chat/completions",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         # Should return 200 with alias resolution
         self.assertEqual(
@@ -1569,12 +1645,13 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
             "response_format": "mp3",
         }
 
-        response = self.client.post(
-            "/audio/speech",
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+        with self.mock_server.patch_external_api():
+            response = self.client.post(
+                "/audio/speech",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         # Should return 200 with alias resolution
         self.assertEqual(
@@ -1608,14 +1685,15 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
             # Remove Content-Type for multipart form data
             headers.pop("Content-Type", None)
 
-            response = self.client.post(
-                "/audio/transcriptions",
-                {
-                    "file": test_audio_file,
-                    "model": "stt",
-                },  # Using alias instead of actual model name
-                headers=headers,
-            )
+            with self.mock_server.patch_external_api():
+                response = self.client.post(
+                    "/audio/transcriptions",
+                    {
+                        "file": test_audio_file,
+                        "model": "stt",
+                    },  # Using alias instead of actual model name
+                    headers=headers,
+                )
 
             # Should return 200 with alias resolution
             self.assertEqual(
@@ -1641,12 +1719,13 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         messages = [{"role": "user", "content": "Hello!"}]
         payload = {"model": "nonexistent-alias-12345", "messages": messages, "max_tokens": 10}
 
-        response = self.client.post(
-            "/chat/completions",
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+        with self.mock_server.patch_external_api():
+            response = self.client.post(
+                "/chat/completions",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         self.assertEqual(response.status_code, 400)
 
@@ -1656,12 +1735,13 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         """
         payload = {"model": "embedding", "input": ["The quick brown fox."]}
 
-        response = self.client.post(
-            "/embeddings",
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+        with self.mock_server.patch_external_api():
+            response = self.client.post(
+                "/embeddings",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         # Should return 200 with alias resolution
         self.assertEqual(
@@ -1695,12 +1775,13 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 "size": "256x256",
             }
 
-            response = self.client.post(
-                "/images/generations",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+            with self.mock_server.patch_external_api():
+                response = self.client.post(
+                    "/images/generations",
+                    data=json.dumps(payload),
+                    headers=self.headers,
+                    content_type="application/json",
+                )
 
             # Should return 200 with alias resolution
             self.assertEqual(response.status_code, 200)
@@ -1732,12 +1813,13 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         for alias in aliases_to_test:
             payload = {"model": alias, "messages": messages, "max_tokens": 5}
 
-            response = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+            with self.mock_server.patch_external_api():
+                response = self.client.post(
+                    "/chat/completions",
+                    data=json.dumps(payload),
+                    headers=self.headers,
+                    content_type="application/json",
+                )
 
             # All should behave the same (either all work or all fail)
             if first_status is None:
@@ -1765,21 +1847,25 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
 
         # Test with actual model name
         payload = {"model": self.model, "messages": messages, "max_tokens": 5}
-        response_actual = self.client.post(
-            "/chat/completions",
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+
+        with self.mock_server.patch_external_api():
+            response_actual = self.client.post(
+                "/chat/completions",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         # Test with alias
         payload = {"model": "main", "messages": messages, "max_tokens": 5}
-        response_alias = self.client.post(
-            "/chat/completions",
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+
+        with self.mock_server.patch_external_api():
+            response_alias = self.client.post(
+                "/chat/completions",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         # Both should be rejected (404)
         self.assertEqual(
@@ -1803,12 +1889,14 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
 
         # Test with correct case
         payload = {"model": "main", "messages": messages, "max_tokens": 5}
-        response_lowercase = self.client.post(
-            "/chat/completions",
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
-        )
+
+        with self.mock_server.patch_external_api():
+            response_lowercase = self.client.post(
+                "/chat/completions",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
         # Should return 200 with alias resolution
         self.assertEqual(

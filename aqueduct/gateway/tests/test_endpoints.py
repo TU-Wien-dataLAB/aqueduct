@@ -45,7 +45,7 @@ class EmbeddingTest(GatewayIntegrationTestCase):
     @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_embeddings(self):
         """
-        Sends a simple embeddings request to the vLLM server using the Django test client.
+        Sends a simple embeddings request to the mock server using the Django test client.
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """

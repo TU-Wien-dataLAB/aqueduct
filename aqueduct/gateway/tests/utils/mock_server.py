@@ -27,14 +27,16 @@ class MockStreamingConfig(MockConfig):
 
 
 default_mock_post_responses = {
-    # TODO: test them all, they were generated or guessed
+    # OK
     "audio/speech": MockStreamingConfig(response_data=[b"mock", b"audio", b"data"]),
+    # OK
     "audio/transcriptions": MockConfig(
         response_data={
             "text": "This is a mock transcription",
             "usage": {"type": "duration", "seconds": 60},
         }
     ),
+    # Batches are already mocked with a mock_router; TODO: check the response data
     "batches": MockConfig(
         response_data={
             "id": "batch_123456789",
@@ -57,6 +59,7 @@ default_mock_post_responses = {
             "metadata": {"custom_id": "my-batch"},
         }
     ),
+    # TODO: check this!
     "completions": MockConfig(
         response_data={
             "id": "cmpl-123456789",
@@ -74,6 +77,7 @@ default_mock_post_responses = {
             "usage": {"prompt_tokens": 10, "completion_tokens": 7, "total_tokens": 17},
         }
     ),
+    # OK
     "chat/completions": MockConfig(
         response_data={
             "id": "chatcmpl-123456789",
@@ -104,6 +108,7 @@ default_mock_post_responses = {
             },
         }
     ),
+    # OK
     "embeddings": MockConfig(
         response_data={
             "object": "list",
@@ -114,6 +119,7 @@ default_mock_post_responses = {
             "usage": {"prompt_tokens": 8, "total_tokens": 8},
         }
     ),
+    # TODO: check this!
     "files": MockConfig(
         response_data={
             "id": "file-123456789",
@@ -124,6 +130,7 @@ default_mock_post_responses = {
             "purpose": "fine-tune",
         }
     ),
+    # OK
     "images/generations": MockConfig(
         response_data={
             "created": 1713833628,
@@ -155,6 +162,12 @@ async def health_check():
 async def configure_endpoint(path: str, config: MockConfig | MockStreamingConfig):
     special_mock_responses[path] = config
     return {"message": f"Configured a special mock response for {path}"}
+
+
+@app.post("/reset/{path:path}")
+async def reset_endpoint(path: str):
+    del special_mock_responses[path]
+    return {"message": f"Reset the special mock response for {path}"}
 
 
 @app.post("/{path:path}")
@@ -239,7 +252,13 @@ class MockAPIServer:
         if isinstance(config, MockConfig):
             response = requests.post(url, json=config.model_dump(mode="json"), timeout=1)
         else:
-            response = requests
+            response = requests.post(url, ...)  # TODO!
+        response.raise_for_status()
+
+    def reset_endpoint_config(self, path: str) -> None:
+        normalized_path = path.strip("/").removeprefix("v1/")
+        url = f"{self.base_url}/reset/{normalized_path}"
+        response = requests.post(url, timeout=1)
         response.raise_for_status()
 
     @contextmanager
@@ -269,7 +288,10 @@ class MockAPIServer:
             try:
                 yield
             finally:
-                special_mock_responses.clear()
+                if config is not None:
+                    self.reset_endpoint_config(url)
+                else:
+                    pass
                 # Further cleanup handled by tearDown
 
 

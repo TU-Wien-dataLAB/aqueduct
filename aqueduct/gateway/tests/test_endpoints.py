@@ -1,5 +1,6 @@
 import base64
 import json
+from http import HTTPStatus
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -102,6 +103,13 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
         {"role": "user", "content": "Write me a short poem!"},
     ]
 
+    MOCK_STREAMING_RESPONSE_DATA = [
+        b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Beneath the sky so vast and blue,  \\n","role":"assistant"}}],"stream_options":{"include_usage":true}}\n\n',
+        b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Whispers of dreams drift softly through,  \\n"}}],"stream_options":{"include_usage":true}}\n\n',
+        b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"A gentle breeze, a song so sweet,  \\n"}}],"stream_options":{"include_usage":true}}\n\n',
+        b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Moments of magic, softly complete."}}],"stream_options":{"include_usage":true}}\n\n',
+    ]
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -116,18 +124,23 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
 
     def _send_chat_completion(self, messages, **payload_kwargs):
         """
-        Helper to send a chat completion request (non-streaming) using Django test client.
+        Helper to send a chat completion request (non-streaming) to the mock server,
+        using Django test client.
         """
         request = self._build_chat_completion_request(messages, stream=False, **payload_kwargs)
-        return self.client.post(**request, content_type="application/json")
+        with self.mock_server.patch_external_api():
+            response = self.client.post(**request, content_type="application/json")
+        return response
 
     async def _send_chat_completion_streaming(self, messages, **payload_kwargs):
         """
-        Helper to send a streaming chat completion request using Django async test client.
+        Helper to send a streaming chat completion request to the mock server,
+        using Django async test client.
         """
         request = self._build_chat_completion_request(messages, stream=True, **payload_kwargs)
 
-        with self.mock_server.patch_external_api():
+        expected = MockStreamingConfig(response_data=self.MOCK_STREAMING_RESPONSE_DATA)
+        with self.mock_server.patch_external_api(url=self.url, config=expected):
             response = await self.async_client.post(**request, content_type="application/json")
         return response
 
@@ -139,9 +152,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
-
-        with self.mock_server.patch_external_api():
-            response = self._send_chat_completion(self.MESSAGES)
+        response = self._send_chat_completion(self.MESSAGES)
 
         self.assertEqual(
             response.status_code,
@@ -571,7 +582,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         tika_response_mock = Response(
             request=HttpxRequest(method="PUT", url="http://example.com/tika"),
             json={"error": "Mocked Tika server error"},
-            status_code=500,
+            status_code=HTTPStatus.IM_A_TEAPOT,
         )
 
         with (
@@ -601,8 +612,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
-        with self.mock_server.patch_external_api():
-            response = self._send_chat_completion(self.MESSAGES)
+        response = self._send_chat_completion(self.MESSAGES)
 
         self.assertEqual(
             response.status_code,
@@ -626,8 +636,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         # Clear any existing requests
         Request.objects.all().delete()
 
-        with self.mock_server.patch_external_api():
-            response = self._send_chat_completion(self.MESSAGES)
+        response = self._send_chat_completion(self.MESSAGES)
 
         # Verify we get a timeout response
         self.assertEqual(
@@ -688,8 +697,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             )
         )()
 
-        with self.mock_server.patch_external_api():
-            response = await self._send_chat_completion_streaming(self.MESSAGES)
+        response = await self._send_chat_completion_streaming(self.MESSAGES)
 
         # Should be a StreamingHttpResponse with status 200
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
@@ -820,8 +828,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         org.save()
         assert len(org.excluded_models) == 1
 
-        with self.mock_server.patch_external_api():
-            response = self._send_chat_completion(self.MESSAGES)
+        response = self._send_chat_completion(self.MESSAGES)
 
         self.assertEqual(
             response.status_code,
@@ -1240,10 +1247,9 @@ class TokenLimitTest(ChatCompletionsBase):
         # Set the limit
         self._setup_limits(kind, field, value)
 
-        with self.mock_server.patch_external_api():
-            response1 = self._send_chat_completion(
-                messages, max_completion_tokens=max_completion_tokens
-            )
+        response1 = self._send_chat_completion(
+            messages, max_completion_tokens=max_completion_tokens
+        )
         self.assertEqual(
             response1.status_code,
             200,
@@ -1270,10 +1276,9 @@ class TokenLimitTest(ChatCompletionsBase):
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
         # Second request should fail with 429
-        with self.mock_server.patch_external_api():
-            response2 = self._send_chat_completion(
-                messages, max_completion_tokens=max_completion_tokens
-            )
+        response2 = self._send_chat_completion(
+            messages, max_completion_tokens=max_completion_tokens
+        )
         self.assertEqual(
             response2.status_code,
             429,

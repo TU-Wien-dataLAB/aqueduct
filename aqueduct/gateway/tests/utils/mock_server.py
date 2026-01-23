@@ -1,4 +1,5 @@
 import argparse
+import re
 import subprocess
 import time
 from contextlib import contextmanager
@@ -9,6 +10,8 @@ import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from starlette.requests import Request
+from starlette.status import HTTP_404_NOT_FOUND
 
 from gateway.tests.utils.helpers import get_available_port
 
@@ -147,8 +150,114 @@ default_mock_post_responses = {
             },
         }
     ),
+    #
+    "responses": MockConfig(
+        response_data={
+            "created_at": 1741476542,
+            "completed_at": 1741476543,
+            "id": "resp_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+            "max_output_tokens": 50,
+            "model": "gpt-4.1-nano-2025-04-14",
+            "object": "response",
+            "output": [
+                {
+                    "type": "message",
+                    "id": "msg_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "Hello! I'm doing well, thank you. How can I assist you today?",
+                            "annotations": [],
+                        }
+                    ],
+                }
+            ],
+            "parallel_tool_calls": True,
+            "reasoning": {},
+            "status": "completed",
+            "store": True,
+            "temperature": 1.0,
+            "text": {"format": {"type": "text"}, "verbosity": "medium"},
+            "tool_choice": "auto",
+            "tools": [],
+            "top_p": 1.0,
+            "truncation": "disabled",
+            "usage": {
+                "input_tokens": 13,
+                "input_tokens_details": {"cached_tokens": 0},
+                "output_tokens": 17,
+                "output_tokens_details": {"reasoning_tokens": 0},
+                "total_tokens": 30,
+            },
+            "metadata": {},
+        }
+    ),
 }
 
+default_mock_get_responses = {
+    "responses/id": MockConfig(
+        response_data={
+            "completed_at": 1769125419,
+            "created_at": 1769125418.0,
+            "id": "resp_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+            "max_output_tokens": 50,
+            "metadata": {},
+            "model": "gpt-4.1-nano-2025-04-14",
+            "object": "response",
+            "output": [
+                {
+                    "content": [
+                        {
+                            "annotations": [],
+                            "text": "Hello! I'm doing well, thank you. How are "
+                            "you today? How can I assist you?",
+                            "type": "output_text",
+                        }
+                    ],
+                    "id": "msg_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+                    "role": "assistant",
+                    "status": "completed",
+                    "type": "message",
+                }
+            ],
+            "parallel_tool_calls": True,
+            "reasoning": {},
+            "status": "completed",
+            "store": True,
+            "temperature": 1.0,
+            "text": {"format": {"type": "text"}, "verbosity": "medium"},
+            "tool_choice": "auto",
+            "tools": [],
+            "truncation": "disabled",
+            "usage": {
+                "input_tokens": 13,
+                "input_tokens_details": {"cached_tokens": 0},
+                "output_tokens": 21,
+                "output_tokens_details": {"reasoning_tokens": 0},
+                "total_tokens": 34,
+            },
+        }
+    ),
+    "responses/id/input_items": MockConfig(
+        response_data={
+            "data": [
+                {
+                    "content": [{"text": "Hello, how are you?", "type": "input_text"}],
+                    "id": "msg_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+                    "role": "user",
+                    "status": "completed",
+                    "type": "message",
+                }
+            ],
+            "first_id": "msg_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+            "has_more": False,
+            "last_id": "msg_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+            "object": "list",
+        }
+    ),
+}
 
 special_mock_responses: dict[str, MockConfig] = {}
 
@@ -160,26 +269,50 @@ async def health_check():
 
 @app.post("/configure/{path:path}")
 async def configure_endpoint(path: str, config: MockConfig | MockStreamingConfig):
+    """
+    Configure a special mock response for a specific endpoint.
+
+    This endpoint allows to dynamically configure a mock response for any endpoint,
+    regardless of the request method (GET, POST). It can be used when the default
+    response from `default_mock_post_responses` is not what one needs.
+    """
     special_mock_responses[path] = config
     return {"message": f"Configured a special mock response for {path}"}
 
 
 @app.post("/reset/{path:path}")
 async def reset_endpoint(path: str):
+    """
+    Reset the special mock response for a specific endpoint to its default behavior.
+
+    A request to this endpoint should be sent after a test with a special mock response
+    finishes, to prevent tests from interfering with one another.
+    """
     del special_mock_responses[path]
     return {"message": f"Reset the special mock response for {path}"}
 
 
+@app.get("/{path:path}")
 @app.post("/{path:path}")
-async def mock_endpoint(path: str):
+async def mock_endpoint(path: str, request: Request):
     path = path.strip("/").removeprefix("v1/")
 
-    if path in special_mock_responses:
-        config = special_mock_responses[path]
-    elif path in default_mock_post_responses:
-        config = default_mock_post_responses[path]
-    else:
-        raise HTTPException(status_code=404, detail=f"No mock configured for this endpoint: {path}")
+    try:
+        if path in special_mock_responses:
+            config = special_mock_responses[path]
+        elif request.method == "POST":
+            config = default_mock_post_responses[path]
+        else:  # request.method == "GET"
+            if re.match("^responses/.+/input_items$", path):
+                config = default_mock_get_responses["responses/id/input_items"]
+            elif re.match("responses/.+$", path):
+                config = default_mock_get_responses["responses/id"]
+            else:
+                config = default_mock_get_responses[path]
+    except KeyError:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND, detail=f"No mock configured for this endpoint: {path}"
+        )
 
     if isinstance(config, MockStreamingConfig):
         return StreamingResponse(

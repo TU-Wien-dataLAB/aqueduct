@@ -44,6 +44,8 @@ _response_basic_data = {
 }
 
 default_post_configs = {
+    # Note: audio/speech is streaming by default - it cannot be sent as JSON!
+    "audio/speech": MockStreamingConfig(response_data=[b"mock", b"audio", b"data"]),
     "audio/transcriptions": MockConfig(
         response_data={
             "text": "This is a mock transcription",
@@ -333,12 +335,11 @@ _responses_stream_data = [
 
 default_post_stream_configs = {
     # TODO: Add other stream responses; figure out a better way to retrieve them
-    "audio/speech": MockStreamingConfig(response_data=[b"mock", b"audio", b"data"]),
     "responses": MockStreamingConfig(
         response_data=[
             b"data: " + json.dumps(item).encode() + b"\n\n" for item in _responses_stream_data
         ]
-    ),
+    )
 }
 
 default_get_configs = {
@@ -437,7 +438,7 @@ async def mock_endpoint(path: str, request: Request):
             # Special config can be a streaming or a JSON one.
             config = special_configs[path]
         elif await _should_stream(request):
-            # Streaming configs are stored in a separate dict, because some
+            # Some streaming configs are stored in a separate dict, because some
             # endpoints can return both a streaming or a JSON response.
             # Note: streaming responses can only be returned for POST requests.
             config = default_post_stream_configs[path]

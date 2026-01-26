@@ -1,8 +1,10 @@
 import argparse
+import json
 import re
 import subprocess
 import time
 from contextlib import contextmanager
+from json import JSONDecodeError
 from typing import Any, Dict, Optional
 from unittest.mock import patch
 
@@ -28,6 +30,18 @@ class MockStreamingConfig(MockConfig):
     response_data: list[bytes] = []
     headers: Dict[str, str] = {"Content-Type": "text/event-stream"}
 
+
+_response_basic_data = {
+    "metadata": {},
+    "model": "gpt-4.1-nano-2025-04-14",
+    "object": "response",
+    "parallel_tool_calls": True,
+    "temperature": 1.0,
+    "max_output_tokens": 50,
+    "reasoning": {},
+    "text": {"format": {"type": "text"}, "verbosity": "medium"},
+    "store": True,
+}
 
 default_post_configs = {
     "audio/transcriptions": MockConfig(
@@ -146,17 +160,14 @@ default_post_configs = {
     ),
     "responses": MockConfig(
         response_data={
+            **_response_basic_data,
             "created_at": 1741476542,
             "completed_at": 1741476543,
-            "id": "resp_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
-            "max_output_tokens": 50,
-            "metadata": {},
-            "model": "gpt-4.1-nano-2025-04-14",
-            "object": "response",
+            "id": "resp_12345abc",
             "output": [
                 {
                     "type": "message",
-                    "id": "msg_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+                    "id": "msg_12345abc",
                     "status": "completed",
                     "role": "assistant",
                     "content": [
@@ -168,16 +179,7 @@ default_post_configs = {
                     ],
                 }
             ],
-            "parallel_tool_calls": True,
-            "reasoning": {},
             "status": "completed",
-            "store": True,
-            "temperature": 1.0,
-            "text": {"format": {"type": "text"}, "verbosity": "medium"},
-            "tool_choice": "auto",
-            "tools": [],
-            "top_p": 1.0,
-            "truncation": "disabled",
             "usage": {
                 "input_tokens": 13,
                 "input_tokens_details": {"cached_tokens": 0},
@@ -189,47 +191,175 @@ default_post_configs = {
     ),
 }
 
-default_post_stream_configs = {
-    # TODO: Add other stream responses; figure out a better way to retrieve them
-    "audio/speech": MockStreamingConfig(response_data=[b"mock", b"audio", b"data"]),
-    "responses": MockStreamingConfig(response_data=[b"..."]),
-}
-
-default_get_configs = {
-    "responses/id": MockConfig(
-        response_data={
-            "completed_at": 1769125419,
-            "created_at": 1769125418.0,
-            "id": "resp_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
-            "max_output_tokens": 50,
-            "metadata": {},
-            "model": "gpt-4.1-nano-2025-04-14",
-            "object": "response",
+_responses_stream_data = [
+    {
+        "response": {
+            **_response_basic_data,
+            "id": "resp_12345abc",
+            "created_at": 1769184439.0,
+            "output": [],
+            "status": "in_progress",
+        },
+        "sequence_number": 0,
+        "type": "response.created",
+    },
+    {
+        "response": {
+            **_response_basic_data,
+            "id": "resp_12345abc",
+            "created_at": 1769184439.0,
+            "output": [],
+            "status": "in_progress",
+        },
+        "sequence_number": 1,
+        "type": "response.in_progress",
+    },
+    {
+        "item": {
+            "id": "msg_67890def",
+            "content": [],
+            "role": "assistant",
+            "status": "in_progress",
+            "type": "message",
+        },
+        "output_index": 0,
+        "sequence_number": 2,
+        "type": "response.output_item.added",
+    },
+    {
+        "content_index": 0,
+        "item_id": "msg_67890def",
+        "output_index": 0,
+        "part": {"annotations": [], "text": "", "type": "output_text", "logprobs": []},
+        "sequence_number": 3,
+        "type": "response.content_part.added",
+    },
+    {
+        "content_index": 0,
+        "delta": "Hello, ",
+        "item_id": "msg_67890def",
+        "logprobs": [],
+        "output_index": 0,
+        "sequence_number": 4,
+        "type": "response.output_text.delta",
+        "obfuscation": "os68n2ZVujH",
+    },
+    {
+        "content_index": 0,
+        "delta": "how are you?",
+        "item_id": "msg_67890def",
+        "logprobs": [],
+        "output_index": 0,
+        "sequence_number": 5,
+        "type": "response.output_text.delta",
+        "obfuscation": "PoyFT5eRx8AC4mb",
+    },
+    {
+        "content_index": 0,
+        "item_id": "msg_67890def",
+        "logprobs": [],
+        "output_index": 0,
+        "sequence_number": 6,
+        "text": "Hello, how are you?",
+        "type": "response.output_text.done",
+    },
+    {
+        "content_index": 0,
+        "item_id": "msg_67890def",
+        "output_index": 0,
+        "part": {
+            "annotations": [],
+            "text": "Hello, how are you?",
+            "type": "output_text",
+            "logprobs": [],
+        },
+        "sequence_number": 7,
+        "type": "response.content_part.done",
+    },
+    {
+        "item": {
+            "id": "msg_67890def",
+            "content": [
+                {
+                    "annotations": [],
+                    "text": "Hello, how are you?",
+                    "type": "output_text",
+                    "logprobs": [],
+                }
+            ],
+            "role": "assistant",
+            "status": "completed",
+            "type": "message",
+        },
+        "output_index": 0,
+        "sequence_number": 8,
+        "type": "response.output_item.done",
+    },
+    {
+        "response": {
+            **_response_basic_data,
+            "id": "resp_12345abc",
+            "created_at": 1769184439.0,
             "output": [
                 {
+                    "id": "msg_67890def",
                     "content": [
                         {
                             "annotations": [],
-                            "text": "Hello! I'm doing well, thank you. How are "
-                            "you today? How can I assist you?",
+                            "text": "Hello, how are you?",
                             "type": "output_text",
+                            "logprobs": [],
                         }
                     ],
-                    "id": "msg_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
                     "role": "assistant",
                     "status": "completed",
                     "type": "message",
                 }
             ],
-            "parallel_tool_calls": True,
-            "reasoning": {},
             "status": "completed",
-            "store": True,
-            "temperature": 1.0,
-            "text": {"format": {"type": "text"}, "verbosity": "medium"},
-            "tool_choice": "auto",
-            "tools": [],
-            "truncation": "disabled",
+            "completed_at": 1769184440,
+            "usage": {
+                "input_tokens": 13,
+                "input_tokens_details": {"cached_tokens": 0},
+                "output_tokens": 7,
+                "output_tokens_details": {"reasoning_tokens": 0},
+                "total_tokens": 17,
+            },
+        },
+        "sequence_number": 9,
+        "type": "response.completed",
+    },
+]
+
+default_post_stream_configs = {
+    # TODO: Add other stream responses; figure out a better way to retrieve them
+    "audio/speech": MockStreamingConfig(response_data=[b"mock", b"audio", b"data"]),
+    "responses": MockStreamingConfig(
+        response_data=[
+            b"data: " + json.dumps(item).encode() + b"\n\n" for item in _responses_stream_data
+        ]
+    ),
+}
+
+default_get_configs = {
+    "responses/id": MockConfig(
+        response_data={
+            **_response_basic_data,
+            "completed_at": 1769125419,
+            "created_at": 1769125418.0,
+            "id": "resp_12345abc",
+            "output": [
+                {
+                    "content": [
+                        {"annotations": [], "text": "Hello, how are you?", "type": "output_text"}
+                    ],
+                    "id": "msg_12345abc",
+                    "role": "assistant",
+                    "status": "completed",
+                    "type": "message",
+                }
+            ],
+            "status": "completed",
             "usage": {
                 "input_tokens": 13,
                 "input_tokens_details": {"cached_tokens": 0},
@@ -244,23 +374,21 @@ default_get_configs = {
             "data": [
                 {
                     "content": [{"text": "Hello, how are you?", "type": "input_text"}],
-                    "id": "msg_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+                    "id": "msg_12345abc",
                     "role": "user",
                     "status": "completed",
                     "type": "message",
                 }
             ],
-            "first_id": "msg_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+            "first_id": "msg_12345abc",
             "has_more": False,
-            "last_id": "msg_67cb71b3c2b0819084d481baaaf148f206981a8637e6bc44",
+            "last_id": "msg_12345abc",
             "object": "list",
         }
     ),
 }
 
-# default_delete_configs = {
-#     "responses/id": MockConfig(response_data={'deleted': True})
-# }
+default_delete_configs = {"responses/id": MockConfig(response_data={"deleted": True})}
 
 special_configs: dict[str, MockConfig] = {}
 
@@ -298,7 +426,7 @@ async def reset_endpoint(path: str):
 # TODO: Do we need to mock any other GET/DELETE endpoints? Refactor the response
 #   matching to get rid of those if..elifs. Maybe create separate endpoints for
 #   GET and DELETE?
-# @app.delete("/{path:path}")
+@app.delete("/{path:path}")
 @app.get("/{path:path}")
 @app.post("/{path:path}")
 async def mock_endpoint(path: str, request: Request):
@@ -308,9 +436,10 @@ async def mock_endpoint(path: str, request: Request):
         if path in special_configs:
             # Special config can be a streaming or a JSON one.
             config = special_configs[path]
-        elif _should_stream(request):
+        elif await _should_stream(request):
             # Streaming configs are stored in a separate dict, because some
             # endpoints can return both a streaming or a JSON response.
+            # Note: streaming responses can only be returned for POST requests.
             config = default_post_stream_configs[path]
         elif request.method == "POST":
             config = default_post_configs[path]
@@ -321,11 +450,11 @@ async def mock_endpoint(path: str, request: Request):
                 config = default_get_configs["responses/id"]
             else:
                 config = default_get_configs[path]
-        # elif request.method == "DELETE":
-        #     if re.match("^responses/.+$", path):
-        #         config = default_delete_configs["responses/id"]
-        #     else:
-        #         config = default_delete_configs[path]
+        elif request.method == "DELETE":
+            if re.match("^responses/.+$", path):
+                config = default_delete_configs["responses/id"]
+            else:
+                config = default_delete_configs[path]
     except KeyError:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND, detail=f"No mock configured for this endpoint: {path}"
@@ -344,7 +473,7 @@ async def _should_stream(request: Request) -> bool:
     try:
         request_data = await request.json()
         should_stream = request_data.get("stream") is True
-    except Exception:
+    except (AttributeError, JSONDecodeError, UnicodeDecodeError):
         should_stream = False
     return should_stream
 
@@ -408,10 +537,7 @@ class MockAPIServer:
     def configure_endpoint(self, path: str, config: MockConfig) -> None:
         normalized_path = path.strip("/").removeprefix("v1/")
         url = f"{self.base_url}/configure/{normalized_path}"
-        if isinstance(config, MockConfig):
-            response = requests.post(url, json=config.model_dump(mode="json"), timeout=1)
-        else:
-            response = requests.post(url, ...)  # TODO!
+        response = requests.post(url, json=config.model_dump(mode="json"), timeout=1)
         response.raise_for_status()
 
     def reset_endpoint_config(self, path: str) -> None:

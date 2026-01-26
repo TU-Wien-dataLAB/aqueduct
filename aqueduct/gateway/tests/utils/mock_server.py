@@ -499,9 +499,7 @@ class MockAPIServer:
             "--log-level",
             self.log_level,
         ]
-        self.process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
+        self.process = subprocess.Popen(cmd, text=True)
 
         print(f"Waiting for the mock server to accept connections on port {self.port}...")
         start_time = time.time()
@@ -530,7 +528,7 @@ class MockAPIServer:
                 self.process.communicate(timeout=5)
             except subprocess.TimeoutExpired:
                 self.process.kill()
-                outs, errs = self.process.communicate()
+                self.process.communicate()
                 print("Process did not terminate gracefully. Force killed.")
             self.process = None
 

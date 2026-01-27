@@ -1,14 +1,10 @@
 # models.py
 import dataclasses
 import hashlib
-import json
 import logging
 import secrets
-import threading
 import uuid
-from collections import deque
-from pathlib import Path
-from typing import Any, Callable, Dict, Literal, Optional
+from typing import Callable, Literal, Optional
 
 import openai.types
 from django.conf import settings
@@ -728,8 +724,6 @@ class FileObject(models.Model):
     Mirrors the structure of OpenAI's FileObject type, excluding deprecated fields.
     """
 
-    FILES_ROOT = Path(settings.AQUEDUCT_FILES_API_ROOT).absolute()
-
     id = models.CharField(
         max_length=100,
         primary_key=True,
@@ -767,6 +761,21 @@ class FileObject(models.Model):
         related_name="files",
     )
 
+    remote_id = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="File ID from the upstream API (e.g., 'file-abc123' from OpenAI)",
+    )
+
+    preview = models.TextField(
+        null=True, blank=True, help_text="Preview of file content (first 10 lines for JSONL files)"
+    )
+
+    upstream_url = models.URLField(
+        null=True, blank=True, help_text="The upstream API URL this file was uploaded to"
+    )
+
     class Meta:
         verbose_name = "File Object"
         verbose_name_plural = "File Objects"
@@ -784,92 +793,11 @@ class FileObject(models.Model):
             status="processed",
         )
 
-    def path(self) -> Path:
-        """Get the file system path for this file."""
-        subdir = (
-            str(self.token.service_account.team.id)
-            if self.token.service_account
-            else str(self.token.user.id)
-        )
-        return self.FILES_ROOT / subdir / self.id
-
-    def read(self) -> bytes:
-        """Read the file contents."""
-        path = self.path()
-        try:
-            with path.open("rb") as f:
-                return f.read()
-        except FileNotFoundError:
-            raise ObjectDoesNotExist(f"File not found at {path}")
-
-    def write(self, data: bytes):
-        """Write the file contents."""
-        path = self.path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("wb") as f:
-            f.write(data)
-        # Update stored size
-        self.bytes = len(data)
-        self.save(update_fields=["bytes"])
-
-    def append(self, data: bytes):
-        """Append content to the file."""
-        # Ensure directory exists and append bytes, creating file if needed
-        path = self.path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("ab") as f:
-            f.write(data)
-        # Update stored size
-        self.bytes = path.stat().st_size
-        self.save(update_fields=["bytes"])
-
-    def delete_file(self):
-        """Delete the file."""
-        path = self.path()
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
-
     def delete(self, using=None, keep_parents=False):
-        """Override ORM delete to also remove the file from disk."""
-        # Remove the physical file first
-        try:
-            self.delete_file()
-        except Exception:
-            # Ignore errors deleting the file
-            pass
-        # Then delete the database record
+        """
+        Override ORM delete - files are stored upstream, so we only delete the local DB record.
+        """
         super().delete(using=using, keep_parents=keep_parents)
-
-    def __fspath__(self):
-        return self.path()
-
-    def lines(self) -> list[str]:
-        """Get the number of lines in the file."""
-        try:
-            return self.read().decode("utf-8").splitlines()
-        except ObjectDoesNotExist:
-            return ["File not found..."]
-
-    def num_lines(self) -> int:
-        def _make_gen(reader):
-            while True:
-                b = reader(2**16)
-                if not b:
-                    break
-                yield b
-
-        try:
-            with open(self.path(), "rb") as f:
-                count = sum(buf.count(b"\n") for buf in _make_gen(f.raw.read))
-            return count
-        except FileNotFoundError:
-            return 0
-
-    def preview(self, num_lines: int = 15) -> str:
-        """Get the preview of the file."""
-        return "\n".join(self.lines()[:num_lines])
 
     def __str__(self):
         return self.id
@@ -935,15 +863,6 @@ class Batch(models.Model):
         blank=True,
         help_text="The Unix timestamp (in seconds) for when the batch was completed.",
     )
-    error_file = models.ForeignKey(
-        FileObject,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="batch_error_files",
-        help_text="The file containing the outputs of requests with errors.",
-    )
-    errors = JSONField(null=True, blank=True, help_text="List of errors for the batch.")
     expired_at = models.PositiveIntegerField(
         null=True,
         blank=True,
@@ -970,20 +889,16 @@ class Batch(models.Model):
         help_text="The Unix timestamp (in seconds) for when the batch started processing.",
     )
     metadata = JSONField(null=True, blank=True, help_text="Metadata attached to the batch.")
-    output_file = models.ForeignKey(
-        FileObject,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="batch_output_files",
-        help_text="The file containing the outputs of successfully executed requests.",
-    )
     # {"input": 0, "total": 0, "completed": 0, "failed": 0 }
     request_counts = JSONField(
         default=default_request_counts,
         null=True,
         blank=True,
         help_text="The request counts for different statuses within the batch.",
+    )
+
+    remote_id = models.CharField(
+        max_length=100, null=True, blank=True, help_text="Batch ID from the upstream API"
     )
 
     class Meta:
@@ -1003,15 +918,15 @@ class Batch(models.Model):
             cancelled_at=self.cancelled_at,
             cancelling_at=self.cancelling_at,
             completed_at=self.completed_at,
-            error_file_id=self.error_file_id,
-            errors=self.errors,
+            error_file_id=None,
+            errors=None,
             expired_at=self.expired_at,
             expires_at=self.expires_at,
             failed_at=self.failed_at,
             finalizing_at=self.finalizing_at,
             in_progress_at=self.in_progress_at,
             metadata=self.metadata,
-            output_file_id=self.output_file_id,
+            output_file_id=None,
             request_counts=openai.types.BatchRequestCounts(
                 total=self.request_counts.get("total", 0),
                 completed=self.request_counts.get("completed", 0),
@@ -1021,98 +936,6 @@ class Batch(models.Model):
 
     def delete(self, using=None, keep_parents=False):
         """
-        Override delete to also remove associated batch files (input, error, output).
+        Override delete - files are stored upstream, so we only delete the local DB record.
         """
-        for file_obj in (self.input_file, self.error_file, self.output_file):
-            try:
-                if file_obj:
-                    file_obj.delete()
-            except Exception:
-                # Ignore errors deleting file records and physical files
-                pass
         super().delete(using=using, keep_parents=keep_parents)
-
-    def input_file_lines(self) -> deque[str]:
-        """
-        Iterate over the input JSONL file, skipping lines already processed.
-        Yields parsed JSON dict or None for invalid lines.
-        """
-        # Read all lines from the input file
-        raw: list[str] = self.input_file.lines()
-        # Determine how many requests have been counted so far
-        total = (self.request_counts or {}).get("total", 0)
-        return deque(raw[total:])
-
-    # Use a threading lock to guard append operations in synchronous context
-    append_lock = threading.Lock()
-
-    def append(self, result: Dict[str, Any], error: bool = False):
-        with self.append_lock:
-            log.info(f"Appending result to batch: {self.id}")
-            self.refresh_from_db(fields=["request_counts", "status", "output_file", "error_file"])
-            counts = self.request_counts or {}
-            if error:
-                self._append_error(result)
-                counts["total"] = counts.get("total", 0) + 1
-                counts["failed"] = counts.get("failed", 0) + 1
-            else:
-                self._append_output(result)
-                counts["total"] = counts.get("total", 0) + 1
-                counts["completed"] = counts.get("completed", 0) + 1
-
-            if counts["total"] == counts.get("input", 0):
-                now_ts = int(timezone.now().timestamp())
-                self.completed_at = now_ts
-                self.status = BatchStatus.COMPLETED
-
-            self.request_counts = counts
-            self.save(update_fields=["request_counts", "status"])
-
-    def _append_output(self, result: Dict[str, Any]):
-        """
-        Append a result JSON object as a new line to the output file.
-        Creates the output FileObject if not already present.
-        """
-        # Prepare line data
-        line = json.dumps(result, separators=(",", ":")).encode("utf-8") + b"\n"
-        # Ensure output_file exists
-        if not self.output_file:
-            now_ts = int(timezone.now().timestamp())
-            filename = f"{self.id}-output.jsonl"
-            file_obj = FileObject(
-                token=self.input_file.token,
-                bytes=0,
-                filename=filename,
-                created_at=now_ts,
-                purpose="batch_output",
-                expires_at=self.expires_at,
-            )
-            file_obj.save()
-            self.output_file = file_obj
-            self.save(update_fields=["output_file"])
-        # Append to file
-        self.output_file.append(line)
-
-    def _append_error(self, error_result: Dict[str, Any]):
-        """
-        Append an error JSON object as a new line to the error file.
-        Creates the error FileObject if not already present.
-        """
-        line = json.dumps(error_result, separators=(",", ":")).encode("utf-8") + b"\n"
-        # Ensure error_file exists
-        if not self.error_file:
-            now_ts = int(timezone.now().timestamp())
-            filename = f"{self.id}-error.jsonl"
-            file_obj = FileObject(
-                token=self.input_file.token,
-                bytes=0,
-                filename=filename,
-                created_at=now_ts,
-                purpose="batch_output",
-                expires_at=self.expires_at,
-            )
-            file_obj.save()
-            self.error_file = file_obj
-            self.save(update_fields=["error_file"])
-        # Append to file
-        self.error_file.append(line)

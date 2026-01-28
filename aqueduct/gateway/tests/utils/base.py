@@ -138,6 +138,8 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
 
 
 @override_settings(
+    AQUEDUCT_FILES_API_URL="https://api.openai.com",
+    AQUEDUCT_FILES_API_KEY=os.environ.get("OPENAI_API_KEY"),
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=lambda: 2,

@@ -146,7 +146,8 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertEqual(resp.status_code, 404)
         err = resp.json()
         self.assertIn("error", err)
-        self.assertEqual(err.get("error"), "Input file not found.")
+        error = err.get("error", {})
+        self.assertEqual(error.get("message"), "Input file not found.")
 
     def test_list_empty_batches(self):
         """GET /batches when there are no batches should return empty list."""
@@ -253,7 +254,8 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         )
         self.assertEqual(over.status_code, 403)
         err = over.json()
-        self.assertEqual(err.get("error"), f"Batch limit reached ({settings.MAX_USER_BATCHES})")
+        error = err.get("error", {})
+        self.assertEqual(error.get("message"), f"Batch limit reached ({settings.MAX_USER_BATCHES})")
 
         # Verify that only MAX_USER_BATCHES batches exist
         resp = self.client.get("/batches", headers=self.headers)
@@ -457,14 +459,16 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         resp = self.client.get("/batches/nonexistent", headers=self.headers)
         self.assertEqual(resp.status_code, 404)
         body = resp.json()
-        self.assertEqual(body.get("error"), "Batch not found.")
+        error = body.get("error", {})
+        self.assertEqual(error.get("message"), "Batch not found.")
 
     def test_cancel_nonexistent_batch(self):
         """POST /batches/{id}/cancel for non-existent batch returns 404."""
         resp = self.client.post("/batches/nonexistent/cancel", headers=self.headers)
         self.assertEqual(resp.status_code, 404)
         body = resp.json()
-        self.assertEqual(body.get("error"), "Batch not found.")
+        error = body.get("error", {})
+        self.assertEqual(error.get("message"), "Batch not found.")
 
     def test_queue_parallelism(self):
         """Ensure more requests than concurrency limit still all get processed."""

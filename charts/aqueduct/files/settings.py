@@ -164,37 +164,6 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = (
     * 1024
 )
 
-AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(
-    os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES", 15)
-)
-assert AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES > 10
-AQUEDUCT_BATCH_PROCESSING_CRONTAB = crontab(minute=f"*/{AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES}")
-AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS = int(
-    os.environ.get("AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS", 5 * 60)
-)
-AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS = int(
-    os.environ.get("AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS", 30)
-)
-
-AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY = int(os.environ.get(
-    "AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", "16"
-))
-AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY = int(os.environ.get(
-    "AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY", "4"
-))
-
-
-def batch_processing_concurrency():
-    """Is called when starting a batch processing run and returns the size of the concurrency queue,
-    so how many requests run in parallel."""
-    dt = datetime.now()
-    min_c = AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY
-    max_c = AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY
-    return max_c if dt.hour > 20 or dt.hour < 5 else min_c
-
-
-AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
-
 TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")
 
 MCP_CONFIG_FILE_PATH = os.environ.get("MCP_CONFIG_FILE_PATH", "mcp.json")
@@ -253,10 +222,6 @@ CELERY_BEAT_SCHEDULE = {
     "delete-expired-files-and-batches": {
         "task": "aqueduct.celery.delete_expired_files_and_batches",
         "schedule": crontab.from_string(REQUEST_RETENTION_SCHEDULE),
-    },
-    "process-batches": {
-        "task": "aqueduct.celery.process_batches",
-        "schedule": AQUEDUCT_BATCH_PROCESSING_CRONTAB,
     },
 }
 

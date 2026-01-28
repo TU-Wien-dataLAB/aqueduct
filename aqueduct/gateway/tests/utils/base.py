@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
-from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TransactionTestCase, override_settings
@@ -138,15 +137,12 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
 
 
 @override_settings(
+    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     AQUEDUCT_FILES_API_URL="https://api.openai.com",
     AQUEDUCT_FILES_API_KEY=os.environ.get("OPENAI_API_KEY"),
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
-    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=lambda: 2,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     MAX_USER_BATCHES=3,
-    AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=3 / 60,
-    AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=2,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
 )
 class GatewayBatchesTestCase(GatewayIntegrationTestCase):
@@ -156,12 +152,6 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
         if os.path.exists(TEST_FILES_ROOT):
             shutil.rmtree(TEST_FILES_ROOT)
             os.makedirs(TEST_FILES_ROOT, exist_ok=True)
-
-    @staticmethod
-    def run_batch_processing_loop():
-        from gateway.views.batches import run_batch_processing
-
-        async_to_sync(run_batch_processing)()
 
 
 @override_settings(

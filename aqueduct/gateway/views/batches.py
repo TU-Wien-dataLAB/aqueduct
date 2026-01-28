@@ -12,6 +12,7 @@ from gateway.config import get_files_api_client
 from management.models import Batch, FileObject, Token
 
 from .decorators import log_request, parse_body, token_authenticated, tos_accepted
+from .errors import error_response
 from .files import sync_batch_file_if_needed
 
 
@@ -54,7 +55,7 @@ async def batches(
     # POST /batches
 
     # Check batch limit before creating batch (for upstream quota management)
-    max_batches = settings.MAX_USER_BATCHES if hasattr(settings, "MAX_USER_BATCHES") else 10
+    max_batches = getattr(settings, "MAX_USER_BATCHES", 10)
     if token.service_account:
         active_count = await sync_to_async(
             Batch.objects.filter(
@@ -62,7 +63,7 @@ async def batches(
                 status__in=["validating", "in_progress", "cancelling"],
             ).count
         )()
-        limit = settings.MAX_TEAM_BATCHES if hasattr(settings, "MAX_TEAM_BATCHES") else 50
+        limit = getattr(settings, "MAX_TEAM_BATCHES", 50)
     else:
         active_count = await sync_to_async(
             Batch.objects.filter(
@@ -73,15 +74,7 @@ async def batches(
         limit = max_batches
 
     if active_count >= limit:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": f"Batch limit reached ({limit})",
-                    "type": "invalid_request_error",
-                }
-            },
-            status=403,
-        )
+        return error_response(f"Batch limit reached ({limit})", status=403)
 
     client = get_files_api_client()
 
@@ -91,27 +84,10 @@ async def batches(
             id=pydantic_model["input_file_id"], token__user=token.user
         )
     except FileObject.DoesNotExist:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": "Input file not found.",
-                    "type": "invalid_request_error",
-                    "param": "input_file_id",
-                }
-            },
-            status=404,
-        )
+        return error_response("Input file not found.", param="input_file_id", status=404)
 
     if not file_obj.remote_id:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": "File was not uploaded to upstream API.",
-                    "type": "invalid_request_error",
-                }
-            },
-            status=400,
-        )
+        return error_response("File was not uploaded to upstream API.", status=400)
 
     # Create batch on upstream using remote file ID
     try:
@@ -122,14 +98,8 @@ async def batches(
             metadata=pydantic_model.get("metadata"),
         )
     except Exception as e:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": f"Failed to create batch on upstream: {str(e)}",
-                    "type": "server_error",
-                }
-            },
-            status=502,
+        return error_response(
+            f"Failed to create batch on upstream: {str(e)}", error_type="server_error", status=502
         )
 
     # Create local tracking record
@@ -178,22 +148,12 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
             id=batch_id, input_file__token=token
         )
     except Batch.DoesNotExist:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": "Batch not found.",
-                    "type": "invalid_request_error",
-                    "param": "batch_id",
-                }
-            },
-            status=404,
-        )
+        return error_response("Batch not found.", param="batch_id", status=404)
 
     remote_id = batch_obj.remote_id
     if not remote_id:
-        return JsonResponse(
-            {"error": {"message": "Batch has no remote reference.", "type": "server_error"}},
-            status=500,
+        return error_response(
+            "Batch has no remote reference.", error_type="server_error", status=500
         )
 
     client = get_files_api_client()
@@ -201,13 +161,9 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
     try:
         remote_batch = await client.batches.retrieve(remote_id)
     except Exception as e:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": f"Failed to retrieve batch from upstream: {str(e)}",
-                    "type": "server_error",
-                }
-            },
+        return error_response(
+            f"Failed to retrieve batch from upstream: {str(e)}",
+            error_type="server_error",
             status=502,
         )
 
@@ -262,22 +218,12 @@ async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args,
             id=batch_id, input_file__token=token
         )
     except Batch.DoesNotExist:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": "Batch not found.",
-                    "type": "invalid_request_error",
-                    "param": "batch_id",
-                }
-            },
-            status=404,
-        )
+        return error_response("Batch not found.", param="batch_id", status=404)
 
     remote_id = batch_obj.remote_id
     if not remote_id:
-        return JsonResponse(
-            {"error": {"message": "Batch has no remote reference.", "type": "server_error"}},
-            status=500,
+        return error_response(
+            "Batch has no remote reference.", error_type="server_error", status=500
         )
 
     client = get_files_api_client()
@@ -285,14 +231,8 @@ async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args,
     try:
         remote_batch = await client.batches.cancel(remote_id)
     except Exception as e:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": f"Failed to cancel batch on upstream: {str(e)}",
-                    "type": "server_error",
-                }
-            },
-            status=502,
+        return error_response(
+            f"Failed to cancel batch on upstream: {str(e)}", error_type="server_error", status=502
         )
 
     # Update local record

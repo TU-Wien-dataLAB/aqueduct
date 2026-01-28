@@ -10,6 +10,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
+from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from gateway.config import get_files_api_client
@@ -22,6 +23,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
+from .errors import error_response
 
 
 class FilesCreateParams(BaseModel):
@@ -51,7 +53,7 @@ def validate_batch_file(data: bytes):
 
 
 async def sync_batch_file_if_needed(
-    remote_file_id: str | None, token: Token, client
+    remote_file_id: str | None, token: Token, client: AsyncOpenAI
 ) -> FileObject | None:
     """
     Ensure a local FileObject record exists for a batch output/error file.
@@ -154,8 +156,8 @@ async def files(
 
     # Validate file extension for batch files
     if purpose == "batch" and not filename.endswith(".jsonl"):
-        return JsonResponse(
-            {"error": "Only .jsonl files are currently supported for purpose 'batch'."}, status=400
+        return error_response(
+            "Only .jsonl files are currently supported for purpose 'batch'.", status=400
         )
 
     # Enforce per-token total storage limit
@@ -165,11 +167,8 @@ async def files(
     current_total = sum_res.get("sum_bytes") or 0
     max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB * 1024 * 1024
     if current_total + len(file_content) > max_total_bytes:
-        return JsonResponse(
-            {
-                "error": f"Total files size exceeds "
-                f"{settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB}MB limit."
-            },
+        return error_response(
+            f"Total files size exceeds {settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB}MB limit.",
             status=413,
         )
 
@@ -178,7 +177,7 @@ async def files(
         try:
             validate_batch_file(file_content)
         except ValueError as e:
-            return JsonResponse({"error": f"Batch file validation failed: {str(e)}"}, status=400)
+            return error_response(f"Batch file validation failed: {str(e)}", status=400)
 
     # file_content is already read and processed by @process_batch_file decorator
     # For batch files: model names are rewritten
@@ -213,8 +212,7 @@ async def files(
     await sync_to_async(file_obj.save)()
 
     # IMPORTANT: Return response with Aqueduct ID, not remote ID
-    response_data = remote_file.model_dump()
-    response_data["id"] = file_obj.id  # Replace remote ID with Aqueduct ID
+    response_data = file_obj.model.model_dump(exclude_none=True, exclude_unset=True)
 
     return JsonResponse(response_data, status=200)
 
@@ -235,22 +233,12 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     try:
         file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
     except FileObject.DoesNotExist:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": "File not found.",
-                    "type": "invalid_request_error",
-                    "param": "file_id",
-                }
-            },
-            status=404,
-        )
+        return error_response("File not found.", param="file_id", status=404)
 
     remote_id = file_obj.remote_id
     if not remote_id:
-        return JsonResponse(
-            {"error": {"message": "File has no remote reference.", "type": "server_error"}},
-            status=500,
+        return error_response(
+            "File has no remote reference.", error_type="server_error", status=500
         )
 
     client = get_files_api_client()
@@ -260,13 +248,9 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
         try:
             remote_file = await client.files.retrieve(remote_id)
         except Exception as e:
-            return JsonResponse(
-                {
-                    "error": {
-                        "message": f"Failed to retrieve file from upstream: {str(e)}",
-                        "type": "server_error",
-                    }
-                },
+            return error_response(
+                f"Failed to retrieve file from upstream: {str(e)}",
+                error_type="server_error",
                 status=502,
             )
 
@@ -279,14 +263,8 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     try:
         delete_response = await client.files.delete(remote_id)
     except Exception as e:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": f"Failed to delete file from upstream: {str(e)}",
-                    "type": "server_error",
-                }
-            },
-            status=502,
+        return error_response(
+            f"Failed to delete file from upstream: {str(e)}", error_type="server_error", status=502
         )
 
     # Delete local record
@@ -313,22 +291,12 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
     try:
         file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
     except FileObject.DoesNotExist:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": "File not found.",
-                    "type": "invalid_request_error",
-                    "param": "file_id",
-                }
-            },
-            status=404,
-        )
+        return error_response("File not found.", param="file_id", status=404)
 
     remote_id = file_obj.remote_id
     if not remote_id:
-        return JsonResponse(
-            {"error": {"message": "File has no remote reference.", "type": "server_error"}},
-            status=500,
+        return error_response(
+            "File has no remote reference.", error_type="server_error", status=500
         )
 
     client = get_files_api_client()
@@ -337,13 +305,9 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
         # Returns HttpxBinaryResponseContent, use .content to get bytes
         response = await client.files.content(remote_id)
     except Exception as e:
-        return JsonResponse(
-            {
-                "error": {
-                    "message": f"Failed to retrieve file content from upstream: {str(e)}",
-                    "type": "server_error",
-                }
-            },
+        return error_response(
+            f"Failed to retrieve file content from upstream: {str(e)}",
+            error_type="server_error",
             status=502,
         )
 

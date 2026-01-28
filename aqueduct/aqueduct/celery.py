@@ -5,9 +5,6 @@ from celery import Celery
 from django.conf import settings
 from django.utils import timezone
 
-from gateway.config import get_files_api_client
-from management.models import Batch, FileObject
-
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "aqueduct.settings")
 
@@ -63,6 +60,9 @@ def delete_expired_files_and_batches(self):
     fails (e.g., file already deleted, network error), the local record is
     still deleted to prevent infinite retry loops.
     """
+    from gateway.config import get_files_api_client
+    from management.models import Batch, FileObject
+
     now_ts = int(timezone.now().timestamp())
     client = get_files_api_client()
 

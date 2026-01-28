@@ -860,8 +860,9 @@ def rewrite_batch_file_models(content: bytes) -> bytes:
     {"custom_id": "...", "method": "POST", "url": "/v1/chat/completions",
      "body": {"model": "relay-model-name", ...}}
 
-    This function replaces the model name in each request body with
-    the actual upstream model name from the router configuration.
+    This function:
+    1. Ensures custom_id is a string type (required by OpenAI Batch API)
+    2. Replaces the model name in each request body with the actual upstream model name from the router configuration
     """
     lines = content.decode("utf-8").splitlines()
     rewritten_lines = []
@@ -877,6 +878,8 @@ def rewrite_batch_file_models(content: bytes) -> bytes:
                 relay_model = get_relay_model_name(original_model)
                 body["model"] = relay_model
                 request["body"] = body
+            if "custom_id" in request:
+                request["custom_id"] = str(request["custom_id"])
             rewritten_lines.append(json.dumps(request, separators=(",", ":")))
         except json.JSONDecodeError:
             # Keep invalid lines as-is (will fail validation anyway)

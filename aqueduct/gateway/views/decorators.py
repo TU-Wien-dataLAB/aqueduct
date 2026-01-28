@@ -29,7 +29,7 @@ from pydantic import TypeAdapter, ValidationError
 from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
-from gateway.config import get_mcp_config, resolve_model_alias
+from gateway.config import get_mcp_config, get_router, resolve_model_alias
 from gateway.views.utils import get_response_from_cache, in_wildcard
 from management.models import FileObject, Request, Token
 
@@ -825,6 +825,118 @@ def check_tool_availability(view_func):
                 case other:
                     if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
                         return JsonResponse({"error": f"Invalid tool type: {other}"}, status=400)
+
+        return await view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+def get_relay_model_name(requested_model: str) -> str:
+    """
+    Map a requested model name to the actual upstream model name.
+
+    Uses the LiteLLM router configuration to find the deployment
+    and return the litellm_params.model value.
+    """
+    router = get_router()
+    if not router:
+        return requested_model
+
+    # Find matching deployment in router config
+    for deployment in router.model_list:
+        model_name = deployment.get("model_name")
+        if model_name == requested_model:
+            litellm_params = deployment.get("litellm_params", {})
+            return litellm_params.get("model", requested_model)
+
+    return requested_model
+
+
+def rewrite_batch_file_models(content: bytes) -> bytes:
+    """
+    Rewrite model names in a batch input JSONL file.
+
+    Each line is a JSON object with structure:
+    {"custom_id": "...", "method": "POST", "url": "/v1/chat/completions",
+     "body": {"model": "relay-model-name", ...}}
+
+    This function replaces the model name in each request body with
+    the actual upstream model name from the router configuration.
+    """
+    lines = content.decode("utf-8").splitlines()
+    rewritten_lines = []
+
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            request = json.loads(line)
+            body = request.get("body", {})
+            if "model" in body:
+                original_model = body["model"]
+                relay_model = get_relay_model_name(original_model)
+                body["model"] = relay_model
+                request["body"] = body
+            rewritten_lines.append(json.dumps(request, separators=(",", ":")))
+        except json.JSONDecodeError:
+            # Keep invalid lines as-is (will fail validation anyway)
+            rewritten_lines.append(line)
+
+    return ("\n".join(rewritten_lines) + "\n").encode("utf-8")
+
+
+def extract_preview(content: bytes, num_lines: int = 10) -> str:
+    """Extract first 10 lines from file content for preview."""
+    try:
+        lines = content.decode("utf-8").splitlines()[:num_lines]
+        return "\n".join(lines)
+    except UnicodeDecodeError:
+        return "[Binary content - no preview available]"
+
+
+def process_batch_file(view_func):
+    """
+    Decorator for batch file upload that processes file content before proxying.
+
+    This decorator (applied after @parse_body):
+    1. Reads the file content ONCE from the uploaded file
+    2. Extracts a preview (first 10 lines) of the original content
+    3. For batch files: rewrites model names using router config
+    4. Passes processed data to the view via kwargs:
+       - file_content: bytes - the raw file content (or rewritten for batch)
+       - file_preview: str | None - first 10 lines for batch files
+
+    This follows the existing decorator pattern (like @parse_body) of reading
+    data once and passing it via kwargs to avoid multiple reads.
+    """
+
+    @wraps(view_func)
+    async def wrapper(request, *args, **kwargs):
+        if request.method != "POST":
+            return await view_func(request, *args, **kwargs)
+
+        pydantic_model = kwargs.get("pydantic_model")
+        if not pydantic_model:
+            return await view_func(request, *args, **kwargs)
+
+        uploaded = pydantic_model.get("file")
+        purpose = pydantic_model.get("purpose")
+
+        if not uploaded:
+            return await view_func(request, *args, **kwargs)
+
+        # Read file content ONCE
+        content = uploaded.read()
+
+        if purpose == "batch":
+            # Store preview (first 10 lines) before rewriting
+            kwargs["file_preview"] = extract_preview(content)
+            # Rewrite model names for batch files
+            kwargs["file_content"] = rewrite_batch_file_models(content)
+        else:
+            # For non-batch files, pass content as-is, no preview
+            kwargs["file_content"] = content
+            kwargs["file_preview"] = None
 
         return await view_func(request, *args, **kwargs)
 

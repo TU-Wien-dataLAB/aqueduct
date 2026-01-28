@@ -107,18 +107,25 @@ class GatewayIntegrationTestCase(TransactionTestCase):
 
 
 @override_settings(
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     API_MAX_RETRIES=5,
+    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
+    AQUEDUCT_FILES_API_URL="https://api.openai.com",
+    AQUEDUCT_FILES_API_KEY=os.environ.get("OPENAI_API_KEY"),
 )
-class GatewayFilesTestCase(TransactionTestCase):
+class GatewayFilesTestCase(GatewayIntegrationTestCase):
     # Load default fixture (includes test Token) and set test access token
     fixtures = ["gateway_data.json"]
-    AQUEDUCT_ACCESS_TOKEN = GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN
 
     @classmethod
     def setUpClass(cls):
+        cls._write_router_config()
         super().setUpClass()
+        if INTEGRATION_TEST_BACKEND == "openai":
+            if not os.environ.get("OPENAI_API_KEY"):
+                raise RuntimeError(
+                    "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
+                )
         # Prepare auth headers for file API
         headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
         # Remove Content-Type header to allow multipart file upload
@@ -128,10 +135,6 @@ class GatewayFilesTestCase(TransactionTestCase):
 
     def tearDown(self):
         super().tearDown()
-        # Clean up the file storage directory after each test
-        if os.path.exists(TEST_FILES_ROOT):
-            shutil.rmtree(TEST_FILES_ROOT)
-            os.makedirs(TEST_FILES_ROOT, exist_ok=True)
 
 
 @override_settings(

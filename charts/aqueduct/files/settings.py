@@ -9,6 +9,7 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
+
 import logging
 import os
 import sys
@@ -135,21 +136,33 @@ LITELLM_ROUTER_CONFIG_FILE_PATH = os.environ.get("LITELLM_ROUTER_CONFIG_FILE_PAT
 AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST: list[str] = []
 AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST: list[str] = []
 
-AQUEDUCT_FILES_API_ROOT = os.environ.get("AQUEDUCT_FILES_API_ROOT", "/tmp")
+# External Files/Batches API endpoint (required)
+# Examples: "https://api.openai.com", "https://your-azure-endpoint.openai.azure.com"
+AQUEDUCT_FILES_API_URL = os.environ.get("AQUEDUCT_FILES_API_URL")
+
+# API key for external endpoint (if different from per-request auth)
+AQUEDUCT_FILES_API_KEY = os.environ.get("AQUEDUCT_FILES_API_KEY", None)
+
 AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB", 8))
-AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 32))
+AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(
+    os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 32)
+)
 AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB = int(
     os.environ.get("AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB", 1024)
 )
 AQUEDUCT_FILES_API_EXPIRY_DAYS = int(os.environ.get("AQUEDUCT_FILES_API_EXPIRY_DAYS", 7))
-AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB = int(os.environ.get("AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB", 10))
+AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB = int(
+    os.environ.get("AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB", 10)
+)
 AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB = int(
     os.environ.get("AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB", 32)
 )
 # This variable is in bytes, unlike the Aqueduct-specific size limits!
-DATA_UPLOAD_MAX_MEMORY_SIZE = max(
-    AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB, AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB,
-) * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = (
+    max(AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB, AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB)
+    * 1024
+    * 1024
+)
 
 AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(
     os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES", 15)
@@ -197,9 +210,13 @@ MCP_ALLOWED_ORIGINS = os.getenv(
     "MCP_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:*"
 ).split(",")
 
-RESPONSES_API_TTL_SECONDS = int(os.getenv("RESPONSES_API_TTL_SECONDS", f"{60 * 60 * 24 * 30}")) # 30-day default
+RESPONSES_API_TTL_SECONDS = int(
+    os.getenv("RESPONSES_API_TTL_SECONDS", f"{60 * 60 * 24 * 30}")
+)  # 30-day default
 RESPONSES_API_ALLOWED_NATIVE_TOOLS = os.getenv("RESPONSES_API_ALLOWED_NATIVE_TOOLS", "").split(",")
-RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS = os.getenv("RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS", "False").lower() == "true"
+RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS = (
+    os.getenv("RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS", "False").lower() == "true"
+)
 
 API_MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "0"))
 
@@ -326,11 +343,7 @@ CACHES = {
 }
 
 if TESTING:
-    CACHES = {
-        "default": {
-            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        }
-    }
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

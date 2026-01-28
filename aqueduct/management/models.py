@@ -779,6 +779,7 @@ class FileObject(models.Model):
     class Meta:
         verbose_name = "File Object"
         verbose_name_plural = "File Objects"
+        indexes = [models.Index(fields=["remote_id"], name="fileobject_remote_id_idx")]
 
     @property
     def model(self) -> openai.types.FileObject:

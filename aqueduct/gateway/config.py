@@ -11,6 +11,28 @@ from litellm import Router
 log = logging.getLogger("aqueduct")
 
 
+@lru_cache(maxsize=1)
+def get_files_api_client() -> openai.AsyncClient:
+    """
+    Get configured OpenAI client for Files/Batches API.
+
+    Uses the OpenAI Python SDK which provides:
+    - Proper response models (FileObject, Batch, etc.)
+    - Automatic error handling and retries
+    - Type safety
+
+    The client is cached since the configuration is static.
+    """
+    if not settings.AQUEDUCT_FILES_API_URL:
+        raise ValueError("AQUEDUCT_FILES_API_URL must be configured")
+
+    return openai.AsyncClient(
+        base_url=f"{settings.AQUEDUCT_FILES_API_URL.rstrip('/')}/v1",
+        api_key=settings.AQUEDUCT_FILES_API_KEY or "unused",
+        timeout=60.0,
+    )
+
+
 def _validate_router_config(config: dict):
     # Validate alias uniqueness
     alias_to_model = {}

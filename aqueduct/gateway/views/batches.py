@@ -16,7 +16,8 @@ from litellm import Router
 from openai.types.batch_create_params import BatchCreateParams
 from pydantic import TypeAdapter
 
-from gateway.config import get_router
+from gateway.config import get_files_api_client, get_router
+from gateway.views.files import sync_batch_file_if_needed
 from management.models import Batch, BatchStatus, FileObject, Token
 
 from .decorators import log_request, parse_body, token_authenticated, tos_accepted
@@ -136,14 +137,69 @@ async def batches(
 @require_http_methods(["GET"])
 @token_authenticated(token_auth_only=True)
 @log_request
-async def batch(request: ASGIRequest, token, batch_id: str, *args, **kwargs):
-    """GET /batches/{batch_id} - retrieve a batch"""
+async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs):
+    """
+    Retrieve a specific batch.
+
+    This endpoint also handles lazy synchronization of batch output/error files:
+    When a batch completes, the upstream provider creates output_file_id and error_file_id.
+    These files need local FileObject records for access control, so we create them
+    on-demand when the batch is queried.
+    """
+    # Verify batch ownership through input_file relationship
     try:
-        batch_obj = await Batch.objects.aget(id=batch_id, input_file__token=token)
+        batch_obj = await Batch.objects.select_related("input_file__token").aget(
+            id=batch_id, input_file__token=token
+        )
     except Batch.DoesNotExist:
-        return JsonResponse({"error": "Batch not found."}, status=404)
-    openai_batch = batch_obj.model
-    return JsonResponse(openai_batch.model_dump(exclude_none=True, exclude_unset=True), status=200)
+        return JsonResponse(
+            {
+                "error": {
+                    "message": "Batch not found.",
+                    "type": "invalid_request_error",
+                    "param": "batch_id",
+                }
+            },
+            status=404,
+        )
+
+    client = get_files_api_client()
+
+    # If batch has a remote_id, fetch current status from upstream
+    if batch_obj.remote_id:
+        try:
+            remote_batch = await client.batches.retrieve(batch_obj.remote_id)
+
+            # Sync output/error files if they exist upstream but not locally
+            # These files inherit ownership from the batch's input_file token
+            output_file_obj = await sync_batch_file_if_needed(
+                remote_batch.output_file_id, token, client
+            )
+            error_file_obj = await sync_batch_file_if_needed(
+                remote_batch.error_file_id, token, client
+            )
+
+            # Build response with Aqueduct IDs
+            response_data = remote_batch.model_dump()
+            response_data["id"] = batch_obj.id  # Replace remote batch ID with Aqueduct ID
+            response_data["input_file_id"] = batch_obj.input_file_id  # Already an Aqueduct ID
+
+            # Replace remote file IDs with Aqueduct IDs
+            if output_file_obj:
+                response_data["output_file_id"] = output_file_obj.id
+            if error_file_obj:
+                response_data["error_file_id"] = error_file_obj.id
+
+            return JsonResponse(response_data, status=200)
+
+        except Exception:
+            # Fall back to local data if upstream fetch fails
+            pass
+
+    # Return local batch data
+    return JsonResponse(
+        batch_obj.model.model_dump(exclude_none=True, exclude_unset=True), status=200
+    )
 
 
 @csrf_exempt

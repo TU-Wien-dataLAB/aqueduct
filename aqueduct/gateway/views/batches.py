@@ -142,6 +142,7 @@ async def batches(
         status=remote_batch.status,
         metadata=pydantic_model.get("metadata"),
         remote_id=remote_batch.id,
+        expires_at=remote_batch.expires_at,
         request_counts=remote_batch.request_counts.model_dump()
         if remote_batch.request_counts
         else {},

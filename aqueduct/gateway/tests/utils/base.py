@@ -1,5 +1,4 @@
 import os
-import shutil
 from pathlib import Path
 from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
@@ -36,9 +35,6 @@ with open(ROUTER_CONFIG_PATH) as f:
 
 User = get_user_model()
 
-TEST_FILES_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "files_root")
-os.makedirs(TEST_FILES_ROOT, exist_ok=True)
-
 
 def get_mock_router(model: str = "test-model"):
     router = MagicMock(spec=Router)
@@ -55,7 +51,6 @@ def get_mock_router(model: str = "test-model"):
 
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     API_MAX_RETRIES=5,  # for some reason the OpenAI API fails with 503 sometimes...
 )
@@ -140,23 +135,16 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     AQUEDUCT_FILES_API_URL="https://api.openai.com",
     AQUEDUCT_FILES_API_KEY=os.environ.get("OPENAI_API_KEY"),
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     MAX_USER_BATCHES=3,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
 )
 class GatewayBatchesTestCase(GatewayIntegrationTestCase):
-    def tearDown(self):
-        super().tearDown()
-        # Clean up the file storage directory after each test
-        if os.path.exists(TEST_FILES_ROOT):
-            shutil.rmtree(TEST_FILES_ROOT)
-            os.makedirs(TEST_FILES_ROOT, exist_ok=True)
+    pass
 
 
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
 )
 class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
@@ -180,7 +168,6 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
 
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     TOS_ENABLED=True,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},

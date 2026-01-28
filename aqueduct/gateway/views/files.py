@@ -91,13 +91,19 @@ async def sync_batch_file_if_needed(
     # Create local record with same ownership as batch
     now = timezone.now()
     expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
+    local_expires_at = int((now + timezone.timedelta(days=expiry_days)).timestamp())
+
+    # Use the earlier expiry to avoid stale local records if upstream expires first
+    if remote_file.expires_at and remote_file.expires_at < local_expires_at:
+        local_expires_at = remote_file.expires_at
+
     file_obj = FileObject(
         token=token,
         bytes=remote_file.bytes,
         filename=remote_file.filename,
         created_at=remote_file.created_at,
         purpose=remote_file.purpose,  # "batch_output" or similar
-        expires_at=int((now + timezone.timedelta(days=expiry_days)).timestamp()),
+        expires_at=local_expires_at,
         remote_id=remote_file.id,
         upstream_url=settings.AQUEDUCT_FILES_API_URL,
     )
@@ -187,14 +193,19 @@ async def files(
     # Create local tracking record with preview
     now = timezone.now()
     expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
+    local_expires_at = int((now + timezone.timedelta(days=expiry_days)).timestamp())
+
+    # Use the earlier expiry to avoid stale local records if upstream expires first
+    if remote_file.expires_at and remote_file.expires_at < local_expires_at:
+        local_expires_at = remote_file.expires_at
+
     file_obj = FileObject(
         token=token,
         bytes=len(file_content),
         filename=filename,
         created_at=int(now.timestamp()),
         purpose=purpose,
-        # Use local expiry for cleanup scheduling (remote may have different expiry)
-        expires_at=int((now + timezone.timedelta(days=expiry_days)).timestamp()),
+        expires_at=local_expires_at,
         remote_id=remote_file.id,
         preview=file_preview,
         upstream_url=settings.AQUEDUCT_FILES_API_URL,

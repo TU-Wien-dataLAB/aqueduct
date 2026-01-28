@@ -5,6 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
+from openai import OpenAI
 
 from aqueduct.celery import delete_expired_files_and_batches
 from gateway.tests.utils.base import GatewayFilesTestCase
@@ -12,6 +13,24 @@ from management.models import FileObject, Token
 
 
 class TestFilesAPI(GatewayFilesTestCase):
+    def tearDown(self):
+        # Clean up all files created during tests
+        client = OpenAI(
+            base_url=settings.AQUEDUCT_FILES_API_URL.rstrip("/") + "/v1",
+            api_key=settings.AQUEDUCT_FILES_API_KEY or "unused",
+        )
+        from management.models import FileObject
+
+        file_objects = FileObject.objects.all()
+        for file_obj in file_objects:
+            if file_obj.remote_id:
+                try:
+                    client.files.delete(file_obj.remote_id)
+                except Exception:
+                    pass  # Ignore deletions in teardown
+            file_obj.delete()
+        super().tearDown()
+
     def test_file_lifecycle(self):
         """Test uploading, listing, retrieving, downloading, and deleting a file."""
         content = b'{"custom_id": "bar"}\n{"custom_id": "123"}\n{"custom_id": "baz"}\n{"custom_id": "1234"}\n'

@@ -5,10 +5,11 @@ from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
+from openai import OpenAI
 
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.base import GatewayBatchesTestCase
-from management.models import Token
+from management.models import Batch, FileObject, Token
 
 
 def mock_router():
@@ -33,6 +34,34 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         super().setUpClass()
         cls.headers.pop("Content-Type", None)
         cls.url_chat = reverse("gateway:v1_chat_completions")
+
+    def tearDown(self):
+        # Clean up all files and batches created during tests
+        client = OpenAI(
+            base_url=settings.AQUEDUCT_FILES_API_URL.rstrip("/") + "/v1",
+            api_key=settings.AQUEDUCT_FILES_API_KEY or "unused",
+        )
+
+        # Delete all batches upstream and locally
+        batch_objects = Batch.objects.all()
+        for batch_obj in batch_objects:
+            if batch_obj.remote_id:
+                try:
+                    client.batches.cancel(batch_obj.remote_id)
+                except Exception:
+                    pass
+            batch_obj.delete()
+
+        # Delete all files upstream and locally
+        file_objects = FileObject.objects.all()
+        for file_obj in file_objects:
+            if file_obj.remote_id:
+                try:
+                    client.files.delete(file_obj.remote_id)
+                except Exception:
+                    pass  # Ignore deletions in teardown
+            file_obj.delete()
+        super().tearDown()
 
     def test_invalid_json(self):
         """POST /batches with invalid JSON returns 400."""

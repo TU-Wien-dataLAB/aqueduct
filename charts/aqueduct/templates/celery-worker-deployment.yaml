@@ -52,24 +52,6 @@ spec:
             - name: mcp-config
               mountPath: /etc/aqueduct/mcp.json
               subPath: mcp.json
-            {{- if .Values.persistence.files.enabled }}
-            - name: files
-              mountPath: {{ .Values.persistence.files.mountPath }}
-            {{- end }}
-      initContainers:
-        {{- if .Values.persistence.files.enabled }}
-        - name: fix-permissions
-          image: busybox
-          command:
-            - "sh"
-            - "-c"
-            - "chown -R {{ .Values.securityContext.runAsUser }}:{{ .Values.securityContext.runAsGroup }} {{ .Values.persistence.files.mountPath }}"
-          securityContext:
-            runAsUser: 0
-          volumeMounts:
-            - name: files
-              mountPath: {{ .Values.persistence.files.mountPath }}
-        {{- end }}
       volumes:
         - name: settings-py
           configMap:
@@ -80,8 +62,3 @@ spec:
         - name: mcp-config
           configMap:
             name: {{ .Release.Name }}-mcp-config
-        {{- if .Values.persistence.files.enabled }}
-        - name: files
-          persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-files
-        {{- end }}

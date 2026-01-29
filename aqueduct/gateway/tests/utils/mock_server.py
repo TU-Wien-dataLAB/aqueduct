@@ -1,7 +1,9 @@
 import argparse
 import json
+import os
 import re
 import subprocess
+import sys
 import time
 from contextlib import contextmanager
 from json import JSONDecodeError
@@ -518,7 +520,12 @@ class MockAPIServer:
             "--log-level",
             self.log_level,
         ]
-        self.process = subprocess.Popen(cmd, text=True)
+
+        # Set PYTHONPATH to include current directory so uvicorn can import the gateway module
+        # (necessary for the github pipeline)
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(sys.path)
+        self.process = subprocess.Popen(cmd, text=True, env=env)
 
         print(f"Waiting for the mock server to accept connections on port {self.port}...")
         start_time = time.time()

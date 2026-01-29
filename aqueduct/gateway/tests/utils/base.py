@@ -8,7 +8,7 @@ from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from litellm import Router
 from litellm.types.llms.openai import HttpxBinaryResponseContent
@@ -132,10 +132,9 @@ class GatewayIntegrationTestCase(TestCase):
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     API_MAX_RETRIES=5,
 )
-class GatewayFilesTestCase(TransactionTestCase):
+class GatewayFilesTestCase(GatewayIntegrationTestCase):
     # Load default fixture (includes test Token) and set test access token
     fixtures = ["gateway_data.json"]
-    AQUEDUCT_ACCESS_TOKEN = GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN
 
     @classmethod
     def setUpClass(cls):

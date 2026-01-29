@@ -1,7 +1,7 @@
 import json
 from http import HTTPStatus
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from urllib.parse import urlparse
 
 import httpx
@@ -198,9 +198,7 @@ class TestUserId(MCPLiveServerTestCase):
             text="How much is the fish?"
         )
 
-        with (
-            patch("gateway.views.utils.get_openai_client", return_value=mock_client),
-        ):
+        with patch("gateway.views.utils.get_openai_client", return_value=mock_client):
             resp = self.client.post(
                 url,
                 {"file": file, "model": "whisper-1", "user_id": user_id},

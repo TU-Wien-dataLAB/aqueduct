@@ -87,8 +87,8 @@ class GatewayIntegrationTestCase(TestCase):
     def setUpClass(cls):
         cls._write_router_config()
         super().setUpClass()
-        if INTEGRATION_TEST_BACKEND == "openai":
-            # TODO: the key shouldn't be necessary!
+        if INTEGRATION_TEST_BACKEND == "openai" and not settings.TESTS_USE_MOCK_API:
+            # When running tests against the real OpenAI API, the API key has to be set
             if not os.environ.get("OPENAI_API_KEY"):
                 raise RuntimeError(
                     "OPENAI_API_KEY environment variable has to be set for OpenAI integration."

@@ -103,13 +103,6 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
         {"role": "user", "content": "Write me a short poem!"},
     ]
 
-    MOCK_STREAMING_RESPONSE_DATA = [
-        b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Beneath the sky so vast and blue,  \\n","role":"assistant"}}],"stream_options":{"include_usage":true}}\n\n',
-        b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Whispers of dreams drift softly through,  \\n"}}],"stream_options":{"include_usage":true}}\n\n',
-        b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"A gentle breeze, a song so sweet,  \\n"}}],"stream_options":{"include_usage":true}}\n\n',
-        b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Moments of magic, softly complete."}}],"stream_options":{"include_usage":true}}\n\n',
-    ]
-
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -139,8 +132,7 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
         """
         request = self._build_chat_completion_request(messages, stream=True, **payload_kwargs)
 
-        expected = MockStreamingConfig(response_data=self.MOCK_STREAMING_RESPONSE_DATA)
-        with self.mock_server.patch_external_api(url=self.url, config=expected):
+        with self.mock_server.patch_external_api():
             response = await self.async_client.post(**request, content_type="application/json")
         return response
 

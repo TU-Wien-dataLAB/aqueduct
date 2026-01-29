@@ -198,6 +198,13 @@ default_post_configs = {
     ),
 }
 
+_chat_completion_stream_data = [
+    b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Beneath the sky so vast and blue,  \\n","role":"assistant"}}],"stream_options":{"include_usage":true}}\n\n',
+    b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Whispers of dreams drift softly through,  \\n"}}],"stream_options":{"include_usage":true}}\n\n',
+    b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"A gentle breeze, a song so sweet,  \\n"}}],"stream_options":{"include_usage":true}}\n\n',
+    b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Moments of magic, softly complete."}}],"stream_options":{"include_usage":true}}\n\n',
+]
+
 _responses_stream_data = [
     {
         "response": {
@@ -339,12 +346,12 @@ _responses_stream_data = [
 ]
 
 default_post_stream_configs = {
-    # TODO: Add other stream responses; figure out a better way to retrieve them
+    "chat/completions": MockStreamingConfig(response_data=_chat_completion_stream_data),
     "responses": MockStreamingConfig(
         response_data=[
             b"data: " + json.dumps(item).encode() + b"\n\n" for item in _responses_stream_data
         ]
-    )
+    ),
 }
 
 default_get_configs = {

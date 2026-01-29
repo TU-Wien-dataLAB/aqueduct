@@ -59,13 +59,12 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         assert self.model in ROUTER_CONFIG
         payload = {"model": self.model, "input": ["The quick brown fox jumps over the lazy dog."]}
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(
             response.status_code,
@@ -121,9 +120,7 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
         using Django test client.
         """
         request = self._build_chat_completion_request(messages, stream=False, **payload_kwargs)
-        with self.mock_server.patch_external_api():
-            response = self.client.post(**request, content_type="application/json")
-        return response
+        return self.client.post(**request, content_type="application/json")
 
     async def _send_chat_completion_streaming(self, messages, **payload_kwargs):
         """
@@ -131,10 +128,7 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
         using Django async test client.
         """
         request = self._build_chat_completion_request(messages, stream=True, **payload_kwargs)
-
-        with self.mock_server.patch_external_api():
-            response = await self.async_client.post(**request, content_type="application/json")
-        return response
+        return await self.async_client.post(**request, content_type="application/json")
 
 
 class ChatCompletionsIntegrationTest(ChatCompletionsBase):
@@ -272,10 +266,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         headers.pop("Content-Type", None)
 
         # Upload the file
-        with self.mock_server.patch_external_api():
-            upload_response = self.client.post(
-                "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
-            )
+        upload_response = self.client.post(
+            "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
+        )
         self.assertEqual(
             upload_response.status_code, 200, f"File upload failed: {upload_response.json()}"
         )
@@ -358,13 +351,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(
             response.status_code,
@@ -388,10 +380,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         headers.pop("Content-Type", None)
 
         # Upload the file
-        with self.mock_server.patch_external_api():
-            upload_response = self.client.post(
-                "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
-            )
+        upload_response = self.client.post(
+            "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
+        )
         self.assertEqual(
             upload_response.status_code, 200, f"File upload failed: {upload_response.json()}"
         )
@@ -463,13 +454,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(
             response.status_code,
@@ -736,8 +726,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             )
         )()
 
-        with self.mock_server.patch_external_api():
-            response = await self._send_chat_completion_streaming(self.MESSAGES)
+        response = await self._send_chat_completion_streaming(self.MESSAGES)
 
         self.assertEqual(
             response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}"
@@ -767,8 +756,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             )
         )()
 
-        with self.mock_server.patch_external_api():
-            response = await self._send_chat_completion_streaming(self.MESSAGES)
+        response = await self._send_chat_completion_streaming(self.MESSAGES)
 
         # Verify we get a timeout response
         self.assertEqual(
@@ -831,13 +819,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
     def test_chat_completion_unknown_model(self):
         payload = {"model": "unknown-model", "messages": self.MESSAGES}
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
         self.assertEqual(
             response.status_code,
             400,
@@ -967,13 +954,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(
             response.status_code,
@@ -1612,13 +1598,12 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         # Try to use alias instead of model name
         payload = {"model": "main", "messages": messages, "max_tokens": 10}
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         # Should return 200 with alias resolution
         self.assertEqual(
@@ -1642,13 +1627,12 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
             "response_format": "mp3",
         }
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                "/audio/speech",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            "/audio/speech",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         # Should return 200 with alias resolution
         self.assertEqual(
@@ -1682,15 +1666,14 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
             # Remove Content-Type for multipart form data
             headers.pop("Content-Type", None)
 
-            with self.mock_server.patch_external_api():
-                response = self.client.post(
-                    "/audio/transcriptions",
-                    {
-                        "file": test_audio_file,
-                        "model": "stt",
-                    },  # Using alias instead of actual model name
-                    headers=headers,
-                )
+            response = self.client.post(
+                "/audio/transcriptions",
+                {
+                    "file": test_audio_file,
+                    "model": "stt",
+                },  # Using alias instead of actual model name
+                headers=headers,
+            )
 
             # Should return 200 with alias resolution
             self.assertEqual(
@@ -1716,13 +1699,12 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         messages = [{"role": "user", "content": "Hello!"}]
         payload = {"model": "nonexistent-alias-12345", "messages": messages, "max_tokens": 10}
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(response.status_code, 400)
 
@@ -1732,13 +1714,12 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         """
         payload = {"model": "embedding", "input": ["The quick brown fox."]}
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                "/embeddings",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            "/embeddings",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         # Should return 200 with alias resolution
         self.assertEqual(
@@ -1772,13 +1753,12 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 "size": "256x256",
             }
 
-            with self.mock_server.patch_external_api():
-                response = self.client.post(
-                    "/images/generations",
-                    data=json.dumps(payload),
-                    headers=self.headers,
-                    content_type="application/json",
-                )
+            response = self.client.post(
+                "/images/generations",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
             # Should return 200 with alias resolution
             self.assertEqual(response.status_code, 200)
@@ -1810,13 +1790,12 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         for alias in aliases_to_test:
             payload = {"model": alias, "messages": messages, "max_tokens": 5}
 
-            with self.mock_server.patch_external_api():
-                response = self.client.post(
-                    "/chat/completions",
-                    data=json.dumps(payload),
-                    headers=self.headers,
-                    content_type="application/json",
-                )
+            response = self.client.post(
+                "/chat/completions",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
 
             # All should behave the same (either all work or all fail)
             if first_status is None:
@@ -1845,24 +1824,22 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         # Test with actual model name
         payload = {"model": self.model, "messages": messages, "max_tokens": 5}
 
-        with self.mock_server.patch_external_api():
-            response_actual = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response_actual = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         # Test with alias
         payload = {"model": "main", "messages": messages, "max_tokens": 5}
 
-        with self.mock_server.patch_external_api():
-            response_alias = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response_alias = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         # Both should be rejected (404)
         self.assertEqual(
@@ -1887,13 +1864,12 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         # Test with correct case
         payload = {"model": "main", "messages": messages, "max_tokens": 5}
 
-        with self.mock_server.patch_external_api():
-            response_lowercase = self.client.post(
-                "/chat/completions",
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response_lowercase = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         # Should return 200 with alias resolution
         self.assertEqual(

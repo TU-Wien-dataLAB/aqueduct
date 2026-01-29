@@ -26,13 +26,12 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
             "response_format": "mp3",
         }
 
-        with self.mock_server.patch_external_api():
-            response = await self.async_client.post(
-                self.url_tts,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = await self.async_client.post(
+            self.url_tts,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
 
@@ -66,13 +65,12 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
             "voice": "alloy",
         }
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url_tts,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url_tts,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(
             response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
@@ -90,13 +88,12 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
             "voice": "alloy",
         }
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url_tts,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url_tts,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(
             response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
@@ -115,13 +112,12 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
     #         "voice": "alloy",
     #     }
     #
-    #     with self.mock_server.patch_external_api():
-    #         response = self.client.post(
-    #             self.url_tts,
-    #             data=json.dumps(payload),
-    #             headers=self.headers,
-    #             content_type="application/json",
-    #         )
+    #     response = self.client.post(
+    #         self.url_tts,
+    #         data=json.dumps(payload),
+    #         headers=self.headers,
+    #         content_type="application/json",
+    #     )
     #
     #     # TODO: Currently this test fails (Response code is 200 instead of 400).
     #     #  We don't validate the compatibility of the model in the view; this test actually tests
@@ -139,13 +135,12 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
 
         payload = {"model": self.tts_model, "input": "Hello, this is a test.", "voice": "alloy"}
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url_tts,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url_tts,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(
             response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}"
@@ -172,12 +167,11 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url_stt,
-                {"file": self.test_audio_file, "model": self.stt_model},
-                headers=self.multipart_headers,
-            )
+        response = self.client.post(
+            self.url_stt,
+            {"file": self.test_audio_file, "model": self.stt_model},
+            headers=self.multipart_headers,
+        )
 
         self.assertEqual(
             response.status_code,
@@ -202,12 +196,11 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url_stt,
-                {"file": self.test_audio_file, "model": "invalid-stt-model"},
-                headers=self.multipart_headers,
-            )
+        response = self.client.post(
+            self.url_stt,
+            {"file": self.test_audio_file, "model": "invalid-stt-model"},
+            headers=self.multipart_headers,
+        )
 
         self.assertEqual(
             response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
@@ -219,12 +212,11 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url_stt,
-                {"model": self.stt_model},  # Missing file
-                headers=self.multipart_headers,
-            )
+        response = self.client.post(
+            self.url_stt,
+            {"model": self.stt_model},  # Missing file
+            headers=self.multipart_headers,
+        )
 
         self.assertEqual(
             response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
@@ -237,15 +229,14 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
     #     if INTEGRATION_TEST_BACKEND == "vllm":
     #         self.skipTest("STT tests require OpenAI backend")
     #
-    #     with self.mock_server.patch_external_api():
-    #         response = self.client.post(
-    #             self.url_stt,
-    #             {
-    #                 "file": self.test_audio_file,
-    #                 "model": self.model,  # This is a chat model, not STT
-    #             },
-    #             headers=self.multipart_headers,
-    #         )
+    #     response = self.client.post(
+    #         self.url_stt,
+    #         {
+    #             "file": self.test_audio_file,
+    #             "model": self.model,  # This is a chat model, not STT
+    #         },
+    #         headers=self.multipart_headers,
+    #     )
     #
     #     # TODO: Currently this test fails (Response code is 200 instead of 400).
     #     #  We don't validate the compatibility of the model in the view; this test actually tests
@@ -260,12 +251,11 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url_stt,
-                {"file": self.test_audio_file, "model": self.stt_model, "language": "en"},
-                headers=self.multipart_headers,
-            )
+        response = self.client.post(
+            self.url_stt,
+            {"file": self.test_audio_file, "model": self.stt_model, "language": "en"},
+            headers=self.multipart_headers,
+        )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
         response_json = response.json()
@@ -276,16 +266,15 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url_stt,
-                {
-                    "file": self.test_audio_file,
-                    "model": self.stt_model,
-                    "response_format": "verbose_json",
-                },
-                headers=self.multipart_headers,
-            )
+        response = self.client.post(
+            self.url_stt,
+            {
+                "file": self.test_audio_file,
+                "model": self.stt_model,
+                "response_format": "verbose_json",
+            },
+            headers=self.multipart_headers,
+        )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
         response_json = response.json()
@@ -413,12 +402,11 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url_stt,
-                {"file": self.test_audio_file, "model": self.stt_model},
-                headers=self.multipart_headers,
-            )
+        response = self.client.post(
+            self.url_stt,
+            {"file": self.test_audio_file, "model": self.stt_model},
+            headers=self.multipart_headers,
+        )
 
         self.assertEqual(
             response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}"
@@ -448,13 +436,12 @@ class TTSSTTLifecycleTest(GatewayTTSSTTestCase):
             "response_format": "mp3",
         }
 
-        with self.mock_server.patch_external_api():
-            tts_response = await self.async_client.post(
-                self.url_tts,
-                data=json.dumps(tts_payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        tts_response = await self.async_client.post(
+            self.url_tts,
+            data=json.dumps(tts_payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(
             tts_response.status_code, 200, f"TTS request failed: {tts_response.status_code}"
@@ -476,12 +463,9 @@ class TTSSTTLifecycleTest(GatewayTTSSTTestCase):
         buffer = io.BytesIO(audio_data)
         buffer.name = "file.mp3"
 
-        with self.mock_server.patch_external_api():
-            stt_response = await self.async_client.post(
-                self.url_stt,
-                {"file": buffer, "model": self.stt_model},
-                headers=self.multipart_headers,
-            )
+        stt_response = await self.async_client.post(
+            self.url_stt, {"file": buffer, "model": self.stt_model}, headers=self.multipart_headers
+        )
 
         self.assertEqual(
             stt_response.status_code, 200, f"STT request failed: {stt_response.status_code}"
@@ -545,13 +529,12 @@ class TTSSTTLifecycleTest(GatewayTTSSTTestCase):
                     "response_format": "mp3",
                 }
 
-                with self.mock_server.patch_external_api():
-                    tts_response = await self.async_client.post(
-                        self.url_tts,
-                        data=json.dumps(tts_payload),
-                        headers=self.headers,
-                        content_type="application/json",
-                    )
+                tts_response = await self.async_client.post(
+                    self.url_tts,
+                    data=json.dumps(tts_payload),
+                    headers=self.headers,
+                    content_type="application/json",
+                )
 
                 self.assertEqual(
                     tts_response.status_code,
@@ -573,12 +556,11 @@ class TTSSTTLifecycleTest(GatewayTTSSTTestCase):
                     f"generated_speech_{voice}.mp3", audio_data, content_type="audio/mpeg"
                 )
 
-                with self.mock_server.patch_external_api():
-                    stt_response = await self.async_client.post(
-                        self.url_stt,
-                        {"file": audio_file, "model": self.stt_model},
-                        headers=self.multipart_headers,
-                    )
+                stt_response = await self.async_client.post(
+                    self.url_stt,
+                    {"file": audio_file, "model": self.stt_model},
+                    headers=self.multipart_headers,
+                )
 
                 self.assertEqual(
                     stt_response.status_code,

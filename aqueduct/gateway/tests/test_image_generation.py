@@ -29,13 +29,12 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             "size": "256x256",
         }
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
@@ -69,13 +68,12 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             "response_format": "b64_json",
         }
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
@@ -106,13 +104,12 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             "size": "256x256",
         }
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
@@ -148,13 +145,12 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
     #
     #     payload = {"model": "gpt-4.1-nano", "prompt": "A test image", "n": 1, "size": "256x256"}
     #
-    #     with self.mock_server.patch_external_api():
-    #         response = self.client.post(
-    #             self.url,
-    #             data=json.dumps(payload),
-    #             headers=self.headers,
-    #             content_type="application/json",
-    #         )
+    #     response = self.client.post(
+    #         self.url,
+    #         data=json.dumps(payload),
+    #         headers=self.headers,
+    #         content_type="application/json",
+    #     )
     #     # TODO: Currently this test fails (Response code is 200 instead of 400).
     #     #  We don't validate the compatibility of the model in the view; this test actually tests
     #     #  the external API, not our code.
@@ -205,7 +201,6 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
 
         response_json = response.json()
         self.assertIn("data", response_json, "Response should contain 'data' field")
-        # TODO: Should return 2, returns 1 img
         self.assertEqual(len(response_json["data"]), 2, "Should generate exactly 2 images")
 
         # Each image should have required fields
@@ -217,13 +212,12 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
 
         payload = {"model": self.model, "prompt": "A test image", "size": "1x1"}
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
@@ -232,13 +226,12 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
 
         payload = {"model": self.model, "prompt": "A test image", "stream": True}
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.assertIn("Aqueduct does not support image streaming.", response.json()["error"])
@@ -248,13 +241,12 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
 
         payload = {"model": self.model, "prompt": "A test image", "sth_extra": "Oh yeah"}
 
-        with self.mock_server.patch_external_api():
-            response = self.client.post(
-                self.url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.assertIn("Extra inputs are not permitted", response.json()["error"])

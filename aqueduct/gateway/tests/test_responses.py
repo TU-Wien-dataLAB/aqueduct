@@ -36,10 +36,9 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
             "max_output_tokens": 50,
         }
 
-        with self.mock_server.patch_external_api():
-            response = await self.async_client.post(
-                self.url, data=json.dumps(payload), headers=headers, content_type="application/json"
-            )
+        response = await self.async_client.post(
+            self.url, data=json.dumps(payload), headers=headers, content_type="application/json"
+        )
 
         self.assertEqual(
             response.status_code,
@@ -85,8 +84,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         # Test GET response endpoint
         response_url = reverse("gateway:v1_response", kwargs={"response_id": response_id})
 
-        with self.mock_server.patch_external_api():
-            get_response = await self.async_client.get(response_url, headers=headers)
+        get_response = await self.async_client.get(response_url, headers=headers)
         self.assertEqual(
             get_response.status_code,
             200,
@@ -99,11 +97,10 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(get_data["object"], "response")
 
         # Test GET response input_items endpoint
-        with self.mock_server.patch_external_api():
-            input_items_response = await self.async_client.get(
-                reverse("gateway:v1_response_input_items", kwargs={"response_id": response_id}),
-                headers=headers,
-            )
+        input_items_response = await self.async_client.get(
+            reverse("gateway:v1_response_input_items", kwargs={"response_id": response_id}),
+            headers=headers,
+        )
         self.assertEqual(
             input_items_response.status_code,
             200,
@@ -116,8 +113,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsInstance(input_items_data["data"], list)
 
         # Test DELETE response endpoint
-        with self.mock_server.patch_external_api():
-            delete_response = await self.async_client.delete(response_url, headers=headers)
+        delete_response = await self.async_client.delete(response_url, headers=headers)
         self.assertEqual(
             delete_response.status_code,
             200,
@@ -158,10 +154,9 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
             "stream": True,
         }
 
-        with self.mock_server.patch_external_api():
-            response = await self.async_client.post(
-                self.url, data=json.dumps(payload), headers=headers, content_type="application/json"
-            )
+        response = await self.async_client.post(
+            self.url, data=json.dumps(payload), headers=headers, content_type="application/json"
+        )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
 
@@ -231,8 +226,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         # Test GET response endpoint for streaming response
         response_url = reverse("gateway:v1_response", kwargs={"response_id": response_id})
 
-        with self.mock_server.patch_external_api():
-            get_response = await self.async_client.get(response_url, headers=headers)
+        get_response = await self.async_client.get(response_url, headers=headers)
 
         self.assertEqual(
             get_response.status_code,
@@ -245,11 +239,10 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(get_data["object"], "response")
 
         # Test GET response input_items endpoint for streaming response
-        with self.mock_server.patch_external_api():
-            input_items_response = await self.async_client.get(
-                reverse("gateway:v1_response_input_items", kwargs={"response_id": response_id}),
-                headers=headers,
-            )
+        input_items_response = await self.async_client.get(
+            reverse("gateway:v1_response_input_items", kwargs={"response_id": response_id}),
+            headers=headers,
+        )
         self.assertEqual(
             input_items_response.status_code,
             200,
@@ -262,8 +255,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsInstance(input_items_data["data"], list)
 
         # Test DELETE response endpoint for streaming response
-        with self.mock_server.patch_external_api():
-            delete_response = await self.async_client.delete(response_url, headers=headers)
+        delete_response = await self.async_client.delete(response_url, headers=headers)
         self.assertEqual(
             delete_response.status_code,
             200,
@@ -272,8 +264,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         )
 
         # Verify streaming response is deleted - GET should now return 404
-        with self.mock_server.patch_external_api():
-            verify_get_response = await self.async_client.get(response_url, headers=headers)
+        verify_get_response = await self.async_client.get(response_url, headers=headers)
         self.assertEqual(
             verify_get_response.status_code,
             404,

@@ -2,9 +2,10 @@ import os
 import shutil
 from pathlib import Path
 from typing import Literal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from asgiref.sync import async_to_sync
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TestCase, TransactionTestCase, override_settings
@@ -92,9 +93,23 @@ class GatewayIntegrationTestCase(TestCase):
                 raise RuntimeError(
                     "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
                 )
-        cls.mock_server = get_shared_mock_server()
+
+        if settings.TESTS_USE_MOCK_API:
+            # Mock all requests to the external OpenAI API
+            cls.mock_server = get_shared_mock_server()
+            cls._patcher = patch.dict(
+                "os.environ",
+                {"OPENAI_BASE_URL": cls.mock_server.base_url, "OPENAI_API_KEY": "fake_openai_key"},
+            )
+            cls._patcher.start()
 
         cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+
+    @classmethod
+    def tearDownClass(cls):
+        if hasattr(cls, "_patcher") and cls._patcher:
+            cls._patcher.stop()
+        super().tearDownClass()
 
     @staticmethod
     def create_new_user() -> tuple[str, int]:

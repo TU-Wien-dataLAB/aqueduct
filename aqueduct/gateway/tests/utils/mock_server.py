@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import requests
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.requests import Request
 from starlette.status import HTTP_404_NOT_FOUND
@@ -29,6 +29,11 @@ class MockConfig(BaseModel):
 class MockStreamingConfig(MockConfig):
     response_data: list[bytes] = []
     headers: Dict[str, str] = {"Content-Type": "text/event-stream"}
+
+
+class MockPlainTextConfig(MockConfig):
+    response_data: str = ""
+    headers: Dict[str, str] = {"Content-Type": "text/plain; charset=utf-8"}
 
 
 _response_basic_data = {
@@ -400,7 +405,9 @@ async def health_check():
 
 
 @app.post("/configure/{path:path}")
-async def configure_endpoint(path: str, config: MockConfig | MockStreamingConfig):
+async def configure_endpoint(
+    path: str, config: MockConfig | MockStreamingConfig | MockPlainTextConfig
+):
     """
     Configure a special mock response for a specific endpoint.
 
@@ -463,6 +470,10 @@ async def mock_endpoint(path: str, request: Request):
 
     if isinstance(config, MockStreamingConfig):
         return StreamingResponse(
+            content=config.response_data, status_code=config.status_code, headers=config.headers
+        )
+    elif isinstance(config, MockPlainTextConfig):
+        return PlainTextResponse(
             content=config.response_data, status_code=config.status_code, headers=config.headers
         )
     return JSONResponse(

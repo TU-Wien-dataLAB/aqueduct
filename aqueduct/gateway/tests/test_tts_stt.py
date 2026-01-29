@@ -7,6 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
 from gateway.tests.utils.base import INTEGRATION_TEST_BACKEND, GatewayTTSSTTestCase
+from gateway.tests.utils.mock_server import MockPlainTextConfig
 from management.models import Request
 
 
@@ -292,7 +293,13 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        with self.mock_server.patch_external_api():
+        transcription = (
+            "WEBVTT\n\n00:00:00.000 --> 00:00:05.880\nHello.\n\n"
+            "00:00:05.880 --> 00:00:11.400\nThis is\n\n"
+            "00:00:11.400 --> 00:00:16.959\na mock WEBVTT transcription.\n\n"
+        )
+        mock_resp = MockPlainTextConfig(response_data=transcription)
+        with self.mock_server.patch_external_api(self.url_stt, mock_resp):
             response = self.client.post(
                 self.url_stt,
                 {"file": self.test_audio_file, "model": self.stt_model, "response_format": "vtt"},
@@ -300,14 +307,12 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
             )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
-
         # VTT format returns plain text (matching OpenAI's content-type), not JSON
         self.assertEqual(response.get("Content-Type"), "text/plain; charset=utf-8")
 
         # Decode the response content
         vtt_content = response.content.decode("utf-8")
 
-        # TODO: this fails - mock a VTT response
         # VTT files should start with "WEBVTT"
         self.assertTrue(
             vtt_content.startswith("WEBVTT"),
@@ -330,7 +335,13 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        with self.mock_server.patch_external_api():
+        transcription = (
+            "1\n00:00:00.000 --> 00:00:05.880\nHello.\n\n"
+            "2\n00:00:05.880 --> 00:00:11.400\nThis is\n\n"
+            "3\n00:00:11.400 --> 00:00:16.959\na mock SRT transcription.\n\n"
+        )
+        mock_resp = MockPlainTextConfig(response_data=transcription)
+        with self.mock_server.patch_external_api(self.url_stt, mock_resp):
             response = self.client.post(
                 self.url_stt,
                 {"file": self.test_audio_file, "model": self.stt_model, "response_format": "srt"},
@@ -344,8 +355,6 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
         # Decode the response content
         srt_content = response.content.decode("utf-8")
-
-        # TODO: this fails - mock an srt response
         # SRT files should start with a number (subtitle index)
         self.assertTrue(
             srt_content.strip().startswith("1"),
@@ -368,7 +377,9 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("STT tests require OpenAI backend")
 
-        with self.mock_server.patch_external_api():
+        transcription = "Hello. This is a mock text transcription.\n"
+        mock_resp = MockPlainTextConfig(response_data=transcription)
+        with self.mock_server.patch_external_api(self.url_stt, mock_resp):
             response = self.client.post(
                 self.url_stt,
                 {"file": self.test_audio_file, "model": self.stt_model, "response_format": "text"},
@@ -382,7 +393,6 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
         # Decode the response content
         text_content = response.content.decode("utf-8")
-
         # Should contain some transcribed text
         self.assertGreater(len(text_content), 10, "Text content should not be empty")
 

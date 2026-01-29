@@ -5,63 +5,135 @@ from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
-from openai import OpenAI
 
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.base import GatewayBatchesTestCase
-from management.models import Batch, FileObject, Token
+from management.models import Token
 
 
-def mock_router():
-    class DummyResult:
-        def model_dump(self, **kwargs):
-            return {"choices": [{"message": {"content": "dummy"}}]}
+def make_mock_batch(id_suffix: str, status: str = "in_progress") -> MagicMock:
+    """Helper to create a mock batch with given ID suffix and status."""
+    mock_batch = MagicMock()
+    mock_batch.id = f"batch-mock-{id_suffix}"
+    mock_batch.status = status
+    mock_batch.input_file_id = "file-mock-123"
+    mock_batch.request_counts = MagicMock()
+    mock_batch.request_counts.model_dump = MagicMock(return_value={})
+    mock_batch.completed_at = None
+    mock_batch.failed_at = None
+    mock_batch.cancelled_at = None
+    mock_batch.cancelling_at = None
+    mock_batch.expired_at = None
+    mock_batch.expires_at = None
+    mock_batch.finalizing_at = None
+    mock_batch.in_progress_at = None
 
-    class DummyEmbeddingResult:
-        def model_dump(self, **kwargs):
-            return {"data": [{"embedding": [1.0, 2.0]}]}
+    if status == "cancelled":
+        mock_batch.cancelling_at = int(timezone.now().timestamp())
+        mock_batch.cancelled_at = int(timezone.now().timestamp())
 
-    m = MagicMock()
-    m.acompletion = AsyncMock(return_value=DummyResult())
-    m.atext_completion = AsyncMock(return_value=DummyResult())
-    m.aembedding = AsyncMock(return_value=DummyEmbeddingResult())
-    return m
+    mock_batch.model_dump = MagicMock(
+        return_value={
+            "id": mock_batch.id,
+            "status": mock_batch.status,
+            "input_file_id": mock_batch.input_file_id,
+            "request_counts": {},
+            "completed_at": None,
+            "failed_at": None,
+            "cancelled_at": mock_batch.cancelled_at,
+            "expired_at": None,
+            "expires_at": None,
+            "cancelling_at": mock_batch.cancelling_at,
+            "finalizing_at": None,
+            "in_progress_at": None,
+        }
+    )
+    return mock_batch
+
+
+def create_mock_batch_client():
+    """Create a fully mocked OpenAI client for files/batches API."""
+    mock_client = MagicMock()
+
+    # Mock file creation response
+    mock_file = MagicMock()
+    mock_file.id = "file-mock-123"
+    mock_file.filename = "test.jsonl"
+    mock_file.size = 100
+    mock_file.bytes = 100
+    mock_file.purpose = "batch"
+    mock_file.created_at = int(timezone.now().timestamp())
+    mock_file.expires_at = None
+    mock_file.model_dump = MagicMock(
+        return_value={
+            "id": mock_file.id,
+            "filename": mock_file.filename,
+            "size": mock_file.size,
+            "purpose": mock_file.purpose,
+            "created_at": mock_file.created_at,
+        }
+    )
+    mock_client.files.create = AsyncMock(return_value=mock_file)
+    mock_client.files.retrieve = AsyncMock(return_value=mock_file)
+
+    # Counter for batch IDs to make them unique
+    batch_counter = [0]
+
+    async def make_batch_create_response(*args, **kwargs):
+        batch_counter[0] += 1
+        return make_mock_batch(str(batch_counter[0]), "in_progress")
+
+    mock_client.batches.create = AsyncMock(side_effect=make_batch_create_response)
+
+    # Mock batch response for retrieve and cancel
+    async def make_batch_cancel_response(batch_id, *args, **kwargs):
+        # Return the same batch ID but with cancelled status
+        return make_mock_batch(batch_id.split("-")[-1], "cancelled")
+
+    mock_client.batches.retrieve = AsyncMock(side_effect=make_batch_cancel_response)
+    mock_client.batches.cancel = AsyncMock(side_effect=make_batch_cancel_response)
+
+    return mock_client
+
+
+def create_mock_cancelled_batch_client():
+    """Mock client with batches.cancel() returning cancelled batch."""
+    mock_client = create_mock_batch_client()
+
+    mock_cancelled_batch = MagicMock()
+    mock_cancelled_batch.id = "batch-mock-123"
+    mock_cancelled_batch.status = "cancelled"
+    mock_cancelled_batch.cancelling_at = int(timezone.now().timestamp())
+    mock_cancelled_batch.cancelled_at = int(timezone.now().timestamp())
+    mock_cancelled_batch.input_file_id = "file-mock-123"
+    mock_cancelled_batch.completed_at = None
+    mock_cancelled_batch.failed_at = None
+    mock_cancelled_batch.expired_at = None
+    mock_cancelled_batch.expires_at = None
+    mock_cancelled_batch.finalizing_at = None
+    mock_cancelled_batch.in_progress_at = None
+    mock_cancelled_batch.model_dump = MagicMock(
+        return_value={
+            "id": mock_cancelled_batch.id,
+            "status": mock_cancelled_batch.status,
+            "input_file_id": mock_cancelled_batch.input_file_id,
+            "cancelling_at": mock_cancelled_batch.cancelling_at,
+            "cancelled_at": mock_cancelled_batch.cancelled_at,
+            "completed_at": None,
+            "failed_at": None,
+            "expired_at": None,
+            "expires_at": None,
+            "finalizing_at": None,
+            "in_progress_at": None,
+        }
+    )
+    mock_client.batches.cancel = AsyncMock(return_value=mock_cancelled_batch)
+
+    return mock_client
 
 
 class TestBatchesAPI(GatewayBatchesTestCase):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.headers.pop("Content-Type", None)
-        cls.url_chat = reverse("gateway:v1_chat_completions")
-
-    def tearDown(self):
-        # Clean up all files and batches created during tests
-        client = OpenAI(
-            base_url=settings.AQUEDUCT_FILES_API_URL.rstrip("/") + "/v1",
-            api_key=settings.AQUEDUCT_FILES_API_KEY or "unused",
-        )
-
-        # Delete all batches upstream and locally
-        batch_objects = Batch.objects.all()
-        for batch_obj in batch_objects:
-            if batch_obj.remote_id:
-                try:
-                    client.batches.cancel(batch_obj.remote_id)
-                except Exception:
-                    pass
-            batch_obj.delete()
-
-        # Delete all files upstream and locally
-        file_objects = FileObject.objects.all()
-        for file_obj in file_objects:
-            if file_obj.remote_id:
-                try:
-                    client.files.delete(file_obj.remote_id)
-                except Exception:
-                    pass  # Ignore deletions in teardown
-            file_obj.delete()
-        super().tearDown()
+    url_chat = reverse("gateway:v1_chat_completions")
 
     def test_invalid_json(self):
         """POST /batches with invalid JSON returns 400."""
@@ -78,8 +150,10 @@ class TestBatchesAPI(GatewayBatchesTestCase):
             f"Unexpected error message: {body.get('error')}",
         )
 
-    def test_nonexistent_input_file(self):
+    @patch("gateway.views.batches.get_files_api_client")
+    def test_nonexistent_input_file(self, mock_get_files_client):
         """POST /batches with a non-existent file ID returns 404."""
+        mock_get_files_client.return_value = create_mock_batch_client()
         payload = {
             "input_file_id": "does_not_exist",
             "completion_window": "24h",
@@ -105,8 +179,14 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertIn("data", data)
         self.assertEqual(data.get("data"), [])
 
-    def test_list_batches_different_tokens(self):
+    @patch("gateway.views.batches.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_list_batches_different_tokens(
+        self, mock_get_files_client_batches, mock_get_files_client_files
+    ):
         """Batches created under one token should not be visible under another."""
+        mock_get_files_client_files.return_value = create_mock_batch_client()
+        mock_get_files_client_batches.return_value = create_mock_batch_client()
         # Prepare a simple JSONL file in batch API format
         payload = _build_chat_payload(
             self.model,
@@ -160,8 +240,14 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         ids2 = [b["id"] for b in resp.json().get("data", [])]
         self.assertCountEqual(ids2, [b2, b1])
 
-    def test_max_user_batches_limit(self):
+    @patch("gateway.views.batches.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_max_user_batches_limit(
+        self, mock_get_files_client_batches, mock_get_files_client_files
+    ):
         """POST /batches should enforce MAX_USER_BATCHES and reject the fourth batch."""
+        mock_get_files_client_files.return_value = create_mock_batch_client()
+        mock_get_files_client_batches.return_value = create_mock_batch_client()
         # Upload a simple JSONL file for batching in batch API format
         payload = _build_chat_payload(
             self.model, [{"role": "system", "content": "X"}, {"role": "user", "content": "Y"}]
@@ -212,93 +298,13 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertCountEqual(ids_list, created_ids)
 
     @patch("gateway.views.batches.get_files_api_client")
-    def test_max_user_batches_limit_after_cancel(self, mock_get_files_client):
+    @patch("gateway.views.files.get_files_api_client")
+    def test_max_user_batches_limit_after_cancel(
+        self, mock_get_files_client_batches, mock_get_files_client_files
+    ):
         """Cancelling an active batch frees up a slot for a new batch."""
-        # Create mock for OpenAI client methods
-        mock_client = MagicMock()
-        mock_get_files_client.return_value = mock_client
-
-        # Create mock for batch.create() response
-
-        mock_batch = MagicMock()
-        mock_batch.id = "batch-test-123"
-        mock_batch.status = "in_progress"
-        mock_batch.input_file_id = "file-test-123"
-        mock_batch.request_counts = MagicMock()
-        mock_batch.request_counts.model_dump = MagicMock(return_value={})
-        mock_batch.completed_at = None
-        mock_batch.failed_at = None
-        mock_batch.cancelled_at = None
-        mock_batch.cancelling_at = None
-        mock_batch.expired_at = None
-        mock_batch.expires_at = None
-        mock_batch.finalizing_at = None
-        mock_batch.in_progress_at = None
-        mock_batch.model_dump = MagicMock(
-            return_value={
-                "id": mock_batch.id,
-                "status": mock_batch.status,
-                "input_file_id": mock_batch.input_file_id,
-                "request_counts": {},
-                "completed_at": None,
-                "failed_at": None,
-                "cancelled_at": None,
-                "expired_at": None,
-                "expires_at": None,
-                "cancelling_at": None,
-                "finalizing_at": None,
-                "in_progress_at": None,
-            }
-        )
-        mock_client.batches.create = AsyncMock(return_value=mock_batch)
-
-        # Create mock for batch.cancel() response - this was causing 502 errors
-        mock_cancelled_batch = MagicMock()
-        mock_cancelled_batch.id = "batch-test-123"
-        mock_cancelled_batch.status = "cancelled"
-        mock_cancelled_batch.cancelling_at = int(timezone.now().timestamp())
-        mock_cancelled_batch.cancelled_at = int(timezone.now().timestamp())
-        mock_cancelled_batch.input_file_id = "file-test-123"
-        mock_cancelled_batch.completed_at = None
-        mock_cancelled_batch.failed_at = None
-        mock_cancelled_batch.expired_at = None
-        mock_cancelled_batch.expires_at = None
-        mock_cancelled_batch.finalizing_at = None
-        mock_cancelled_batch.in_progress_at = None
-        mock_cancelled_batch.model_dump = MagicMock(
-            return_value={
-                "id": mock_cancelled_batch.id,
-                "status": mock_cancelled_batch.status,
-                "input_file_id": mock_cancelled_batch.input_file_id,
-                "cancelling_at": mock_cancelled_batch.cancelling_at,
-                "cancelled_at": mock_cancelled_batch.cancelled_at,
-                "completed_at": None,
-                "failed_at": None,
-                "expired_at": None,
-                "expires_at": None,
-                "finalizing_at": None,
-                "in_progress_at": None,
-            }
-        )
-        mock_client.batches.cancel = AsyncMock(return_value=mock_cancelled_batch)
-
-        # Create mock for files.create() response (used by file upload)
-        mock_file = MagicMock()
-        mock_file.id = "file-test-123"
-        mock_file.filename = "limit.jsonl"
-        mock_file.size = 100
-        mock_file.purpose = "batch"
-        mock_file.created_at = int(timezone.now().timestamp())
-        mock_file.model_dump = MagicMock(
-            return_value={
-                "id": mock_file.id,
-                "filename": mock_file.filename,
-                "size": mock_file.size,
-                "purpose": mock_file.purpose,
-                "created_at": mock_file.created_at,
-            }
-        )
-        mock_client.files.create = AsyncMock(return_value=mock_file)
+        mock_get_files_client_files.return_value = create_mock_batch_client()
+        mock_get_files_client_batches.return_value = create_mock_cancelled_batch_client()
 
         # Upload a simple JSONL file for batching
         payload = _build_chat_payload(

@@ -133,14 +133,18 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
 
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_FILES_API_URL="https://api.openai.com",
-    AQUEDUCT_FILES_API_KEY=os.environ.get("OPENAI_API_KEY"),
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     MAX_USER_BATCHES=3,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    AQUEDUCT_FILES_API_URL="https://api.openai.com",
+    AQUEDUCT_FILES_API_KEY="test_key",
+    AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB=1000000,  # Limit set high to avoid conflicts
 )
 class GatewayBatchesTestCase(GatewayIntegrationTestCase):
-    pass
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.headers.pop("Content-Type", None)
 
 
 @override_settings(

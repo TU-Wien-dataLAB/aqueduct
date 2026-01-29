@@ -1,4 +1,5 @@
 import json
+import time
 
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -72,6 +73,8 @@ class TestFilesAPI(GatewayFilesTestCase):
             self.assertEqual(resp_data["custom_id"], orig_data["custom_id"])
 
         # Delete file
+        # Wait for upstream API to fully process the file before deleting
+        time.sleep(5)
         response = self.client.delete(file_url, headers=self.headers)
         self.assertEqual(response.status_code, 200)
         delete_data = response.json()
@@ -207,6 +210,8 @@ class TestFilesAPI(GatewayFilesTestCase):
         self.assertCountEqual(data_ids, ids)
 
         # Delete the middle one and re-list
+        # Wait for upstream API to fully process files before deleting
+        time.sleep(5)
         mid = ids[1]
         file_url = reverse("gateway:file", kwargs={"file_id": mid})
         resp = self.client.delete(file_url, headers=self.headers)

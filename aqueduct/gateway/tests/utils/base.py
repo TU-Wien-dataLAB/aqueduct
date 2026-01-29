@@ -127,7 +127,18 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
         cls.headers = headers
         cls.url_files = reverse("gateway:files")
 
+    def setUp(self):
+        super().setUp()
+        # Clear the cached client so it picks up the test settings (override_settings)
+        from gateway.config import get_files_api_client
+
+        get_files_api_client.cache_clear()
+
     def tearDown(self):
+        # Clear the cached client so it doesn't affect other tests
+        from gateway.config import get_files_api_client
+
+        get_files_api_client.cache_clear()
         super().tearDown()
 
 

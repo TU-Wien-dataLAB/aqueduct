@@ -1,7 +1,7 @@
 import base64
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
@@ -243,13 +243,32 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             req.output_tokens, 0, "output_tokens should be > 0 for base64 file input"
         )
 
-    def test_chat_completion_file_id_input(self):
+    @patch("gateway.views.files.get_files_api_client")
+    @patch("gateway.views.decorators.get_files_api_client")
+    def test_chat_completion_file_id_input(self, mock_decorators_client, mock_files_client):
         """
         Sends a chat completion request with file_id input.
         Tests the file upload functionality using a file ID from the files API.
         """
-        # First, upload a file using the files API
+        # Setup mock for file upload
+        mock_remote_file = MagicMock()
+        mock_remote_file.id = "file-mock-remote-123"
+        mock_remote_file.expires_at = None
+
+        mock_upload_client = MagicMock()
+        mock_upload_client.files.create = AsyncMock(return_value=mock_remote_file)
+        mock_files_client.return_value = mock_upload_client
+
+        # Setup mock for file content retrieval
         file_content = b'{"custom_id": "test_file_id_input"}\n'
+        mock_content_response = MagicMock()
+        mock_content_response.content = file_content
+
+        mock_content_client = MagicMock()
+        mock_content_client.files.content = AsyncMock(return_value=mock_content_response)
+        mock_decorators_client.return_value = mock_content_client
+
+        # First, upload a file using the files API
         upload_file = SimpleUploadedFile(
             "test_file_id.jsonl", file_content, content_type="application/jsonl"
         )

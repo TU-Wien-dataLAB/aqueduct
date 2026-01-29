@@ -29,7 +29,7 @@ from pydantic import TypeAdapter, ValidationError
 from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
-from gateway.config import get_mcp_config, get_router, resolve_model_alias
+from gateway.config import get_files_api_client, get_mcp_config, get_router, resolve_model_alias
 from gateway.views.utils import get_response_from_cache, in_wildcard
 from management.models import FileObject, Request, Token
 
@@ -461,8 +461,13 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
             if token and token.user != file_obj.token.user:
                 raise FileObject.DoesNotExist
 
-            file_bytes = await sync_to_async(file_obj.read)()
-            return file_bytes
+            if not file_obj.remote_id:
+                raise ValueError(f"File {file_id} has no remote reference")
+
+            # Fetch content from upstream using the async client
+            client = get_files_api_client()
+            response = await client.files.content(file_obj.remote_id)
+            return response.content
         except FileObject.DoesNotExist as e:
             raise e
         except Exception as e:

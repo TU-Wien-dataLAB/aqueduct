@@ -28,11 +28,35 @@ class TestUserId(MCPLiveServerTestCase):
         cls.model = "test-model"
         cls.multipart_headers = {"Authorization": f"Bearer {cls.AQUEDUCT_ACCESS_TOKEN}"}
 
-    def test_batches_with_user_id(self):
+    @patch("gateway.views.batches.get_files_api_client")
+    def test_batches_with_user_id(self, mock_get_files_client):
         from management.models import FileObject, Request, Token
 
+        # Create mock batch response
+        mock_batch = MagicMock()
+        mock_batch.id = "batch-mock-123"
+        mock_batch.status = "in_progress"
+        mock_batch.input_file_id = "file-remote-123"
+        mock_batch.request_counts = MagicMock()
+        mock_batch.request_counts.model_dump = MagicMock(return_value={})
+        mock_batch.expires_at = None
+        mock_batch.model_dump = MagicMock(
+            return_value={
+                "id": mock_batch.id,
+                "status": mock_batch.status,
+                "input_file_id": mock_batch.input_file_id,
+                "request_counts": {},
+            }
+        )
+
+        mock_client = MagicMock()
+        mock_client.batches.create = AsyncMock(return_value=mock_batch)
+        mock_get_files_client.return_value = mock_client
+
         token = Token.objects.first()
-        file_obj = FileObject.objects.create(bytes=1, created_at=42, token=token, purpose="batch")
+        file_obj = FileObject.objects.create(
+            bytes=1, created_at=42, token=token, purpose="batch", remote_id="file-remote-123"
+        )
 
         url = reverse("gateway:batches")
         user_id = "testuser"
@@ -114,8 +138,18 @@ class TestUserId(MCPLiveServerTestCase):
         req = Request.objects.get()
         self.assertEqual(req.user_id, user_id)
 
-    def test_file_upload_with_user_id(self):
+    @patch("gateway.views.files.get_files_api_client")
+    def test_file_upload_with_user_id(self, mock_get_files_client):
         from management.models import Request
+
+        # Setup mock for file upload
+        mock_remote_file = MagicMock()
+        mock_remote_file.id = "file-mock-remote-123"
+        mock_remote_file.expires_at = None
+
+        mock_client = MagicMock()
+        mock_client.files.create = AsyncMock(return_value=mock_remote_file)
+        mock_get_files_client.return_value = mock_client
 
         url = reverse("gateway:files")
         user_id = "testuser"

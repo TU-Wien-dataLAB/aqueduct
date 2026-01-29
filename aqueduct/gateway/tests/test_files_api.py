@@ -1,41 +1,90 @@
 import json
-import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
-from openai import OpenAI
 
 from aqueduct.celery import delete_expired_files_and_batches
 from gateway.tests.utils.base import GatewayFilesTestCase
 from management.models import FileObject, Token
 
 
+def create_mock_file(
+    id_suffix: str = "123",
+    filename: str = "test.jsonl",
+    purpose: str = "batch",
+    bytes_size: int = 100,
+) -> MagicMock:
+    """Create a mock file object matching OpenAI's FileObject structure."""
+    mock_file = MagicMock()
+    mock_file.id = f"file-mock-{id_suffix}"
+    mock_file.filename = filename
+    mock_file.bytes = bytes_size
+    mock_file.purpose = purpose
+    mock_file.created_at = int(timezone.now().timestamp())
+    mock_file.expires_at = None
+    mock_file.status = "processed"
+    mock_file.model_dump = MagicMock(
+        return_value={
+            "id": mock_file.id,
+            "filename": mock_file.filename,
+            "bytes": mock_file.bytes,
+            "purpose": mock_file.purpose,
+            "created_at": mock_file.created_at,
+            "expires_at": mock_file.expires_at,
+            "status": mock_file.status,
+        }
+    )
+    return mock_file
+
+
+def create_mock_files_client():
+    """Create a fully mocked OpenAI client for files API."""
+    mock_client = MagicMock()
+    file_counter = [0]
+
+    async def mock_create(*args, **kwargs):
+        file_counter[0] += 1
+        return create_mock_file(id_suffix=str(file_counter[0]))
+
+    mock_client.files.create = AsyncMock(side_effect=mock_create)
+    mock_client.files.retrieve = AsyncMock(return_value=create_mock_file())
+
+    mock_delete_response = MagicMock()
+    mock_delete_response.id = "file-mock-123"
+    mock_delete_response.deleted = True
+    mock_delete_response.model_dump = MagicMock(
+        return_value={"id": "file-mock-123", "deleted": True, "object": "file"}
+    )
+    mock_client.files.delete = AsyncMock(return_value=mock_delete_response)
+
+    mock_content_response = MagicMock()
+    mock_content_response.content = b'{"custom_id": "bar"}\n'
+    mock_client.files.content = AsyncMock(return_value=mock_content_response)
+
+    return mock_client
+
+
 class TestFilesAPI(GatewayFilesTestCase):
     def tearDown(self):
-        # Clean up all files created during tests
-        client = OpenAI(
-            base_url=settings.AQUEDUCT_FILES_API_URL.rstrip("/") + "/v1",
-            api_key=settings.AQUEDUCT_FILES_API_KEY or "unused",
-        )
-        from management.models import FileObject
-
-        file_objects = FileObject.objects.all()
-        for file_obj in file_objects:
-            if file_obj.remote_id:
-                try:
-                    client.files.delete(file_obj.remote_id)
-                except Exception:
-                    pass  # Ignore deletions in teardown
-            file_obj.delete()
+        # Clean up local file records only (no remote API calls needed with mocks)
+        FileObject.objects.all().delete()
         super().tearDown()
 
-    def test_file_lifecycle(self):
+    @patch("gateway.views.files.get_files_api_client")
+    def test_file_lifecycle(self, mock_get_files_client):
         """Test uploading, listing, retrieving, downloading, and deleting a file."""
         content = b'{"custom_id": "bar"}\n{"custom_id": "123"}\n{"custom_id": "baz"}\n{"custom_id": "1234"}\n'
         upload_file = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
+
+        # Set up mock client with content matching the uploaded data
+        mock_client = create_mock_files_client()
+        mock_client.files.content = AsyncMock(return_value=MagicMock(content=content))
+        mock_get_files_client.return_value = mock_client
+
         # Upload file
         response = self.client.post(
             self.url_files, {"file": upload_file, "purpose": "batch"}, headers=self.headers
@@ -73,8 +122,6 @@ class TestFilesAPI(GatewayFilesTestCase):
             self.assertEqual(resp_data["custom_id"], orig_data["custom_id"])
 
         # Delete file
-        # Wait for upstream API to fully process the file before deleting
-        time.sleep(5)
         response = self.client.delete(file_url, headers=self.headers)
         self.assertEqual(response.status_code, 200)
         delete_data = response.json()
@@ -115,10 +162,11 @@ class TestFilesAPI(GatewayFilesTestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
-    def test_user_data_purpose(self):
+    @patch("gateway.views.files.get_files_api_client")
+    def test_user_data_purpose(self, mock_get_files_client):
         """File with purpose user_data should return 200."""
+        mock_get_files_client.return_value = create_mock_files_client()
         good = SimpleUploadedFile("ok.jsonl", b"{}\n", content_type="application/json")
-        # unsupported purpose
         resp = self.client.post(
             self.url_files, {"file": good, "purpose": "user_data"}, headers=self.headers
         )
@@ -187,8 +235,11 @@ class TestFilesAPI(GatewayFilesTestCase):
         resp = self.client.get(nonexistent_content_url, headers=self.headers)
         self.assertEqual(resp.status_code, 404)
 
-    def test_list_empty_and_bulk_operations(self):
+    @patch("gateway.views.files.get_files_api_client")
+    def test_list_empty_and_bulk_operations(self, mock_get_files_client):
         """Listing on empty, multiple uploads, and deletion among many."""
+        mock_get_files_client.return_value = create_mock_files_client()
+
         # Initially empty
         resp = self.client.get(self.url_files, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
@@ -210,8 +261,6 @@ class TestFilesAPI(GatewayFilesTestCase):
         self.assertCountEqual(data_ids, ids)
 
         # Delete the middle one and re-list
-        # Wait for upstream API to fully process files before deleting
-        time.sleep(5)
         mid = ids[1]
         file_url = reverse("gateway:file", kwargs={"file_id": mid})
         resp = self.client.delete(file_url, headers=self.headers)
@@ -220,8 +269,12 @@ class TestFilesAPI(GatewayFilesTestCase):
         resp = self.client.get(self.url_files, headers=self.headers)
         self.assertCountEqual([f["id"] for f in resp.json()["data"]], remaining)
 
-    def test_expires_at_and_cleanup_task(self):
+    @patch("gateway.config.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_expires_at_and_cleanup_task(self, mock_view_client, mock_celery_client):
         """Verify expires_at is set 1 week ahead and expired files get purged."""
+        mock_view_client.return_value = create_mock_files_client()
+        mock_celery_client.return_value = create_mock_files_client()
 
         # Upload a file
         content = b'{"custom_id": 1}\n'

@@ -528,7 +528,6 @@ class MockAPIServer:
             try:
                 response = requests.get(f"{self.base_url}/health", timeout=0.5)
                 if response.status_code == 200:
-                    print(f"✓ Mock server started successfully on port {self.port}.")
                     break
             except requests.RequestException as err:
                 if time.time() - start_time < timeout:
@@ -540,16 +539,14 @@ class MockAPIServer:
 
     def stop(self):
         """Stop the mock server"""
-        if self.process:
-            print("\nStopping mock server...")
-            self.process.terminate()
-            try:
-                self.process.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.communicate()
-                print("Process did not terminate gracefully. Force killed.")
-            self.process = None
+        self.process.terminate()
+        try:
+            self.process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.communicate()
+            print("Process did not terminate gracefully. Force killed.")
+        self.process = None
 
     def configure_endpoint(self, path: str, config: MockConfig) -> None:
         normalized_path = path.strip("/").removeprefix("v1/")

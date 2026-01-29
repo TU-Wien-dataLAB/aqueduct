@@ -22,6 +22,7 @@ from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.mock_server import MockAPIServer
+from gateway.tests.utils.test_runner import get_shared_mock_server
 from management.models import Org, Token, UserProfile
 
 INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
@@ -55,41 +56,13 @@ def get_mock_router(model: str = "test-model"):
     return router
 
 
-class OpenAITestCase(TestCase):
-    """A test case running the mock server for external OpenAI requests."""
-
-    fixtures = ["gateway_data.json"]
-    mock_server = None
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.mock_server = MockAPIServer()
-
-        try:
-            cls.mock_server.start()
-        except RuntimeError as err:
-            print(err)
-            print(f"Failed to connect to the mock server! Interrupting the {cls.__name__}")
-            # In case of any errors during setup, `tearDownClass` is not called, which means
-            # the uvicorn server subprocess is *not* terminated and continues to run
-            # in the background even after the test process exists.
-            cls.tearDownClass()
-            raise
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.mock_server.stop()
-        super().tearDownClass()
-
-
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     API_MAX_RETRIES=5,  # for some reason the OpenAI API fails with 503 sometimes...
 )
-class GatewayIntegrationTestCase(OpenAITestCase):
+class GatewayIntegrationTestCase(TestCase):
     """
     Integration tests for gateway endpoints, using the mock OpenAI server.
     """
@@ -101,6 +74,7 @@ class GatewayIntegrationTestCase(OpenAITestCase):
     AQUEDUCT_ACCESS_TOKEN = "sk-123abc"
 
     fixtures = ["gateway_data.json"]
+    mock_server: MockAPIServer = None
 
     @classmethod
     def _write_router_config(cls):
@@ -118,6 +92,8 @@ class GatewayIntegrationTestCase(OpenAITestCase):
                 raise RuntimeError(
                     "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
                 )
+        cls.mock_server = get_shared_mock_server()
+
         cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
 
     @staticmethod

@@ -1,6 +1,9 @@
 import io
 import json
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
+
+if TYPE_CHECKING:
+    from management.models import Batch
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -14,7 +17,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from gateway.config import get_files_api_client
-from management.models import FileObject, Token
+from management.models import Batch, FileObject, Token
 
 from .decorators import (
     log_request,
@@ -53,8 +56,12 @@ def validate_batch_file(data: bytes):
 
 
 async def sync_batch_file_if_needed(
-    remote_file_id: str | None, token: Token, client: AsyncOpenAI
-) -> FileObject | None:
+    remote_file_id: Optional[str],
+    token: Token,
+    client: AsyncOpenAI,
+    batch_obj: Optional["Batch"] = None,
+    field_name: str = "output_file",
+) -> Optional[FileObject]:
     """
     Ensure a local FileObject record exists for a batch output/error file.
 
@@ -96,12 +103,18 @@ async def sync_batch_file_if_needed(
         bytes=remote_file.bytes,
         filename=remote_file.filename,
         created_at=remote_file.created_at,
-        purpose=remote_file.purpose,  # "batch_output" or similar
+        purpose=remote_file.purpose,
         expires_at=local_expires_at,
         remote_id=remote_file.id,
         upstream_url=settings.AQUEDUCT_FILES_API_URL,
     )
     await sync_to_async(file_obj.save)()
+
+    # Update batch record with linked file if batch_obj provided
+    if batch_obj:
+        setattr(batch_obj, field_name, file_obj)
+        await sync_to_async(batch_obj.save)(update_fields=[field_name])
+
     return file_obj
 
 

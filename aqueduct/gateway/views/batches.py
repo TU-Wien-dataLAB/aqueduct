@@ -178,8 +178,12 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
     await sync_to_async(batch_obj.save)()
 
     # Create local FileObject records for output/error files if missing (inherit ownership from input_file token)
-    output_file_obj = await sync_batch_file_if_needed(remote_batch.output_file_id, token, client)
-    error_file_obj = await sync_batch_file_if_needed(remote_batch.error_file_id, token, client)
+    output_file_obj = await sync_batch_file_if_needed(
+        remote_batch.output_file_id, token, client, batch_obj, "output_file"
+    )
+    error_file_obj = await sync_batch_file_if_needed(
+        remote_batch.error_file_id, token, client, batch_obj, "error_file"
+    )
 
     # Return response with Aqueduct IDs, not remote IDs
     response_data = remote_batch.model_dump()

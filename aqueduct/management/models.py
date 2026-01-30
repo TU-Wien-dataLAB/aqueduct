@@ -846,6 +846,22 @@ class Batch(models.Model):
         related_name="batches",
         help_text="The input file for the batch.",
     )
+    output_file = models.ForeignKey(
+        FileObject,
+        on_delete=models.SET_NULL,
+        related_name="output_batches",
+        null=True,
+        blank=True,
+        help_text="The output file for the batch (set when batch completes).",
+    )
+    error_file = models.ForeignKey(
+        FileObject,
+        on_delete=models.SET_NULL,
+        related_name="error_batches",
+        null=True,
+        blank=True,
+        help_text="The error file for the batch (set when batch completes with errors).",
+    )
     status = models.CharField(
         max_length=20, choices=BatchStatus.choices, help_text="The current status of the batch."
     )
@@ -919,7 +935,7 @@ class Batch(models.Model):
             cancelled_at=self.cancelled_at,
             cancelling_at=self.cancelling_at,
             completed_at=self.completed_at,
-            error_file_id=None,
+            error_file_id=self.error_file_id if self.error_file else None,
             errors=None,
             expired_at=self.expired_at,
             expires_at=self.expires_at,
@@ -927,7 +943,7 @@ class Batch(models.Model):
             finalizing_at=self.finalizing_at,
             in_progress_at=self.in_progress_at,
             metadata=self.metadata,
-            output_file_id=None,
+            output_file_id=self.output_file_id if self.output_file else None,
             request_counts=openai.types.BatchRequestCounts(
                 total=self.request_counts.get("total", 0),
                 completed=self.request_counts.get("completed", 0),

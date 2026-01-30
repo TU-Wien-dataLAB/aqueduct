@@ -840,21 +840,16 @@ def get_relay_model_name(requested_model: str) -> str:
     """
     Map a requested model name to the actual upstream model name.
 
-    Uses the LiteLLM router configuration to find the deployment
-    and return the litellm_params.model value.
+    Uses the LiteLLM router configuration to find the deployment.
     """
     router = get_router()
     if not router:
         return requested_model
 
-    # Find matching deployment in router config
-    for deployment in router.model_list:
-        model_name = deployment.get("model_name")
-        if model_name == requested_model:
-            litellm_params = deployment.get("litellm_params", {})
-            return litellm_params.get("model", requested_model)
-
-    return requested_model
+    requested_model = resolve_model_alias(requested_model)
+    deployment: litellm.Deployment = router.get_deployment(model_id=requested_model)
+    relay_model, _, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
+    return relay_model
 
 
 def rewrite_batch_file_models(content: bytes) -> bytes:

@@ -65,14 +65,6 @@ async def sync_batch_file_if_needed(
 
     This function is called when retrieving a batch to lazily create
     FileObject records for any output/error files that don't exist locally.
-
-    Args:
-        remote_file_id: The upstream provider's file ID (e.g., "file-abc123")
-        token: The token that owns the batch (ownership is inherited)
-        client: The OpenAI client for fetching file metadata
-
-    Returns:
-        The FileObject record (existing or newly created), or None if remote_file_id is None
     """
     if not remote_file_id:
         return None
@@ -225,11 +217,9 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     """
     Retrieve or delete a specific file.
 
-    SECURITY: Requires local FileObject record with matching ownership.
+    Requires local FileObject record with matching ownership.
     Returns 404 if file not found or not owned by user - NEVER falls back to upstream.
     """
-    # SECURITY: Require local record to exist with correct ownership
-    # This is the ONLY way to access a file - no fallback to upstream
     try:
         file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
     except FileObject.DoesNotExist:
@@ -284,10 +274,9 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
     """
     Retrieve the content of a specific file.
 
-    SECURITY: Requires local FileObject record with matching ownership.
+    Requires local FileObject record with matching ownership.
     Returns 404 if file not found or not owned by user - NEVER falls back to upstream.
     """
-    # SECURITY: Require local record to exist with correct ownership
     try:
         file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
     except FileObject.DoesNotExist:

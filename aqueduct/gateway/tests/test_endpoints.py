@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from httpx import Request as HttpxRequest
 from httpx import Response
 from litellm.types.utils import ModelResponse
@@ -31,6 +32,54 @@ from gateway.tests.utils.base import (
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
 
 User = get_user_model()
+
+
+def create_mock_file_for_chat_completion(
+    id_suffix: str = "123",
+    filename: str = "test.jsonl",
+    purpose: str = "user_data",
+    bytes_size: int = 100,
+) -> MagicMock:
+    """Create a mock file object matching OpenAI's FileObject structure."""
+    mock_file = MagicMock()
+    mock_file.id = f"file-mock-{id_suffix}"
+    mock_file.filename = filename
+    mock_file.bytes = bytes_size
+    mock_file.purpose = purpose
+    mock_file.created_at = int(timezone.now().timestamp())
+    mock_file.expires_at = None
+    mock_file.status = "processed"
+    mock_file.model_dump = MagicMock(
+        return_value={
+            "id": mock_file.id,
+            "filename": mock_file.filename,
+            "bytes": mock_file.bytes,
+            "purpose": mock_file.purpose,
+            "created_at": mock_file.created_at,
+            "expires_at": mock_file.expires_at,
+            "status": mock_file.status,
+        }
+    )
+    return mock_file
+
+
+def create_mock_file_client_with_content(file_content: bytes):
+    """Create a fully mocked OpenAI client for files API with custom content."""
+    mock_client = MagicMock()
+    file_counter = [0]
+
+    async def mock_create(*args, **kwargs):
+        file_counter[0] += 1
+        return create_mock_file_for_chat_completion(id_suffix=str(file_counter[0]))
+
+    mock_client.files.create = AsyncMock(side_effect=mock_create)
+    mock_client.files.retrieve = AsyncMock(return_value=create_mock_file_for_chat_completion())
+
+    mock_content_response = MagicMock()
+    mock_content_response.content = file_content
+    mock_client.files.content = AsyncMock(return_value=mock_content_response)
+
+    return mock_client
 
 
 class EmbeddingTest(GatewayIntegrationTestCase):
@@ -250,23 +299,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         Sends a chat completion request with file_id input.
         Tests the file upload functionality using a file ID from the files API.
         """
-        # Setup mock for file upload
-        mock_remote_file = MagicMock()
-        mock_remote_file.id = "file-mock-remote-123"
-        mock_remote_file.expires_at = None
-
-        mock_upload_client = MagicMock()
-        mock_upload_client.files.create = AsyncMock(return_value=mock_remote_file)
-        mock_files_client.return_value = mock_upload_client
-
-        # Setup mock for file content retrieval
         file_content = b'{"custom_id": "test_file_id_input"}\n'
-        mock_content_response = MagicMock()
-        mock_content_response.content = file_content
-
-        mock_content_client = MagicMock()
-        mock_content_client.files.content = AsyncMock(return_value=mock_content_response)
-        mock_decorators_client.return_value = mock_content_client
+        mock_files_client.return_value = create_mock_file_client_with_content(file_content)
+        mock_decorators_client.return_value = create_mock_file_client_with_content(file_content)
 
         # First, upload a file using the files API
         upload_file = SimpleUploadedFile(
@@ -373,13 +408,20 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             f"Expected 404 Not Found, got {response.status_code}: {response.content}",
         )
 
-    def test_chat_completion_file_id_different_user(self):
+    @patch("gateway.views.decorators.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_chat_completion_file_id_different_user(
+        self, mock_files_client, mock_decorators_client
+    ):
         """
         Sends a chat completion request with a file_id that was created by a different user.
         Should raise a 404 error.
         """
-        # First, upload a file using the files API with the default user
         file_content = b'{"custom_id": "test_file_id_input"}\n'
+        mock_files_client.return_value = create_mock_file_client_with_content(file_content)
+        mock_decorators_client.return_value = create_mock_file_client_with_content(file_content)
+
+        # First, upload a file using the files API with the default user
         upload_file = SimpleUploadedFile(
             "test_file_id.jsonl", file_content, content_type="application/jsonl"
         )

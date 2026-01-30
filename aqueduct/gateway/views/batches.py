@@ -34,15 +34,13 @@ async def batches(
     POST /batches - create a new batch on upstream
     """
     if request.method == "GET":
-        # SECURITY: Query local DB only, filtered by user ownership
-        # This ensures users only see their own batches, not all batches from upstream
+        # Users only see their own batches, not all batches from upstream
         batch_objects = await sync_to_async(list)(
             Batch.objects.filter(input_file__token__user=token.user)
             .order_by("-created_at")
             .select_related("input_file")
         )
 
-        # Return OpenAI-compatible list response using Aqueduct IDs
         return JsonResponse(
             {
                 "object": "list",
@@ -119,10 +117,10 @@ async def batches(
     )
     await sync_to_async(batch_obj.save)()
 
-    # IMPORTANT: Return response with Aqueduct IDs, not remote IDs
+    # Return response with Aqueduct IDs, not remote IDs
     response_data = remote_batch.model_dump()
-    response_data["id"] = batch_obj.id  # Replace remote batch ID with Aqueduct ID
-    response_data["input_file_id"] = file_obj.id  # Replace remote file ID with Aqueduct ID
+    response_data["id"] = batch_obj.id
+    response_data["input_file_id"] = file_obj.id
 
     return JsonResponse(response_data, status=200)
 
@@ -135,14 +133,11 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
     """
     GET /batches/{batch_id} - retrieve a batch from upstream
 
-    SECURITY: Requires local Batch record with matching ownership.
     Returns 404 if batch not found or not owned by user - NEVER falls back to upstream.
 
-    BATCH FILE SYNC: When output_file_id or error_file_id exist in the upstream
+    When output_file_id or error_file_id exist in the upstream
     response but don't have local FileObject records, create them lazily.
     """
-    # SECURITY: Require local record to exist with correct ownership
-    # This is the ONLY way to access a batch - no fallback to upstream
     try:
         batch_obj = await Batch.objects.select_related("input_file__token").aget(
             id=batch_id, input_file__token=token
@@ -182,15 +177,14 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
         batch_obj.expired_at = remote_batch.expired_at
     await sync_to_async(batch_obj.save)()
 
-    # BATCH FILE SYNC: Create local FileObject records for output/error files if missing
-    # These files inherit ownership from the batch's input_file token
+    # Create local FileObject records for output/error files if missing (inherit ownership from input_file token)
     output_file_obj = await sync_batch_file_if_needed(remote_batch.output_file_id, token, client)
     error_file_obj = await sync_batch_file_if_needed(remote_batch.error_file_id, token, client)
 
-    # Build response with Aqueduct IDs (NEVER return remote IDs to user)
+    # Return response with Aqueduct IDs, not remote IDs
     response_data = remote_batch.model_dump()
-    response_data["id"] = batch_obj.id  # Replace remote batch ID with Aqueduct ID
-    response_data["input_file_id"] = batch_obj.input_file_id  # Already an Aqueduct ID
+    response_data["id"] = batch_obj.id
+    response_data["input_file_id"] = batch_obj.input_file_id
 
     # Replace remote file IDs with Aqueduct IDs (if files were synced)
     if output_file_obj:
@@ -209,10 +203,9 @@ async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args,
     """
     POST /batches/{batch_id}/cancel - cancel a batch on upstream
 
-    SECURITY: Requires local Batch record with matching ownership.
+    Requires local Batch record with matching ownership.
     Returns 404 if batch not found or not owned by user - NEVER falls back to upstream.
     """
-    # SECURITY: Require local record to exist with correct ownership
     try:
         batch_obj = await Batch.objects.select_related("input_file").aget(
             id=batch_id, input_file__token=token

@@ -137,10 +137,7 @@ AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST: list[str] = []
 AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST: list[str] = []
 
 # External Files/Batches API endpoint (required)
-# Examples: "https://api.openai.com", "https://your-azure-endpoint.openai.azure.com"
 AQUEDUCT_FILES_API_URL = os.environ.get("AQUEDUCT_FILES_API_URL")
-
-# API key for external endpoint (if different from per-request auth)
 AQUEDUCT_FILES_API_KEY = os.environ.get("AQUEDUCT_FILES_API_KEY", None)
 
 AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB", 8))

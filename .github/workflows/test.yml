@@ -45,8 +45,6 @@ jobs:
           START_VLLM_SERVER: ${{ matrix.start }}
           DJANGO_LOG_LEVEL: WARNING
           OIDC_OP_JWKS_ENDPOINT: https://example.com/application/o/example/jwks/
-          AQUEDUCT_FILES_API_URL: https://api.openai.com
-          AQUEDUCT_FILES_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: uv run ${{ matrix.start == 'true' && '--extra vllm' || '' }} python aqueduct/manage.py test gateway
 
   compose:

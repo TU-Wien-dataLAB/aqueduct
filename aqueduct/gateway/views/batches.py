@@ -74,7 +74,10 @@ async def batches(
     if active_count >= limit:
         return error_response(f"Batch limit reached ({limit})", status=403)
 
-    client = get_files_api_client()
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Files API not configured", status=503)
 
     # Get the input file's remote ID
     try:
@@ -151,7 +154,10 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
             "Batch has no remote reference.", error_type="server_error", status=500
         )
 
-    client = get_files_api_client()
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Files API not configured", status=503)
 
     try:
         remote_batch = await client.batches.retrieve(remote_id)
@@ -223,7 +229,10 @@ async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args,
             "Batch has no remote reference.", error_type="server_error", status=500
         )
 
-    client = get_files_api_client()
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Files API not configured", status=503)
 
     try:
         remote_batch = await client.batches.cancel(remote_id)

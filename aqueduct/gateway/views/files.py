@@ -134,7 +134,10 @@ async def files(
     *args,
     **kwargs,
 ):
-    client = get_files_api_client()
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Files API not configured", status=503)
 
     if request.method == "GET":
         file_objects = await sync_to_async(list)(
@@ -244,7 +247,10 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
             "File has no remote reference.", error_type="server_error", status=500
         )
 
-    client = get_files_api_client()
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Files API not configured", status=503)
 
     if request.method == "GET":
         # Fetch current status from upstream
@@ -301,7 +307,10 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
             "File has no remote reference.", error_type="server_error", status=500
         )
 
-    client = get_files_api_client()
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Files API not configured", status=503)
 
     try:
         # Returns HttpxBinaryResponseContent, use .content to get bytes

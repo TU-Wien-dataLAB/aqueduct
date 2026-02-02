@@ -64,11 +64,17 @@ def delete_expired_files_and_batches(self):
     from management.models import Batch, FileObject
 
     now_ts = int(timezone.now().timestamp())
-    client = get_files_api_client()
+    try:
+        client = get_files_api_client()
+        files_api_configured = True
+    except ValueError:
+        client = None
+        files_api_configured = False
+        print("Files API not configured - will skip upstream deletion")
 
     async def delete_upstream_file(remote_id: str) -> bool:
         """Attempt to delete a file from upstream. Returns True on success."""
-        if not client or not remote_id:
+        if not files_api_configured or not client or not remote_id:
             return True  # Nothing to delete upstream
         try:
             await client.files.delete(remote_id)

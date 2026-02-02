@@ -465,9 +465,12 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
                 raise ValueError(f"File {file_id} has no remote reference")
 
             # Fetch content from upstream using the async client
-            client = get_files_api_client()
-            response = await client.files.content(file_obj.remote_id)
-            return response.content
+            try:
+                client = get_files_api_client()
+                response = await client.files.content(file_obj.remote_id)
+                return response.content
+            except ValueError as e:
+                raise ValueError(f"Files API not configured: {e}")
         except FileObject.DoesNotExist as e:
             raise e
         except Exception as e:

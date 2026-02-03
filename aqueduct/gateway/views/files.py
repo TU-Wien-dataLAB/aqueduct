@@ -1,9 +1,6 @@
 import io
 import json
-from typing import TYPE_CHECKING, Literal, Optional
-
-if TYPE_CHECKING:
-    from management.models import Batch
+from typing import Literal, Optional
 
 from asgiref.sync import sync_to_async
 from django.conf import settings

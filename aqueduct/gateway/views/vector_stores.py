@@ -7,28 +7,15 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from openai.types.vector_store_create_params import VectorStoreCreateParams
+from openai.types.vector_store_update_params import VectorStoreUpdateParams
+from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
 from management.models import Token, VectorStore
 
 from .decorators import log_request, parse_body, token_authenticated, tos_accepted
 from .errors import error_response
-
-
-class VectorStoreCreateParams(BaseModel):
-    name: str
-    expires_after: Optional[dict] = None
-    chunking_strategy: Optional[dict] = None
-    metadata: Optional[dict] = None
-    model_config = ConfigDict(extra="allow")
-
-
-class VectorStoreModifyParams(BaseModel):
-    name: Optional[str] = None
-    expires_after: Optional[dict] = None
-    metadata: Optional[dict] = None
-    model_config = ConfigDict(extra="allow")
 
 
 @csrf_exempt
@@ -160,7 +147,7 @@ async def vector_stores(
 @require_http_methods(["GET", "POST", "DELETE"])
 @token_authenticated(token_auth_only=True)
 @tos_accepted
-@parse_body(model=TypeAdapter(VectorStoreModifyParams))
+@parse_body(model=TypeAdapter(VectorStoreUpdateParams))
 @log_request
 async def vector_store(
     request: ASGIRequest,

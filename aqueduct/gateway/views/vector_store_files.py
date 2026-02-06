@@ -1,4 +1,4 @@
-import json
+from typing import Optional
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -7,11 +7,13 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from openai.types.vector_stores.file_create_params import FileCreateParams
+from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
 from management.models import FileObject, Token, VectorStore, VectorStoreFile
 
-from .decorators import log_request, token_authenticated, tos_accepted
+from .decorators import log_request, parse_body, token_authenticated, tos_accepted
 from .errors import error_response
 
 
@@ -19,9 +21,15 @@ from .errors import error_response
 @require_http_methods(["GET", "POST"])
 @token_authenticated(token_auth_only=True)
 @tos_accepted
+@parse_body(model=TypeAdapter(FileCreateParams))
 @log_request
 async def vector_store_files(
-    request: ASGIRequest, token: Token, vector_store_id: str, *args, **kwargs
+    request: ASGIRequest,
+    token: Token,
+    vector_store_id: str,
+    pydantic_model: Optional[dict] = None,
+    *args,
+    **kwargs,
 ):
     """
     GET /v1/vector_stores/{vector_store_id}/files - List files in vector store
@@ -34,7 +42,12 @@ async def vector_store_files(
 
     # Check vector store ownership
     try:
-        vs_obj = await VectorStore.objects.aget(id=vector_store_id, token__user=token.user)
+        if token.service_account:
+            vs_obj = await VectorStore.objects.aget(
+                id=vector_store_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            vs_obj = await VectorStore.objects.aget(id=vector_store_id, token__user=token.user)
     except VectorStore.DoesNotExist:
         return error_response("Vector store not found.", param="vector_store_id", status=404)
 
@@ -68,12 +81,8 @@ async def vector_store_files(
         )
 
     # POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
-    try:
-        body = json.loads(request.body)
-    except json.JSONDecodeError:
-        return error_response("Invalid JSON in request body", status=400)
-
-    file_id = body.get("file_id")
+    params = pydantic_model if pydantic_model else {}
+    file_id = params.get("file_id")
     if not file_id:
         return error_response("Missing required parameter: file_id", param="file_id", status=400)
 
@@ -101,9 +110,12 @@ async def vector_store_files(
 
     # Add file to vector store on upstream using remote file ID
     try:
-        remote_vs_file = await client.vector_stores.files.create(
-            vector_store_id=vs_obj.remote_id, file_id=file_obj.remote_id
-        )
+        create_kwargs = {"vector_store_id": vs_obj.remote_id, "file_id": file_obj.remote_id}
+        if params.get("chunking_strategy"):
+            create_kwargs["chunking_strategy"] = params["chunking_strategy"]
+        if params.get("attributes"):
+            create_kwargs["attributes"] = params["attributes"]
+        remote_vs_file = await client.vector_stores.files.create(**create_kwargs)
     except Exception as e:
         return error_response(
             f"Failed to add file to vector store on upstream: {str(e)}",

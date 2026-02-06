@@ -32,9 +32,20 @@ class FilesCreateParams(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
+def calculate_expires_at(remote_expires_at: Optional[int]) -> int:
+    """Calculate local expiry timestamp, using earlier of local or upstream expiry."""
+    now = timezone.now()
+    expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
+    local_expires_at = int((now + timezone.timedelta(days=expiry_days)).timestamp())
+
+    if remote_expires_at and remote_expires_at < local_expires_at:
+        return remote_expires_at
+    return local_expires_at
+
+
 def validate_batch_file(data: bytes):
     """Validate batch file format: valid JSON lines with unique custom_ids."""
-    lines = data.decode().splitlines()
+    lines = data.decode("utf-8").splitlines()
     custom_ids = set()
     for i, line in enumerate(lines):
         if not line.strip():
@@ -87,13 +98,7 @@ async def sync_batch_file_if_needed(
         return None
 
     # Create local record with same ownership as batch
-    now = timezone.now()
-    expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
-    local_expires_at = int((now + timezone.timedelta(days=expiry_days)).timestamp())
-
-    # Use the earlier expiry to avoid stale local records if upstream expires first
-    if remote_file.expires_at and remote_file.expires_at < local_expires_at:
-        local_expires_at = remote_file.expires_at
+    local_expires_at = calculate_expires_at(remote_file.expires_at)
 
     file_obj = FileObject(
         token=token,
@@ -195,19 +200,13 @@ async def files(
     remote_file = await client.files.create(file=file_tuple, purpose=purpose)
 
     # Create local tracking record with preview
-    now = timezone.now()
-    expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
-    local_expires_at = int((now + timezone.timedelta(days=expiry_days)).timestamp())
-
-    # Use the earlier expiry to avoid stale local records if upstream expires first
-    if remote_file.expires_at and remote_file.expires_at < local_expires_at:
-        local_expires_at = remote_file.expires_at
+    local_expires_at = calculate_expires_at(remote_file.expires_at)
 
     file_obj = FileObject(
         token=token,
         bytes=len(file_content),
         filename=filename,
-        created_at=int(now.timestamp()),
+        created_at=int(timezone.now().timestamp()),
         purpose=purpose,
         expires_at=local_expires_at,
         remote_id=remote_file.id,

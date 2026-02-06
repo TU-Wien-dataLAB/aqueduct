@@ -1,89 +1,77 @@
 import json
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
+from openai.types import VectorStore
+from openai.types.vector_store import FileCounts as VectorStoreFileCounts
+from openai.types.vector_stores import VectorStoreFile, VectorStoreFileBatch
+from openai.types.vector_stores.vector_store_file_batch import FileCounts
 
 from gateway.tests.utils.base import GatewayFilesTestCase
-from management.models import FileObject, Token, VectorStore, VectorStoreFile, VectorStoreFileBatch
+from management.models import FileObject, Token
+from management.models import VectorStore as VectorStoreModel
+from management.models import VectorStoreFile as VectorStoreFileModel
+from management.models import VectorStoreFileBatch as VectorStoreFileBatchModel
 
 
-def create_mock_vector_store(id_suffix: str = "123", status: str = "completed") -> MagicMock:
-    """Create a mock vector store with given ID suffix and status."""
-    mock_vs = MagicMock()
-    mock_vs.id = f"vs-mock-{id_suffix}"
-    mock_vs.name = "Test Store"
-    mock_vs.status = status
-    mock_vs.usage_bytes = 0
-    mock_vs.created_at = int(timezone.now().timestamp())
-    mock_vs.expires_after = None
-    mock_vs.metadata = None
-    mock_vs.model_dump = MagicMock(
-        return_value={
-            "id": mock_vs.id,
-            "name": mock_vs.name,
-            "status": mock_vs.status,
-            "usage_bytes": mock_vs.usage_bytes,
-            "created_at": mock_vs.created_at,
-            "expires_after": mock_vs.expires_after,
-            "metadata": mock_vs.metadata,
-        }
+def create_mock_vector_store(
+    id_suffix: str = "123", status: Literal["expired", "in_progress", "completed"] = "completed"
+) -> VectorStore:
+    """Create a mock vector store with given ID suffix and status using OpenAI types."""
+    now = int(timezone.now().timestamp())
+    return VectorStore(
+        id=f"vs-mock-{id_suffix}",
+        name="Test Store",
+        status=status,
+        usage_bytes=0,
+        created_at=now,
+        expires_after=None,
+        metadata=None,
+        object="vector_store",
+        file_counts=VectorStoreFileCounts(
+            total=0, completed=0, failed=0, in_progress=0, cancelled=0
+        ),
+        last_active_at=None,
+        expires_at=None,
     )
-    return mock_vs
 
 
-def create_mock_vector_store_file(id_suffix: str = "123", status: str = "completed") -> MagicMock:
-    """Create a mock vector store file with given ID suffix and status."""
-    mock_vsf = MagicMock()
-    mock_vsf.id = f"vsf-mock-{id_suffix}"
-    mock_vsf.status = status
-    mock_vsf.usage_bytes = 100
-    mock_vsf.created_at = int(timezone.now().timestamp())
-    mock_vsf.last_error = None
-    mock_vsf.model_dump = MagicMock(
-        return_value={
-            "id": mock_vsf.id,
-            "status": mock_vsf.status,
-            "usage_bytes": mock_vsf.usage_bytes,
-            "created_at": mock_vsf.created_at,
-            "last_error": mock_vsf.last_error,
-        }
+def create_mock_vector_store_file(
+    id_suffix: str = "123",
+    status: Literal["in_progress", "completed", "cancelled", "failed"] = "completed",
+) -> VectorStoreFile:
+    """Create a mock vector store file with given ID suffix and status using OpenAI types."""
+    now = int(timezone.now().timestamp())
+    return VectorStoreFile(
+        id=f"vsf-mock-{id_suffix}",
+        status=status,
+        usage_bytes=100,
+        created_at=now,
+        last_error=None,
+        object="vector_store.file",
+        vector_store_id=f"vs-mock-{id_suffix}",
+        attributes=None,
+        chunking_strategy=None,
     )
-    return mock_vsf
 
 
-def create_mock_file_batch(id_suffix: str = "123", status: str = "in_progress") -> MagicMock:
-    """Create a mock vector store file batch with given ID suffix and status."""
-    mock_batch = MagicMock()
-    mock_batch.id = f"vsb-mock-{id_suffix}"
-    mock_batch.status = status
-    mock_batch.created_at = int(timezone.now().timestamp())
-
-    # Mock file_counts
-    mock_file_counts = MagicMock()
-    mock_file_counts.total = 2
-    mock_file_counts.completed = 0
-    mock_file_counts.failed = 0
-    mock_file_counts.in_progress = 2
-    mock_file_counts.cancelled = 0
-    mock_batch.file_counts = mock_file_counts
-
-    mock_batch.model_dump = MagicMock(
-        return_value={
-            "id": mock_batch.id,
-            "status": mock_batch.status,
-            "created_at": mock_batch.created_at,
-            "file_counts": {
-                "total": 2,
-                "completed": 0,
-                "failed": 0,
-                "in_progress": 2,
-                "cancelled": 0,
-            },
-        }
+def create_mock_file_batch(
+    id_suffix: str = "123",
+    status: Literal["in_progress", "completed", "cancelled", "failed"] = "in_progress",
+) -> VectorStoreFileBatch:
+    """Create a mock vector store file batch with given ID suffix and status using OpenAI types."""
+    now = int(timezone.now().timestamp())
+    return VectorStoreFileBatch(
+        id=f"vsb-mock-{id_suffix}",
+        status=status,
+        created_at=now,
+        file_counts=FileCounts(total=2, completed=0, failed=0, in_progress=2, cancelled=0),
+        object="vector_store.files_batch",
+        vector_store_id=f"vs-mock-{id_suffix}",
     )
-    return mock_batch
 
 
 def create_mock_vector_store_client():
@@ -95,26 +83,22 @@ def create_mock_vector_store_client():
 
     async def mock_vs_create(*args, **kwargs):
         vs_counter[0] += 1
-        mock_vs = MagicMock()
-        mock_vs.id = f"vs-mock-{vs_counter[0]}"
-        mock_vs.name = kwargs.get("name", "Test Store")
-        mock_vs.status = "completed"
-        mock_vs.usage_bytes = 0
-        mock_vs.created_at = int(timezone.now().timestamp())
-        mock_vs.expires_after = kwargs.get("expires_after")
-        mock_vs.metadata = kwargs.get("metadata")
-        mock_vs.model_dump = MagicMock(
-            return_value={
-                "id": mock_vs.id,
-                "name": mock_vs.name,
-                "status": mock_vs.status,
-                "usage_bytes": mock_vs.usage_bytes,
-                "created_at": mock_vs.created_at,
-                "expires_after": mock_vs.expires_after,
-                "metadata": mock_vs.metadata,
-            }
+        now = int(timezone.now().timestamp())
+        return VectorStore(
+            id=f"vs-mock-{vs_counter[0]}",
+            name=kwargs.get("name", "Test Store"),
+            status="completed",
+            usage_bytes=0,
+            created_at=now,
+            expires_after=kwargs.get("expires_after"),
+            metadata=kwargs.get("metadata"),
+            object="vector_store",
+            file_counts=VectorStoreFileCounts(
+                total=0, completed=0, failed=0, in_progress=0, cancelled=0
+            ),
+            last_active_at=None,
+            expires_at=None,
         )
-        return mock_vs
 
     async def mock_vs_retrieve(*args, **kwargs):
         return create_mock_vector_store("123", "completed")
@@ -171,9 +155,9 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
 
     def tearDown(self):
         # Clean up local records
-        VectorStoreFile.objects.all().delete()
-        VectorStoreFileBatch.objects.all().delete()
-        VectorStore.objects.all().delete()
+        VectorStoreFileModel.objects.all().delete()
+        VectorStoreFileBatchModel.objects.all().delete()
+        VectorStoreModel.objects.all().delete()
         super().tearDown()
 
     def _create_vector_store(self, mock_client, name="Test Store"):

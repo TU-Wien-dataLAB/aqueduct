@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.conf import settings
@@ -6,10 +7,13 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
+from openai.types import FileObject
+from openai.types.file_deleted import FileDeleted
 
 from aqueduct.celery import delete_expired_files_and_batches
 from gateway.tests.utils.base import GatewayFilesTestCase
-from management.models import FileObject, Token
+from management.models import FileObject as FileObjectModel
+from management.models import Token
 
 
 def create_mock_file(
@@ -17,28 +21,20 @@ def create_mock_file(
     filename: str = "test.jsonl",
     purpose: str = "batch",
     bytes_size: int = 100,
-) -> MagicMock:
+    status: Literal["uploaded", "processed", "error"] = "processed",
+) -> FileObject:
     """Create a mock file object matching OpenAI's FileObject structure."""
-    mock_file = MagicMock()
-    mock_file.id = f"file-mock-{id_suffix}"
-    mock_file.filename = filename
-    mock_file.bytes = bytes_size
-    mock_file.purpose = purpose
-    mock_file.created_at = int(timezone.now().timestamp())
-    mock_file.expires_at = None
-    mock_file.status = "processed"
-    mock_file.model_dump = MagicMock(
-        return_value={
-            "id": mock_file.id,
-            "filename": mock_file.filename,
-            "bytes": mock_file.bytes,
-            "purpose": mock_file.purpose,
-            "created_at": mock_file.created_at,
-            "expires_at": mock_file.expires_at,
-            "status": mock_file.status,
-        }
+    return FileObject(
+        id=f"file-mock-{id_suffix}",
+        filename=filename,
+        bytes=bytes_size,
+        purpose=purpose,
+        created_at=int(timezone.now().timestamp()),
+        expires_at=None,
+        status=status,
+        status_details=None,
+        object="file",
     )
-    return mock_file
 
 
 def create_mock_files_client():
@@ -53,12 +49,7 @@ def create_mock_files_client():
     mock_client.files.create = AsyncMock(side_effect=mock_create)
     mock_client.files.retrieve = AsyncMock(return_value=create_mock_file())
 
-    mock_delete_response = MagicMock()
-    mock_delete_response.id = "file-mock-123"
-    mock_delete_response.deleted = True
-    mock_delete_response.model_dump = MagicMock(
-        return_value={"id": "file-mock-123", "deleted": True, "object": "file"}
-    )
+    mock_delete_response = FileDeleted(id="file-mock-123", deleted=True, object="file")
     mock_client.files.delete = AsyncMock(return_value=mock_delete_response)
 
     mock_content_response = MagicMock()
@@ -71,7 +62,7 @@ def create_mock_files_client():
 class TestFilesAPI(GatewayFilesTestCase):
     def tearDown(self):
         # Clean up local file records only (no remote API calls needed with mocks)
-        FileObject.objects.all().delete()
+        FileObjectModel.objects.all().delete()
         super().tearDown()
 
     @patch("gateway.views.files.get_files_api_client")
@@ -205,10 +196,10 @@ class TestFilesAPI(GatewayFilesTestCase):
         token = Token.objects.first()
 
         # Setup: Create some files assigned to the token; 1 MB in total
-        FileObject.objects.bulk_create(
+        FileObjectModel.objects.bulk_create(
             [
-                FileObject(bytes=512 * 1024, created_at=42, token=token, purpose="batch"),
-                FileObject(bytes=512 * 1024, created_at=43, token=token, purpose="batch"),
+                FileObjectModel(bytes=512 * 1024, created_at=42, token=token, purpose="batch"),
+                FileObjectModel(bytes=512 * 1024, created_at=43, token=token, purpose="batch"),
             ]
         )
 
@@ -297,10 +288,10 @@ class TestFilesAPI(GatewayFilesTestCase):
 
         # Simulate expiration in the past and run cleanup task
         past = now - timezone.timedelta(days=8)
-        FileObject.objects.filter(id=file_id).update(expires_at=int(past.timestamp()))
+        FileObjectModel.objects.filter(id=file_id).update(expires_at=int(past.timestamp()))
         delete_expired_files_and_batches()
         # record removed
-        self.assertFalse(FileObject.objects.filter(id=file_id).exists())
+        self.assertFalse(FileObjectModel.objects.filter(id=file_id).exists())
 
     def test_batch_duplicate_custom_ids(self):
         bad = SimpleUploadedFile(

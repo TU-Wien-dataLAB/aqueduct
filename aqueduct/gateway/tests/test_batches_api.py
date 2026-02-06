@@ -1,54 +1,66 @@
 import json
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
+from openai.types import Batch, FileObject
+from openai.types.batch_request_counts import BatchRequestCounts
 
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.base import GatewayBatchesTestCase
 from management.models import Token
 
 
-def make_mock_batch(id_suffix: str, status: str = "in_progress") -> MagicMock:
-    """Helper to create a mock batch with given ID suffix and status."""
-    mock_batch = MagicMock()
-    mock_batch.id = f"batch-mock-{id_suffix}"
-    mock_batch.status = status
-    mock_batch.input_file_id = "file-mock-123"
-    mock_batch.request_counts = MagicMock()
-    mock_batch.request_counts.model_dump = MagicMock(return_value={})
-    mock_batch.completed_at = None
-    mock_batch.failed_at = None
-    mock_batch.cancelled_at = None
-    mock_batch.cancelling_at = None
-    mock_batch.expired_at = None
-    mock_batch.expires_at = None
-    mock_batch.finalizing_at = None
-    mock_batch.in_progress_at = None
+def make_mock_batch(
+    id_suffix: str,
+    status: Literal[
+        "validating",
+        "failed",
+        "in_progress",
+        "finalizing",
+        "completed",
+        "expired",
+        "cancelling",
+        "cancelled",
+    ] = "in_progress",
+) -> Batch:
+    """Helper to create a mock batch with given ID suffix and status using OpenAI types."""
+    now = int(timezone.now().timestamp())
+
+    cancelled_at = None
+    cancelling_at = None
 
     if status == "cancelled":
-        mock_batch.cancelling_at = int(timezone.now().timestamp())
-        mock_batch.cancelled_at = int(timezone.now().timestamp())
+        cancelling_at = now
+        cancelled_at = now
 
-    mock_batch.model_dump = MagicMock(
-        return_value={
-            "id": mock_batch.id,
-            "status": mock_batch.status,
-            "input_file_id": mock_batch.input_file_id,
-            "request_counts": {},
-            "completed_at": None,
-            "failed_at": None,
-            "cancelled_at": mock_batch.cancelled_at,
-            "expired_at": None,
-            "expires_at": None,
-            "cancelling_at": mock_batch.cancelling_at,
-            "finalizing_at": None,
-            "in_progress_at": None,
-        }
+    return Batch(
+        id=f"batch-mock-{id_suffix}",
+        status=status,
+        input_file_id="file-mock-123",
+        request_counts=BatchRequestCounts(completed=0, failed=0, total=0),
+        completed_at=None,
+        failed_at=None,
+        cancelled_at=cancelled_at,
+        cancelling_at=cancelling_at,
+        expired_at=None,
+        expires_at=None,
+        finalizing_at=None,
+        in_progress_at=None,
+        completion_window="24h",
+        created_at=now,
+        endpoint="/v1/chat/completions",
+        error_file_id=None,
+        errors=None,
+        metadata=None,
+        model=None,
+        object="batch",
+        output_file_id=None,
+        usage=None,
     )
-    return mock_batch
 
 
 def create_mock_batch_client():
@@ -56,22 +68,16 @@ def create_mock_batch_client():
     mock_client = MagicMock()
 
     # Mock file creation response
-    mock_file = MagicMock()
-    mock_file.id = "file-mock-123"
-    mock_file.filename = "test.jsonl"
-    mock_file.size = 100
-    mock_file.bytes = 100
-    mock_file.purpose = "batch"
-    mock_file.created_at = int(timezone.now().timestamp())
-    mock_file.expires_at = None
-    mock_file.model_dump = MagicMock(
-        return_value={
-            "id": mock_file.id,
-            "filename": mock_file.filename,
-            "size": mock_file.size,
-            "purpose": mock_file.purpose,
-            "created_at": mock_file.created_at,
-        }
+    mock_file = FileObject(
+        id="file-mock-123",
+        filename="test.jsonl",
+        bytes=100,
+        purpose="batch",
+        created_at=int(timezone.now().timestamp()),
+        expires_at=None,
+        status="processed",
+        status_details=None,
+        object="file",
     )
     mock_client.files.create = AsyncMock(return_value=mock_file)
     mock_client.files.retrieve = AsyncMock(return_value=mock_file)
@@ -100,32 +106,30 @@ def create_mock_cancelled_batch_client():
     """Mock client with batches.cancel() returning cancelled batch."""
     mock_client = create_mock_batch_client()
 
-    mock_cancelled_batch = MagicMock()
-    mock_cancelled_batch.id = "batch-mock-123"
-    mock_cancelled_batch.status = "cancelled"
-    mock_cancelled_batch.cancelling_at = int(timezone.now().timestamp())
-    mock_cancelled_batch.cancelled_at = int(timezone.now().timestamp())
-    mock_cancelled_batch.input_file_id = "file-mock-123"
-    mock_cancelled_batch.completed_at = None
-    mock_cancelled_batch.failed_at = None
-    mock_cancelled_batch.expired_at = None
-    mock_cancelled_batch.expires_at = None
-    mock_cancelled_batch.finalizing_at = None
-    mock_cancelled_batch.in_progress_at = None
-    mock_cancelled_batch.model_dump = MagicMock(
-        return_value={
-            "id": mock_cancelled_batch.id,
-            "status": mock_cancelled_batch.status,
-            "input_file_id": mock_cancelled_batch.input_file_id,
-            "cancelling_at": mock_cancelled_batch.cancelling_at,
-            "cancelled_at": mock_cancelled_batch.cancelled_at,
-            "completed_at": None,
-            "failed_at": None,
-            "expired_at": None,
-            "expires_at": None,
-            "finalizing_at": None,
-            "in_progress_at": None,
-        }
+    now = int(timezone.now().timestamp())
+    mock_cancelled_batch = Batch(
+        id="batch-mock-123",
+        status="cancelled",
+        cancelling_at=now,
+        cancelled_at=now,
+        input_file_id="file-mock-123",
+        completed_at=None,
+        failed_at=None,
+        expired_at=None,
+        expires_at=None,
+        finalizing_at=None,
+        in_progress_at=None,
+        completion_window="24h",
+        created_at=now,
+        endpoint="/v1/chat/completions",
+        error_file_id=None,
+        errors=None,
+        metadata=None,
+        model=None,
+        object="batch",
+        output_file_id=None,
+        request_counts=BatchRequestCounts(completed=0, failed=0, total=0),
+        usage=None,
     )
     mock_client.batches.cancel = AsyncMock(return_value=mock_cancelled_batch)
 

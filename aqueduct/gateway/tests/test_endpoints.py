@@ -627,7 +627,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             400,
             f"Expected 400, got {response.status_code}: {response.content}",
         )
-        self.assertIn("Tika error extracting text from file", response.json()["error"])
+        self.assertIn("Tika error extracting text from file", response.json()["error"]["message"])
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     def test_chat_completion_timeout(self):

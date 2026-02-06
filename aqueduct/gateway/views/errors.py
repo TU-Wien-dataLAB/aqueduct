@@ -2,13 +2,30 @@ from django.http import JsonResponse
 
 
 def error_response(
-    message: str,
-    error_type: str = "invalid_request_error",
-    param: str | None = None,
-    status: int = 400,
+    message: str, error_type: str | None = None, param: str | None = None, status: int = 400
 ) -> JsonResponse:
     """Return an OpenAI-compatible error response."""
+    if error_type is None:
+        error_type = _status_to_error_type(status)
     error = {"message": message, "type": error_type}
     if param:
         error["param"] = param
     return JsonResponse({"error": error}, status=status)
+
+
+def _status_to_error_type(status: int) -> str:
+    """Map HTTP status codes to OpenAI error types."""
+    status_map = {
+        400: "invalid_request_error",
+        401: "invalid_request_error",
+        403: "permission_denied_error",
+        404: "not_found_error",
+        410: "invalid_request_error",
+        421: "invalid_request_error",
+        422: "invalid_request_error",
+        429: "rate_limit_error",
+        500: "server_error",
+        503: "server_error",
+        504: "timeout_error",
+    }
+    return status_map.get(status, "invalid_request_error")

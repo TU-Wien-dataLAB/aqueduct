@@ -18,7 +18,7 @@ from django.contrib import auth
 from django.core.cache import cache
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Sum
-from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.urls import reverse
 from django.utils import timezone
 from mcp.types import JSONRPCMessage
@@ -30,6 +30,7 @@ from tos.models import has_user_agreed_latest_tos
 
 from gateway.authentication import token_from_request
 from gateway.config import get_files_api_client, get_mcp_config, get_router, resolve_model_alias
+from gateway.views.errors import error_response
 from gateway.views.utils import get_response_from_cache, in_wildcard
 from management.models import FileObject, Request, Token
 
@@ -40,7 +41,7 @@ def token_authenticated(token_auth_only: bool):
     def decorator(view_func):
         @wraps(view_func)
         async def wrapper(request: ASGIRequest, *args, **kwargs):
-            unauthorized_response = JsonResponse({"error": "Authentication Required"}, status=401)
+            unauthorized_response = error_response("Authentication Required", status=401)
             # Authentication Check
             if not (await request.auser()).is_authenticated:
                 user = await auth.aauthenticate(request=request)
@@ -157,7 +158,7 @@ def parse_body(model: TypeAdapter):
 
             if request.body is None:
                 log.error("Request body is None")
-                return JsonResponse({"error": "Missing request body"}, status=400)
+                return error_response("Missing request body", status=400)
 
             content_type = request.headers.get("content-type", "")
 
@@ -167,18 +168,16 @@ def parse_body(model: TypeAdapter):
                     data = json.loads(body)
                 except json.JSONDecodeError as e:
                     log.error(f"JSON decode error: {str(e)}, body was: {request.body!r}")
-                    return JsonResponse({"error": f"Invalid JSON: {str(e)}"}, status=400)
+                    return error_response(f"Invalid JSON: {str(e)}", status=400)
             elif content_type.startswith("multipart/form-data"):
                 try:
                     data = _parse_multipart_body(request)
                 except FileSizeError as e:
-                    return JsonResponse(
-                        {"error": str(e)}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE
-                    )
+                    return error_response(str(e), status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             else:
                 log.error(f"Unsupported Content-Type: {content_type}")
-                return JsonResponse(
-                    {"error": f"Unsupported Content-Type: {content_type}"},
+                return error_response(
+                    f"Unsupported Content-Type: {content_type}",
                     status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 )
 
@@ -190,12 +189,14 @@ def parse_body(model: TypeAdapter):
                 model.validate_python(data)
             except ValidationError as e:
                 log.error(f"Validation error: {e}")
-                return JsonResponse({"error": str(e)}, status=HTTPStatus.BAD_REQUEST)
+                error_messages = ", ".join(
+                    f"{err['loc'][0] if err['loc'] else 'field'}: {err['msg']}"
+                    for err in e.errors()
+                )
+                return error_response(error_messages, status=HTTPStatus.BAD_REQUEST)
             except Exception as e:
                 log.error(f"Request body parse error: {str(e)}, data was: {data!r}")
-                return JsonResponse(
-                    {"error": f"Failed to parse the request body: {str(e)}"}, status=400
-                )
+                return error_response(f"Failed to parse the request body: {str(e)}", status=400)
 
             # If there are files sent with the request (i.e. content type is "multipart/form-data"),
             # update bytes to BytesIO because pydantic TypeAdapter has problems with BytesIO.
@@ -242,7 +243,7 @@ def check_limits(view_func):
         token: Token | None = kwargs.get("token", None)
         if not token:
             log.error("check_limits decorator used without @token_authenticated decorator")
-            return JsonResponse({"error": "Internal server error"}, status=500)
+            return error_response("Internal server error", status=500)
 
         try:
             # Get limits asynchronously
@@ -304,14 +305,12 @@ def check_limits(view_func):
                     )
                     log.error(f"Rate limit exceeded - {error_message}")
                     # Return 429 Too Many Requests
-                    return JsonResponse({"error": error_message}, status=429)
+                    return error_response(error_message, status=429)
 
         except Exception as e:
             log.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
             log.error("Internal gateway error checking rate limits")
-            return JsonResponse(
-                {"error": "Internal gateway error checking rate limits"}, status=500
-            )
+            return error_response("Internal gateway error checking rate limits", status=500)
 
         return await view_func(request, *args, **kwargs)
 
@@ -388,7 +387,7 @@ def check_model_availability(view_func):
             log.error(
                 "check_model_availability decorator used without @token_authenticated decorator"
             )
-            return JsonResponse({"error": "Internal server error"}, status=500)
+            return error_response("Internal server error", status=500)
         body: dict | None = kwargs.get("pydantic_model", None)
         if not body:
             return await view_func(request, *args, **kwargs)
@@ -399,7 +398,7 @@ def check_model_availability(view_func):
             else:
                 if await sync_to_async(token.model_excluded)(model):
                     log.error(f"Model not found - {model}")
-                    return JsonResponse({"error": "Model not found!"}, status=404)
+                    return error_response("Model not found!", status=404)
                 return await view_func(request, *args, **kwargs)
 
     return wrapper
@@ -413,14 +412,14 @@ def check_mcp_server_availability(view_func):
             log.error(
                 "check_mcp_server_availability decorator used without @token_authenticated decorator"
             )
-            return JsonResponse({"error": "Internal server error"}, status=500)
+            return error_response("Internal server error", status=500)
         server_name: str | None = kwargs.get("name", None)
         if not server_name:
             return await view_func(request, *args, **kwargs)
         else:
             if await sync_to_async(token.mcp_server_excluded)(server_name):
                 log.error(f"MCP server not found - {server_name}")
-                return JsonResponse({"error": "MCP server not found!"}, status=404)
+                return error_response("MCP server not found!", status=404)
             return await view_func(request, *args, **kwargs)
 
     return wrapper
@@ -488,7 +487,7 @@ def process_file_content(view_func):
         pydantic_model: dict | None = kwargs.get("pydantic_model", None)
         if not pydantic_model:
             log.error("Invalid request - missing request body")
-            return JsonResponse({"error": "Invalid request: missing request body"}, status=400)
+            return error_response("Invalid request: missing request body", status=400)
 
         messages = pydantic_model.get("messages", [])
         if not messages:
@@ -512,24 +511,20 @@ def process_file_content(view_func):
                         file_bytes = await file_to_bytes(token, file)
                     except FileObject.DoesNotExist:
                         log.error("File not found")
-                        return JsonResponse({"error": "File not found"}, status=404)
+                        return error_response("File not found", status=404)
                     except Exception as e:
                         # return json response here if there was an error
                         log.error(f"Error processing file - {str(e)}")
-                        return JsonResponse(
-                            {"error": f"Error processing file: {str(e)}"}, status=400
-                        )
+                        return error_response(f"Error processing file: {str(e)}", status=400)
 
                     if len(file_bytes) > max_file_bytes:
                         log.error(
                             f"File processing error - File too large (individual file must be "
                             f"<= {max_file_mb}MB)"
                         )
-                        return JsonResponse(
-                            {
-                                "error": f"Error processing file content: File too large. "
-                                f"Individual file must be <= {max_file_mb}MB."
-                            },
+                        return error_response(
+                            f"Error processing file content: File too large. "
+                            f"Individual file must be <= {max_file_mb}MB.",
                             status=400,
                         )
                     total_file_size_bytes += len(file_bytes)
@@ -538,11 +533,9 @@ def process_file_content(view_func):
                             f"File processing error - Files too large in total "
                             f"(all files must be <= {max_total_size_mb}MB)"
                         )
-                        return JsonResponse(
-                            {
-                                "error": f"Error processing file content: Files too large in total. "
-                                f"All files must be <= {max_total_size_mb}MB."
-                            },
+                        return error_response(
+                            f"Error processing file content: Files too large in total. "
+                            f"All files must be <= {max_total_size_mb}MB.",
                             status=400,
                         )
 
@@ -552,8 +545,8 @@ def process_file_content(view_func):
                     except httpx.HTTPStatusError as e:
                         # return json response here if there was a tika request error
                         log.error(f"Tika error extracting text from file - {str(e)}")
-                        return JsonResponse(
-                            {"error": f"Tika error extracting text from file: {str(e)}"}, status=400
+                        return error_response(
+                            f"Tika error extracting text from file: {str(e)}", status=400
                         )
 
                     extracted_text = (
@@ -585,43 +578,43 @@ def catch_router_exceptions(view_func):
             return await view_func(request, *args, **kwargs)
         except (litellm.BadRequestError, openai.BadRequestError) as e:
             log.error(f"Bad request - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=400)
+            return error_response(_r(e), status=400)
         except (litellm.AuthenticationError, openai.AuthenticationError) as e:
             log.error(f"Authentication error - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=401)
+            return error_response(_r(e), status=401)
         except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
             log.error(f"Permission denied - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=403)
+            return error_response(_r(e), status=403)
         except (litellm.NotFoundError, openai.NotFoundError) as e:
             log.error(f"Not found - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=404)
+            return error_response(_r(e), status=404)
         except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
             log.error(f"Unprocessable entity - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=422)
+            return error_response(_r(e), status=422)
         except (litellm.RateLimitError, openai.RateLimitError) as e:
             log.error(f"Rate limit exceeded - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=429)
+            return error_response(_r(e), status=429)
         except (litellm.Timeout, openai.APITimeoutError) as e:
             log.error(f"Timeout - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=504)
+            return error_response(_r(e), status=504)
         except (
             litellm.ServiceUnavailableError,
             litellm.APIConnectionError,
             openai.APIConnectionError,
         ) as e:
             log.error(f"Service unavailable - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=503)
+            return error_response(_r(e), status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
             log.error(f"Internal server error - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=500)
+            return error_response(_r(e), status=500)
         except (litellm.APIError, openai.APIError) as e:
             # APIError is raised e.g. when user sends extra kwargs in the request body,
             # so we return a 400 Bad request.
             log.error(f"API error - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=400)
+            return error_response(_r(e), status=400)
         except Exception as e:
             log.error(f"Unexpected error - {_r(e)}")
-            return JsonResponse({"error": _r(e)}, status=500)
+            return error_response(_r(e), status=500)
 
     return wrapper
 
@@ -645,10 +638,8 @@ def tos_accepted(view_func):
 
                 if not user_agreed:
                     log.error("Terms of service agreement required")
-                    return JsonResponse(
-                        {
-                            "error": "In order to use the API you have to agree to the terms of service!"
-                        },
+                    return error_response(
+                        "In order to use the API you have to agree to the terms of service!",
                         status=403,
                     )
 
@@ -687,7 +678,7 @@ def mcp_transport_security(view_func):
             log.debug(f"POST request Content-Type: '{content_type}'")
             if not content_type.lower().startswith("application/json"):
                 log.error(f"Invalid Content-Type header: {content_type}")
-                return JsonResponse({"error": "Invalid Content-Type header"}, status=400)
+                return error_response("Invalid Content-Type header", status=400)
 
         # Validate Host header against allowed values
         allowed_hosts = getattr(settings, "MCP_ALLOWED_HOSTS", [])
@@ -695,22 +686,22 @@ def mcp_transport_security(view_func):
 
         if not host:
             log.error("Missing Host header in request")
-            return JsonResponse({"error": "Invalid Host header"}, status=421)
+            return error_response("Invalid Host header", status=421)
 
         host_valid = in_wildcard(host, allowed_hosts)
         if not host_valid:
             log.error(f"Invalid Host header: {host}")
-            return JsonResponse({"error": "Invalid Host header"}, status=421)
+            return error_response("Invalid Host header", status=421)
 
         # Validate Origin header against allowed values
-        # Origin can be absent for same-origin requests, so it's only validated if present
+        # Origin can be absent for same-origin requests, so it\'s only validated if present
         allowed_origins = getattr(settings, "MCP_ALLOWED_ORIGINS", [])
         origin = request.headers.get("origin")
         if origin:
             origin_valid = in_wildcard(origin, allowed_origins)
             if not origin_valid:
                 log.error(f"Invalid Origin header: {origin}")
-                return JsonResponse({"error": "Invalid Origin header"}, status=403)
+                return error_response("Invalid Origin header", status=403)
 
         return await view_func(request, *args, **kwargs)
 
@@ -726,7 +717,7 @@ def parse_jsonrpc_message(view_func):
         if request.method != "POST":
             if not session_id:
                 log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
-                return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
+                return error_response("Mcp-Session-Id header required", status=400)
 
             return await view_func(request, request_log=None, *args, **kwargs)
 
@@ -741,7 +732,7 @@ def parse_jsonrpc_message(view_func):
 
         if not is_initialize and not session_id:
             log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
-            return JsonResponse({"error": "Mcp-Session-Id header required"}, status=400)
+            return error_response("Mcp-Session-Id header required", status=400)
 
         kwargs["json_rpc_message"] = json_rpc_message
         kwargs["is_initialize"] = is_initialize
@@ -757,14 +748,14 @@ def validate_response_id(view_func):
         token = kwargs.get("token", None)
         if not token:
             log.error("validate_response_id decorator used without @token_authenticated decorator")
-            return JsonResponse({"error": "Internal server error"}, status=500)
+            return error_response("Internal server error", status=500)
 
         response = get_response_from_cache(response_id)
         if not response:
-            return JsonResponse({"error": "Response not found"}, status=404)
+            return error_response("Response not found", status=404)
 
         if response["email"] != token.user.email:
-            return JsonResponse({"error": "Response not found"}, status=404)
+            return error_response("Response not found", status=404)
 
         return await view_func(request, response_id, *args, **kwargs)
 
@@ -789,7 +780,7 @@ def check_tool_availability(view_func):
         token: Token | None = kwargs.get("token", None)
         pydantic_model: ResponseCreateParams | None = kwargs.get("pydantic_model", None)
         if not token or not pydantic_model:
-            return JsonResponse({"error": "Invalid request"}, status=400)
+            return error_response("Invalid request", status=400)
 
         tools: Iterable[ToolParam] = pydantic_model.get("tools") or []
         for tool in tools:
@@ -800,9 +791,7 @@ def check_tool_availability(view_func):
                     server_name = tool.get("server_label")
                     if await sync_to_async(token.mcp_server_excluded)(server_name):
                         log.error(f"MCP server not found - {server_name}")
-                        return JsonResponse(
-                            {"error": f"MCP server not found - {server_name}"}, status=404
-                        )
+                        return error_response(f"MCP server not found - {server_name}", status=404)
 
                     try:
                         mcp_config = get_mcp_config()
@@ -811,8 +800,8 @@ def check_tool_availability(view_func):
                         # the user wants to access an externally managed MCP server
                         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
                             log.error(f"MCP server not found - {server_name}")
-                            return JsonResponse(
-                                {"error": f"MCP server not found - {server_name}"}, status=404
+                            return error_response(
+                                f"MCP server not found - {server_name}", status=404
                             )
                     else:
                         expected_url = request.build_absolute_uri(
@@ -822,17 +811,15 @@ def check_tool_availability(view_func):
                             log.error(
                                 "The server_url of the tool does not match the Aqueduct MCP server url."
                             )
-                            return JsonResponse(
-                                {
-                                    "error": "The server_url of the tool does not match the Aqueduct MCP server url."
-                                },
+                            return error_response(
+                                "The server_url of the tool does not match the Aqueduct MCP server url.",
                                 status=400,
                             )
 
                         tool["server_url"] = server_config["url"]
                 case other:
                     if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
-                        return JsonResponse({"error": f"Invalid tool type: {other}"}, status=400)
+                        return error_response(f"Invalid tool type: {other}", status=400)
 
         return await view_func(request, *args, **kwargs)
 

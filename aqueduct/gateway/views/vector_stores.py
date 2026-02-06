@@ -1,0 +1,294 @@
+from typing import Optional
+
+from asgiref.sync import sync_to_async
+from django.conf import settings
+from django.core.handlers.asgi import ASGIRequest
+from django.http import JsonResponse
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from pydantic import BaseModel, ConfigDict, TypeAdapter
+
+from gateway.config import get_files_api_client
+from management.models import Token, VectorStore
+
+from .decorators import log_request, parse_body, token_authenticated, tos_accepted
+from .errors import error_response
+
+
+class VectorStoreCreateParams(BaseModel):
+    name: str
+    expires_after: Optional[dict] = None
+    chunking_strategy: Optional[dict] = None
+    metadata: Optional[dict] = None
+    model_config = ConfigDict(extra="allow")
+
+
+class VectorStoreModifyParams(BaseModel):
+    name: Optional[str] = None
+    expires_after: Optional[dict] = None
+    metadata: Optional[dict] = None
+    model_config = ConfigDict(extra="allow")
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@token_authenticated(token_auth_only=True)
+@tos_accepted
+@parse_body(model=TypeAdapter(VectorStoreCreateParams))
+@log_request
+async def vector_stores(
+    request: ASGIRequest, token: Token, pydantic_model: Optional[dict] = None, *args, **kwargs
+):
+    """
+    GET /v1/vector_stores - List vector stores
+    POST /v1/vector_stores - Create vector store
+    """
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Vector Store API not configured", status=503)
+
+    if request.method == "GET":
+        # List user's vector stores from local DB
+        if token.service_account:
+            vector_stores_qs = VectorStore.objects.filter(
+                token__service_account__team=token.service_account.team
+            )
+        else:
+            vector_stores_qs = VectorStore.objects.filter(token__user=token.user)
+
+        vector_stores_list = await sync_to_async(list)(
+            vector_stores_qs.order_by("-created_at").select_related("token")
+        )
+
+        return JsonResponse(
+            {
+                "object": "list",
+                "data": [
+                    {
+                        "id": vs.id,
+                        "object": "vector_store",
+                        "name": vs.name,
+                        "status": vs.status,
+                        "usage_bytes": vs.usage_bytes,
+                        "created_at": vs.created_at,
+                        "metadata": vs.metadata,
+                        "expires_after": vs.expires_after,
+                    }
+                    for vs in vector_stores_list
+                ],
+                "has_more": False,
+            },
+            status=200,
+        )
+
+    # POST /v1/vector_stores - Create vector store
+    params = pydantic_model if pydantic_model else {}
+    name = params.get("name")
+
+    if not name:
+        return error_response("Missing required parameter: name", param="name", status=400)
+
+    # Check user/team limits before creating
+    if token.service_account:
+        limit = getattr(settings, "MAX_TEAM_VECTOR_STORES", 50)
+        active_count = await sync_to_async(
+            VectorStore.objects.filter(
+                token__service_account__team=token.service_account.team
+            ).count
+        )()
+    else:
+        limit = getattr(settings, "MAX_USER_VECTOR_STORES", 10)
+        active_count = await sync_to_async(
+            VectorStore.objects.filter(token__user=token.user).count
+        )()
+
+    if active_count >= limit:
+        return error_response(f"Vector store limit reached ({limit})", status=403)
+
+    # Create on upstream
+    try:
+        create_kwargs = {"name": name}
+        if params.get("expires_after"):
+            create_kwargs["expires_after"] = params["expires_after"]
+        if params.get("chunking_strategy"):
+            create_kwargs["chunking_strategy"] = params["chunking_strategy"]
+        if params.get("metadata"):
+            create_kwargs["metadata"] = params["metadata"]
+
+        remote_vs = await client.vector_stores.create(**create_kwargs)
+    except Exception as e:
+        return error_response(
+            f"Failed to create vector store on upstream: {str(e)}",
+            error_type="server_error",
+            status=502,
+        )
+
+    # Create local record with remote_id
+    now = timezone.now()
+    vs_obj = VectorStore(
+        token=token,
+        remote_id=remote_vs.id,
+        name=name,
+        status=remote_vs.status or "completed",
+        usage_bytes=getattr(remote_vs, "usage_bytes", 0),
+        created_at=int(now.timestamp()),
+        expires_after=params.get("expires_after"),
+        chunking_strategy=params.get("chunking_strategy"),
+        metadata=params.get("metadata"),
+        upstream_url=settings.AQUEDUCT_FILES_API_URL,
+    )
+    await sync_to_async(vs_obj.save)()
+
+    # Return response with Aqueduct ID, not remote ID
+    response_data = {
+        "id": vs_obj.id,
+        "object": "vector_store",
+        "name": vs_obj.name,
+        "status": vs_obj.status,
+        "usage_bytes": vs_obj.usage_bytes,
+        "created_at": vs_obj.created_at,
+        "metadata": vs_obj.metadata,
+        "expires_after": vs_obj.expires_after,
+    }
+
+    return JsonResponse(response_data, status=200)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST", "DELETE"])
+@token_authenticated(token_auth_only=True)
+@tos_accepted
+@parse_body(model=TypeAdapter(VectorStoreModifyParams))
+@log_request
+async def vector_store(
+    request: ASGIRequest,
+    token: Token,
+    vector_store_id: str,
+    pydantic_model: Optional[dict] = None,
+    *args,
+    **kwargs,
+):
+    """
+    GET /v1/vector_stores/{vector_store_id} - Retrieve vector store
+    POST /v1/vector_stores/{vector_store_id} - Modify vector store
+    DELETE /v1/vector_stores/{vector_store_id} - Delete vector store
+    """
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Vector Store API not configured", status=503)
+
+    try:
+        if token.service_account:
+            vs_obj = await VectorStore.objects.aget(
+                id=vector_store_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            vs_obj = await VectorStore.objects.aget(id=vector_store_id, token__user=token.user)
+    except VectorStore.DoesNotExist:
+        return error_response("Vector store not found.", param="vector_store_id", status=404)
+
+    remote_id = vs_obj.remote_id
+    if not remote_id:
+        return error_response(
+            "Vector store has no remote reference.", error_type="server_error", status=500
+        )
+
+    if request.method == "GET":
+        # Retrieve from upstream and sync status
+        try:
+            remote_vs = await client.vector_stores.retrieve(remote_id)
+        except Exception as e:
+            return error_response(
+                f"Failed to retrieve vector store from upstream: {str(e)}",
+                error_type="server_error",
+                status=502,
+            )
+
+        # Update local record with latest status
+        vs_obj.status = remote_vs.status or vs_obj.status
+        vs_obj.usage_bytes = getattr(remote_vs, "usage_bytes", vs_obj.usage_bytes)
+        vs_obj.last_active_at = int(timezone.now().timestamp())
+        await sync_to_async(vs_obj.save)(update_fields=["status", "usage_bytes", "last_active_at"])
+
+        # Return with Aqueduct ID
+        response_data = {
+            "id": str(vs_obj.id),
+            "object": "vector_store",
+            "name": vs_obj.name,
+            "status": vs_obj.status,
+            "usage_bytes": vs_obj.usage_bytes,
+            "created_at": vs_obj.created_at,
+            "metadata": vs_obj.metadata,
+            "expires_after": vs_obj.expires_after,
+        }
+        return JsonResponse(response_data, status=200)
+
+    elif request.method == "POST":
+        # Modify vector store
+        params = pydantic_model if pydantic_model else {}
+
+        modify_kwargs = {}
+        if params.get("name"):
+            modify_kwargs["name"] = params["name"]
+        if params.get("expires_after"):
+            modify_kwargs["expires_after"] = params["expires_after"]
+        if params.get("metadata"):
+            modify_kwargs["metadata"] = params["metadata"]
+
+        if modify_kwargs:
+            try:
+                remote_vs = await client.vector_stores.update(remote_id, **modify_kwargs)
+            except Exception as e:
+                return error_response(
+                    f"Failed to update vector store on upstream: {str(e)}",
+                    error_type="server_error",
+                    status=502,
+                )
+
+            # Update local record
+            if params.get("name"):
+                vs_obj.name = params["name"]
+            if params.get("metadata"):
+                vs_obj.metadata = params["metadata"]
+            if params.get("expires_after"):
+                vs_obj.expires_after = params["expires_after"]
+            vs_obj.status = remote_vs.status or vs_obj.status
+            vs_obj.usage_bytes = getattr(remote_vs, "usage_bytes", vs_obj.usage_bytes)
+            await sync_to_async(vs_obj.save)()
+
+        # Return with Aqueduct ID
+        response_data = {
+            "id": vs_obj.id,
+            "object": "vector_store",
+            "name": vs_obj.name,
+            "status": vs_obj.status,
+            "usage_bytes": vs_obj.usage_bytes,
+            "created_at": vs_obj.created_at,
+            "metadata": vs_obj.metadata,
+            "expires_after": vs_obj.expires_after,
+        }
+        return JsonResponse(response_data, status=200)
+
+    # DELETE /v1/vector_stores/{vector_store_id}
+    try:
+        await client.vector_stores.delete(remote_id)
+    except Exception as e:
+        return error_response(
+            f"Failed to delete vector store from upstream: {str(e)}",
+            error_type="server_error",
+            status=502,
+        )
+
+    # Save the ID before deleting the object
+    vs_id_to_return = str(vs_obj.id)
+
+    # Delete local record
+    await sync_to_async(vs_obj.delete)()
+
+    # Return with Aqueduct ID
+    return JsonResponse(
+        {"id": vs_id_to_return, "object": "vector_store.deleted", "deleted": True}, status=200
+    )

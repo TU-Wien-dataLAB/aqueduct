@@ -956,3 +956,191 @@ class Batch(models.Model):
         Override delete - files are stored upstream, so we only delete the local DB record.
         """
         super().delete(using=using, keep_parents=keep_parents)
+
+
+def generate_vector_store_id() -> str:
+    """Generate a new VectorStore primary key with a 'vs-' prefix."""
+    return f"vs-{uuid.uuid4().hex}"
+
+
+def generate_vector_store_file_id() -> str:
+    """Generate a new VectorStoreFile primary key with a 'vsf-' prefix."""
+    return f"vsf-{uuid.uuid4().hex}"
+
+
+def generate_vector_store_file_batch_id() -> str:
+    """Generate a new VectorStoreFileBatch primary key with a 'vsb-' prefix."""
+    return f"vsb-{uuid.uuid4().hex}"
+
+
+class VectorStoreStatus(models.TextChoices):
+    """Vector store status choices matching OpenAI's API."""
+
+    EXPIRED = "expired", "expired"
+    IN_PROGRESS = "in_progress", "in_progress"
+    COMPLETED = "completed", "completed"
+
+
+class VectorStore(models.Model):
+    """
+    Mirrors the structure of OpenAI's VectorStore type.
+    Stores metadata for vector stores with upstream relay.
+    """
+
+    id = models.CharField(
+        max_length=100,
+        primary_key=True,
+        default=generate_vector_store_id,
+        editable=False,
+        help_text="The vector store identifier.",
+    )
+    remote_id = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="Vector store ID from the upstream API (e.g., 'vs_abc123' from OpenAI)",
+    )
+    token = models.ForeignKey(Token, on_delete=models.CASCADE, related_name="vector_stores")
+    name = models.CharField(max_length=255, help_text="The name of the vector store.")
+    expires_after = models.JSONField(
+        null=True, blank=True, help_text="Expiration policy for the vector store."
+    )
+    chunking_strategy = models.JSONField(
+        null=True, blank=True, help_text="Chunking configuration for the vector store."
+    )
+    metadata = models.JSONField(
+        null=True, blank=True, help_text="Custom metadata for the vector store."
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=VectorStoreStatus.choices,
+        default=VectorStoreStatus.IN_PROGRESS,
+        help_text="The current status of the vector store.",
+    )
+    usage_bytes = models.BigIntegerField(
+        default=0, help_text="The total number of bytes used by the vector store."
+    )
+    created_at = models.PositiveIntegerField(
+        help_text="The Unix timestamp (in seconds) for when the vector store was created."
+    )
+    last_active_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the vector store was last active.",
+    )
+    upstream_url = models.URLField(
+        null=True, blank=True, help_text="The upstream API URL this vector store was created on"
+    )
+
+    class Meta:
+        verbose_name = "Vector Store"
+        verbose_name_plural = "Vector Stores"
+        indexes = [models.Index(fields=["remote_id"], name="vectorstore_remote_id_idx")]
+
+    def delete(self, using=None, keep_parents=False):
+        """
+        Override ORM delete - vector stores are stored upstream, so we only delete the local DB record.
+        """
+        super().delete(using=using, keep_parents=keep_parents)
+
+
+class VectorStoreFileStatus(models.TextChoices):
+    """Vector store file processing status choices."""
+
+    IN_PROGRESS = "in_progress", "in_progress"
+    COMPLETED = "completed", "completed"
+    FAILED = "failed", "failed"
+    CANCELLED = "cancelled", "cancelled"
+
+
+class VectorStoreFile(models.Model):
+    """
+    Represents a file within a vector store.
+    This is NOT the same as FileObject - it's a join table that tracks
+    a FileObject's association with a specific VectorStore.
+    """
+
+    id = models.CharField(
+        max_length=100,
+        primary_key=True,
+        default=generate_vector_store_file_id,
+        editable=False,
+        help_text="The vector store file identifier.",
+    )
+    remote_id = models.CharField(
+        max_length=100, null=True, blank=True, help_text="VectorStoreFile ID from the upstream API"
+    )
+    vector_store = models.ForeignKey(VectorStore, on_delete=models.CASCADE, related_name="files")
+    file_obj = models.ForeignKey(
+        FileObject,
+        on_delete=models.CASCADE,
+        related_name="vector_store_files",
+        help_text="Reference to the actual file object.",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=VectorStoreFileStatus.choices,
+        default=VectorStoreFileStatus.IN_PROGRESS,
+        help_text="Processing status of the file in the vector store.",
+    )
+    last_error = models.JSONField(
+        null=True, blank=True, help_text="Error details if processing failed."
+    )
+    created_at = models.PositiveIntegerField(
+        help_text="The Unix timestamp (in seconds) for when the file was added to the vector store."
+    )
+    usage_bytes = models.BigIntegerField(
+        default=0,
+        help_text="Bytes used in vector store (may differ from original file after chunking).",
+    )
+
+    class Meta:
+        verbose_name = "Vector Store File"
+        verbose_name_plural = "Vector Store Files"
+        indexes = [models.Index(fields=["remote_id"], name="vectorstorefile_remote_id_idx")]
+
+
+class VectorStoreFileBatchStatus(models.TextChoices):
+    """Vector store file batch status choices."""
+
+    IN_PROGRESS = "in_progress", "in_progress"
+    COMPLETED = "completed", "completed"
+    FAILED = "failed", "failed"
+    CANCELLED = "cancelled", "cancelled"
+
+
+class VectorStoreFileBatch(models.Model):
+    """
+    Represents a batch operation for adding files to a vector store.
+    """
+
+    id = models.CharField(
+        max_length=100,
+        primary_key=True,
+        default=generate_vector_store_file_batch_id,
+        editable=False,
+        help_text="The vector store file batch identifier.",
+    )
+    remote_id = models.CharField(
+        max_length=100, null=True, blank=True, help_text="Batch ID from the upstream API"
+    )
+    vector_store = models.ForeignKey(
+        VectorStore, on_delete=models.CASCADE, related_name="file_batches"
+    )
+    file_counts = models.JSONField(
+        default=dict, help_text="Processing counts (completed/failed/total/cancelled/in_progress)."
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=VectorStoreFileBatchStatus.choices,
+        default=VectorStoreFileBatchStatus.IN_PROGRESS,
+        help_text="The current status of the batch.",
+    )
+    created_at = models.PositiveIntegerField(
+        help_text="The Unix timestamp (in seconds) for when the batch was created."
+    )
+
+    class Meta:
+        verbose_name = "Vector Store File Batch"
+        verbose_name_plural = "Vector Store File Batches"
+        indexes = [models.Index(fields=["remote_id"], name="vs_file_batch_remote_idx")]

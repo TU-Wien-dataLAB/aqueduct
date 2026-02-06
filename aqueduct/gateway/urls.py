@@ -61,4 +61,59 @@ urlpatterns = [
     ),
     # MCP server endpoints
     path("mcp-servers/<str:name>/mcp", mcp_views.mcp_server, name="mcp_server"),
+    # Vector Stores endpoints
+    path("vector_stores", views.vector_stores, name="vector_stores"),
+    path("v1/vector_stores", views.vector_stores, name="v1_vector_stores"),
+    path("vector_stores/<str:vector_store_id>", views.vector_store, name="vector_store"),
+    path("v1/vector_stores/<str:vector_store_id>", views.vector_store, name="v1_vector_store"),
+    path(
+        "vector_stores/<str:vector_store_id>/files",
+        views.vector_store_files,
+        name="vector_store_files",
+    ),
+    path(
+        "v1/vector_stores/<str:vector_store_id>/files",
+        views.vector_store_files,
+        name="v1_vector_store_files",
+    ),
+    path(
+        "vector_stores/<str:vector_store_id>/files/<str:file_id>",
+        views.vector_store_file,
+        name="vector_store_file",
+    ),
+    path(
+        "v1/vector_stores/<str:vector_store_id>/files/<str:file_id>",
+        views.vector_store_file,
+        name="v1_vector_store_file",
+    ),
+    path(
+        "vector_stores/<str:vector_store_id>/file_batches",
+        views.vector_store_file_batches,
+        name="vector_store_file_batches",
+    ),
+    path(
+        "v1/vector_stores/<str:vector_store_id>/file_batches",
+        views.vector_store_file_batches,
+        name="v1_vector_store_file_batches",
+    ),
+    path(
+        "vector_stores/<str:vector_store_id>/file_batches/<str:batch_id>",
+        views.vector_store_file_batch,
+        name="vector_store_file_batch",
+    ),
+    path(
+        "v1/vector_stores/<str:vector_store_id>/file_batches/<str:batch_id>",
+        views.vector_store_file_batch,
+        name="v1_vector_store_file_batch",
+    ),
+    path(
+        "vector_stores/<str:vector_store_id>/file_batches/<str:batch_id>/cancel",
+        views.vector_store_file_batch_cancel,
+        name="vector_store_file_batch_cancel",
+    ),
+    path(
+        "v1/vector_stores/<str:vector_store_id>/file_batches/<str:batch_id>/cancel",
+        views.vector_store_file_batch_cancel,
+        name="v1_vector_store_file_batch_cancel",
+    ),
 ]

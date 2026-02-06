@@ -145,9 +145,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         body = resp.json()
         self.assertIn("error", body)
         # Should indicate invalid JSON
+        error_message = body.get("error", {}).get("message", "")
         self.assertTrue(
-            "Invalid JSON" in body.get("error", ""),
-            f"Unexpected error message: {body.get('error')}",
+            "Invalid JSON" in error_message, f"Unexpected error message: {error_message}"
         )
 
     @patch("gateway.views.batches.get_files_api_client")

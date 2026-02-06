@@ -182,7 +182,7 @@ class TestFilesAPI(GatewayFilesTestCase):
             self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers
         )
         self.assertEqual(resp.status_code, 413)
-        self.assertIn("File 'file' exceeds maximum size", resp.json()["error"])
+        self.assertIn("File 'file' exceeds maximum size", resp.json()["error"]["message"])
 
     @override_settings(AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB=1)
     def test_exceeded_total_files_size(self):
@@ -197,7 +197,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         # Upload files
         resp = self.client.post(self.url_files, data, headers=self.headers)
         self.assertEqual(resp.status_code, 413)
-        self.assertIn("Total file size exceeds maximum of 1MB", resp.json()["error"])
+        self.assertIn("Total file size exceeds maximum of 1MB", resp.json()["error"]["message"])
 
     @override_settings(AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB=1)
     def test_exceeded_storage_per_token(self):

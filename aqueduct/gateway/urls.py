@@ -116,4 +116,35 @@ urlpatterns = [
         views.vector_store_file_batch_cancel,
         name="v1_vector_store_file_batch_cancel",
     ),
+    # New endpoints for OpenAI compatibility
+    path(
+        "vector_stores/<str:vector_store_id>/search",
+        views.vector_store_search,
+        name="vector_store_search",
+    ),
+    path(
+        "v1/vector_stores/<str:vector_store_id>/search",
+        views.vector_store_search,
+        name="v1_vector_store_search",
+    ),
+    path(
+        "vector_stores/<str:vector_store_id>/files/<str:file_id>/content",
+        views.vector_store_file_content,
+        name="vector_store_file_content",
+    ),
+    path(
+        "v1/vector_stores/<str:vector_store_id>/files/<str:file_id>/content",
+        views.vector_store_file_content,
+        name="v1_vector_store_file_content",
+    ),
+    path(
+        "vector_stores/<str:vector_store_id>/file_batches/<str:batch_id>/files",
+        views.vector_store_file_batch_files,
+        name="vector_store_file_batch_files",
+    ),
+    path(
+        "v1/vector_stores/<str:vector_store_id>/file_batches/<str:batch_id>/files",
+        views.vector_store_file_batch_files,
+        name="v1_vector_store_file_batch_files",
+    ),
 ]

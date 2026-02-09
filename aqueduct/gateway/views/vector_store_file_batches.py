@@ -108,29 +108,19 @@ async def vector_store_file_batches(
 
     # Create local batch record
     now = timezone.now()
-    file_counts = {}
-    if hasattr(remote_batch, "file_counts") and remote_batch.file_counts:
-        file_counts = {
-            "total": getattr(remote_batch.file_counts, "total", len(file_ids)),
-            "completed": getattr(remote_batch.file_counts, "completed", 0),
-            "failed": getattr(remote_batch.file_counts, "failed", 0),
-            "in_progress": getattr(remote_batch.file_counts, "in_progress", len(file_ids)),
-            "cancelled": getattr(remote_batch.file_counts, "cancelled", 0),
-        }
-    else:
-        file_counts = {
+    batch_obj = VectorStoreFileBatch(
+        vector_store=vs_obj,
+        remote_id=remote_batch.id,
+        status=remote_batch.status or "in_progress",
+        file_counts=remote_batch.file_counts.model_dump(mode="json")
+        if hasattr(remote_batch, "file_counts") and remote_batch.file_counts
+        else {
             "total": len(file_ids),
             "completed": 0,
             "failed": 0,
             "in_progress": len(file_ids),
             "cancelled": 0,
-        }
-
-    batch_obj = VectorStoreFileBatch(
-        vector_store=vs_obj,
-        remote_id=remote_batch.id,
-        status=remote_batch.status or "in_progress",
-        file_counts=file_counts,
+        },
         created_at=int(now.timestamp()),
     )
     await sync_to_async(batch_obj.save)()
@@ -147,15 +137,11 @@ async def vector_store_file_batches(
         )
         await sync_to_async(vs_file_obj.save)()
 
-    # Return with Aqueduct ID
-    response_data = {
-        "id": batch_obj.id,
-        "object": "vector_store.file_batch",
-        "vector_store_id": vs_obj.id,
-        "status": batch_obj.status,
-        "file_counts": batch_obj.file_counts,
-        "created_at": batch_obj.created_at,
-    }
+    # Return upstream response with only id and vector_store_id replaced
+    response_data = remote_batch.model_dump(mode="json")
+    response_data["id"] = batch_obj.id
+    response_data["vector_store_id"] = vs_obj.id
+
     return JsonResponse(response_data, status=200)
 
 
@@ -214,24 +200,14 @@ async def vector_store_file_batch(
     # Update local record with latest status
     batch_obj.status = remote_batch.status or batch_obj.status
     if hasattr(remote_batch, "file_counts") and remote_batch.file_counts:
-        batch_obj.file_counts = {
-            "total": getattr(remote_batch.file_counts, "total", 0),
-            "completed": getattr(remote_batch.file_counts, "completed", 0),
-            "failed": getattr(remote_batch.file_counts, "failed", 0),
-            "in_progress": getattr(remote_batch.file_counts, "in_progress", 0),
-            "cancelled": getattr(remote_batch.file_counts, "cancelled", 0),
-        }
+        batch_obj.file_counts = remote_batch.file_counts.model_dump(mode="json")
     await sync_to_async(batch_obj.save)()
 
-    # Return with Aqueduct ID
-    response_data = {
-        "id": batch_obj.id,
-        "object": "vector_store.file_batch",
-        "vector_store_id": vs_obj.id,
-        "status": batch_obj.status,
-        "file_counts": batch_obj.file_counts,
-        "created_at": batch_obj.created_at,
-    }
+    # Return upstream response with only id and vector_store_id replaced
+    response_data = remote_batch.model_dump(mode="json")
+    response_data["id"] = batch_obj.id
+    response_data["vector_store_id"] = vs_obj.id
+
     return JsonResponse(response_data, status=200)
 
 
@@ -290,24 +266,85 @@ async def vector_store_file_batch_cancel(
     # Update local record
     batch_obj.status = remote_batch.status or "cancelled"
     if hasattr(remote_batch, "file_counts") and remote_batch.file_counts:
-        batch_obj.file_counts = {
-            "total": getattr(
-                remote_batch.file_counts, "total", batch_obj.file_counts.get("total", 0)
-            ),
-            "completed": getattr(remote_batch.file_counts, "completed", 0),
-            "failed": getattr(remote_batch.file_counts, "failed", 0),
-            "in_progress": getattr(remote_batch.file_counts, "in_progress", 0),
-            "cancelled": getattr(remote_batch.file_counts, "cancelled", 0),
-        }
+        batch_obj.file_counts = remote_batch.file_counts.model_dump(mode="json")
     await sync_to_async(batch_obj.save)()
 
-    # Return with Aqueduct ID
-    response_data = {
-        "id": batch_obj.id,
-        "object": "vector_store.file_batch",
-        "vector_store_id": vs_obj.id,
-        "status": batch_obj.status,
-        "file_counts": batch_obj.file_counts,
-        "created_at": batch_obj.created_at,
-    }
+    # Return upstream response with only id and vector_store_id replaced
+    response_data = remote_batch.model_dump(mode="json")
+    response_data["id"] = batch_obj.id
+    response_data["vector_store_id"] = vs_obj.id
+
     return JsonResponse(response_data, status=200)
+
+
+@csrf_exempt
+@require_GET
+@token_authenticated(token_auth_only=True)
+@tos_accepted
+@log_request
+async def vector_store_file_batch_files(
+    request: ASGIRequest, token: Token, vector_store_id: str, batch_id: str, *args, **kwargs
+):
+    """
+    GET /v1/vector_stores/{vector_store_id}/file_batches/{batch_id}/files - List files in batch
+    """
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Vector Store API not configured", status=503)
+
+    # Check vector store ownership
+    try:
+        if token.service_account:
+            vs_obj = await VectorStore.objects.aget(
+                id=vector_store_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            vs_obj = await VectorStore.objects.aget(id=vector_store_id, token__user=token.user)
+    except VectorStore.DoesNotExist:
+        return error_response("Vector store not found.", param="vector_store_id", status=404)
+
+    # Get the batch
+    try:
+        batch_obj = await VectorStoreFileBatch.objects.select_related("vector_store").aget(
+            id=batch_id, vector_store=vs_obj
+        )
+    except VectorStoreFileBatch.DoesNotExist:
+        return error_response("File batch not found.", param="batch_id", status=404)
+
+    if not batch_obj.remote_id:
+        return error_response(
+            "File batch has no remote reference.", error_type="server_error", status=500
+        )
+
+    # Get files in batch from upstream
+    try:
+        remote_files_response = await client.vector_stores.file_batches.list_files(
+            vector_store_id=vs_obj.remote_id, batch_id=batch_obj.remote_id
+        )
+    except Exception as e:
+        return error_response(
+            f"Failed to retrieve file batch files from upstream: {str(e)}",
+            error_type="server_error",
+            status=502,
+        )
+
+    # Get all local vector store files to map remote IDs to local IDs
+    vs_files = await sync_to_async(list)(
+        VectorStoreFile.objects.filter(vector_store=vs_obj).select_related("file_obj")
+    )
+    remote_to_local_map = {f.remote_id: f for f in vs_files if f.remote_id}
+
+    # Map remote file IDs to local IDs in response
+    remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
+    response_files = []
+    for remote_file in remote_files:
+        file_data = remote_file.model_dump(mode="json")
+        # Try to map to local ID if we have this file tracked
+        local_file = remote_to_local_map.get(remote_file.id)
+        if local_file:
+            file_data["id"] = local_file.id
+        file_data["vector_store_id"] = vs_obj.id
+        response_files.append(file_data)
+
+    return JsonResponse({"object": "list", "data": response_files, "has_more": False}, status=200)

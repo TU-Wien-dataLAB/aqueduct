@@ -1,12 +1,12 @@
-from typing import Optional
+from typing import Optional, TypedDict
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods
 from openai.types.vector_stores.file_create_params import FileCreateParams
 from pydantic import TypeAdapter
 
@@ -15,6 +15,12 @@ from management.models import FileObject, Token, VectorStore, VectorStoreFile
 
 from .decorators import log_request, parse_body, token_authenticated, tos_accepted
 from .errors import error_response
+
+
+class FileUpdateBody(TypedDict, total=False):
+    """Request body for updating a vector store file."""
+
+    attributes: dict
 
 
 @csrf_exempt
@@ -59,25 +65,35 @@ async def vector_store_files(
             .select_related("vector_store", "file_obj")
         )
 
+        # Get all remote IDs to map them
+        remote_to_local_map = {f.remote_id: f for f in files_list if f.remote_id}
+
+        # Retrieve from upstream to get accurate status
+        try:
+            remote_files_response = await client.vector_stores.files.list(
+                vector_store_id=vs_obj.remote_id
+            )
+            remote_files = (
+                remote_files_response.data if hasattr(remote_files_response, "data") else []
+            )
+        except Exception:
+            # Fall back to local data if upstream fails
+            remote_files = []
+
+        # Build response data using upstream responses with local ID mapping
+        response_files = []
+        for remote_file in remote_files:
+            local_file = remote_to_local_map.get(remote_file.id)
+            if local_file:
+                file_data = remote_file.model_dump(mode="json")
+                file_data["id"] = local_file.id
+                file_data["vector_store_id"] = vs_obj.id
+                # Map file_id to local Aqueduct file ID
+                file_data["file_id"] = local_file.file_obj.id if local_file.file_obj else None
+                response_files.append(file_data)
+
         return JsonResponse(
-            {
-                "object": "list",
-                "data": [
-                    {
-                        "id": vf.id,
-                        "object": "vector_store.file",
-                        "vector_store_id": vs_obj.id,
-                        "file_id": vf.file_obj.id if vf.file_obj else None,
-                        "status": vf.status,
-                        "usage_bytes": vf.usage_bytes,
-                        "created_at": vf.created_at,
-                        "last_error": vf.last_error,
-                    }
-                    for vf in files_list
-                ],
-                "has_more": False,
-            },
-            status=200,
+            {"object": "list", "data": response_files, "has_more": False}, status=200
         )
 
     # POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
@@ -135,30 +151,34 @@ async def vector_store_files(
     )
     await sync_to_async(vs_file_obj.save)()
 
-    # Return with Aqueduct ID
-    response_data = {
-        "id": vs_file_obj.id,
-        "object": "vector_store.file",
-        "vector_store_id": vs_obj.id,
-        "file_id": file_obj.id,
-        "status": vs_file_obj.status,
-        "usage_bytes": vs_file_obj.usage_bytes,
-        "created_at": vs_file_obj.created_at,
-        "last_error": vs_file_obj.last_error,
-    }
+    # Return upstream response with ID and vector_store_id replaced
+    response_data = remote_vs_file.model_dump(mode="json")
+    response_data["id"] = vs_file_obj.id
+    response_data["vector_store_id"] = vs_obj.id
+    # Map file_id to local Aqueduct file ID
+    response_data["file_id"] = file_obj.id
+
     return JsonResponse(response_data, status=200)
 
 
 @csrf_exempt
-@require_http_methods(["GET", "DELETE"])
+@require_http_methods(["GET", "POST", "DELETE"])
 @token_authenticated(token_auth_only=True)
 @tos_accepted
+@parse_body(model=TypeAdapter(FileUpdateBody))
 @log_request
 async def vector_store_file(
-    request: ASGIRequest, token: Token, vector_store_id: str, file_id: str, *args, **kwargs
+    request: ASGIRequest,
+    token: Token,
+    vector_store_id: str,
+    file_id: str,
+    pydantic_model: Optional[dict] = None,
+    *args,
+    **kwargs,
 ):
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id} - Retrieve file
+    POST /v1/vector_stores/{vector_store_id}/files/{file_id} - Update file attributes
     DELETE /v1/vector_stores/{vector_store_id}/files/{file_id} - Delete file
     """
     try:
@@ -210,22 +230,49 @@ async def vector_store_file(
             vs_file_obj.last_error = remote_vs_file.last_error
         await sync_to_async(vs_file_obj.save)()
 
-        # Return with Aqueduct ID
-        response_data = {
-            "id": vs_file_obj.id,
-            "object": "vector_store.file",
-            "vector_store_id": vs_obj.id,
-            "file_id": vs_file_obj.file_obj.id if vs_file_obj.file_obj else None,
-            "status": vs_file_obj.status,
-            "usage_bytes": vs_file_obj.usage_bytes,
-            "created_at": vs_file_obj.created_at,
-            "last_error": vs_file_obj.last_error,
-        }
+        # Return upstream response with ID and vector_store_id replaced
+        response_data = remote_vs_file.model_dump(mode="json")
+        response_data["id"] = vs_file_obj.id
+        response_data["vector_store_id"] = vs_obj.id
+        # Map file_id to local Aqueduct file ID
+        response_data["file_id"] = vs_file_obj.file_obj.id if vs_file_obj.file_obj else None
+
+        return JsonResponse(response_data, status=200)
+
+    elif request.method == "POST":
+        # Update file attributes
+        params = pydantic_model if pydantic_model else {}
+
+        update_kwargs = {"vector_store_id": vs_obj.remote_id, "file_id": vs_file_obj.remote_id}
+        if params.get("attributes"):
+            update_kwargs["attributes"] = params["attributes"]
+
+        if not params.get("attributes"):
+            return error_response(
+                "Missing required parameter: attributes", param="attributes", status=400
+            )
+
+        try:
+            remote_vs_file = await client.vector_stores.files.update(**update_kwargs)
+        except Exception as e:
+            return error_response(
+                f"Failed to update file attributes on upstream: {str(e)}",
+                error_type="server_error",
+                status=502,
+            )
+
+        # Return upstream response with ID and vector_store_id replaced
+        response_data = remote_vs_file.model_dump(mode="json")
+        response_data["id"] = vs_file_obj.id
+        response_data["vector_store_id"] = vs_obj.id
+        # Map file_id to local Aqueduct file ID
+        response_data["file_id"] = vs_file_obj.file_obj.id if vs_file_obj.file_obj else None
+
         return JsonResponse(response_data, status=200)
 
     # DELETE /v1/vector_stores/{vector_store_id}/files/{file_id}
     try:
-        await client.vector_stores.files.delete(
+        remote_result = await client.vector_stores.files.delete(
             vector_store_id=vs_obj.remote_id, file_id=vs_file_obj.remote_id
         )
     except Exception as e:
@@ -238,7 +285,95 @@ async def vector_store_file(
     # Delete local record
     await sync_to_async(vs_file_obj.delete)()
 
-    # Return with Aqueduct ID
-    return JsonResponse(
-        {"id": file_id, "object": "vector_store.file.deleted", "deleted": True}, status=200
-    )
+    # Return upstream response with ID replaced
+    if hasattr(remote_result, "model_dump"):
+        response_data = remote_result.model_dump(mode="json")
+    else:
+        response_data = {"deleted": True}
+    response_data["id"] = file_id
+    response_data["object"] = "vector_store.file.deleted"
+
+    return JsonResponse(response_data, status=200)
+
+
+@csrf_exempt
+@require_GET
+@token_authenticated(token_auth_only=True)
+@tos_accepted
+@log_request
+async def vector_store_file_content(
+    request: ASGIRequest, token: Token, vector_store_id: str, file_id: str, *args, **kwargs
+):
+    """
+    GET /v1/vector_stores/{vector_store_id}/files/{file_id}/content - Get file content
+    """
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Vector Store API not configured", status=503)
+
+    # Check vector store ownership
+    try:
+        if token.service_account:
+            vs_obj = await VectorStore.objects.aget(
+                id=vector_store_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            vs_obj = await VectorStore.objects.aget(id=vector_store_id, token__user=token.user)
+    except VectorStore.DoesNotExist:
+        return error_response("Vector store not found.", param="vector_store_id", status=404)
+
+    # Get the vector store file
+    try:
+        vs_file_obj = await VectorStoreFile.objects.select_related("file_obj").aget(
+            id=file_id, vector_store=vs_obj
+        )
+    except VectorStoreFile.DoesNotExist:
+        return error_response("Vector store file not found.", param="file_id", status=404)
+
+    if not vs_file_obj.remote_id:
+        return error_response(
+            "Vector store file has no remote reference.", error_type="server_error", status=500
+        )
+
+    # Get content from upstream
+    try:
+        content_response = await client.vector_stores.files.content(
+            vector_store_id=vs_obj.remote_id, file_id=vs_file_obj.remote_id
+        )
+    except Exception as e:
+        return error_response(
+            f"Failed to retrieve file content from upstream: {str(e)}",
+            error_type="server_error",
+            status=502,
+        )
+
+    # Return content directly as binary response
+    # Handle different response types from OpenAI client
+    if hasattr(content_response, "content"):
+        # It's a response object with content attribute
+        content = content_response.content
+        content_type = getattr(content_response, "content_type", "application/octet-stream")
+    elif hasattr(content_response, "read"):
+        # It's a file-like object
+        content = await content_response.read()
+        content_type = "application/octet-stream"
+    elif hasattr(content_response, "__iter__") and not isinstance(content_response, (str, bytes)):
+        # It's an async iterator (like AsyncPage), convert to bytes
+        chunks = []
+        async for chunk in content_response:
+            if isinstance(chunk, bytes):
+                chunks.append(chunk)
+            else:
+                chunks.append(chunk.encode("utf-8"))
+        content = b"".join(chunks)
+        content_type = "application/octet-stream"
+    else:
+        # Assume it's already bytes or string
+        if isinstance(content_response, str):
+            content = content_response.encode("utf-8")
+        else:
+            content = content_response
+        content_type = "application/octet-stream"
+
+    return HttpResponse(content, content_type=content_type)

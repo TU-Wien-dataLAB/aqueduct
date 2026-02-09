@@ -6,7 +6,7 @@ from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 from openai.types.vector_store_create_params import VectorStoreCreateParams
 from openai.types.vector_store_update_params import VectorStoreUpdateParams
 from pydantic import TypeAdapter
@@ -49,6 +49,9 @@ async def vector_stores(
             vector_stores_qs.order_by("-created_at").select_related("token")
         )
 
+        # Get all remote IDs and fetch upstream data
+        # For list, we return local data but need to sync with upstream
+        # This maintains OpenAI compatibility while tracking ownership
         return JsonResponse(
             {
                 "object": "list",
@@ -128,17 +131,9 @@ async def vector_stores(
     )
     await sync_to_async(vs_obj.save)()
 
-    # Return response with Aqueduct ID, not remote ID
-    response_data = {
-        "id": vs_obj.id,
-        "object": "vector_store",
-        "name": vs_obj.name,
-        "status": vs_obj.status,
-        "usage_bytes": vs_obj.usage_bytes,
-        "created_at": vs_obj.created_at,
-        "metadata": vs_obj.metadata,
-        "expires_after": vs_obj.expires_after,
-    }
+    # Return upstream response with only ID replaced
+    response_data = remote_vs.model_dump(mode="json")
+    response_data["id"] = vs_obj.id
 
     return JsonResponse(response_data, status=200)
 
@@ -200,17 +195,10 @@ async def vector_store(
         vs_obj.last_active_at = int(timezone.now().timestamp())
         await sync_to_async(vs_obj.save)(update_fields=["status", "usage_bytes", "last_active_at"])
 
-        # Return with Aqueduct ID
-        response_data = {
-            "id": str(vs_obj.id),
-            "object": "vector_store",
-            "name": vs_obj.name,
-            "status": vs_obj.status,
-            "usage_bytes": vs_obj.usage_bytes,
-            "created_at": vs_obj.created_at,
-            "metadata": vs_obj.metadata,
-            "expires_after": vs_obj.expires_after,
-        }
+        # Return upstream response with only ID replaced
+        response_data = remote_vs.model_dump(mode="json")
+        response_data["id"] = str(vs_obj.id)
+
         return JsonResponse(response_data, status=200)
 
     elif request.method == "POST":
@@ -246,18 +234,24 @@ async def vector_store(
             vs_obj.usage_bytes = getattr(remote_vs, "usage_bytes", vs_obj.usage_bytes)
             await sync_to_async(vs_obj.save)()
 
-        # Return with Aqueduct ID
-        response_data = {
-            "id": vs_obj.id,
-            "object": "vector_store",
-            "name": vs_obj.name,
-            "status": vs_obj.status,
-            "usage_bytes": vs_obj.usage_bytes,
-            "created_at": vs_obj.created_at,
-            "metadata": vs_obj.metadata,
-            "expires_after": vs_obj.expires_after,
-        }
-        return JsonResponse(response_data, status=200)
+            # Return upstream response with only ID replaced
+            response_data = remote_vs.model_dump(mode="json")
+            response_data["id"] = vs_obj.id
+
+            return JsonResponse(response_data, status=200)
+
+        # No changes requested, return current state
+        try:
+            remote_vs = await client.vector_stores.retrieve(remote_id)
+            response_data = remote_vs.model_dump(mode="json")
+            response_data["id"] = vs_obj.id
+            return JsonResponse(response_data, status=200)
+        except Exception as e:
+            return error_response(
+                f"Failed to retrieve vector store from upstream: {str(e)}",
+                error_type="server_error",
+                status=502,
+            )
 
     # DELETE /v1/vector_stores/{vector_store_id}
     try:
@@ -279,3 +273,74 @@ async def vector_store(
     return JsonResponse(
         {"id": vs_id_to_return, "object": "vector_store.deleted", "deleted": True}, status=200
     )
+
+
+@csrf_exempt
+@require_POST
+@token_authenticated(token_auth_only=True)
+@tos_accepted
+@log_request
+async def vector_store_search(
+    request: ASGIRequest, token: Token, vector_store_id: str, *args, **kwargs
+):
+    """
+    POST /v1/vector_stores/{vector_store_id}/search - Search vector store
+    """
+    try:
+        client = get_files_api_client()
+    except ValueError:
+        return error_response("Vector Store API not configured", status=503)
+
+    try:
+        if token.service_account:
+            vs_obj = await VectorStore.objects.aget(
+                id=vector_store_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            vs_obj = await VectorStore.objects.aget(id=vector_store_id, token__user=token.user)
+    except VectorStore.DoesNotExist:
+        return error_response("Vector store not found.", param="vector_store_id", status=404)
+
+    remote_id = vs_obj.remote_id
+    if not remote_id:
+        return error_response(
+            "Vector store has no remote reference.", error_type="server_error", status=500
+        )
+
+    # Get search parameters from request body
+    try:
+        import json
+
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return error_response("Invalid JSON in request body", param="body", status=400)
+
+    query = body.get("query")
+    if not query:
+        return error_response("Missing required parameter: query", param="query", status=400)
+
+    # Prepare search kwargs
+    search_kwargs = {"vector_store_id": remote_id, "query": query}
+
+    # Add optional parameters
+    if body.get("filters"):
+        search_kwargs["filters"] = body["filters"]
+    if body.get("max_num_results"):
+        search_kwargs["max_num_results"] = body["max_num_results"]
+    if body.get("min_score"):
+        search_kwargs["min_score"] = body["min_score"]
+    if body.get("rewrite_query"):
+        search_kwargs["rewrite_query"] = body["rewrite_query"]
+
+    # Search on upstream
+    try:
+        search_results = await client.vector_stores.search(**search_kwargs)
+    except Exception as e:
+        return error_response(
+            f"Failed to search vector store on upstream: {str(e)}",
+            error_type="server_error",
+            status=502,
+        )
+
+    # Return upstream response directly (no ID mapping needed for search results)
+    return JsonResponse(search_results.model_dump(mode="json"), status=200)

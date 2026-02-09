@@ -3,6 +3,7 @@ from typing import Optional, TypedDict
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -102,13 +103,7 @@ async def vector_store_files(
     if not file_id:
         return error_response("Missing required parameter: file_id", param="file_id", status=400)
 
-    # Check file limit before adding
-    max_files = getattr(settings, "MAX_VECTOR_STORE_FILES", 1000)
-    current_count = await sync_to_async(VectorStoreFile.objects.filter(vector_store=vs_obj).count)()
-    if current_count >= max_files:
-        return error_response(f"Vector store file limit reached ({max_files})", status=403)
-
-    # Lookup FileObject by Aqueduct ID
+    # Lookup FileObject by Aqueduct ID (outside transaction - no lock needed)
     try:
         if token.service_account:
             file_obj = await FileObject.objects.aget(
@@ -123,6 +118,44 @@ async def vector_store_files(
         return error_response(
             "File has no remote reference.", error_type="server_error", status=500
         )
+
+    # Check file limit BEFORE creating upstream file to prevent orphaned upstream files
+    # Use transaction with select_for_update to prevent race conditions on file limit
+    # Note: select_for_update is a no-op on SQLite, so race conditions may still occur
+    # in development/SQLite deployments. Production should use PostgreSQL.
+    max_files = getattr(settings, "MAX_VECTOR_STORE_FILES", 1000)
+
+    @sync_to_async
+    def check_limit_and_lock() -> tuple[VectorStore | None, bool]:
+        with transaction.atomic():
+            # Re-fetch vector store with lock to ensure exclusive access
+            try:
+                if token.service_account:
+                    vs_obj_locked = VectorStore.objects.select_for_update().get(
+                        id=vector_store_id, token__service_account__team=token.service_account.team
+                    )
+                else:
+                    vs_obj_locked = VectorStore.objects.select_for_update().get(
+                        id=vector_store_id, token__user=token.user
+                    )
+            except VectorStore.DoesNotExist:
+                return None, False  # Vector store not found
+
+            # Check file limit inside transaction with lock held
+            current_count = VectorStoreFile.objects.filter(vector_store=vs_obj_locked).count()
+            if current_count >= max_files:
+                return vs_obj_locked, False  # Limit reached
+
+            return vs_obj_locked, True  # Limit OK, proceed
+
+    vs_obj_locked, limit_ok = await check_limit_and_lock()
+
+    if vs_obj_locked is None:
+        # Vector store not found error
+        return error_response("Vector store not found.", param="vector_store_id", status=404)
+
+    if not limit_ok:
+        return error_response(f"Vector store file limit reached ({max_files})", status=403)
 
     # Add file to vector store on upstream using remote file ID
     try:
@@ -139,22 +172,62 @@ async def vector_store_files(
             status=502,
         )
 
-    # Create local record
-    now = timezone.now()
-    vs_file_obj = VectorStoreFile(
-        vector_store=vs_obj,
-        file_obj=file_obj,
-        remote_id=remote_vs_file.id,
-        status=remote_vs_file.status or "in_progress",
-        usage_bytes=getattr(remote_vs_file, "usage_bytes", 0),
-        created_at=int(now.timestamp()),
-    )
-    await sync_to_async(vs_file_obj.save)()
+    # Create local record - wrap in try/except to clean up upstream file on any failure
+    try:
+
+        @sync_to_async
+        def create_local_record():
+            with transaction.atomic():
+                # Re-fetch vector store with lock to ensure consistency
+                try:
+                    if token.service_account:
+                        vs_obj_locked = VectorStore.objects.select_for_update().get(
+                            id=vector_store_id,
+                            token__service_account__team=token.service_account.team,
+                        )
+                    else:
+                        vs_obj_locked = VectorStore.objects.select_for_update().get(
+                            id=vector_store_id, token__user=token.user
+                        )
+                except VectorStore.DoesNotExist:
+                    raise VectorStore.DoesNotExist(
+                        "Vector store not found during local record creation"
+                    )
+
+                # Double-check limit (defense in depth)
+                current_count = VectorStoreFile.objects.filter(vector_store=vs_obj_locked).count()
+                if current_count >= max_files:
+                    raise Exception("LIMIT_REACHED")
+
+                # Create local record
+                now = timezone.now()
+                vs_file_obj = VectorStoreFile(
+                    vector_store=vs_obj_locked,
+                    file_obj=file_obj,
+                    remote_id=remote_vs_file.id,
+                    status=remote_vs_file.status or "in_progress",
+                    usage_bytes=getattr(remote_vs_file, "usage_bytes", 0),
+                    created_at=int(now.timestamp()),
+                )
+                vs_file_obj.save()
+                return vs_obj_locked, vs_file_obj
+
+        vs_obj_locked, vs_file_obj = await create_local_record()
+
+    except Exception:
+        # Clean up upstream file on any failure to prevent orphaned files
+        try:
+            await client.vector_stores.files.delete(
+                vector_store_id=vs_obj.remote_id, file_id=remote_vs_file.id
+            )
+        except Exception:
+            pass  # Best effort cleanup - file may be orphaned
+        raise
 
     # Return upstream response with ID and vector_store_id replaced
     response_data = remote_vs_file.model_dump(mode="json")
     response_data["id"] = vs_file_obj.id
-    response_data["vector_store_id"] = vs_obj.id
+    response_data["vector_store_id"] = vs_obj_locked.id
     # Map file_id to local Aqueduct file ID
     response_data["file_id"] = file_obj.id
 

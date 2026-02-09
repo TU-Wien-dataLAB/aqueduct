@@ -45,4 +45,8 @@ urlpatterns = [
     path("files/", views.UserFilesView.as_view(), name="files"),
     path("batches/", views.UserBatchesView.as_view(), name="batches"),
     path("mcp-servers/", views.MCPServersView.as_view(), name="mcp_servers"),
+    path("vector-stores/", views.UserVectorStoresView.as_view(), name="vector_stores"),
+    path(
+        "vector-stores/<str:id>/", views.VectorStoreDetailView.as_view(), name="vector_store_detail"
+    ),
 ]

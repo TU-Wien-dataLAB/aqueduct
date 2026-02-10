@@ -36,6 +36,10 @@ dev = [
     "ruff>=0.13.3",
     "tbump>=6.11.0",
 ]
+dev-locust = [
+    "fastapi>=0.115.12",
+    "locust>=2.43.2",
+]
 
 [tool.ruff]
 line-length = 100

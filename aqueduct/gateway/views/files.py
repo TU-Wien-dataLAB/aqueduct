@@ -28,7 +28,7 @@ from .errors import error_response
 
 class FilesCreateParams(BaseModel):
     file: bytes
-    purpose: Literal["batch", "user_data"]
+    purpose: Literal["assistants", "batch", "user_data"]
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 

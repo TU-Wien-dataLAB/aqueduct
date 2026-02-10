@@ -121,8 +121,6 @@ async def vector_store_files(
 
     # Check file limit BEFORE creating upstream file to prevent orphaned upstream files
     # Use transaction with select_for_update to prevent race conditions on file limit
-    # Note: select_for_update is a no-op on SQLite, so race conditions may still occur
-    # in development/SQLite deployments. Production should use PostgreSQL.
     max_files = getattr(settings, "MAX_VECTOR_STORE_FILES", 1000)
 
     @sync_to_async

@@ -122,8 +122,8 @@ async def _should_stream(request: Request) -> bool:
 
 
 class MockAPIServer:
-    def __init__(self, port: int = None, log_level: str = "error") -> None:
-        self.host: str = "localhost"
+    def __init__(self, host: str = "0.0.0.0", port: int = None, log_level: str = "error") -> None:
+        self.host: str = host
         self.port: int = port or get_available_port()
         self.base_url: str = f"http://{self.host}:{self.port}"
         self.process: Optional[subprocess.Popen] = None
@@ -227,6 +227,12 @@ def main():
     """Run the mock uvicorn server as a standalone script."""
     parser = argparse.ArgumentParser(description="Run a mock API server")
     parser.add_argument(
+        "--host",
+        type=str,
+        default="0.0.0.0",
+        help="Host to bind the server to (use '0.0.0.0' for Docker, 'localhost' when running Django tests)",
+    )
+    parser.add_argument(
         "--port",
         type=int,
         default=None,
@@ -236,7 +242,7 @@ def main():
     # TODO: add option to add delays to responses
     # parser.add_argument("--delays", action="store_true", help="Add delays to responses")
     args = parser.parse_args()
-    mock_server = MockAPIServer(port=args.port, log_level=args.log_level)
+    mock_server = MockAPIServer(host=args.host, port=args.port, log_level=args.log_level)
     try:
         mock_server.start()
         print(f"Server running on {mock_server.base_url}. Press Ctrl+C to stop.")

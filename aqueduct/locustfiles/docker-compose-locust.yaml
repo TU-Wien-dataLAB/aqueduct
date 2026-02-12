@@ -1,0 +1,86 @@
+services:
+
+  mock_api:
+    build:
+      context: ../..
+      dockerfile: ./aqueduct/locustfiles/Dockerfile
+    container_name: mock_api
+    command:  |    # There's something wrong with the paths. `aqueduct/locustfiles` is copied inside `./locustfiles`. 
+      sh -c "ls -alh . && ls -alh ../ && ls -alh ./locustfiles/aqueduct"
+#    command: python -m aqueduct.gateway.tests.utils.mock_server --port 45999 --log-level debug
+#    command: python gateway/tests/utils/mock_server.py --port 45999 --log-level debug
+    volumes:
+      - ./aqueduct/locustfiles/locust_router_config.yaml:/app/locust_router_config.yaml
+#      - ./aqueduct/:/app/aqueduct/
+    ports:
+      - "45999:45999"
+    env_file:
+      - .locust.env
+    depends_on:
+      locust_web:
+        condition: service_started
+    tty: true  # for debugging
+    stdin_open: true  # for debugging
+
+
+  locust_migrate:
+    build:
+      context: ../..
+      dockerfile: ./aqueduct/locustfiles/Dockerfile
+    container_name: locust_django_migrate
+    command: python manage.py migrate
+    env_file:
+      - .locust.env
+    depends_on:
+      - locust_db
+
+  locust_web:
+    build:
+      context: ../..
+#      dockerfile: ./Dockerfile
+    container_name: locust_django_app
+    command: |    # Using `runserver` for debugging; static files not really needed, but Django shows a warning, so...
+      sh -c "python manage.py collectstatic --no-input && 
+            python manage.py loaddata ./locustfiles/locust_fixture.json && 
+            python manage.py runserver 0.0.0.0:8000"
+#    command: |
+#      sh -c "python manage.py collectstatic --no-input && python manage.py loaddata locust_fixture.json && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
+    volumes:
+      - ./aqueduct/locustfiles/locust_router_config.yaml:/app/locust_router_config.yaml
+      - ./aqueduct/locustfiles/locust_fixture.json:/app/locust_fixture.json
+#      - ./test-mcp.json:/app/test-mcp.json  # TODO: for now there are no mcp tests
+#      - ./aqueduct/:/app/aqueduct/
+    ports:
+      - "8000:8000"
+    env_file:
+      - .locust.env
+#    environment:
+#      - OPENAI_API_KEY=fake_openai_key
+#      - OPENAI_BASE_URL=mock_api:45999
+    depends_on:
+      locust_redis:
+        condition: service_started
+      locust_migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys, httpx; httpx.get('http://localhost:8000/health', timeout=4).raise_for_status()"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 2s
+    tty: true  # for debugging
+    stdin_open: true  # for debugging
+
+  locust_redis:
+    image: redis:8.2.1
+
+  locust_db:
+    image: postgres:15
+    container_name: locust_postgres_db
+    volumes:
+      - locust_postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - .locust.env
+
+volumes:
+  locust_postgres_data:

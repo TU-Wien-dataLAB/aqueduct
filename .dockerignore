@@ -6,6 +6,8 @@ uploads
 venv
 .idea
 .vscode
+.ruff_cache
+.continue
 
 .git
 .github

@@ -16,7 +16,7 @@ COPY ./pyproject.toml /app/pyproject.toml
 
 # Install Python dependencies
 RUN uv pip install --prefix=/install ".[postgresql]"
-RUN uv pip install --prefix=/install . --group=dev-locust
+RUN uv pip install --prefix=/install --group=dev-locust
 
 # Final image with dependencies for running locust tests
 FROM base AS final
@@ -28,7 +28,7 @@ COPY --from=builder /install /usr/local
 RUN groupadd -g 1000 mockapi && useradd -u 1000 -g 1000 -r mockapi
 
 # Copy app code, set ownership
-COPY . /app/
+COPY ./aqueduct /app/aqueduct
 RUN chown -R mockapi:mockapi /app
 
 USER mockapi

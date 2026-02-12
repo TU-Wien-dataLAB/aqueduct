@@ -1,5 +1,6 @@
 import argparse
 import logging
+import logging.config
 import os
 import re
 import subprocess
@@ -28,14 +29,40 @@ from mock_api.mock_configs import (
     special_configs,
 )
 
-app = FastAPI(debug=True)
+# Since the mock server is running as a standalone application and not within the Django app,
+# we need to separately configure logging for it.
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler", "formatter": "standard",
+        }
+    },
+    "loggers": {
+        "mock_api": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        }
+    },
+}  # fmt: skip
+logging.config.dictConfig(LOGGING_CONFIG)
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("mock_api")
+
+
+app = FastAPI(debug=True)
 
 
 @app.get("/health")
 async def health_check():
-    print("health")
+    logger.debug("health check successful")
     return JSONResponse({"status": "ok"})
 
 
@@ -51,6 +78,7 @@ async def configure_endpoint(
     response from `default_{method}_configs` is not what one needs.
     """
     special_configs[path] = config
+    logger.debug("Configured a special mock response for %s", path)
     return {"message": f"Configured a special mock response for {path}"}
 
 
@@ -63,6 +91,7 @@ async def reset_endpoint(path: str):
     finishes, to prevent tests from interfering with one another.
     """
     del special_configs[path]
+    logger.debug("Reset the special mock response for %s", path)
     return {"message": f"Reset the special mock response for {path}"}
 
 
@@ -103,7 +132,7 @@ async def mock_endpoint(path: str, request: Request):
             status_code=HTTP_404_NOT_FOUND, detail=f"No mock configured for this endpoint: {path}"
         )
 
-    print(f"Got a request to {path}")
+    logger.debug("Got a request to %s", path)
     if isinstance(config, MockStreamingConfig):
         return StreamingResponse(
             content=config.response_data, status_code=config.status_code, headers=config.headers
@@ -133,10 +162,11 @@ class MockAPIServer:
         self.base_url: str = f"http://{self.host}:{self.port}"
         self.process: Optional[subprocess.Popen] = None
         self.log_level: str = log_level
+        self.logger = logging.getLogger("mock_api")
 
     def start(self) -> None:
         """Start the uvicorn mock server in a subprocess"""
-        print(f"\nStarting a mock uvicorn server on port {self.port}...")
+        self.logger.info("Starting a mock uvicorn server on port %s", self.port)
         cmd = [
             "uvicorn",
             "mock_api.mock_server:app",
@@ -154,7 +184,7 @@ class MockAPIServer:
         env["PYTHONPATH"] = os.pathsep.join(sys.path)
         self.process = subprocess.Popen(cmd, text=True, env=env)
 
-        print(f"Waiting for the mock server to accept connections on port {self.port}...")
+        self.logger.debug("Waiting for the mock server to accept connections on port %s", self.port)
         start_time = time.time()
         timeout = 20
 
@@ -167,6 +197,9 @@ class MockAPIServer:
                 if time.time() - start_time < timeout:
                     time.sleep(0.5)
                 else:
+                    self.logger.error(
+                        "Mock server failed to start within %s s. Last error: %s", timeout, err
+                    )
                     raise RuntimeError(
                         f"Mock server failed to start within {timeout} s. Last error: {err}"
                     )
@@ -179,7 +212,7 @@ class MockAPIServer:
         except subprocess.TimeoutExpired:
             self.process.kill()
             self.process.communicate()
-            print("Process did not terminate gracefully. Force killed.")
+            self.logger.warning("Process did not terminate gracefully. Force killed.")
         self.process = None
 
     def configure_endpoint(self, path: str, config: MockConfig) -> None:
@@ -212,44 +245,6 @@ class MockAPIServer:
 
         if config is not None:
             self.configure_endpoint(url, config)
-
-        # TODO: make it more robust? Now it relies on the fact that AsyncOpenAI client
-        #  tries to get the url from the env; maybe mock get_openai_client? or Router? like in `get_mock_router`?
-        #  Deployment has litellm_params, inluding `api_key` and `api_base`. Deployment is created based on
-        #  the router config (?) - read a config file with 'fake' api key and base (=url)?
-        """
-        Example Usage:
-        ```python
-        from litellm import Router
-        model_list = [
-        {
-            "model_name": "azure-gpt-3.5-turbo", # model alias
-            "litellm_params": { # params for litellm completion/embedding call
-                "model": "azure/<your-deployment-name-1>",
-                "api_key": <your-api-key>,
-                "api_version": <your-api-version>,
-                "api_base": <your-api-base>
-            },
-        },
-        {
-            "model_name": "azure-gpt-3.5-turbo", # model alias
-            "litellm_params": { # params for litellm completion/embedding call
-                "model": "azure/<your-deployment-name-2>",
-                "api_key": <your-api-key>,
-                "api_version": <your-api-version>,
-                "api_base": <your-api-base>
-            },
-        },
-        {
-            "model_name": "openai-gpt-3.5-turbo", # model alias
-            "litellm_params": { # params for litellm completion/embedding call
-                "model": "gpt-3.5-turbo",
-                "api_key": <your-api-key>,
-            },
-        ]
-
-        router = Router(model_list=model_list, fallbacks=[{"azure-gpt-3.5-turbo": "openai-gpt-3.5-turbo"}])
-        """
 
         with patch.dict(
             "os.environ", {"OPENAI_BASE_URL": self.base_url, "OPENAI_API_KEY": "fake_openai_key"}
@@ -286,14 +281,14 @@ def main():
     mock_server = MockAPIServer(host=args.host, port=args.port, log_level=args.log_level)
     try:
         mock_server.start()
-        print(f"Server running on {mock_server.base_url}. Press Ctrl+C to stop.")
+        logger.info("Mock server running on %s. Press Ctrl+C to stop.", mock_server.base_url)
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         pass  # Do not print out the traceback here, just exit cleanly
     finally:
         mock_server.stop()
-        print("Server stopped.")
+        logger.info("Mock server stopped.")
 
 
 if __name__ == "__main__":

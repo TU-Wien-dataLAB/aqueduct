@@ -1,9 +1,13 @@
 import atexit
+import logging
 from typing import Optional
 
 from django.test.runner import DiscoverRunner
 
 from mock_api.mock_server import MockAPIServer
+
+logger = logging.getLogger("aqueduct")
+
 
 # Tests need access to the global mock server instance
 _shared_mock_server: Optional[MockAPIServer] = None
@@ -32,9 +36,9 @@ class MockServerTestRunner(DiscoverRunner):
         _shared_mock_server = MockAPIServer(host="localhost")
         try:
             _shared_mock_server.start()
-            print(f"✓ Mock server started on {_shared_mock_server.base_url}.")
+            logger.info(f"✓ Mock server started on {_shared_mock_server.base_url}.")
         except RuntimeError as err:
-            print(f"✗ Failed to start mock server: {err}")
+            logger.error(f"✗ Failed to start mock server: {err}")
             raise
 
         # Ensure server is stopped even if tests crash
@@ -49,6 +53,6 @@ class MockServerTestRunner(DiscoverRunner):
         """Stop the mock server if it's running."""
         global _shared_mock_server
         if _shared_mock_server is not None and _shared_mock_server.process:
-            print("\nStopping mock server...")
+            logger.info("\nStopping mock server...")
             _shared_mock_server.stop()
             _shared_mock_server = None

@@ -3,10 +3,7 @@ from locust import HttpUser, between, task
 
 class GatewayUser(HttpUser):
     wait_time = between(1, 3)
-    headers = {
-        "Authorization": "Bearer sk-abc123",  # TODO: test that the token works
-        "Content-Type": "application/json",
-    }
+    headers = {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
     host = "http://localhost:8000/"
 
     @task

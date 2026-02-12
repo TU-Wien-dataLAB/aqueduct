@@ -53,7 +53,7 @@
                             </td>
                             <td>{{ file.filename }}</td>
                             <td>{{ file.purpose }}</td>
-                            <td>{{ file.bytes }}</td>
+                            <td>{{ file.bytes|filesizeformat }}</td>
                             <td>{{ file.created_dt|date:"Y-m-d H:i" }}</td>
                             <td class="flex-shrink-0">
                                 <button type="button"

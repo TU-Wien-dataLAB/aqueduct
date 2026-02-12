@@ -50,7 +50,7 @@ docstring-code-format = true
 skip-magic-trailing-comma = true
 
 [tool.ruff.lint.isort]
-known-first-party = ["aqueduct", "gateway", "management"]
+known-first-party = ["aqueduct", "gateway", "management", "mock_api"]
 
 [tool.ruff.lint.per-file-ignores]
 # Ignore `F401` (imported but unused) in all `__init__.py` files

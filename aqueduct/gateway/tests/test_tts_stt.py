@@ -7,8 +7,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
 from gateway.tests.utils.base import INTEGRATION_TEST_BACKEND, GatewayTTSSTTestCase
-from gateway.tests.utils.mock_configs import MockPlainTextConfig
 from management.models import Request
+from mock_api.mock_configs import MockPlainTextConfig
 
 
 class SpeechEndpointTest(GatewayTTSSTTestCase):

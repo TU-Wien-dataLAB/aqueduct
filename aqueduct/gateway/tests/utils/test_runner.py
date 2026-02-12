@@ -3,7 +3,7 @@ from typing import Optional
 
 from django.test.runner import DiscoverRunner
 
-from gateway.tests.utils.mock_server import MockAPIServer
+from mock_api.mock_server import MockAPIServer
 
 # Tests need access to the global mock server instance
 _shared_mock_server: Optional[MockAPIServer] = None

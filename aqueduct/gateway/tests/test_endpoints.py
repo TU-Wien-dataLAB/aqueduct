@@ -29,8 +29,8 @@ from gateway.tests.utils.base import (
     ROUTER_CONFIG,
     GatewayIntegrationTestCase,
 )
-from gateway.tests.utils.mock_configs import MockConfig, MockStreamingConfig
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
+from mock_api.mock_configs import MockConfig, MockStreamingConfig
 
 User = get_user_model()
 

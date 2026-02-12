@@ -5,8 +5,8 @@ from django.urls import reverse
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from gateway.tests.utils.mock_configs import MockConfig
 from management.models import Request, Usage
+from mock_api.mock_configs import MockConfig
 
 
 class ImageGenerationEndpointTest(GatewayIntegrationTestCase):

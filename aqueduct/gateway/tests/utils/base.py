@@ -22,9 +22,9 @@ from litellm.types.utils import (
 from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers
-from gateway.tests.utils.mock_server import MockAPIServer
 from gateway.tests.utils.test_runner import get_shared_mock_server
 from management.models import Org, Token, UserProfile
+from mock_api.mock_server import MockAPIServer
 
 INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
     "INTEGRATION_TEST_BACKEND", "openai"

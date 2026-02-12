@@ -15,7 +15,7 @@ from django.test import override_settings
 from mcp import ClientSession
 from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_client
 
-from gateway.tests.utils.helpers import get_available_port
+from mock_api.helpers import get_available_port
 
 MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {

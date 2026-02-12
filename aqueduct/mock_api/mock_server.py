@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import re
 import subprocess
@@ -15,8 +16,8 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from starlette.requests import Request
 from starlette.status import HTTP_404_NOT_FOUND
 
-from gateway.tests.utils.helpers import get_available_port
-from gateway.tests.utils.mock_configs import (
+from mock_api.helpers import get_available_port
+from mock_api.mock_configs import (
     MockConfig,
     MockPlainTextConfig,
     MockStreamingConfig,
@@ -29,9 +30,12 @@ from gateway.tests.utils.mock_configs import (
 
 app = FastAPI(debug=True)
 
+logger = logging.getLogger(__name__)
+
 
 @app.get("/health")
 async def health_check():
+    print("health")
     return JSONResponse({"status": "ok"})
 
 
@@ -99,6 +103,7 @@ async def mock_endpoint(path: str, request: Request):
             status_code=HTTP_404_NOT_FOUND, detail=f"No mock configured for this endpoint: {path}"
         )
 
+    print(f"Got a request to {path}")
     if isinstance(config, MockStreamingConfig):
         return StreamingResponse(
             content=config.response_data, status_code=config.status_code, headers=config.headers
@@ -134,7 +139,7 @@ class MockAPIServer:
         print(f"\nStarting a mock uvicorn server on port {self.port}...")
         cmd = [
             "uvicorn",
-            "gateway.tests.utils.mock_server:app",
+            "mock_api.mock_server:app",
             "--host",
             self.host,
             "--port",
@@ -143,7 +148,7 @@ class MockAPIServer:
             self.log_level,
         ]
 
-        # Set PYTHONPATH to include current directory so uvicorn can import the gateway module
+        # Set PYTHONPATH to include current directory so uvicorn can import the mock_api module
         # (necessary for the github pipeline)
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(sys.path)
@@ -210,6 +215,42 @@ class MockAPIServer:
 
         # TODO: make it more robust? Now it relies on the fact that AsyncOpenAI client
         #  tries to get the url from the env; maybe mock get_openai_client? or Router? like in `get_mock_router`?
+        #  Deployment has litellm_params, inluding `api_key` and `api_base`. Deployment is created based on
+        #  the router config (?) - read a config file with 'fake' api key and base (=url)?
+        """
+        Example Usage:
+        ```python
+        from litellm import Router
+        model_list = [
+        {
+            "model_name": "azure-gpt-3.5-turbo", # model alias
+            "litellm_params": { # params for litellm completion/embedding call
+                "model": "azure/<your-deployment-name-1>",
+                "api_key": <your-api-key>,
+                "api_version": <your-api-version>,
+                "api_base": <your-api-base>
+            },
+        },
+        {
+            "model_name": "azure-gpt-3.5-turbo", # model alias
+            "litellm_params": { # params for litellm completion/embedding call
+                "model": "azure/<your-deployment-name-2>",
+                "api_key": <your-api-key>,
+                "api_version": <your-api-version>,
+                "api_base": <your-api-base>
+            },
+        },
+        {
+            "model_name": "openai-gpt-3.5-turbo", # model alias
+            "litellm_params": { # params for litellm completion/embedding call
+                "model": "gpt-3.5-turbo",
+                "api_key": <your-api-key>,
+            },
+        ]
+
+        router = Router(model_list=model_list, fallbacks=[{"azure-gpt-3.5-turbo": "openai-gpt-3.5-turbo"}])
+        """
+
         with patch.dict(
             "os.environ", {"OPENAI_BASE_URL": self.base_url, "OPENAI_API_KEY": "fake_openai_key"}
         ):

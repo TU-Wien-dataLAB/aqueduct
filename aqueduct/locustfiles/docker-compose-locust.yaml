@@ -5,13 +5,9 @@ services:
       context: ../..
       dockerfile: ./aqueduct/locustfiles/Dockerfile
     container_name: mock_api
-    command:  |    # There's something wrong with the paths. `aqueduct/locustfiles` is copied inside `./locustfiles`. 
-      sh -c "ls -alh . && ls -alh ../ && ls -alh ./locustfiles/aqueduct"
-#    command: python -m aqueduct.gateway.tests.utils.mock_server --port 45999 --log-level debug
-#    command: python gateway/tests/utils/mock_server.py --port 45999 --log-level debug
-    volumes:
-      - ./aqueduct/locustfiles/locust_router_config.yaml:/app/locust_router_config.yaml
-#      - ./aqueduct/:/app/aqueduct/
+    command: python -m mock_api.mock_server --port 45999 --log-level debug
+#    volumes:
+#      - ./locust_router_config.yaml:/app/aqueduct/locust_router_config.yaml
     ports:
       - "45999:45999"
     env_file:
@@ -22,8 +18,7 @@ services:
     tty: true  # for debugging
     stdin_open: true  # for debugging
 
-
-  locust_migrate:
+  locust_migrate:  # Comment out to speed up restarting the services
     build:
       context: ../..
       dockerfile: ./aqueduct/locustfiles/Dockerfile
@@ -37,26 +32,17 @@ services:
   locust_web:
     build:
       context: ../..
-#      dockerfile: ./Dockerfile
     container_name: locust_django_app
     command: |    # Using `runserver` for debugging; static files not really needed, but Django shows a warning, so...
-      sh -c "python manage.py collectstatic --no-input && 
-            python manage.py loaddata ./locustfiles/locust_fixture.json && 
+      sh -c "python manage.py collectstatic --no-input &&
+            python manage.py loaddata locustfiles/locust_fixture.json &&
             python manage.py runserver 0.0.0.0:8000"
 #    command: |
 #      sh -c "python manage.py collectstatic --no-input && python manage.py loaddata locust_fixture.json && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
-    volumes:
-      - ./aqueduct/locustfiles/locust_router_config.yaml:/app/locust_router_config.yaml
-      - ./aqueduct/locustfiles/locust_fixture.json:/app/locust_fixture.json
-#      - ./test-mcp.json:/app/test-mcp.json  # TODO: for now there are no mcp tests
-#      - ./aqueduct/:/app/aqueduct/
     ports:
       - "8000:8000"
     env_file:
       - .locust.env
-#    environment:
-#      - OPENAI_API_KEY=fake_openai_key
-#      - OPENAI_BASE_URL=mock_api:45999
     depends_on:
       locust_redis:
         condition: service_started
@@ -72,7 +58,8 @@ services:
     stdin_open: true  # for debugging
 
   locust_redis:
-    image: redis:8.2.1
+    image: redis:8.6.0
+    container_name: locust_redis
 
   locust_db:
     image: postgres:15

@@ -9,12 +9,6 @@ class GatewayUser(HttpUser):
     }
     host = "http://localhost:8000/"
 
-    # def on_start(self) -> None:
-    #     # TODO: this should be loaded in the Django app - maybe in the docker-compose setup?
-    #     #  It wouldn't work here, because locust runs outside of the Django context.
-    #     # management.call_command("loaddata", "locust_fixture.json")
-    #     ...
-
     @task
     def chat_completions(self):
         _ = self.client.post(

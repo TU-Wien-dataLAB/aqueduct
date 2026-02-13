@@ -1,7 +1,9 @@
 import argparse
+import asyncio
 import logging
 import logging.config
 import os
+import random
 import re
 import subprocess
 import sys
@@ -14,7 +16,9 @@ from unittest.mock import patch
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
+from starlette.responses import Response
 from starlette.status import HTTP_404_NOT_FOUND
 
 from mock_api.helpers import get_available_port
@@ -57,7 +61,25 @@ logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger("mock_api")
 
 
+delays_enabled = os.getenv("MOCK_API_DELAYS", "false").lower() == "true"
+
+
+class RandomDelayMiddleware(BaseHTTPMiddleware):
+    """A middleware to add random delays to responses, mimicking API latency."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        # No need to add delays for health endpoint
+        if request.url.path != "/health" and delays_enabled:
+            delay = 0.1 + (0.9 * random.random())
+            logger.debug("Adding %.2fs delay to request", delay)
+            await asyncio.sleep(delay)
+
+        response = await call_next(request)
+        return response
+
+
 app = FastAPI(debug=True)
+app.add_middleware(RandomDelayMiddleware)
 
 
 @app.get("/health")
@@ -156,10 +178,13 @@ async def _should_stream(request: Request) -> bool:
 
 
 class MockAPIServer:
-    def __init__(self, host: str = "0.0.0.0", port: int = None, log_level: str = "error") -> None:
+    def __init__(
+        self, host: str = "0.0.0.0", port: int = None, delays: bool = True, log_level: str = "error"
+    ) -> None:
         self.host: str = host
         self.port: int = port or get_available_port()
         self.base_url: str = f"http://{self.host}:{self.port}"
+        self.delays: bool = delays
         self.process: Optional[subprocess.Popen] = None
         self.log_level: str = log_level
         self.logger = logging.getLogger("mock_api")
@@ -182,6 +207,7 @@ class MockAPIServer:
         # (necessary for the github pipeline)
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(sys.path)
+        env["MOCK_API_DELAYS"] = "true" if self.delays else "false"
         self.process = subprocess.Popen(cmd, text=True, env=env)
 
         self.logger.debug("Waiting for the mock server to accept connections on port %s", self.port)
@@ -274,11 +300,12 @@ def main():
         default=None,
         help="Port to run the server on. If not provided, a random unused port is chosen",
     )
+    parser.add_argument("--delays", action="store_true", help="Add delays to responses")
     parser.add_argument("--log-level", type=str, default="error", help="Log level for uvicorn")
-    # TODO: add option to add delays to responses
-    # parser.add_argument("--delays", action="store_true", help="Add delays to responses")
     args = parser.parse_args()
-    mock_server = MockAPIServer(host=args.host, port=args.port, log_level=args.log_level)
+    mock_server = MockAPIServer(
+        host=args.host, port=args.port, delays=args.delays, log_level=args.log_level
+    )
     try:
         mock_server.start()
         logger.info("Mock server running on %s. Press Ctrl+C to stop.", mock_server.base_url)

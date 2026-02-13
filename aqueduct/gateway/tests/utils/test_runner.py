@@ -33,7 +33,7 @@ class MockServerTestRunner(DiscoverRunner):
 
         # Start the mock server once for the entire test suite
         global _shared_mock_server
-        _shared_mock_server = MockAPIServer(host="localhost")
+        _shared_mock_server = MockAPIServer(host="localhost", delays=False)
         try:
             _shared_mock_server.start()
             logger.info(f"✓ Mock server started on {_shared_mock_server.base_url}.")

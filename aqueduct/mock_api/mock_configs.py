@@ -1,8 +1,8 @@
 import json
-from typing import Any, Dict
+from typing import Any
 
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse, Usage
-from openai.types import Image, ImagesResponse
+from openai.types import Batch, Embedding, Image, ImagesResponse
 from openai.types.audio import Transcription
 from openai.types.audio.transcription import UsageDuration
 from openai.types.images_response import Usage as ImageUsage
@@ -31,18 +31,22 @@ from pydantic import BaseModel
 
 class MockConfig(BaseModel):
     status_code: int = 200
-    response_data: Dict[str, Any] | None = {}
-    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    response_data: dict[str, Any] | None = {}
+    headers: dict[str, str] = {"Content-Type": "application/json"}
 
 
 class MockStreamingConfig(MockConfig):
     response_data: list[bytes] = []
-    headers: Dict[str, str] = {"Content-Type": "text/event-stream"}
+    headers: dict[str, str] = {"Content-Type": "text/event-stream"}
 
 
 class MockPlainTextConfig(MockConfig):
     response_data: str = ""
-    headers: Dict[str, str] = {"Content-Type": "text/plain; charset=utf-8"}
+    headers: dict[str, str] = {"Content-Type": "text/plain; charset=utf-8"}
+
+
+def _convert_to_stream_data(data: list[BaseModel]) -> list[bytes]:
+    return [b"data: " + json.dumps(item).encode() + b"\n\n" for item in data]
 
 
 _response_basic_data = {
@@ -61,9 +65,7 @@ _response_basic_data = {
 
 default_post_configs = {
     # Note: audio/speech is streaming by default - it cannot be sent as JSON!
-    "audio/speech": MockStreamingConfig(
-        response_data=[b"mock", b"audio", b"data"]
-    ),  # TODO: use a model
+    "audio/speech": MockStreamingConfig(response_data=[b"mock", b"audio", b"data"]),
     "audio/transcriptions": MockConfig(
         response_data=Transcription(
             text="This is a mock transcription", usage=UsageDuration(type="duration", seconds=60)
@@ -71,26 +73,25 @@ default_post_configs = {
     ),
     # Batches are already mocked with a mock_router; TODO: check the response data
     "batches": MockConfig(
-        response_data={  # TODO: use a model?
-            "id": "batch_123456789",
-            "object": "batch",
-            "endpoint": "/v1/chat/completions",
-            "errors": None,
-            "input_file_id": "file-123456789",
-            "completion_window": "24h",
-            "status": "validating",
-            "created_at": 1694268190,
-            "in_progress_at": None,
-            "expires_at": 1694354590,
-            "finalizing_at": None,
-            "completed_at": None,
-            "failed_at": None,
-            "cancelling_at": None,
-            "cancelled_at": None,
-            "error_file_id": None,
-            "results_file_id": None,
-            "metadata": {"custom_id": "my-batch"},
-        }
+        response_data=Batch(
+            cancelled_at=None,
+            cancelling_at=None,
+            completed_at=None,
+            completion_window="24h",
+            created_at=1694268190,
+            endpoint="/v1/chat/completions",
+            error_file_id=None,
+            errors=None,
+            expires_at=1694354590,
+            failed_at=None,
+            finalizing_at=None,
+            id="batch_123456789",
+            in_progress_at=None,
+            input_file_id="file-123456789",
+            metadata={"custom_id": "my-batch"},
+            object="batch",
+            status="validating",
+        ).model_dump()
     ),
     # TODO: check this!
     "completions": MockConfig(
@@ -107,7 +108,7 @@ default_post_configs = {
                     "finish_reason": "stop",
                 }
             ],
-            usage={"prompt_tokens": 10, "completion_tokens": 7, "total_tokens": 17},
+            usage=Usage(prompt_tokens=10, completion_tokens=7, total_tokens=17),
         ).model_dump()
     ),
     "chat/completions": MockConfig(
@@ -144,7 +145,7 @@ default_post_configs = {
         response_data=EmbeddingResponse(
             object="list",
             data=[
-                {"object": "embedding", "embedding": [0.1234, -0.5678, 0.9012, -0.3456], "index": 0}
+                Embedding(object="embedding", embedding=[0.1234, -0.5678, 0.9012, -0.3456], index=0)
             ],
             model="text-embedding-ada-002",
             usage=Usage(prompt_tokens=8, total_tokens=8),
@@ -198,15 +199,63 @@ default_post_configs = {
     ),
 }
 
-# TODO: use openai/lllm models, dump them and encode
 _chat_completion_stream_data = [
-    b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Beneath the sky so vast and blue,  \\n","role":"assistant"}}],"stream_options":{"include_usage":true}}\n\n',
-    b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Whispers of dreams drift softly through,  \\n"}}],"stream_options":{"include_usage":true}}\n\n',
-    b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"A gentle breeze, a song so sweet,  \\n"}}],"stream_options":{"include_usage":true}}\n\n',
-    b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Moments of magic, softly complete."}}],"stream_options":{"include_usage":true}}\n\n',
+    ModelResponse(
+        id="chatcmpl-12345",
+        created=1768398242,
+        model="gpt-4.1-nano",
+        object="chat.completion.chunk",
+        choices=[
+            {
+                "index": 0,
+                "delta": {"content": "Beneath the sky so vast and blue,  \n", "role": "assistant"},
+            }
+        ],
+        stream=True,
+        stream_options={"include_usage": True},
+    ).model_dump(),
+    ModelResponse(
+        id="chatcmpl-12345",
+        created=1768398242,
+        model="gpt-4.1-nano",
+        object="chat.completion.chunk",
+        choices=[
+            {"index": 0, "delta": {"content": "Whispers of dreams drift softly through,  \n"}}
+        ],
+        stream=True,
+        stream_options={"include_usage": True},
+    ).model_dump(),
+    ModelResponse(
+        id="chatcmpl-12345",
+        created=1768398242,
+        model="gpt-4.1-nano",
+        object="chat.completion.chunk",
+        choices=[{"index": 0, "delta": {"content": "A gentle breeze, a song so sweet,  \n"}}],
+        stream=True,
+        stream_options={"include_usage": True},
+    ).model_dump(),
+    ModelResponse(
+        id="chatcmpl-12345",
+        created=1768398242,
+        model="gpt-4.1-nano",
+        object="chat.completion.chunk",
+        choices=[{"index": 0, "delta": {"content": "Moments of magic, softly complete."}}],
+        stream=True,
+        stream_options={"include_usage": True},
+    ).model_dump(),
+    ModelResponse(
+        id="chatcmpl-12345",
+        created=1768398242,
+        model="gpt-4.1-nano",
+        object="chat.completion.chunk",
+        choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        stream=True,
+        stream_options={"include_usage": True},
+    ).model_dump(),
 ]
 
-_responses_stream_data: list[dict] = [
+
+_responses_stream_data: list[BaseModel] = [
     ResponseCreatedEvent(
         response=Response(
             **_response_basic_data,
@@ -334,12 +383,10 @@ _responses_stream_data: list[dict] = [
 ]
 
 default_post_stream_configs = {
-    "chat/completions": MockStreamingConfig(response_data=_chat_completion_stream_data),
-    "responses": MockStreamingConfig(
-        response_data=[
-            b"data: " + json.dumps(item).encode() + b"\n\n" for item in _responses_stream_data
-        ]
+    "chat/completions": MockStreamingConfig(
+        response_data=_convert_to_stream_data(_chat_completion_stream_data)
     ),
+    "responses": MockStreamingConfig(response_data=_convert_to_stream_data(_responses_stream_data)),
 }
 
 default_get_configs = {

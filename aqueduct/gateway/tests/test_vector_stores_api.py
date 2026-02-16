@@ -911,13 +911,13 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
 
     @patch("gateway.views.vector_stores.get_files_api_client")
     def test_vector_store_search(self, mock_get_client):
-        """Test searching a vector store."""
+        """Test searching a vector store with file_id mapping."""
         mock_get_client.return_value = create_mock_vector_store_client()
 
-        # Create vector store
         vs_id = self._create_vector_store(mock_get_client)
 
-        # Search vector store
+        file_obj = self._create_file_object("file-mock-123")
+
         search_url = reverse("gateway:vector_store_search", kwargs={"vector_store_id": vs_id})
         resp = self.client.post(
             search_url,
@@ -929,6 +929,8 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         data = resp.json()
         self.assertIn("data", data)
         self.assertIsInstance(data["data"], list)
+        self.assertEqual(len(data["data"]), 1)
+        self.assertEqual(data["data"][0]["file_id"], file_obj.id)
 
     @patch("gateway.views.vector_stores.get_files_api_client")
     def test_vector_store_search_missing_query(self, mock_get_client):
@@ -1056,16 +1058,42 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
     def test_vector_store_file_batch_files(self, mock_batch_client, mock_vs_client):
         """Test listing files in a batch."""
         mock_vs_client.return_value = create_mock_vector_store_client()
-        mock_batch_client.return_value = create_mock_vector_store_client()
 
-        # Create vector store
+        base_mock = create_mock_vector_store_client()
+        now = int(timezone.now().timestamp())
+        from openai.types.vector_stores import VectorStoreFile as OpenAIVectorStoreFile
+
+        upstream_files = AsyncCursorPage[OpenAIVectorStoreFile](
+            data=[
+                OpenAIVectorStoreFile(
+                    id="file-mock-1",
+                    status="completed",
+                    usage_bytes=100,
+                    created_at=now,
+                    last_error=None,
+                    object="vector_store.file",
+                    vector_store_id="vs-remote-123",
+                ),
+                OpenAIVectorStoreFile(
+                    id="file-mock-2",
+                    status="completed",
+                    usage_bytes=200,
+                    created_at=now,
+                    last_error=None,
+                    object="vector_store.file",
+                    vector_store_id="vs-remote-123",
+                ),
+            ],
+            has_more=False,
+        )
+        base_mock.vector_stores.file_batches.list_files = AsyncMock(return_value=upstream_files)
+        mock_batch_client.return_value = base_mock
+
         vs_id = self._create_vector_store(mock_vs_client)
 
-        # Create file objects
         file_obj1 = self._create_file_object("file-mock-1")
         file_obj2 = self._create_file_object("file-mock-2")
 
-        # Create batch
         batches_url = reverse(
             "gateway:vector_store_file_batches", kwargs={"vector_store_id": vs_id}
         )
@@ -1078,7 +1106,6 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(resp.status_code, 200)
         batch_id = resp.json()["id"]
 
-        # List files in batch
         batch_files_url = reverse(
             "gateway:vector_store_file_batch_files",
             kwargs={"vector_store_id": vs_id, "batch_id": batch_id},
@@ -1087,7 +1114,19 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(resp.status_code, 200, f"List batch files failed: {resp.json()}")
         data = resp.json()
         self.assertEqual(data["object"], "list")
-        self.assertIsInstance(data["data"], list)
+        self.assertEqual(len(data["data"]), 2)
+
+        for item in data["data"]:
+            self.assertTrue(item["id"].startswith("vsf-"), f"ID should be local: {item['id']}")
+            self.assertTrue(
+                item["file_id"].startswith("file-"), f"file_id should be local: {item['file_id']}"
+            )
+            self.assertTrue(
+                item["vector_store_id"].startswith("vs-"),
+                f"vector_store_id should be local: {item['vector_store_id']}",
+            )
+            self.assertEqual(item["status"], "completed")
+            self.assertEqual(item["object"], "vector_store.file")
 
     @patch("gateway.views.vector_stores.get_files_api_client")
     @patch("gateway.views.vector_store_files.get_files_api_client")
@@ -1179,3 +1218,158 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         for vs_file in VectorStoreFileModel.objects.filter(vector_store=vs_obj):
             self.assertIsNotNone(vs_file.remote_id, "Batch-created file should now have remote_id")
             self.assertEqual(vs_file.status, "completed")
+
+    @patch("gateway.views.vector_stores.get_files_api_client")
+    @patch("gateway.views.vector_store_files.get_files_api_client")
+    def test_list_vector_store_files_response_structure(self, mock_vs_files_client, mock_vs_client):
+        """Test that list vector store files endpoint returns complete, correctly-mapped response items."""
+        mock_vs_client.return_value = create_mock_vector_store_client()
+        mock_vs_files_client.return_value = create_mock_vector_store_client()
+
+        vs_id = self._create_vector_store(mock_vs_client)
+
+        file_obj1 = self._create_file_object("file-remote-1")
+        file_obj2 = self._create_file_object("file-remote-2")
+
+        files_url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": vs_id})
+        resp = self.client.post(
+            files_url,
+            data=json.dumps({"file_id": file_obj1.id}),
+            headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        resp = self.client.post(
+            files_url,
+            data=json.dumps({"file_id": file_obj2.id}),
+            headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        resp = self.client.get(files_url, headers=self.headers)
+        self.assertEqual(resp.status_code, 200, f"List files failed: {resp.json()}")
+        data = resp.json()
+
+        self.assertEqual(data["object"], "list")
+        self.assertEqual(len(data["data"]), 2)
+
+        for item in data["data"]:
+            self.assertTrue(
+                item["id"].startswith("vsf-"), f"ID should start with vsf-: {item['id']}"
+            )
+            self.assertTrue(
+                item["file_id"].startswith("file-"), f"file_id should be local: {item['file_id']}"
+            )
+            self.assertTrue(
+                item["vector_store_id"].startswith("vs-"),
+                f"vector_store_id should be local: {item['vector_store_id']}",
+            )
+            self.assertEqual(item["status"], "completed")
+            self.assertEqual(item["object"], "vector_store.file")
+
+    @patch("gateway.views.files.get_files_api_client")
+    def test_service_account_file_operations(self, mock_get_client):
+        """Test that the files API works with service account tokens."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from gateway.tests.utils.base import GatewayIntegrationTestCase
+        from management.models import ServiceAccount, Team
+
+        mock_client = MagicMock()
+
+        async def mock_file_create(*args, **kwargs):
+            return MagicMock(
+                id="file-remote-new",
+                bytes=100,
+                filename="test.txt",
+                purpose="user_data",
+                created_at=int(timezone.now().timestamp()),
+                expires_at=None,
+                model_dump=MagicMock(
+                    return_value={
+                        "id": "file-remote-new",
+                        "bytes": 100,
+                        "filename": "test.txt",
+                        "purpose": "user_data",
+                        "created_at": int(timezone.now().timestamp()),
+                        "expires_at": None,
+                    }
+                ),
+            )
+
+        async def mock_file_retrieve(*args, **kwargs):
+            return MagicMock(
+                id="file-remote-new",
+                bytes=100,
+                filename="test.txt",
+                purpose="user_data",
+                created_at=int(timezone.now().timestamp()),
+                expires_at=None,
+                model_dump=MagicMock(
+                    return_value={
+                        "id": "file-remote-new",
+                        "bytes": 100,
+                        "filename": "test.txt",
+                        "purpose": "user_data",
+                        "created_at": int(timezone.now().timestamp()),
+                        "expires_at": None,
+                    }
+                ),
+            )
+
+        async def mock_file_delete(*args, **kwargs):
+            return MagicMock(
+                id="file-remote-new",
+                deleted=True,
+                model_dump=MagicMock(return_value={"id": "file-remote-new", "deleted": True}),
+            )
+
+        async def mock_file_content(*args, **kwargs):
+            return MagicMock(content=b"test file content")
+
+        mock_client.files.create = AsyncMock(side_effect=mock_file_create)
+        mock_client.files.retrieve = AsyncMock(side_effect=mock_file_retrieve)
+        mock_client.files.delete = AsyncMock(side_effect=mock_file_delete)
+        mock_client.files.content = AsyncMock(side_effect=mock_file_content)
+        mock_get_client.return_value = mock_client
+
+        team = Team.objects.get(name="Whale")
+        service_account = ServiceAccount.objects.create(team=team, name="Test Service Account")
+
+        token = Token.objects.get(
+            key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
+        )
+        token.service_account = service_account
+        token.save()
+
+        try:
+            file = SimpleUploadedFile("test.txt", b"test file content", content_type="text/plain")
+            files_url = reverse("gateway:files")
+            resp = self.client.post(
+                files_url, data={"file": file, "purpose": "user_data"}, headers=self.headers
+            )
+            self.assertEqual(resp.status_code, 200, f"Upload failed: {resp.json()}")
+            file_id = resp.json()["id"]
+
+            resp = self.client.get(files_url, headers=self.headers)
+            self.assertEqual(resp.status_code, 200, f"List failed: {resp.json()}")
+            self.assertEqual(len(resp.json()["data"]), 1)
+
+            file_detail_url = reverse("gateway:file", kwargs={"file_id": file_id})
+            resp = self.client.get(file_detail_url, headers=self.headers)
+            self.assertEqual(resp.status_code, 200, f"Retrieve failed: {resp.json()}")
+
+            file_content_url = reverse("gateway:file_content", kwargs={"file_id": file_id})
+            resp = self.client.get(file_content_url, headers=self.headers)
+            self.assertEqual(resp.status_code, 200, f"Content failed: {resp.content}")
+            self.assertEqual(resp.content, b"test file content")
+
+            resp = self.client.delete(file_detail_url, headers=self.headers)
+            self.assertEqual(resp.status_code, 200, f"Delete failed: {resp.json()}")
+
+        finally:
+            token.service_account = None
+            token.save()
+            service_account.delete()

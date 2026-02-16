@@ -12,7 +12,7 @@ from openai.types.vector_store_update_params import VectorStoreUpdateParams
 from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
-from management.models import Token, VectorStore
+from management.models import FileObject, Token, VectorStore
 
 from .decorators import log_request, parse_body, token_authenticated, tos_accepted
 from .errors import error_response
@@ -82,14 +82,14 @@ async def vector_stores(
 
     # Check user/team limits before creating
     if token.service_account:
-        limit = getattr(settings, "MAX_TEAM_VECTOR_STORES", 50)
+        limit = settings.MAX_TEAM_VECTOR_STORES
         active_count = await sync_to_async(
             VectorStore.objects.filter(
                 token__service_account__team=token.service_account.team
             ).count
         )()
     else:
-        limit = getattr(settings, "MAX_USER_VECTOR_STORES", 10)
+        limit = settings.MAX_USER_VECTOR_STORES
         active_count = await sync_to_async(
             VectorStore.objects.filter(token__user=token.user).count
         )()
@@ -342,5 +342,35 @@ async def vector_store_search(
             status=502,
         )
 
-    # Return upstream response directly (no ID mapping needed for search results)
-    return JsonResponse(search_results.model_dump(mode="json"), status=200)
+    results_data = search_results.model_dump(mode="json")
+
+    # Map upstream file_id and vector_store_id to local Aqueduct IDs
+    if "data" in results_data:
+        file_remote_ids = set()
+        for item in results_data["data"]:
+            if "file_id" in item:
+                file_remote_ids.add(item["file_id"])
+
+        if file_remote_ids:
+            if token.service_account:
+                file_objs = await sync_to_async(list)(
+                    FileObject.objects.filter(
+                        remote_id__in=file_remote_ids,
+                        token__service_account__team=token.service_account.team,
+                    )
+                )
+            else:
+                file_objs = await sync_to_async(list)(
+                    FileObject.objects.filter(remote_id__in=file_remote_ids, token__user=token.user)
+                )
+            file_id_map = {f.remote_id: f.id for f in file_objs}
+
+            for item in results_data["data"]:
+                if "file_id" in item:
+                    item["file_id"] = file_id_map.get(item["file_id"], item["file_id"])
+
+        for item in results_data["data"]:
+            if "vector_store_id" in item:
+                item["vector_store_id"] = vs_obj.id
+
+    return JsonResponse(results_data, status=200)

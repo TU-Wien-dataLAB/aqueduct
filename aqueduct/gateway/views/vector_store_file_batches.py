@@ -1,7 +1,10 @@
+import logging
 from typing import Optional
 
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -14,6 +17,8 @@ from management.models import FileObject, Token, VectorStore, VectorStoreFile, V
 
 from .decorators import log_request, parse_body, token_authenticated, tos_accepted
 from .errors import error_response
+
+logger = logging.getLogger(__name__)
 
 
 @csrf_exempt
@@ -126,17 +131,32 @@ async def vector_store_file_batches(
     await sync_to_async(batch_obj.save)()
 
     # Create VectorStoreFile records for each file in the batch
-    for file_obj in file_objs:
-        vs_file_obj = VectorStoreFile(
-            vector_store=vs_obj,
-            file_obj=file_obj,
-            batch=batch_obj,
-            remote_id=None,
-            status="in_progress",
-            usage_bytes=0,
-            created_at=int(now.timestamp()),
-        )
-        await sync_to_async(vs_file_obj.save)()
+    # Use transaction and check file limit
+    @sync_to_async
+    def create_batch_files():
+        with transaction.atomic():
+            max_files = settings.MAX_VECTOR_STORE_FILES
+            current_count = VectorStoreFile.objects.filter(vector_store=vs_obj).count()
+            if current_count + len(file_objs) > max_files:
+                return None
+            records = []
+            for file_obj in file_objs:
+                vs_file_obj = VectorStoreFile(
+                    vector_store=vs_obj,
+                    file_obj=file_obj,
+                    batch=batch_obj,
+                    remote_id=None,
+                    status="in_progress",
+                    usage_bytes=0,
+                    created_at=int(now.timestamp()),
+                )
+                vs_file_obj.save()
+                records.append(vs_file_obj)
+            return records
+
+    batch_file_records = await create_batch_files()
+    if batch_file_records is None:
+        return error_response("File limit exceeded", status=403)
 
     # Return upstream response with only id and vector_store_id replaced
     response_data = remote_batch.model_dump(mode="json")
@@ -367,15 +387,16 @@ async def vector_store_file_batch_files(
         )
 
     # Get all local vector store files to map remote IDs to local IDs
-    vs_files = await sync_to_async(list)(
+    all_vs_files = await sync_to_async(list)(
         VectorStoreFile.objects.filter(vector_store=vs_obj).select_related("file_obj")
     )
-    remote_to_local_map = {f.remote_id: f for f in vs_files if f.remote_id}
+    remote_to_local_map = {f.remote_id: f for f in all_vs_files if f.remote_id}
 
     # Build map of batch-created files (remote_id=None) by file_obj.remote_id
-    # so we can match them to upstream files and link them
+    # Only include files from the current batch to prevent cross-batch linkage
+    batch_vs_files = [f for f in all_vs_files if f.batch_id == batch_obj.id]
     batch_file_by_file_remote_id = {}
-    for f in vs_files:
+    for f in batch_vs_files:
         if f.remote_id is None and f.file_obj and f.file_obj.remote_id:
             batch_file_by_file_remote_id[f.file_obj.remote_id] = f
 
@@ -385,22 +406,22 @@ async def vector_store_file_batch_files(
     files_to_link = []
     for remote_file in remote_files:
         file_data = remote_file.model_dump(mode="json")
-        # Try to map to local ID if we have this file tracked
         local_file = remote_to_local_map.get(remote_file.id)
         if local_file:
             file_data["id"] = local_file.id
+            file_data["vector_store_id"] = vs_obj.id
+            file_data["file_id"] = local_file.file_obj.id if local_file.file_obj else None
+            response_files.append(file_data)
         else:
-            # Try to find a batch-created record by matching the upstream file ID.
-            # In the OpenAI API, VectorStoreFile.id IS the source file ID,
-            # so we match it against FileObject.remote_id.
-            # Also check for file_id attribute (some compatible APIs include it).
-            upstream_file_id = getattr(remote_file, "file_id", None) or remote_file.id
-            batch_file = batch_file_by_file_remote_id.get(upstream_file_id)
+            batch_file = batch_file_by_file_remote_id.get(remote_file.id)
             if batch_file:
                 files_to_link.append((batch_file, remote_file))
                 file_data["id"] = batch_file.id
-        file_data["vector_store_id"] = vs_obj.id
-        response_files.append(file_data)
+                file_data["vector_store_id"] = vs_obj.id
+                file_data["file_id"] = batch_file.file_obj.id if batch_file.file_obj else None
+                response_files.append(file_data)
+            else:
+                logger.warning(f"Batch file {remote_file.id} has no local record, skipping")
 
     # Update batch-created records with their upstream remote_id
     if files_to_link:
@@ -410,7 +431,7 @@ async def vector_store_file_batch_files(
             for local_file, remote_file in files_to_link:
                 local_file.remote_id = remote_file.id
                 local_file.status = remote_file.status or local_file.status
-                local_file.usage_bytes = getattr(remote_file, "usage_bytes", local_file.usage_bytes)
+                local_file.usage_bytes = remote_file.usage_bytes
                 if hasattr(remote_file, "last_error") and remote_file.last_error:
                     local_file.last_error = remote_file.last_error
                 local_file.save()

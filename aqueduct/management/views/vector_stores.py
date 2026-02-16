@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from django.conf import settings
 from django.db.models import Q
 from django.views.generic import TemplateView
 
@@ -15,29 +16,47 @@ class UserVectorStoresView(BaseAqueductView, TemplateView):
 
     template_name = "management/vector_stores.html"
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        profile = self.profile
-        user = profile.user
-        teams = profile.teams.all()
-
-        # Query vector stores accessible by user (personal tokens + team service accounts)
-        vector_stores = (
-            VectorStore.objects.filter(
-                Q(token__user=user) | Q(token__service_account__team__in=teams)
-            )
-            .prefetch_related("files", "file_batches")
-            .order_by("-created_at")
-        )
-
-        # Convert Unix timestamps to datetime for template date filter
-        # and calculate counts
+    def _annotate_vector_stores(self, vector_stores):
+        """Add computed fields to vector store instances for template rendering."""
+        result = []
         for vs in vector_stores:
             vs.created_dt = datetime.fromtimestamp(vs.created_at)
             vs.files_count = vs.files.count()
             vs.batches_count = vs.file_batches.count()
+            result.append(vs)
+        return result
 
-        context["vector_stores"] = vector_stores
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        profile = self.profile
+        user = profile.user
+        teams = self.get_teams_for_user()
+
+        base_qs = VectorStore.objects.prefetch_related("files", "file_batches")
+
+        # Personal vector stores (created via user tokens)
+        user_vector_stores = base_qs.filter(token__user=user).order_by("-created_at")
+        user_vector_stores = self._annotate_vector_stores(user_vector_stores)
+
+        # Per-team vector stores (created via service account tokens)
+        team_sections = []
+        for team in teams:
+            team_vs = base_qs.filter(token__service_account__team=team).order_by("-created_at")
+            team_vs = self._annotate_vector_stores(team_vs)
+            team_sections.append(
+                {
+                    "team": team,
+                    "vector_stores": team_vs,
+                    "count": len(team_vs),
+                    "limit": settings.MAX_TEAM_VECTOR_STORES,
+                }
+            )
+
+        context["user_vector_stores"] = user_vector_stores
+        context["user_vector_store_count"] = len(user_vector_stores)
+        context["user_vector_store_limit"] = settings.MAX_USER_VECTOR_STORES
+        context["team_sections"] = team_sections
+        context["files_limit"] = settings.MAX_VECTOR_STORE_FILES
         return context
 
 
@@ -53,7 +72,7 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
         context = super().get_context_data(**kwargs)
         profile = self.profile
         user = profile.user
-        teams = profile.teams.all()
+        teams = self.get_teams_for_user()
         vector_store_id = self.kwargs.get("id")
 
         # Get vector store accessible by user
@@ -105,6 +124,7 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
             context["vector_store"] = vector_store
             context["files"] = files
             context["batches"] = batches
+            context["files_limit"] = settings.MAX_VECTOR_STORE_FILES
         else:
             context["vector_store"] = None
 

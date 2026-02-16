@@ -145,11 +145,18 @@ async def files(
         return error_response("Files API not configured", status=503)
 
     if request.method == "GET":
-        file_objects = await sync_to_async(list)(
-            FileObject.objects.filter(token__user=token.user)
-            .order_by("-created_at")
-            .select_related("token")
-        )
+        if token.service_account:
+            file_objects = await sync_to_async(list)(
+                FileObject.objects.filter(token__service_account__team=token.service_account.team)
+                .order_by("-created_at")
+                .select_related("token")
+            )
+        else:
+            file_objects = await sync_to_async(list)(
+                FileObject.objects.filter(token__user=token.user)
+                .order_by("-created_at")
+                .select_related("token")
+            )
 
         return JsonResponse(
             {
@@ -174,9 +181,14 @@ async def files(
         )
 
     # Enforce per-token total storage limit
-    sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(
-        sum_bytes=Sum("bytes")
-    )
+    if token.service_account:
+        sum_res = await FileObject.objects.filter(
+            token__service_account__team=token.service_account.team
+        ).aaggregate(sum_bytes=Sum("bytes"))
+    else:
+        sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(
+            sum_bytes=Sum("bytes")
+        )
     current_total = sum_res.get("sum_bytes") or 0
     max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB * 1024 * 1024
     if current_total + len(file_content) > max_total_bytes:
@@ -236,7 +248,12 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     Returns 404 if file not found or not owned by user - NEVER falls back to upstream.
     """
     try:
-        file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
+        if token.service_account:
+            file_obj = await FileObject.objects.aget(
+                id=file_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
     except FileObject.DoesNotExist:
         return error_response("File not found.", param="file_id", status=404)
 
@@ -296,7 +313,12 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
     Returns 404 if file not found or not owned by user - NEVER falls back to upstream.
     """
     try:
-        file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
+        if token.service_account:
+            file_obj = await FileObject.objects.aget(
+                id=file_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
     except FileObject.DoesNotExist:
         return error_response("File not found.", param="file_id", status=404)
 

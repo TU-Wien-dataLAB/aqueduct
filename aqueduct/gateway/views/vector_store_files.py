@@ -112,9 +112,7 @@ async def vector_store_files(
             if local_vs_file:
                 # Update existing record with latest upstream status
                 local_vs_file.status = remote_file.status or local_vs_file.status
-                local_vs_file.usage_bytes = getattr(
-                    remote_file, "usage_bytes", local_vs_file.usage_bytes
-                )
+                local_vs_file.usage_bytes = remote_file.usage_bytes
                 if hasattr(remote_file, "last_error") and remote_file.last_error:
                     local_vs_file.last_error = remote_file.last_error
                 await sync_to_async(local_vs_file.save)()
@@ -125,11 +123,7 @@ async def vector_store_files(
                 file_data["file_id"] = local_vs_file.file_obj.id if local_vs_file.file_obj else None
                 response_files.append(file_data)
             else:
-                # Try to find FileObject by matching the upstream VectorStoreFile ID.
-                # In the OpenAI API, VectorStoreFile.id IS the source file ID,
-                # so we can match it against FileObject.remote_id.
-                # Also check for file_id attribute (some compatible APIs include it).
-                upstream_file_id = getattr(remote_file, "file_id", None) or remote_file.id
+                upstream_file_id = remote_file.id
                 file_obj = file_remote_id_to_obj.get(upstream_file_id)
                 if file_obj:
                     files_to_create.append((file_obj, remote_file))
@@ -150,9 +144,7 @@ async def vector_store_files(
                         # Update the batch-created record with the upstream remote_id
                         existing.remote_id = remote_vs_file.id
                         existing.status = remote_vs_file.status or existing.status
-                        existing.usage_bytes = getattr(
-                            remote_vs_file, "usage_bytes", existing.usage_bytes
-                        )
+                        existing.usage_bytes = remote_vs_file.usage_bytes
                         if hasattr(remote_vs_file, "last_error") and remote_vs_file.last_error:
                             existing.last_error = remote_vs_file.last_error
                         existing.save()
@@ -165,7 +157,7 @@ async def vector_store_files(
                             defaults={
                                 "file_obj": file_obj,
                                 "status": remote_vs_file.status or "in_progress",
-                                "usage_bytes": getattr(remote_vs_file, "usage_bytes", 0),
+                                "usage_bytes": remote_vs_file.usage_bytes,
                                 "created_at": int(now.timestamp()),
                             },
                         )
@@ -207,7 +199,7 @@ async def vector_store_files(
         )
 
     # Use transaction with select_for_update to prevent race conditions on file limit
-    max_files = getattr(settings, "MAX_VECTOR_STORE_FILES", 1000)
+    max_files = settings.MAX_VECTOR_STORE_FILES
 
     # Create upstream file FIRST (outside transaction to minimize lock duration)
     try:
@@ -254,7 +246,7 @@ async def vector_store_files(
                 file_obj=file_obj,
                 remote_id=remote_vs_file.id,
                 status=remote_vs_file.status or "in_progress",
-                usage_bytes=getattr(remote_vs_file, "usage_bytes", 0),
+                usage_bytes=remote_vs_file.usage_bytes,
                 created_at=int(now.timestamp()),
             )
             vs_file_obj.save()
@@ -356,7 +348,7 @@ async def vector_store_file(
 
         # Update local record with latest status
         vs_file_obj.status = remote_vs_file.status or vs_file_obj.status
-        vs_file_obj.usage_bytes = getattr(remote_vs_file, "usage_bytes", vs_file_obj.usage_bytes)
+        vs_file_obj.usage_bytes = remote_vs_file.usage_bytes
         if hasattr(remote_vs_file, "last_error") and remote_vs_file.last_error:
             vs_file_obj.last_error = remote_vs_file.last_error
         await sync_to_async(vs_file_obj.save)()

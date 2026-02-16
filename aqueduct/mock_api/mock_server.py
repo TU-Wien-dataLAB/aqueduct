@@ -16,9 +16,7 @@ from unittest.mock import patch
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.responses import Response
 from starlette.status import HTTP_404_NOT_FOUND
 
 from mock_api.helpers import get_available_port
@@ -64,22 +62,7 @@ logger = logging.getLogger("mock_api")
 delays_enabled = os.getenv("MOCK_API_DELAYS", "false").lower() == "true"
 
 
-class RandomDelayMiddleware(BaseHTTPMiddleware):
-    """A middleware to add random delays to responses, mimicking API latency."""
-
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        # No need to add delays for health endpoint
-        if request.url.path != "/health" and delays_enabled:
-            delay = 0.1 + (0.9 * random.random())
-            logger.debug("Adding %.2fs delay to request", delay)
-            await asyncio.sleep(delay)
-
-        response = await call_next(request)
-        return response
-
-
 app = FastAPI(debug=True)
-app.add_middleware(RandomDelayMiddleware)
 
 
 @app.get("/health")
@@ -124,6 +107,12 @@ async def reset_endpoint(path: str):
 @app.get("/{path:path}")
 @app.post("/{path:path}")
 async def mock_endpoint(path: str, request: Request):
+    """
+    The endpoint that mocks responses from the external OpenAI API.
+
+    If `MOCK_API_DELAYS` env var is set to true, a random delay of 0.1-1 s is added
+    before returning a response.
+    """
     path = path.strip("/").removeprefix("v1/")
 
     try:
@@ -155,6 +144,12 @@ async def mock_endpoint(path: str, request: Request):
         )
 
     logger.debug("Got a request to %s", path)
+
+    if delays_enabled:
+        delay = 0.1 + (0.9 * random.random())
+        logger.debug("Adding %.2fs delay to request", delay)
+        await asyncio.sleep(delay)
+
     if isinstance(config, MockStreamingConfig):
         return StreamingResponse(
             content=config.response_data, status_code=config.status_code, headers=config.headers

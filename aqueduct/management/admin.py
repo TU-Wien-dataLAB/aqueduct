@@ -323,7 +323,7 @@ class BatchAdmin(admin.ModelAdmin):
     """Admin panel registration for Batch model."""
 
     list_display = ("id", "status", "created_at", "completion_window", "endpoint", "input_file")
-    list_filter = ("status", "input_file__token__user__email")
+    list_filter = ("status", "token__user__email")
     search_fields = ("id",)
 
 

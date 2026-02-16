@@ -780,6 +780,13 @@ class FileObject(models.Model):
         verbose_name = "File Object"
         verbose_name_plural = "File Objects"
         indexes = [models.Index(fields=["remote_id"], name="fileobject_remote_id_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["token", "remote_id"],
+                name="unique_fileobject_token_remote_id",
+                condition=models.Q(remote_id__isnull=False),
+            )
+        ]
 
     @property
     def model(self) -> openai.types.FileObject:
@@ -918,9 +925,25 @@ class Batch(models.Model):
         max_length=100, null=True, blank=True, help_text="Batch ID from the upstream API"
     )
 
+    token = models.ForeignKey(
+        Token,
+        on_delete=models.CASCADE,
+        related_name="batches",
+        null=True,
+        blank=True,
+        help_text="The token (API key) that created this batch.",
+    )
+
     class Meta:
         verbose_name = "Batch"
         verbose_name_plural = "Batches"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["token", "remote_id"],
+                name="unique_batch_token_remote_id",
+                condition=models.Q(remote_id__isnull=False),
+            )
+        ]
 
     @property
     def model(self) -> openai.types.batch.Batch:
@@ -1036,6 +1059,13 @@ class VectorStore(models.Model):
         verbose_name = "Vector Store"
         verbose_name_plural = "Vector Stores"
         indexes = [models.Index(fields=["remote_id"], name="vectorstore_remote_id_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["token", "remote_id"],
+                name="unique_vectorstore_token_remote_id",
+                condition=models.Q(remote_id__isnull=False),
+            )
+        ]
 
     def delete(self, using=None, keep_parents=False):
         """
@@ -1077,6 +1107,14 @@ class VectorStoreFile(models.Model):
         related_name="vector_store_files",
         help_text="Reference to the actual file object.",
     )
+    batch = models.ForeignKey(
+        "VectorStoreFileBatch",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="files",
+        help_text="The batch that created this file, if any.",
+    )
     status = models.CharField(
         max_length=20,
         choices=VectorStoreFileStatus.choices,
@@ -1098,6 +1136,13 @@ class VectorStoreFile(models.Model):
         verbose_name = "Vector Store File"
         verbose_name_plural = "Vector Store Files"
         indexes = [models.Index(fields=["remote_id"], name="vectorstorefile_remote_id_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["vector_store", "remote_id"],
+                name="unique_vector_store_remote_id",
+                condition=models.Q(remote_id__isnull=False),
+            )
+        ]
 
 
 class VectorStoreFileBatchStatus(models.TextChoices):
@@ -1144,3 +1189,10 @@ class VectorStoreFileBatch(models.Model):
         verbose_name = "Vector Store File Batch"
         verbose_name_plural = "Vector Store File Batches"
         indexes = [models.Index(fields=["remote_id"], name="vs_file_batch_remote_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["vector_store", "remote_id"],
+                name="unique_vs_file_batch_vector_store_remote_id",
+                condition=models.Q(remote_id__isnull=False),
+            )
+        ]

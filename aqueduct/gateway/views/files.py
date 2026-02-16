@@ -86,7 +86,7 @@ async def sync_batch_file_if_needed(
 
     # Check if we already have a local record for this remote_id
     try:
-        return await FileObject.objects.aget(remote_id=remote_file_id)
+        return await FileObject.objects.aget(remote_id=remote_file_id, token=token)
     except FileObject.DoesNotExist:
         pass
 
@@ -97,20 +97,23 @@ async def sync_batch_file_if_needed(
         # File may have been deleted upstream, skip
         return None
 
-    # Create local record with same ownership as batch
+    # Create local record with same ownership as batch.
+    # Use get_or_create to prevent duplicate records from concurrent requests
+    # (e.g., two GET /batches/{id} requests polling the same completed batch).
     local_expires_at = calculate_expires_at(remote_file.expires_at)
 
-    file_obj = FileObject(
-        token=token,
-        bytes=remote_file.bytes,
-        filename=remote_file.filename,
-        created_at=remote_file.created_at,
-        purpose=remote_file.purpose,
-        expires_at=local_expires_at,
+    file_obj, _ = await sync_to_async(FileObject.objects.get_or_create)(
         remote_id=remote_file.id,
-        upstream_url=settings.AQUEDUCT_FILES_API_URL,
+        token=token,
+        defaults={
+            "bytes": remote_file.bytes,
+            "filename": remote_file.filename,
+            "created_at": remote_file.created_at,
+            "purpose": remote_file.purpose,
+            "expires_at": local_expires_at,
+            "upstream_url": settings.AQUEDUCT_FILES_API_URL,
+        },
     )
-    await sync_to_async(file_obj.save)()
 
     # Update batch record with linked file if batch_obj provided
     if batch_obj:

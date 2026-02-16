@@ -59,17 +59,7 @@ async def vector_store_files(
         return error_response("Vector store not found.", param="vector_store_id", status=404)
 
     if request.method == "GET":
-        # List files in vector store from local DB
-        files_list = await sync_to_async(list)(
-            VectorStoreFile.objects.filter(vector_store=vs_obj)
-            .order_by("-created_at")
-            .select_related("vector_store", "file_obj")
-        )
-
-        # Get all remote IDs to map them
-        remote_to_local_map = {f.remote_id: f for f in files_list if f.remote_id}
-
-        # Retrieve from upstream to get accurate status
+        # List files in vector store - always refresh from upstream
         try:
             remote_files_response = await client.vector_stores.files.list(
                 vector_store_id=vs_obj.remote_id
@@ -78,19 +68,84 @@ async def vector_store_files(
                 remote_files_response.data if hasattr(remote_files_response, "data") else []
             )
         except Exception:
-            # Fall back to local data if upstream fails
-            remote_files = []
+            return error_response(
+                "Failed to retrieve files from upstream.", error_type="server_error", status=502
+            )
 
-        # Build response data using upstream responses with local ID mapping
+        # Get existing local VectorStoreFile records
+        existing_local_files = await sync_to_async(list)(
+            VectorStoreFile.objects.filter(vector_store=vs_obj).select_related("file_obj")
+        )
+
+        # Build map by remote_id for quick lookup
+        remote_id_to_local = {f.remote_id: f for f in existing_local_files if f.remote_id}
+
+        # Get FileObjects that belong to this user/team, indexed by remote_id
+        if token.service_account:
+            file_objs = await sync_to_async(list)(
+                FileObject.objects.filter(token__service_account__team=token.service_account.team)
+            )
+        else:
+            file_objs = await sync_to_async(list)(FileObject.objects.filter(token=token))
+        file_remote_id_to_obj = {f.remote_id: f for f in file_objs if f.remote_id}
+
         response_files = []
+        now = timezone.now()
+
+        # Files that need new local records (collected for batch creation)
+        files_to_create = []
+
         for remote_file in remote_files:
-            local_file = remote_to_local_map.get(remote_file.id)
-            if local_file:
+            local_vs_file = remote_id_to_local.get(remote_file.id)
+
+            if local_vs_file:
+                # Update existing record with latest upstream status
+                local_vs_file.status = remote_file.status or local_vs_file.status
+                local_vs_file.usage_bytes = getattr(
+                    remote_file, "usage_bytes", local_vs_file.usage_bytes
+                )
+                if hasattr(remote_file, "last_error") and remote_file.last_error:
+                    local_vs_file.last_error = remote_file.last_error
+                await sync_to_async(local_vs_file.save)()
+
                 file_data = remote_file.model_dump(mode="json")
-                file_data["id"] = local_file.id
+                file_data["id"] = local_vs_file.id
                 file_data["vector_store_id"] = vs_obj.id
-                # Map file_id to local Aqueduct file ID
-                file_data["file_id"] = local_file.file_obj.id if local_file.file_obj else None
+                file_data["file_id"] = local_vs_file.file_obj.id if local_vs_file.file_obj else None
+                response_files.append(file_data)
+            else:
+                # Try to find FileObject by matching file_id (upstream file ID)
+                file_obj = file_remote_id_to_obj.get(getattr(remote_file, "file_id", None))
+                if file_obj:
+                    files_to_create.append((file_obj, remote_file))
+
+        # Batch create new local VectorStoreFile records using get_or_create
+        # to prevent duplicates from concurrent requests
+        if files_to_create:
+
+            @sync_to_async
+            def create_local_records():
+                created = []
+                for file_obj, remote_vs_file in files_to_create:
+                    vs_file, _ = VectorStoreFile.objects.get_or_create(
+                        vector_store=vs_obj,
+                        remote_id=remote_vs_file.id,
+                        defaults={
+                            "file_obj": file_obj,
+                            "status": remote_vs_file.status or "in_progress",
+                            "usage_bytes": getattr(remote_vs_file, "usage_bytes", 0),
+                            "created_at": int(now.timestamp()),
+                        },
+                    )
+                    created.append((vs_file, remote_vs_file, file_obj))
+                return created
+
+            created_records = await create_local_records()
+            for vs_file, remote_file, file_obj in created_records:
+                file_data = remote_file.model_dump(mode="json")
+                file_data["id"] = vs_file.id
+                file_data["vector_store_id"] = vs_obj.id
+                file_data["file_id"] = file_obj.id
                 response_files.append(file_data)
 
         return JsonResponse(
@@ -119,43 +174,10 @@ async def vector_store_files(
             "File has no remote reference.", error_type="server_error", status=500
         )
 
-    # Check file limit BEFORE creating upstream file to prevent orphaned upstream files
     # Use transaction with select_for_update to prevent race conditions on file limit
     max_files = getattr(settings, "MAX_VECTOR_STORE_FILES", 1000)
 
-    @sync_to_async
-    def check_limit_and_lock() -> tuple[VectorStore | None, bool]:
-        with transaction.atomic():
-            # Re-fetch vector store with lock to ensure exclusive access
-            try:
-                if token.service_account:
-                    vs_obj_locked = VectorStore.objects.select_for_update().get(
-                        id=vector_store_id, token__service_account__team=token.service_account.team
-                    )
-                else:
-                    vs_obj_locked = VectorStore.objects.select_for_update().get(
-                        id=vector_store_id, token__user=token.user
-                    )
-            except VectorStore.DoesNotExist:
-                return None, False  # Vector store not found
-
-            # Check file limit inside transaction with lock held
-            current_count = VectorStoreFile.objects.filter(vector_store=vs_obj_locked).count()
-            if current_count >= max_files:
-                return vs_obj_locked, False  # Limit reached
-
-            return vs_obj_locked, True  # Limit OK, proceed
-
-    vs_obj_locked, limit_ok = await check_limit_and_lock()
-
-    if vs_obj_locked is None:
-        # Vector store not found error
-        return error_response("Vector store not found.", param="vector_store_id", status=404)
-
-    if not limit_ok:
-        return error_response(f"Vector store file limit reached ({max_files})", status=403)
-
-    # Add file to vector store on upstream using remote file ID
+    # Create upstream file FIRST (outside transaction to minimize lock duration)
     try:
         create_kwargs = {"vector_store_id": vs_obj.remote_id, "file_id": file_obj.remote_id}
         if params.get("chunking_strategy"):
@@ -170,61 +192,67 @@ async def vector_store_files(
             status=502,
         )
 
-    # Create local record - wrap in try/except to clean up upstream file on any failure
-    try:
-
-        @sync_to_async
-        def create_local_record():
-            with transaction.atomic():
-                # Re-fetch vector store with lock to ensure consistency
-                try:
-                    if token.service_account:
-                        vs_obj_locked = VectorStore.objects.select_for_update().get(
-                            id=vector_store_id,
-                            token__service_account__team=token.service_account.team,
-                        )
-                    else:
-                        vs_obj_locked = VectorStore.objects.select_for_update().get(
-                            id=vector_store_id, token__user=token.user
-                        )
-                except VectorStore.DoesNotExist:
-                    raise VectorStore.DoesNotExist(
-                        "Vector store not found during local record creation"
+    # Use sync_to_async wrapper with transaction.atomic for the lock
+    @sync_to_async
+    def create_file_with_lock():
+        with transaction.atomic():
+            # Re-fetch vector store with lock
+            try:
+                if token.service_account:
+                    vs_obj_locked = VectorStore.objects.select_for_update().get(
+                        id=vector_store_id, token__service_account__team=token.service_account.team
                     )
+                else:
+                    vs_obj_locked = VectorStore.objects.select_for_update().get(
+                        id=vector_store_id, token__user=token.user
+                    )
+            except VectorStore.DoesNotExist:
+                return None, None  # Vector store not found
 
-                # Double-check limit (defense in depth)
-                current_count = VectorStoreFile.objects.filter(vector_store=vs_obj_locked).count()
-                if current_count >= max_files:
-                    raise Exception("LIMIT_REACHED")
+            # Check limit inside locked transaction
+            current_count = VectorStoreFile.objects.filter(vector_store=vs_obj_locked).count()
 
-                # Create local record
-                now = timezone.now()
-                vs_file_obj = VectorStoreFile(
-                    vector_store=vs_obj_locked,
-                    file_obj=file_obj,
-                    remote_id=remote_vs_file.id,
-                    status=remote_vs_file.status or "in_progress",
-                    usage_bytes=getattr(remote_vs_file, "usage_bytes", 0),
-                    created_at=int(now.timestamp()),
-                )
-                vs_file_obj.save()
-                return vs_obj_locked, vs_file_obj
+            if current_count >= max_files:
+                return vs_obj_locked, None  # Signal limit reached
 
-        vs_obj_locked, vs_file_obj = await create_local_record()
+            # Create local record
+            now = timezone.now()
+            vs_file_obj = VectorStoreFile(
+                vector_store=vs_obj_locked,
+                file_obj=file_obj,
+                remote_id=remote_vs_file.id,
+                status=remote_vs_file.status or "in_progress",
+                usage_bytes=getattr(remote_vs_file, "usage_bytes", 0),
+                created_at=int(now.timestamp()),
+            )
+            vs_file_obj.save()
+            return vs_obj_locked, vs_file_obj
 
-    except Exception:
-        # Clean up upstream file on any failure to prevent orphaned files
+    vs_obj_locked, result = await create_file_with_lock()
+
+    if vs_obj_locked is None:
+        # Vector store not found error - clean up upstream file
         try:
             await client.vector_stores.files.delete(
                 vector_store_id=vs_obj.remote_id, file_id=remote_vs_file.id
             )
         except Exception:
-            pass  # Best effort cleanup - file may be orphaned
-        raise
+            pass
+        return error_response("Vector store not found.", param="vector_store_id", status=404)
+
+    if result is None:
+        # Limit reached - clean up upstream file
+        try:
+            await client.vector_stores.files.delete(
+                vector_store_id=vs_obj.remote_id, file_id=remote_vs_file.id
+            )
+        except Exception:
+            pass
+        return error_response(f"Vector store file limit reached ({max_files})", status=403)
 
     # Return upstream response with ID and vector_store_id replaced
     response_data = remote_vs_file.model_dump(mode="json")
-    response_data["id"] = vs_file_obj.id
+    response_data["id"] = result.id
     response_data["vector_store_id"] = vs_obj_locked.id
     # Map file_id to local Aqueduct file ID
     response_data["file_id"] = file_obj.id

@@ -130,7 +130,8 @@ async def vector_store_file_batches(
         vs_file_obj = VectorStoreFile(
             vector_store=vs_obj,
             file_obj=file_obj,
-            remote_id=None,  # Will be set when batch processes
+            batch=batch_obj,
+            remote_id=None,
             status="in_progress",
             usage_bytes=0,
             created_at=int(now.timestamp()),
@@ -203,6 +204,25 @@ async def vector_store_file_batch(
         batch_obj.file_counts = remote_batch.file_counts.model_dump(mode="json")
     await sync_to_async(batch_obj.save)()
 
+    # Handle orphaned VectorStoreFile records when batch fails
+    # Find records with remote_id=None that were created for this batch
+    if batch_obj.status in ("failed", "cancelled"):
+        orphaned_files = await sync_to_async(list)(
+            VectorStoreFile.objects.filter(
+                batch=batch_obj, remote_id__isnull=True, status="in_progress"
+            )
+        )
+        if orphaned_files:
+
+            @sync_to_async
+            def mark_orphans_failed():
+                for vs_file in orphaned_files:
+                    vs_file.status = "failed"
+                    vs_file.last_error = f"Batch {batch_obj.status}: files were not processed"
+                    vs_file.save()
+
+            await mark_orphans_failed()
+
     # Return upstream response with only id and vector_store_id replaced
     response_data = remote_batch.model_dump(mode="json")
     response_data["id"] = batch_obj.id
@@ -268,6 +288,23 @@ async def vector_store_file_batch_cancel(
     if hasattr(remote_batch, "file_counts") and remote_batch.file_counts:
         batch_obj.file_counts = remote_batch.file_counts.model_dump(mode="json")
     await sync_to_async(batch_obj.save)()
+
+    # Handle orphaned VectorStoreFile records when batch is cancelled
+    orphaned_files = await sync_to_async(list)(
+        VectorStoreFile.objects.filter(
+            batch=batch_obj, remote_id__isnull=True, status="in_progress"
+        )
+    )
+    if orphaned_files:
+
+        @sync_to_async
+        def mark_orphans_cancelled():
+            for vs_file in orphaned_files:
+                vs_file.status = "failed"
+                vs_file.last_error = "Batch cancelled: files were not processed"
+                vs_file.save()
+
+        await mark_orphans_cancelled()
 
     # Return upstream response with only id and vector_store_id replaced
     response_data = remote_batch.model_dump(mode="json")

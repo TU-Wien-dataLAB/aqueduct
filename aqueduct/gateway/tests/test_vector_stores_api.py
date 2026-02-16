@@ -136,24 +136,46 @@ def create_mock_vector_store_client():
 
     mock_client.vector_stores.search = AsyncMock(side_effect=mock_vs_search)
 
-    # Mock vector store files
-    mock_client.vector_stores.files.create = AsyncMock(
-        return_value=create_mock_vector_store_file("123", "completed")
-    )
-    mock_client.vector_stores.files.retrieve = AsyncMock(
-        return_value=create_mock_vector_store_file("123", "completed")
-    )
+    # Mock vector store files - track created files so list returns them
+    vsf_counter = [0]
+    created_vs_files = []
 
-    # Mock file delete - returns a proper delete response
+    async def mock_vsf_create(*args, **kwargs):
+        vsf_counter[0] += 1
+        vs_file = create_mock_vector_store_file(str(vsf_counter[0]), "completed")
+        created_vs_files.append(vs_file)
+        return vs_file
+
+    mock_client.vector_stores.files.create = AsyncMock(side_effect=mock_vsf_create)
+
+    async def mock_vsf_retrieve(*args, **kwargs):
+        file_id = kwargs.get("file_id", "")
+        for f in created_vs_files:
+            if f.id == file_id:
+                return f
+        return create_mock_vector_store_file("123", "completed")
+
+    mock_client.vector_stores.files.retrieve = AsyncMock(side_effect=mock_vsf_retrieve)
+
+    # Mock file delete - returns a proper delete response and removes from tracking
     async def mock_vs_file_delete(*args, **kwargs):
-        return VectorStoreFileDeleted(
-            id="vsf-mock-123", deleted=True, object="vector_store.file.deleted"
-        )
+        file_id = kwargs.get("file_id", "")
+        for i, f in enumerate(created_vs_files):
+            if f.id == file_id:
+                created_vs_files.pop(i)
+                break
+        return VectorStoreFileDeleted(id=file_id, deleted=True, object="vector_store.file.deleted")
 
     mock_client.vector_stores.files.delete = AsyncMock(side_effect=mock_vs_file_delete)
 
     # Mock file update - returns file with updated attributes
     async def mock_vs_file_update(*args, **kwargs):
+        file_id = kwargs.get("file_id", "")
+        for f in created_vs_files:
+            if f.id == file_id:
+                if kwargs.get("attributes"):
+                    f.attributes = kwargs["attributes"]
+                return f
         file = create_mock_vector_store_file("123", "completed")
         if kwargs.get("attributes"):
             file.attributes = kwargs["attributes"]
@@ -167,11 +189,9 @@ def create_mock_vector_store_client():
 
     mock_client.vector_stores.files.content = AsyncMock(side_effect=mock_vs_file_content)
 
-    # Mock files list - returns a mock response with data attribute
+    # Mock files list - returns tracked created files
     async def mock_vs_files_list(*args, **kwargs):
-        return AsyncCursorPage[VectorStoreFile](
-            data=[create_mock_vector_store_file("123", "completed")], has_more=False
-        )
+        return AsyncCursorPage[VectorStoreFile](data=list(created_vs_files), has_more=False)
 
     mock_client.vector_stores.files.list = AsyncMock(side_effect=mock_vs_files_list)
 
@@ -398,6 +418,79 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(len(data["data"]), 0)
+
+    @patch("gateway.views.vector_stores.get_files_api_client")
+    @patch("gateway.views.vector_store_files.get_files_api_client")
+    def test_sync_files_from_upstream_creates_local_records(
+        self, mock_vs_files_client, mock_vs_client
+    ):
+        """Test that files from upstream are synced and local records created if not exist."""
+        # Set up the mock for vector store creation
+        mock_vs_client.return_value = create_mock_vector_store_client()
+
+        # Create vector store first so we know its remote_id
+        vs_id = self._create_vector_store(mock_vs_client)
+
+        # Get the vector store to find its remote_id
+        vs_obj = VectorStoreModel.objects.get(id=vs_id)
+        vs_remote_id = vs_obj.remote_id
+
+        # Now create a mock that returns files for this specific vector store
+        now = int(timezone.now().timestamp())
+
+        # Import the OpenAI type directly to avoid any shadowing issues
+        from openai.types.vector_stores import VectorStoreFile as OpenAIVectorStoreFile
+
+        # Create the response directly
+        response_data = AsyncCursorPage[OpenAIVectorStoreFile](
+            data=[
+                OpenAIVectorStoreFile(
+                    id="vsf-upstream-123",
+                    status="completed",
+                    usage_bytes=100,
+                    created_at=now,
+                    last_error=None,
+                    object="vector_store.file",
+                    vector_store_id=vs_remote_id,
+                    file_id="file-mock-123",
+                )
+            ],
+            has_more=False,
+        )
+
+        # First create the base mock
+        base_mock = create_mock_vector_store_client()
+
+        # Replace the list method with a simple return_value
+        base_mock.vector_stores.files.list = AsyncMock(return_value=response_data)
+        mock_vs_files_client.return_value = base_mock
+
+        # Create file object with remote_id matching the upstream file_id
+        file_obj = self._create_file_object(remote_id="file-mock-123")
+
+        # Verify no VectorStoreFile exists yet
+        vs_file_count_before = VectorStoreFileModel.objects.filter(vector_store_id=vs_id).count()
+        self.assertEqual(vs_file_count_before, 0)
+
+        # List files in vector store - should sync from upstream and create local record
+        files_url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": vs_id})
+        resp = self.client.get(files_url, headers=self.headers)
+        self.assertEqual(resp.status_code, 200, f"List files failed: {resp.json()}")
+        data = resp.json()
+
+        # Verify file is returned in response - should have local Aqueduct ID
+        self.assertEqual(len(data["data"]), 1)
+        self.assertTrue(data["data"][0]["id"].startswith("vsf-"))  # Local Aqueduct ID
+
+        # Verify local VectorStoreFile record was created
+        vs_file_count_after = VectorStoreFileModel.objects.filter(vector_store_id=vs_id).count()
+        self.assertEqual(vs_file_count_after, 1)
+
+        # Verify the local record has correct fields
+        vs_file = VectorStoreFileModel.objects.get(vector_store_id=vs_id)
+        self.assertEqual(vs_file.remote_id, "vsf-upstream-123")
+        self.assertEqual(vs_file.file_obj, file_obj)
+        self.assertEqual(vs_file.status, "completed")
 
     @patch("gateway.views.vector_store_files.get_files_api_client")
     def test_nonexistent_file_for_vs_file(self, mock_get_client):

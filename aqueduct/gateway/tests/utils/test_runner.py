@@ -2,6 +2,7 @@ import atexit
 import logging
 from typing import Optional
 
+from django.conf import settings
 from django.test.runner import DiscoverRunner
 
 from mock_api.mock_server import MockAPIServer
@@ -31,18 +32,21 @@ class MockServerTestRunner(DiscoverRunner):
         """Set up the test environment, starting the mock server."""
         super().setup_test_environment(**kwargs)
 
-        # Start the mock server once for the entire test suite
-        global _shared_mock_server
-        _shared_mock_server = MockAPIServer(host="localhost", delays=False)
-        try:
-            _shared_mock_server.start()
-            logger.info(f"✓ Mock server started on {_shared_mock_server.base_url}.")
-        except RuntimeError as err:
-            logger.error(f"✗ Failed to start mock server: {err}")
-            raise
+        if settings.TESTS_USE_MOCK_API:
+            # Start the mock server once for the entire test suite
+            global _shared_mock_server
+            _shared_mock_server = MockAPIServer(host="localhost", delays=False)
+            try:
+                _shared_mock_server.start()
+                logger.info(f"✓ Mock server started on {_shared_mock_server.base_url}.")
+            except RuntimeError as err:
+                logger.error(f"✗ Failed to start mock server: {err}")
+                raise
 
-        # Ensure server is stopped even if tests crash
-        atexit.register(self._cleanup_server)
+            # Ensure server is stopped even if tests crash
+            atexit.register(self._cleanup_server)
+        else:
+            logger.warning("Skipping the initialisation of the mock server.")
 
     def teardown_test_environment(self, **kwargs):
         """Tear down the test environment, stopping the mock server."""

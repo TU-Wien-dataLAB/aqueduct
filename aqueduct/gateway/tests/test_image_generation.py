@@ -166,30 +166,28 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             "n": 2,
             "size": "256x256",
         }
-
-        with self.mock_server.patch_external_api(
-            self.url,
-            MockConfig(
-                status_code=HTTPStatus.OK,
-                response_data={
-                    "created": 1713833628,
-                    "data": [
-                        {
-                            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
-                        },
-                        {
-                            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
-                        },
-                    ],
-                    "usage": {
-                        "total_tokens": 100,
-                        "input_tokens": 50,
-                        "output_tokens": 50,
-                        "input_tokens_details": {"text_tokens": 10, "image_tokens": 40},
+        expected = MockConfig(
+            status_code=HTTPStatus.OK,
+            response_data={
+                "created": 1713833628,
+                "data": [
+                    {
+                        "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
                     },
+                    {
+                        "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+                    },
+                ],
+                "usage": {
+                    "total_tokens": 100,
+                    "input_tokens": 50,
+                    "output_tokens": 50,
+                    "input_tokens_details": {"text_tokens": 10, "image_tokens": 40},
                 },
-            ),
-        ):
+            },
+        )
+
+        with self.mock_server.patch_external_api(self.url, expected):
             response = self.client.post(
                 self.url,
                 data=json.dumps(payload),

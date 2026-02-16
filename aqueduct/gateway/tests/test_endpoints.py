@@ -30,7 +30,7 @@ from gateway.tests.utils.base import (
     GatewayIntegrationTestCase,
 )
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
-from mock_api.mock_configs import MockConfig, MockStreamingConfig
+from mock_api.mock_configs import MockConfig, MockStreamingConfig, convert_to_stream_data
 
 User = get_user_model()
 
@@ -209,12 +209,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with (
-            patch(
-                "gateway.views.decorators.extract_text_with_tika",
-                return_value="This is a test file content for base64 encoding.",
-            ),
-            self.mock_server.patch_external_api(),
+        with patch(
+            "gateway.views.decorators.extract_text_with_tika",
+            return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
                 self.url,
@@ -290,12 +287,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with (
-            patch(
-                "gateway.views.decorators.extract_text_with_tika",
-                return_value="This is a test file content for base64 encoding.",
-            ),
-            self.mock_server.patch_external_api(),
+        with patch(
+            "gateway.views.decorators.extract_text_with_tika",
+            return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
                 self.url,
@@ -406,12 +400,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with (
-            patch(
-                "gateway.views.decorators.extract_text_with_tika",
-                return_value="This is a test file content for base64 encoding.",
-            ),
-            self.mock_server.patch_external_api(),
+        with patch(
+            "gateway.views.decorators.extract_text_with_tika",
+            return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
                 self.url, data=json.dumps(payload), headers=headers, content_type="application/json"
@@ -514,12 +505,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        with (
-            patch(
-                "gateway.views.decorators.extract_text_with_tika",
-                return_value="This is a test file content for base64 encoding.",
-            ),
-            self.mock_server.patch_external_api(),
+        with patch(
+            "gateway.views.decorators.extract_text_with_tika",
+            return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
                 self.url,
@@ -567,11 +555,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             status_code=HTTPStatus.IM_A_TEAPOT,
         )
 
-        with (
-            patch(
-                "gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock
-            ),
-            self.mock_server.patch_external_api(),
+        with patch(
+            "gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock
         ):
             response = self.client.post(
                 self.url,
@@ -857,7 +842,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
         }
 
-        expected = MockConfig(
+        mock_resp = MockConfig(
             response_data={
                 "id": "chatcmpl-123456789",
                 "created": 1768397207,
@@ -888,7 +873,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 },
             }
         )
-        with self.mock_server.patch_external_api("chat/completions", expected):
+        with self.mock_server.patch_external_api("chat/completions", mock_resp):
             response = self.client.post(
                 self.url,
                 data=json.dumps(payload),
@@ -1016,14 +1001,33 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "stream": True,
         }
 
-        expected_data = [
-            b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"{\\"greeting\\":","role":"assistant"}}],"stream_options":{"include_usage":true}}\n\n',
-            b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"\\"Hello, world!\\","}}],"stream_options":{"include_usage":true}}\n\n',
-            b'data: {"id":"chatcmpl-12345","created":1768398242,"model":"gpt-4.1-nano","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"\\"count\\":1}"}}],"stream_options":{"include_usage":true}}\n\n',
+        _common_stream_chunk_data = {
+            "id": "chatcmpl-12345",
+            "created": 1768398242,
+            "model": "gpt-4.1-nano",
+            "object": "chat.completion.chunk",
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        _chat_completion_stream_data = [
+            ModelResponse(
+                **_common_stream_chunk_data,
+                choices=[{"index": 0, "delta": {"content": '{"greeting":', "role": "assistant"}}],
+            ).model_dump(),
+            ModelResponse(
+                **_common_stream_chunk_data,
+                choices=[{"index": 0, "delta": {"content": '"Hello, world!",'}}],
+            ).model_dump(),
+            ModelResponse(
+                **_common_stream_chunk_data,
+                choices=[{"index": 0, "delta": {"content": '"count":1}'}}],
+            ).model_dump(),
         ]
-        expected = MockStreamingConfig(response_data=expected_data)
+        mock_resp = MockStreamingConfig(
+            response_data=convert_to_stream_data(_chat_completion_stream_data)
+        )
 
-        with self.mock_server.patch_external_api("chat/completions", expected):
+        with self.mock_server.patch_external_api("chat/completions", mock_resp):
             response = await self.async_client.post(
                 self.url,
                 data=json.dumps(payload),

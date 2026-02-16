@@ -45,7 +45,7 @@ class MockPlainTextConfig(MockConfig):
     headers: dict[str, str] = {"Content-Type": "text/plain; charset=utf-8"}
 
 
-def _convert_to_stream_data(data: list[BaseModel]) -> list[bytes]:
+def convert_to_stream_data(data: list[BaseModel]) -> list[bytes]:
     return [b"data: " + json.dumps(item).encode() + b"\n\n" for item in data]
 
 
@@ -384,9 +384,9 @@ _responses_stream_data: list[BaseModel] = [
 
 default_post_stream_configs = {
     "chat/completions": MockStreamingConfig(
-        response_data=_convert_to_stream_data(_chat_completion_stream_data)
+        response_data=convert_to_stream_data(_chat_completion_stream_data)
     ),
-    "responses": MockStreamingConfig(response_data=_convert_to_stream_data(_responses_stream_data)),
+    "responses": MockStreamingConfig(response_data=convert_to_stream_data(_responses_stream_data)),
 }
 
 default_get_configs = {

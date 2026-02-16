@@ -1,7 +1,7 @@
 {% load static %}
-<a href="{% url 'vector_store_detail' id=vs.id %}" class="card bg-base-100 border border-base-300 hover:border-primary/50 hover:shadow-md transition-all duration-200 cursor-pointer">
+<div class="card bg-base-100 border border-base-300 hover:border-primary/50 hover:shadow-md transition-all duration-200">
     <div class="card-body">
-        <div class="flex items-start gap-3">
+        <a href="{% url 'vector_store_detail' id=vs.id %}" class="flex items-start gap-3 cursor-pointer">
             <img src="{% static 'icons/vector_store.svg' %}" alt="Vector Store" 
                  class="h-10 w-10 object-contain flex-shrink-0 mt-1 [[data-theme=dark]_&]:invert">
             <div class="flex-1 min-w-0">
@@ -21,7 +21,7 @@
                     {% endif %}
                 </div>
             </div>
-        </div>
+        </a>
         
         <div class="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-base-300 text-sm">
             <div>
@@ -41,5 +41,17 @@
                 <p class="font-semibold">{{ vs.created_dt|date:"Y-m-d" }}</p>
             </div>
         </div>
+
+        <div class="mt-3 pt-3 border-t border-base-300 flex justify-end">
+            <form method="post" action="{% url 'vector_store_card_refresh' id=vs.id %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-xs btn-soft btn-primary gap-1"
+                        title="Sync this vector store from upstream API">
+                    <img src="{% static 'icons/sync.svg' %}" alt="Sync"
+                         class="h-3.5 w-3.5 [[data-theme=dark]_&]:invert">
+                    Refresh
+                </button>
+            </form>
+        </div>
     </div>
-</a>
+</div>

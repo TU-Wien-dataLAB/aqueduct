@@ -49,4 +49,14 @@ urlpatterns = [
     path(
         "vector-stores/<str:id>/", views.VectorStoreDetailView.as_view(), name="vector_store_detail"
     ),
+    path(
+        "vector-stores/<str:id>/refresh/",
+        views.VectorStoreDetailRefreshView.as_view(),
+        name="vector_store_detail_refresh",
+    ),
+    path(
+        "vector-stores/<str:id>/card-refresh/",
+        views.VectorStoreCardRefreshView.as_view(),
+        name="vector_store_card_refresh",
+    ),
 ]

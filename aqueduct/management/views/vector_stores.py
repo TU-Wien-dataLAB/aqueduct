@@ -1,11 +1,19 @@
+import logging
 from datetime import datetime
 
+from asgiref.sync import async_to_sync
 from django.conf import settings
+from django.contrib import messages
 from django.db.models import Q
+from django.shortcuts import redirect
+from django.urls import reverse
+from django.views import View
 from django.views.generic import TemplateView
 
-from ..models import VectorStore
+from ..models import VectorStore, VectorStoreFile
 from .base import BaseAqueductView
+
+log = logging.getLogger(__name__)
 
 
 class UserVectorStoresView(BaseAqueductView, TemplateView):
@@ -129,3 +137,114 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
             context["vector_store"] = None
 
         return context
+
+
+def _refresh_vector_store(vs):
+    """
+    Refresh a single VectorStore from upstream.
+    Calls areload_from_upstream() with raise_on_error=False.
+    Returns True if the refresh succeeded, False otherwise.
+    """
+    try:
+        result = async_to_sync(vs.areload_from_upstream)(raise_on_error=False)
+        return result is not None
+    except Exception:
+        log.exception(f"Failed to refresh vector store {vs.id} from upstream")
+        return False
+
+
+def _refresh_vector_store_file(vsf):
+    """
+    Refresh a single VectorStoreFile from upstream.
+    Calls areload_from_upstream() with raise_on_error=False.
+    Returns True if the refresh succeeded, False otherwise.
+    """
+    try:
+        result = async_to_sync(vsf.areload_from_upstream)(raise_on_error=False)
+        return result is not None
+    except Exception:
+        log.exception(f"Failed to refresh vector store file {vsf.id} from upstream")
+        return False
+
+
+class VectorStoreCardRefreshView(BaseAqueductView, View):
+    """
+    POST-only view that refreshes a single vector store from the upstream API,
+    then redirects back to the vector stores list page.
+    """
+
+    def post(self, request, *args, **kwargs):
+        user = self.profile.user
+        teams = self.get_teams_for_user()
+        vector_store_id = self.kwargs.get("id")
+
+        try:
+            vs = VectorStore.objects.get(
+                Q(id=vector_store_id)
+                & (Q(token__user=user) | Q(token__service_account__team__in=teams))
+            )
+        except VectorStore.DoesNotExist:
+            messages.error(request, "Vector store not found or you do not have access.")
+            return redirect(reverse("vector_stores"))
+
+        if _refresh_vector_store(vs):
+            messages.success(request, f'Synced "{vs.name}" from upstream.')
+        else:
+            messages.warning(request, f'Failed to sync "{vs.name}" from upstream.')
+
+        return redirect(reverse("vector_stores"))
+
+
+class VectorStoreDetailRefreshView(BaseAqueductView, View):
+    """
+    POST-only view that refreshes a specific vector store and all its files
+    from the upstream API, then redirects back to the detail page.
+    """
+
+    def post(self, request, *args, **kwargs):
+        user = self.profile.user
+        teams = self.get_teams_for_user()
+        vector_store_id = self.kwargs.get("id")
+
+        try:
+            vs = VectorStore.objects.get(
+                Q(id=vector_store_id)
+                & (Q(token__user=user) | Q(token__service_account__team__in=teams))
+            )
+        except VectorStore.DoesNotExist:
+            messages.error(request, "Vector store not found or you do not have access.")
+            return redirect(reverse("vector_stores"))
+
+        # Refresh the vector store itself
+        vs_ok = _refresh_vector_store(vs)
+
+        # Refresh all files in this vector store
+        vs_files = VectorStoreFile.objects.filter(vector_store=vs).select_related("vector_store")
+        file_success = 0
+        file_fail = 0
+        for vsf in vs_files:
+            if _refresh_vector_store_file(vsf):
+                file_success += 1
+            else:
+                file_fail += 1
+
+        # Build message
+        parts = []
+        if vs_ok:
+            parts.append("Vector store refreshed")
+        else:
+            parts.append("Failed to refresh vector store")
+
+        if file_success + file_fail > 0:
+            if file_fail == 0:
+                parts.append(f"{file_success} file(s) refreshed")
+            else:
+                parts.append(f"{file_success} file(s) refreshed, {file_fail} failed")
+
+        msg = ". ".join(parts) + "."
+        if not vs_ok or file_fail > 0:
+            messages.warning(request, msg)
+        else:
+            messages.success(request, msg)
+
+        return redirect(reverse("vector_store_detail", kwargs={"id": vector_store_id}))

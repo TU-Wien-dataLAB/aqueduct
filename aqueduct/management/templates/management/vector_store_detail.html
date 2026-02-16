@@ -16,9 +16,20 @@
 
         {# Header with back link #}
         <div class="mb-6">
-            <a href="{% url 'vector_stores' %}" class="btn btn-sm btn-ghost mb-2">
-                ← Back to Vector Stores
-            </a>
+            <div class="flex items-center justify-between mb-2">
+                <a href="{% url 'vector_stores' %}" class="btn btn-sm btn-ghost">
+                    ← Back to Vector Stores
+                </a>
+                <form method="post" action="{% url 'vector_store_detail_refresh' id=vector_store.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-soft btn-primary gap-1"
+                            title="Sync from upstream API">
+                        <img src="{% static 'icons/sync.svg' %}" alt="Sync"
+                             class="h-4 w-4 [[data-theme=dark]_&]:invert">
+                        Refresh
+                    </button>
+                </form>
+            </div>
             <div class="flex items-start gap-4">
                 <img src="{% static 'icons/vector_store.svg' %}" alt="Vector Store" 
                      class="h-12 w-12 object-contain [[data-theme=dark]_&]:invert">

@@ -99,7 +99,8 @@ class GatewayIntegrationTestCase(TestCase):
             cls.mock_server = get_shared_mock_server()
             # OpenAI's AsyncClient first tries to get the base url and API key from the router
             # config, and only falls back to env variables if they are not set there.
-            # The patching is not strictly necessary, but it's here as a safety measure.
+            # The patching is not strictly necessary if the router config defines these values,
+            # but it's here as a safety measure.
             cls._patcher = patch.dict(
                 "os.environ",
                 {"OPENAI_BASE_URL": cls.mock_server.base_url, "OPENAI_API_KEY": "fake_openai_key"},

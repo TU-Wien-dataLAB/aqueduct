@@ -2,6 +2,9 @@ import json
 from http import HTTPStatus
 
 from django.urls import reverse
+from openai.types import Image, ImagesResponse
+from openai.types.images_response import Usage as ImageUsage
+from openai.types.images_response import UsageInputTokensDetails
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayIntegrationTestCase
@@ -168,23 +171,23 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         }
         expected = MockConfig(
             status_code=HTTPStatus.OK,
-            response_data={
-                "created": 1713833628,
-                "data": [
-                    {
-                        "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
-                    },
-                    {
-                        "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
-                    },
+            response_data=ImagesResponse(
+                created=1713833628,
+                data=[
+                    Image(
+                        b64_json="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+                    ),
+                    Image(
+                        b64_json="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+                    ),
                 ],
-                "usage": {
-                    "total_tokens": 100,
-                    "input_tokens": 50,
-                    "output_tokens": 50,
-                    "input_tokens_details": {"text_tokens": 10, "image_tokens": 40},
-                },
-            },
+                usage=ImageUsage(
+                    total_tokens=100,
+                    input_tokens=50,
+                    output_tokens=50,
+                    input_tokens_details=UsageInputTokensDetails(text_tokens=10, image_tokens=40),
+                ),
+            ).model_dump(),
         )
 
         with self.mock_server.patch_external_api(self.url, expected):

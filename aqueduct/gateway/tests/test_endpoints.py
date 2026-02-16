@@ -11,7 +11,7 @@ from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
 from httpx import Request as HttpxRequest
 from httpx import Response
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import ModelResponse, Usage
 from openai.types.audio import Transcription
 from openai.types.chat import ChatCompletion
 from openai.types.image import Image
@@ -843,13 +843,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         mock_resp = MockConfig(
-            response_data={
-                "id": "chatcmpl-123456789",
-                "created": 1768397207,
-                "model": "gpt-4.1-nano-2025-04-14",
-                "object": "chat.completion",
-                "system_fingerprint": "fp_f0bc439dc3",
-                "choices": [
+            response_data=ModelResponse(
+                id="chatcmpl-123456789",
+                created=1768397207,
+                model="gpt-4.1-nano-2025-04-14",
+                object="chat.completion",
+                choices=[
                     {
                         "finish_reason": "stop",
                         "index": 0,
@@ -859,19 +858,19 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                         },
                     }
                 ],
-                "usage": {
-                    "completion_tokens": 13,
-                    "prompt_tokens": 59,
-                    "total_tokens": 72,
-                    "completion_tokens_details": {
+                usage=Usage(
+                    completion_tokens=13,
+                    prompt_tokens=59,
+                    total_tokens=72,
+                    completion_tokens_details={
                         "accepted_prediction_tokens": 0,
                         "audio_tokens": 0,
                         "reasoning_tokens": 0,
                         "rejected_prediction_tokens": 0,
                     },
-                    "prompt_tokens_details": {"audio_tokens": 0, "cached_tokens": 0},
-                },
-            }
+                    prompt_tokens_details={"audio_tokens": 0, "cached_tokens": 0},
+                ),
+            ).model_dump()
         )
         with self.mock_server.patch_external_api("chat/completions", mock_resp):
             response = self.client.post(

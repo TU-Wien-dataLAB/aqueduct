@@ -128,8 +128,8 @@ class MockAPIServer:
         raises `ValueError`.
 
         Args:
-            url: The path to patch, e.g. "chat/completions"
-            config: The mock configuration to use for creating the response
+            url (optional): The path to patch, e.g. "chat/completions"
+            config (optional): The mock configuration to use for creating the response
         """
         if (url is None) != (config is None):
             raise ValueError("Both 'url' and 'config' must be provided - or neither of them.")

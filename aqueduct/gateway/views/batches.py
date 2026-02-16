@@ -158,28 +158,13 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
         return error_response("Files API not configured", status=503)
 
     try:
-        remote_batch = await client.batches.retrieve(remote_id)
+        remote_batch = await batch_obj.areload_from_upstream(client)
     except Exception as e:
         return error_response(
             f"Failed to retrieve batch from upstream: {str(e)}",
             error_type="server_error",
             status=502,
         )
-
-    # Update local record with latest status
-    batch_obj.status = remote_batch.status
-    batch_obj.request_counts = (
-        remote_batch.request_counts.model_dump() if remote_batch.request_counts else {}
-    )
-    if remote_batch.completed_at:
-        batch_obj.completed_at = remote_batch.completed_at
-    if remote_batch.failed_at:
-        batch_obj.failed_at = remote_batch.failed_at
-    if remote_batch.cancelled_at:
-        batch_obj.cancelled_at = remote_batch.cancelled_at
-    if remote_batch.expired_at:
-        batch_obj.expired_at = remote_batch.expired_at
-    await sync_to_async(batch_obj.save)()
 
     # Create local FileObject records for output/error files if missing (inherit ownership from input_file token)
     output_file_obj = await sync_batch_file_if_needed(

@@ -322,7 +322,7 @@ async def vector_store_file(
 
     # Get the vector store file
     try:
-        vs_file_obj = await VectorStoreFile.objects.select_related("file_obj").aget(
+        vs_file_obj = await VectorStoreFile.objects.select_related("file_obj", "vector_store").aget(
             id=file_id, vector_store=vs_obj
         )
     except VectorStoreFile.DoesNotExist:
@@ -336,22 +336,13 @@ async def vector_store_file(
     if request.method == "GET":
         # Retrieve from upstream and sync status
         try:
-            remote_vs_file = await client.vector_stores.files.retrieve(
-                vector_store_id=vs_obj.remote_id, file_id=vs_file_obj.remote_id
-            )
+            remote_vs_file = await vs_file_obj.areload_from_upstream(client)
         except Exception as e:
             return error_response(
                 f"Failed to retrieve vector store file from upstream: {str(e)}",
                 error_type="server_error",
                 status=502,
             )
-
-        # Update local record with latest status
-        vs_file_obj.status = remote_vs_file.status or vs_file_obj.status
-        vs_file_obj.usage_bytes = remote_vs_file.usage_bytes
-        if hasattr(remote_vs_file, "last_error") and remote_vs_file.last_error:
-            vs_file_obj.last_error = remote_vs_file.last_error
-        await sync_to_async(vs_file_obj.save)()
 
         # Return upstream response with ID and vector_store_id replaced
         response_data = remote_vs_file.model_dump(mode="json")
@@ -395,9 +386,7 @@ async def vector_store_file(
 
     # DELETE /v1/vector_stores/{vector_store_id}/files/{file_id}
     try:
-        remote_result = await client.vector_stores.files.delete(
-            vector_store_id=vs_obj.remote_id, file_id=vs_file_obj.remote_id
-        )
+        await vs_file_obj.adelete_upstream(client)
     except Exception as e:
         return error_response(
             f"Failed to delete vector store file from upstream: {str(e)}",
@@ -408,13 +397,8 @@ async def vector_store_file(
     # Delete local record
     await sync_to_async(vs_file_obj.delete)()
 
-    # Return upstream response with ID replaced
-    if hasattr(remote_result, "model_dump"):
-        response_data = remote_result.model_dump(mode="json")
-    else:
-        response_data = {"deleted": True}
-    response_data["id"] = file_id
-    response_data["object"] = "vector_store.file.deleted"
+    # Return response with ID replaced
+    response_data = {"id": file_id, "object": "vector_store.file.deleted", "deleted": True}
 
     return JsonResponse(response_data, status=200)
 

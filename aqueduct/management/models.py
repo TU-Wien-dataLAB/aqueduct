@@ -801,10 +801,79 @@ class FileObject(models.Model):
             status="processed",
         )
 
-    def delete(self, using=None, keep_parents=False):
+    async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
+        """
+        Delete the file from the upstream API.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns False.
+
+        Returns:
+            True on success or if remote_id is None (nothing to delete).
+            False on failure (only if raise_on_error=False).
+        """
+        if not self.remote_id:
+            return True
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            await client.files.delete(self.remote_id)
+            return True
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to delete file {self.id} from upstream: {e}")
+            return False
+
+    async def areload_from_upstream(
+        self, client=None, raise_on_error=True
+    ) -> Optional[openai.types.FileObject]:
+        """
+        Fetch current state from upstream and update local DB fields.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns None.
+
+        Returns:
+            The upstream response object on success, or None on failure/remote_id is None.
+        """
+        if not self.remote_id:
+            return None
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            remote = await client.files.retrieve(self.remote_id)
+            self.purpose = remote.purpose
+            self.expires_at = remote.expires_at
+            await self.asave()
+            return remote
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload file {self.id} from upstream: {e}")
+            return None
+
+    def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
         Override ORM delete - files are stored upstream, so we only delete the local DB record.
+
+        Args:
+            delete_upstream: If True, also delete from upstream API before local delete.
         """
+        if delete_upstream and self.remote_id:
+            import asyncio
+
+            asyncio.run(self.adelete_upstream())
         super().delete(using=using, keep_parents=keep_parents)
 
     def __str__(self):
@@ -974,6 +1043,47 @@ class Batch(models.Model):
             ),
         )
 
+    async def areload_from_upstream(
+        self, client=None, raise_on_error=True
+    ) -> Optional[openai.types.Batch]:
+        """
+        Fetch current state from upstream and update local DB fields.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns None.
+
+        Returns:
+            The upstream response object on success, or None on failure/remote_id is None.
+        """
+        if not self.remote_id:
+            return None
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            remote = await client.batches.retrieve(self.remote_id)
+            self.status = remote.status
+            if remote.request_counts:
+                self.request_counts = remote.request_counts.model_dump()
+            self.completed_at = remote.completed_at
+            self.failed_at = remote.failed_at
+            self.cancelled_at = remote.cancelled_at
+            self.cancelling_at = remote.cancelling_at
+            self.expired_at = remote.expired_at
+            self.in_progress_at = remote.in_progress_at
+            self.finalizing_at = remote.finalizing_at
+            await self.asave()
+            return remote
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload batch {self.id} from upstream: {e}")
+            return None
+
     def delete(self, using=None, keep_parents=False):
         """
         Override delete - files are stored upstream, so we only delete the local DB record.
@@ -1067,10 +1177,80 @@ class VectorStore(models.Model):
             )
         ]
 
-    def delete(self, using=None, keep_parents=False):
+    async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
+        """
+        Delete the vector store from the upstream API.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns False.
+
+        Returns:
+            True on success or if remote_id is None (nothing to delete).
+            False on failure (only if raise_on_error=False).
+        """
+        if not self.remote_id:
+            return True
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            await client.vector_stores.delete(self.remote_id)
+            return True
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to delete vector store {self.id} from upstream: {e}")
+            return False
+
+    async def areload_from_upstream(
+        self, client=None, raise_on_error=True
+    ) -> Optional[openai.types.VectorStore]:
+        """
+        Fetch current state from upstream and update local DB fields.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns None.
+
+        Returns:
+            The upstream response object on success, or None on failure/remote_id is None.
+        """
+        if not self.remote_id:
+            return None
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            remote = await client.vector_stores.retrieve(self.remote_id)
+            self.status = remote.status or self.status
+            self.usage_bytes = getattr(remote, "usage_bytes", self.usage_bytes)
+            self.last_active_at = int(timezone.now().timestamp())
+            await self.asave()
+            return remote
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload vector store {self.id} from upstream: {e}")
+            return None
+
+    def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
         Override ORM delete - vector stores are stored upstream, so we only delete the local DB record.
+
+        Args:
+            delete_upstream: If True, also delete from upstream API before local delete.
         """
+        if delete_upstream and self.remote_id:
+            import asyncio
+
+            asyncio.run(self.adelete_upstream())
         super().delete(using=using, keep_parents=keep_parents)
 
 
@@ -1132,6 +1312,131 @@ class VectorStoreFile(models.Model):
         help_text="Bytes used in vector store (may differ from original file after chunking).",
     )
 
+    async def _get_vector_store_remote_id(self) -> Optional[str]:
+        """
+        Get the vector_store's remote_id via async DB access.
+
+        Note: Callers should use select_related("vector_store") when fetching
+        VectorStoreFile instances in sync contexts.
+        """
+        if not self.vector_store_id:
+            return None
+        vs = await VectorStore.objects.aget(pk=self.vector_store_id)
+        return vs.remote_id
+
+    async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
+        """
+        Delete the vector store file from the upstream API.
+
+        Note: Callers should use select_related("vector_store") when fetching
+        VectorStoreFile instances to avoid extra queries.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns False.
+
+        Returns:
+            True on success or if remote_id is None (nothing to delete).
+            False on failure (only if raise_on_error=False).
+        """
+        if not self.remote_id:
+            return True
+
+        if not self.vector_store_id:
+            log.warning(f"Cannot delete vector store file {self.id}: vector_store not set")
+            if raise_on_error:
+                raise ValueError("Vector store not loaded")
+            return False
+
+        vs_remote_id = await self._get_vector_store_remote_id()
+        if not vs_remote_id:
+            log.warning(f"Cannot delete vector store file {self.id}: vector_store has no remote_id")
+            if raise_on_error:
+                raise ValueError("Vector store has no remote_id")
+            return False
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            await client.vector_stores.files.delete(
+                vector_store_id=vs_remote_id, file_id=self.remote_id
+            )
+            return True
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to delete vector store file {self.id} from upstream: {e}")
+            return False
+
+    async def areload_from_upstream(
+        self, client=None, raise_on_error=True
+    ) -> Optional["openai.types.vector_stores.VectorStoreFile"]:
+        """
+        Fetch current state from upstream and update local DB fields.
+
+        Note: Callers should use select_related("vector_store") when fetching
+        VectorStoreFile instances to avoid extra queries.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns None.
+
+        Returns:
+            The upstream response object on success, or None on failure/remote_id is None.
+        """
+        if not self.remote_id:
+            return None
+
+        if not self.vector_store_id:
+            if raise_on_error:
+                raise ValueError("Vector store not set")
+            log.warning(f"Cannot reload vector store file {self.id}: vector_store not set")
+            return None
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        vs_remote_id = await self._get_vector_store_remote_id()
+        if not vs_remote_id:
+            if raise_on_error:
+                raise ValueError("Vector store has no remote_id")
+            log.warning(f"Cannot reload vector store file {self.id}: vector_store has no remote_id")
+            return None
+
+        try:
+            remote = await client.vector_stores.files.retrieve(
+                vector_store_id=vs_remote_id, file_id=self.remote_id
+            )
+            self.status = remote.status or self.status
+            self.usage_bytes = remote.usage_bytes
+            if hasattr(remote, "last_error") and remote.last_error:
+                self.last_error = remote.last_error
+            await self.asave()
+            return remote
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload vector store file {self.id} from upstream: {e}")
+            return None
+
+    def delete(self, using=None, keep_parents=False, delete_upstream=False):
+        """
+        Override ORM delete.
+
+        Args:
+            delete_upstream: If True, also delete from upstream API before local delete.
+        """
+        if delete_upstream and self.remote_id:
+            import asyncio
+
+            asyncio.run(self.adelete_upstream())
+        super().delete(using=using, keep_parents=keep_parents)
+
     class Meta:
         verbose_name = "Vector Store File"
         verbose_name_plural = "Vector Store Files"
@@ -1184,6 +1489,60 @@ class VectorStoreFileBatch(models.Model):
     created_at = models.PositiveIntegerField(
         help_text="The Unix timestamp (in seconds) for when the batch was created."
     )
+
+    async def areload_from_upstream(
+        self, client=None, raise_on_error=True
+    ) -> Optional["openai.types.vector_stores.VectorStoreFileBatch"]:
+        """
+        Fetch current state from upstream and update local DB fields.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns None.
+
+        Returns:
+            The upstream response object on success, or None on failure/remote_id is None.
+        """
+        if not self.remote_id:
+            return None
+
+        # Ensure vector_store is loaded to access remote_id
+        if not self.vector_store_id:
+            if raise_on_error:
+                raise ValueError("Vector store not set")
+            log.warning(f"Cannot reload vector store file batch {self.id}: vector_store not set")
+            return None
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        # Load vector_store via async DB access to get its remote_id
+        vs = await VectorStore.objects.aget(pk=self.vector_store_id)
+
+        if not vs.remote_id:
+            if raise_on_error:
+                raise ValueError("Vector store has no remote_id")
+            log.warning(
+                f"Cannot reload vector store file batch {self.id}: vector_store has no remote_id"
+            )
+            return None
+
+        try:
+            remote = await client.vector_stores.file_batches.retrieve(
+                vector_store_id=vs.remote_id, batch_id=self.remote_id
+            )
+            self.status = remote.status or self.status
+            if hasattr(remote, "file_counts") and remote.file_counts:
+                self.file_counts = remote.file_counts.model_dump()
+            await self.asave()
+            return remote
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload vector store file batch {self.id} from upstream: {e}")
+            return None
 
     class Meta:
         verbose_name = "Vector Store File Batch"

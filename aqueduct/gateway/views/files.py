@@ -271,7 +271,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     if request.method == "GET":
         # Fetch current status from upstream
         try:
-            remote_file = await client.files.retrieve(remote_id)
+            remote_file = await file_obj.areload_from_upstream(client)
         except Exception as e:
             return error_response(
                 f"Failed to retrieve file from upstream: {str(e)}",
@@ -286,7 +286,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
 
     # DELETE /files/{file_id}
     try:
-        delete_response = await client.files.delete(remote_id)
+        await file_obj.adelete_upstream(client)
     except Exception as e:
         return error_response(
             f"Failed to delete file from upstream: {str(e)}", error_type="server_error", status=502
@@ -296,8 +296,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     await sync_to_async(file_obj.delete)()
 
     # Return response with Aqueduct ID
-    response_data = delete_response.model_dump()
-    response_data["id"] = file_obj.id
+    response_data = {"id": file_obj.id, "object": "file", "deleted": True}
     return JsonResponse(response_data, status=200)
 
 

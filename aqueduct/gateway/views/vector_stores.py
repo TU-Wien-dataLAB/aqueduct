@@ -181,19 +181,13 @@ async def vector_store(
     if request.method == "GET":
         # Retrieve from upstream and sync status
         try:
-            remote_vs = await client.vector_stores.retrieve(remote_id)
+            remote_vs = await vs_obj.areload_from_upstream(client)
         except Exception as e:
             return error_response(
                 f"Failed to retrieve vector store from upstream: {str(e)}",
                 error_type="server_error",
                 status=502,
             )
-
-        # Update local record with latest status
-        vs_obj.status = remote_vs.status or vs_obj.status
-        vs_obj.usage_bytes = getattr(remote_vs, "usage_bytes", vs_obj.usage_bytes)
-        vs_obj.last_active_at = int(timezone.now().timestamp())
-        await sync_to_async(vs_obj.save)(update_fields=["status", "usage_bytes", "last_active_at"])
 
         # Return upstream response with only ID replaced
         response_data = remote_vs.model_dump(mode="json")
@@ -242,7 +236,7 @@ async def vector_store(
 
         # No changes requested, return current state
         try:
-            remote_vs = await client.vector_stores.retrieve(remote_id)
+            remote_vs = await vs_obj.areload_from_upstream(client)
             response_data = remote_vs.model_dump(mode="json")
             response_data["id"] = vs_obj.id
             return JsonResponse(response_data, status=200)
@@ -255,7 +249,7 @@ async def vector_store(
 
     # DELETE /v1/vector_stores/{vector_store_id}
     try:
-        await client.vector_stores.delete(remote_id)
+        await vs_obj.adelete_upstream(client)
     except Exception as e:
         return error_response(
             f"Failed to delete vector store from upstream: {str(e)}",

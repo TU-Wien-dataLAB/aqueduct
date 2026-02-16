@@ -208,21 +208,13 @@ async def vector_store_file_batch(
 
     # Retrieve from upstream and sync status
     try:
-        remote_batch = await client.vector_stores.file_batches.retrieve(
-            vector_store_id=vs_obj.remote_id, batch_id=batch_obj.remote_id
-        )
+        remote_batch = await batch_obj.areload_from_upstream(client)
     except Exception as e:
         return error_response(
             f"Failed to retrieve file batch from upstream: {str(e)}",
             error_type="server_error",
             status=502,
         )
-
-    # Update local record with latest status
-    batch_obj.status = remote_batch.status or batch_obj.status
-    if hasattr(remote_batch, "file_counts") and remote_batch.file_counts:
-        batch_obj.file_counts = remote_batch.file_counts.model_dump(mode="json")
-    await sync_to_async(batch_obj.save)()
 
     # Handle orphaned VectorStoreFile records when batch fails
     # Find records with remote_id=None that were created for this batch

@@ -101,32 +101,6 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         self.assertIn("validation error for SpeechCreateParams", response.json()["error"])
         self.assertIn("Field required", response.json()["error"])
 
-    # def test_speech_endpoint_non_tts_model(self):
-    #     """Test speech endpoint with a model that doesn't support TTS."""
-    #     if INTEGRATION_TEST_BACKEND == "vllm":
-    #         self.skipTest("TTS tests require OpenAI backend")
-    #
-    #     payload = {
-    #         "model": self.model,  # This is a chat model, not TTS
-    #         "input": "Hello, this is a test.",
-    #         "voice": "alloy",
-    #     }
-    #
-    #     response = self.client.post(
-    #         self.url_tts,
-    #         data=json.dumps(payload),
-    #         headers=self.headers,
-    #         content_type="application/json",
-    #     )
-    #
-    #     # TODO: Currently this test fails (Response code is 200 instead of 400).
-    #     #  We don't validate the compatibility of the model in the view; this test actually tests
-    #     #  the external API, not our code.
-    #     self.assertEqual(
-    #         response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
-    #     )
-    #     self.assertIn("Incompatible model", response.json()["error"])
-
     @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     def test_speech_endpoint_timeout(self):
         """Test speech endpoint timeout."""
@@ -223,28 +197,6 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         )
         self.assertIn("TranscriptionCreateParamsStreaming.file", response.json()["error"])
         self.assertIn("Field required", response.json()["error"])
-
-    # def test_transcriptions_endpoint_non_stt_model(self):
-    #     """Test transcriptions endpoint with a model that doesn't support STT."""
-    #     if INTEGRATION_TEST_BACKEND == "vllm":
-    #         self.skipTest("STT tests require OpenAI backend")
-    #
-    #     response = self.client.post(
-    #         self.url_stt,
-    #         {
-    #             "file": self.test_audio_file,
-    #             "model": self.model,  # This is a chat model, not STT
-    #         },
-    #         headers=self.multipart_headers,
-    #     )
-    #
-    #     # TODO: Currently this test fails (Response code is 200 instead of 400).
-    #     #  We don't validate the compatibility of the model in the view; this test actually tests
-    #     #  the external API, not our code.
-    #     self.assertEqual(
-    #         response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
-    #     )
-    #     self.assertIn("Incompatible model", response.json()["error"])
 
     def test_transcriptions_endpoint_with_language(self):
         """Test transcriptions endpoint with language parameter."""

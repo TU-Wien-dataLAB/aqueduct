@@ -80,6 +80,17 @@ async def vector_store_files(
         # Build map by remote_id for quick lookup
         remote_id_to_local = {f.remote_id: f for f in existing_local_files if f.remote_id}
 
+        # Build map of batch-created files (remote_id=None) by file_obj.remote_id
+        # for matching against upstream files. When a batch creates VectorStoreFile
+        # records, they start with remote_id=None and need to be linked to their
+        # upstream counterpart once processing completes.
+        # In the OpenAI API, the VectorStoreFile.id equals the source File.id,
+        # so we can match by comparing upstream VectorStoreFile.id to FileObject.remote_id.
+        batch_file_by_file_remote_id = {}
+        for f in existing_local_files:
+            if f.remote_id is None and f.file_obj and f.file_obj.remote_id:
+                batch_file_by_file_remote_id[f.file_obj.remote_id] = f
+
         # Get FileObjects that belong to this user/team, indexed by remote_id
         if token.service_account:
             file_objs = await sync_to_async(list)(
@@ -114,33 +125,54 @@ async def vector_store_files(
                 file_data["file_id"] = local_vs_file.file_obj.id if local_vs_file.file_obj else None
                 response_files.append(file_data)
             else:
-                # Try to find FileObject by matching file_id (upstream file ID)
-                file_obj = file_remote_id_to_obj.get(getattr(remote_file, "file_id", None))
+                # Try to find FileObject by matching the upstream VectorStoreFile ID.
+                # In the OpenAI API, VectorStoreFile.id IS the source file ID,
+                # so we can match it against FileObject.remote_id.
+                # Also check for file_id attribute (some compatible APIs include it).
+                upstream_file_id = getattr(remote_file, "file_id", None) or remote_file.id
+                file_obj = file_remote_id_to_obj.get(upstream_file_id)
                 if file_obj:
                     files_to_create.append((file_obj, remote_file))
 
-        # Batch create new local VectorStoreFile records using get_or_create
-        # to prevent duplicates from concurrent requests
+        # Link upstream files to existing batch-created records or create new ones.
+        # Batch-created VectorStoreFile records have remote_id=None and need to be
+        # updated with their upstream remote_id once the batch finishes processing.
         if files_to_create:
 
             @sync_to_async
-            def create_local_records():
-                created = []
+            def create_or_link_local_records():
+                results = []
                 for file_obj, remote_vs_file in files_to_create:
-                    vs_file, _ = VectorStoreFile.objects.get_or_create(
-                        vector_store=vs_obj,
-                        remote_id=remote_vs_file.id,
-                        defaults={
-                            "file_obj": file_obj,
-                            "status": remote_vs_file.status or "in_progress",
-                            "usage_bytes": getattr(remote_vs_file, "usage_bytes", 0),
-                            "created_at": int(now.timestamp()),
-                        },
-                    )
-                    created.append((vs_file, remote_vs_file, file_obj))
-                return created
+                    # Check if there's a batch-created record for this file_obj
+                    # that hasn't been linked to an upstream ID yet
+                    existing = batch_file_by_file_remote_id.get(file_obj.remote_id)
+                    if existing:
+                        # Update the batch-created record with the upstream remote_id
+                        existing.remote_id = remote_vs_file.id
+                        existing.status = remote_vs_file.status or existing.status
+                        existing.usage_bytes = getattr(
+                            remote_vs_file, "usage_bytes", existing.usage_bytes
+                        )
+                        if hasattr(remote_vs_file, "last_error") and remote_vs_file.last_error:
+                            existing.last_error = remote_vs_file.last_error
+                        existing.save()
+                        results.append((existing, remote_vs_file, file_obj))
+                    else:
+                        # No batch-created record found, create a new one
+                        vs_file, _ = VectorStoreFile.objects.get_or_create(
+                            vector_store=vs_obj,
+                            remote_id=remote_vs_file.id,
+                            defaults={
+                                "file_obj": file_obj,
+                                "status": remote_vs_file.status or "in_progress",
+                                "usage_bytes": getattr(remote_vs_file, "usage_bytes", 0),
+                                "created_at": int(now.timestamp()),
+                            },
+                        )
+                        results.append((vs_file, remote_vs_file, file_obj))
+                return results
 
-            created_records = await create_local_records()
+            created_records = await create_or_link_local_records()
             for vs_file, remote_file, file_obj in created_records:
                 file_data = remote_file.model_dump(mode="json")
                 file_data["id"] = vs_file.id

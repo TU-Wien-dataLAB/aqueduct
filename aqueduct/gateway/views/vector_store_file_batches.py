@@ -372,16 +372,49 @@ async def vector_store_file_batch_files(
     )
     remote_to_local_map = {f.remote_id: f for f in vs_files if f.remote_id}
 
+    # Build map of batch-created files (remote_id=None) by file_obj.remote_id
+    # so we can match them to upstream files and link them
+    batch_file_by_file_remote_id = {}
+    for f in vs_files:
+        if f.remote_id is None and f.file_obj and f.file_obj.remote_id:
+            batch_file_by_file_remote_id[f.file_obj.remote_id] = f
+
     # Map remote file IDs to local IDs in response
     remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
     response_files = []
+    files_to_link = []
     for remote_file in remote_files:
         file_data = remote_file.model_dump(mode="json")
         # Try to map to local ID if we have this file tracked
         local_file = remote_to_local_map.get(remote_file.id)
         if local_file:
             file_data["id"] = local_file.id
+        else:
+            # Try to find a batch-created record by matching the upstream file ID.
+            # In the OpenAI API, VectorStoreFile.id IS the source file ID,
+            # so we match it against FileObject.remote_id.
+            # Also check for file_id attribute (some compatible APIs include it).
+            upstream_file_id = getattr(remote_file, "file_id", None) or remote_file.id
+            batch_file = batch_file_by_file_remote_id.get(upstream_file_id)
+            if batch_file:
+                files_to_link.append((batch_file, remote_file))
+                file_data["id"] = batch_file.id
         file_data["vector_store_id"] = vs_obj.id
         response_files.append(file_data)
+
+    # Update batch-created records with their upstream remote_id
+    if files_to_link:
+
+        @sync_to_async
+        def link_batch_files():
+            for local_file, remote_file in files_to_link:
+                local_file.remote_id = remote_file.id
+                local_file.status = remote_file.status or local_file.status
+                local_file.usage_bytes = getattr(remote_file, "usage_bytes", local_file.usage_bytes)
+                if hasattr(remote_file, "last_error") and remote_file.last_error:
+                    local_file.last_error = remote_file.last_error
+                local_file.save()
+
+        await link_batch_files()
 
     return JsonResponse({"object": "list", "data": response_files, "has_more": False}, status=200)

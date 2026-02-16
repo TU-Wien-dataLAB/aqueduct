@@ -137,12 +137,25 @@ def create_mock_vector_store_client():
     mock_client.vector_stores.search = AsyncMock(side_effect=mock_vs_search)
 
     # Mock vector store files - track created files so list returns them
+    # In the OpenAI API, VectorStoreFile.id IS the source file ID.
     vsf_counter = [0]
     created_vs_files = []
 
     async def mock_vsf_create(*args, **kwargs):
         vsf_counter[0] += 1
-        vs_file = create_mock_vector_store_file(str(vsf_counter[0]), "completed")
+        file_id = kwargs.get("file_id", f"vsf-mock-{vsf_counter[0]}")
+        now = int(timezone.now().timestamp())
+        vs_file = VectorStoreFile(
+            id=file_id,
+            status="completed",
+            usage_bytes=100,
+            created_at=now,
+            last_error=None,
+            object="vector_store.file",
+            vector_store_id=kwargs.get("vector_store_id", f"vs-mock-{vsf_counter[0]}"),
+            attributes=None,
+            chunking_strategy=None,
+        )
         created_vs_files.append(vs_file)
         return vs_file
 
@@ -441,18 +454,18 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         # Import the OpenAI type directly to avoid any shadowing issues
         from openai.types.vector_stores import VectorStoreFile as OpenAIVectorStoreFile
 
-        # Create the response directly
+        # In the OpenAI API, VectorStoreFile.id IS the source file ID.
+        # The VectorStoreFile does NOT have a separate file_id field.
         response_data = AsyncCursorPage[OpenAIVectorStoreFile](
             data=[
                 OpenAIVectorStoreFile(
-                    id="vsf-upstream-123",
+                    id="file-mock-123",
                     status="completed",
                     usage_bytes=100,
                     created_at=now,
                     last_error=None,
                     object="vector_store.file",
                     vector_store_id=vs_remote_id,
-                    file_id="file-mock-123",
                 )
             ],
             has_more=False,
@@ -465,7 +478,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         base_mock.vector_stores.files.list = AsyncMock(return_value=response_data)
         mock_vs_files_client.return_value = base_mock
 
-        # Create file object with remote_id matching the upstream file_id
+        # Create file object with remote_id matching the upstream VectorStoreFile.id
         file_obj = self._create_file_object(remote_id="file-mock-123")
 
         # Verify no VectorStoreFile exists yet
@@ -488,7 +501,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
 
         # Verify the local record has correct fields
         vs_file = VectorStoreFileModel.objects.get(vector_store_id=vs_id)
-        self.assertEqual(vs_file.remote_id, "vsf-upstream-123")
+        self.assertEqual(vs_file.remote_id, "file-mock-123")
         self.assertEqual(vs_file.file_obj, file_obj)
         self.assertEqual(vs_file.status, "completed")
 
@@ -1075,3 +1088,94 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         data = resp.json()
         self.assertEqual(data["object"], "list")
         self.assertIsInstance(data["data"], list)
+
+    @patch("gateway.views.vector_stores.get_files_api_client")
+    @patch("gateway.views.vector_store_files.get_files_api_client")
+    @patch("gateway.views.vector_store_file_batches.get_files_api_client")
+    def test_batch_created_files_linked_on_list(
+        self, mock_batch_client, mock_vs_files_client, mock_vs_client
+    ):
+        """Test that batch-created VectorStoreFile records (remote_id=None) get
+        linked to their upstream counterpart when listing files, instead of
+        creating duplicate records."""
+        mock_vs_client.return_value = create_mock_vector_store_client()
+        mock_batch_client.return_value = create_mock_vector_store_client()
+
+        # Create vector store
+        vs_id = self._create_vector_store(mock_vs_client)
+        vs_obj = VectorStoreModel.objects.get(id=vs_id)
+
+        # Create file objects
+        file_obj1 = self._create_file_object("file-mock-1")
+        file_obj2 = self._create_file_object("file-mock-2")
+
+        # Create batch - this creates VectorStoreFile records with remote_id=None
+        batches_url = reverse(
+            "gateway:vector_store_file_batches", kwargs={"vector_store_id": vs_id}
+        )
+        resp = self.client.post(
+            batches_url,
+            data=json.dumps({"file_ids": [file_obj1.id, file_obj2.id]}),
+            headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        # Verify batch-created records have remote_id=None
+        batch_files = VectorStoreFileModel.objects.filter(vector_store=vs_obj)
+        self.assertEqual(batch_files.count(), 2)
+        self.assertTrue(all(f.remote_id is None for f in batch_files))
+
+        # Now set up the files list mock to return upstream files that correspond
+        # to the batch-created files (simulating batch completion)
+        now = int(timezone.now().timestamp())
+        from openai.types.vector_stores import VectorStoreFile as OpenAIVectorStoreFile
+
+        # In the OpenAI API, VectorStoreFile.id IS the source file ID.
+        # The VectorStoreFile does NOT have a separate file_id field.
+        upstream_files = AsyncCursorPage[OpenAIVectorStoreFile](
+            data=[
+                OpenAIVectorStoreFile(
+                    id="file-mock-1",
+                    status="completed",
+                    usage_bytes=100,
+                    created_at=now,
+                    last_error=None,
+                    object="vector_store.file",
+                    vector_store_id=vs_obj.remote_id,
+                ),
+                OpenAIVectorStoreFile(
+                    id="file-mock-2",
+                    status="completed",
+                    usage_bytes=200,
+                    created_at=now,
+                    last_error=None,
+                    object="vector_store.file",
+                    vector_store_id=vs_obj.remote_id,
+                ),
+            ],
+            has_more=False,
+        )
+        base_mock = create_mock_vector_store_client()
+        base_mock.vector_stores.files.list = AsyncMock(return_value=upstream_files)
+        mock_vs_files_client.return_value = base_mock
+
+        # List files - this should link the batch-created records, not create new ones
+        files_url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": vs_id})
+        resp = self.client.get(files_url, headers=self.headers)
+        self.assertEqual(resp.status_code, 200, f"List files failed: {resp.json()}")
+        data = resp.json()
+
+        # Should return exactly 2 files
+        self.assertEqual(len(data["data"]), 2)
+
+        # Verify no duplicate records were created - still exactly 2 VectorStoreFile records
+        total_files = VectorStoreFileModel.objects.filter(vector_store=vs_obj).count()
+        self.assertEqual(
+            total_files, 2, f"Expected 2 records but found {total_files} (duplicates created)"
+        )
+
+        # Verify the batch-created records now have their remote_id set
+        for vs_file in VectorStoreFileModel.objects.filter(vector_store=vs_obj):
+            self.assertIsNotNone(vs_file.remote_id, "Batch-created file should now have remote_id")
+            self.assertEqual(vs_file.status, "completed")

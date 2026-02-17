@@ -95,6 +95,5 @@ def delete_expired_files_and_batches(self):
     # Expired batches - just delete local records
     # (batch resources are managed by the upstream provider)
     batches_qs = Batch.objects.filter(expires_at__isnull=False, expires_at__lt=now_ts)
-    batches_count = batches_qs.count()
-    batches_qs.delete()
+    batches_count, _ = batches_qs.delete()
     print(f"Deleted {batches_count} expired batches.")

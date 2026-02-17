@@ -9,7 +9,7 @@ from openai.types.batch_create_params import BatchCreateParams
 from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
-from management.models import Batch, FileObject, Token
+from management.models import Batch, BatchStatus, FileObject, Token
 
 from .decorators import log_request, parse_body, token_authenticated, tos_accepted
 from .errors import error_response
@@ -58,14 +58,23 @@ async def batches(
         active_count = await sync_to_async(
             Batch.objects.filter(
                 token__service_account__team=token.service_account.team,
-                status__in=["validating", "in_progress", "cancelling"],
+                status__in=[
+                    BatchStatus.VALIDATING,
+                    BatchStatus.IN_PROGRESS,
+                    BatchStatus.CANCELLING,
+                ],
             ).count
         )()
         limit = getattr(settings, "MAX_TEAM_BATCHES", 50)
     else:
         active_count = await sync_to_async(
             Batch.objects.filter(
-                token__user=token.user, status__in=["validating", "in_progress", "cancelling"]
+                token__user=token.user,
+                status__in=[
+                    BatchStatus.VALIDATING,
+                    BatchStatus.IN_PROGRESS,
+                    BatchStatus.CANCELLING,
+                ],
             ).count
         )()
         limit = max_batches

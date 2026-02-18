@@ -84,9 +84,9 @@ async def sync_batch_file_if_needed(
     if not remote_file_id:
         return None
 
-    # Check if we already have a local record for this remote_id
+    # Check if we already have a local record for this upstream file
     try:
-        return await FileObject.objects.aget(remote_id=remote_file_id, token=token)
+        return await FileObject.objects.aget(id=remote_file_id, token=token)
     except FileObject.DoesNotExist:
         pass
 
@@ -103,7 +103,7 @@ async def sync_batch_file_if_needed(
     local_expires_at = calculate_expires_at(remote_file.expires_at)
 
     file_obj, _ = await sync_to_async(FileObject.objects.get_or_create)(
-        remote_id=remote_file.id,
+        id=remote_file.id,
         token=token,
         defaults={
             "bytes": remote_file.bytes,
@@ -218,19 +218,19 @@ async def files(
     local_expires_at = calculate_expires_at(remote_file.expires_at)
 
     file_obj = FileObject(
+        id=remote_file.id,
         token=token,
         bytes=len(file_content),
         filename=filename,
         created_at=int(timezone.now().timestamp()),
         purpose=purpose,
         expires_at=local_expires_at,
-        remote_id=remote_file.id,
         preview=file_preview,
         upstream_url=settings.AQUEDUCT_FILES_API_URL,
     )
     await sync_to_async(file_obj.save)()
 
-    # IMPORTANT: Return response with Aqueduct ID, not remote ID
+    # Return response with upstream ID
     response_data = file_obj.model.model_dump(exclude_none=True, exclude_unset=True)
 
     return JsonResponse(response_data, status=200)
@@ -257,12 +257,6 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     except FileObject.DoesNotExist:
         return error_response("File not found.", param="file_id", status=404)
 
-    remote_id = file_obj.remote_id
-    if not remote_id:
-        return error_response(
-            "File has no remote reference.", error_type="server_error", status=500
-        )
-
     try:
         client = get_files_api_client()
     except ValueError:
@@ -279,9 +273,8 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
                 status=502,
             )
 
-        # Return response with Aqueduct ID
+        # Return response with upstream ID (same as file_obj.id)
         response_data = remote_file.model_dump()
-        response_data["id"] = file_obj.id  # Replace remote ID with Aqueduct ID
         return JsonResponse(response_data, status=200)
 
     # DELETE /files/{file_id}
@@ -295,7 +288,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     # Delete local record
     await sync_to_async(file_obj.delete)()
 
-    # Return response with Aqueduct ID
+    # Return response with upstream ID
     response_data = {"id": file_obj.id, "object": "file", "deleted": True}
     return JsonResponse(response_data, status=200)
 
@@ -321,12 +314,6 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
     except FileObject.DoesNotExist:
         return error_response("File not found.", param="file_id", status=404)
 
-    remote_id = file_obj.remote_id
-    if not remote_id:
-        return error_response(
-            "File has no remote reference.", error_type="server_error", status=500
-        )
-
     try:
         client = get_files_api_client()
     except ValueError:
@@ -334,7 +321,7 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
 
     try:
         # Returns HttpxBinaryResponseContent, use .content to get bytes
-        response = await client.files.content(remote_id)
+        response = await client.files.content(file_obj.id)
     except Exception as e:
         return error_response(
             f"Failed to retrieve file content from upstream: {str(e)}",

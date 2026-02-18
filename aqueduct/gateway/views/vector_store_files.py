@@ -59,11 +59,9 @@ async def vector_store_files(
         return error_response("Vector store not found.", param="vector_store_id", status=404)
 
     if request.method == "GET":
-        # List files in vector store - always refresh from upstream
+        # List files in vector store - return upstream data directly
         try:
-            remote_files_response = await client.vector_stores.files.list(
-                vector_store_id=vs_obj.remote_id
-            )
+            remote_files_response = await client.vector_stores.files.list(vector_store_id=vs_obj.id)
             remote_files = (
                 remote_files_response.data if hasattr(remote_files_response, "data") else []
             )
@@ -72,105 +70,11 @@ async def vector_store_files(
                 "Failed to retrieve files from upstream.", error_type="server_error", status=502
             )
 
-        # Get existing local VectorStoreFile records
-        existing_local_files = await sync_to_async(list)(
-            VectorStoreFile.objects.filter(vector_store=vs_obj).select_related("file_obj")
-        )
-
-        # Build map by remote_id for quick lookup
-        remote_id_to_local = {f.remote_id: f for f in existing_local_files if f.remote_id}
-
-        # Build map of batch-created files (remote_id=None) by file_obj.remote_id
-        # for matching against upstream files. When a batch creates VectorStoreFile
-        # records, they start with remote_id=None and need to be linked to their
-        # upstream counterpart once processing completes.
-        # In the OpenAI API, the VectorStoreFile.id equals the source File.id,
-        # so we can match by comparing upstream VectorStoreFile.id to FileObject.remote_id.
-        batch_file_by_file_remote_id = {}
-        for f in existing_local_files:
-            if f.remote_id is None and f.file_obj and f.file_obj.remote_id:
-                batch_file_by_file_remote_id[f.file_obj.remote_id] = f
-
-        # Get FileObjects that belong to this user/team, indexed by remote_id
-        if token.service_account:
-            file_objs = await sync_to_async(list)(
-                FileObject.objects.filter(token__service_account__team=token.service_account.team)
-            )
-        else:
-            file_objs = await sync_to_async(list)(FileObject.objects.filter(token=token))
-        file_remote_id_to_obj = {f.remote_id: f for f in file_objs if f.remote_id}
-
+        # Return upstream data directly (IDs already match)
         response_files = []
-        now = timezone.now()
-
-        # Files that need new local records (collected for batch creation)
-        files_to_create = []
-
         for remote_file in remote_files:
-            local_vs_file = remote_id_to_local.get(remote_file.id)
-
-            if local_vs_file:
-                # Update existing record with latest upstream status
-                local_vs_file.status = remote_file.status or local_vs_file.status
-                local_vs_file.usage_bytes = remote_file.usage_bytes
-                if hasattr(remote_file, "last_error") and remote_file.last_error:
-                    local_vs_file.last_error = remote_file.last_error
-                await sync_to_async(local_vs_file.save)()
-
-                file_data = remote_file.model_dump(mode="json")
-                file_data["id"] = local_vs_file.id
-                file_data["vector_store_id"] = vs_obj.id
-                file_data["file_id"] = local_vs_file.file_obj.id if local_vs_file.file_obj else None
-                response_files.append(file_data)
-            else:
-                upstream_file_id = remote_file.id
-                file_obj = file_remote_id_to_obj.get(upstream_file_id)
-                if file_obj:
-                    files_to_create.append((file_obj, remote_file))
-
-        # Link upstream files to existing batch-created records or create new ones.
-        # Batch-created VectorStoreFile records have remote_id=None and need to be
-        # updated with their upstream remote_id once the batch finishes processing.
-        if files_to_create:
-
-            @sync_to_async
-            def create_or_link_local_records():
-                results = []
-                for file_obj, remote_vs_file in files_to_create:
-                    # Check if there's a batch-created record for this file_obj
-                    # that hasn't been linked to an upstream ID yet
-                    existing = batch_file_by_file_remote_id.get(file_obj.remote_id)
-                    if existing:
-                        # Update the batch-created record with the upstream remote_id
-                        existing.remote_id = remote_vs_file.id
-                        existing.status = remote_vs_file.status or existing.status
-                        existing.usage_bytes = remote_vs_file.usage_bytes
-                        if hasattr(remote_vs_file, "last_error") and remote_vs_file.last_error:
-                            existing.last_error = remote_vs_file.last_error
-                        existing.save()
-                        results.append((existing, remote_vs_file, file_obj))
-                    else:
-                        # No batch-created record found, create a new one
-                        vs_file, _ = VectorStoreFile.objects.get_or_create(
-                            vector_store=vs_obj,
-                            remote_id=remote_vs_file.id,
-                            defaults={
-                                "file_obj": file_obj,
-                                "status": remote_vs_file.status or "in_progress",
-                                "usage_bytes": remote_vs_file.usage_bytes,
-                                "created_at": int(now.timestamp()),
-                            },
-                        )
-                        results.append((vs_file, remote_vs_file, file_obj))
-                return results
-
-            created_records = await create_or_link_local_records()
-            for vs_file, remote_file, file_obj in created_records:
-                file_data = remote_file.model_dump(mode="json")
-                file_data["id"] = vs_file.id
-                file_data["vector_store_id"] = vs_obj.id
-                file_data["file_id"] = file_obj.id
-                response_files.append(file_data)
+            file_data = remote_file.model_dump(mode="json")
+            response_files.append(file_data)
 
         return JsonResponse(
             {"object": "list", "data": response_files, "has_more": False}, status=200
@@ -193,17 +97,12 @@ async def vector_store_files(
     except FileObject.DoesNotExist:
         return error_response("File not found.", param="file_id", status=404)
 
-    if not file_obj.remote_id:
-        return error_response(
-            "File has no remote reference.", error_type="server_error", status=500
-        )
-
     # Use transaction with select_for_update to prevent race conditions on file limit
     max_files = settings.MAX_VECTOR_STORE_FILES
 
     # Create upstream file FIRST (outside transaction to minimize lock duration)
     try:
-        create_kwargs = {"vector_store_id": vs_obj.remote_id, "file_id": file_obj.remote_id}
+        create_kwargs = {"vector_store_id": vs_obj.id, "file_id": file_obj.id}
         if params.get("chunking_strategy"):
             create_kwargs["chunking_strategy"] = params["chunking_strategy"]
         if params.get("attributes"):
@@ -239,12 +138,12 @@ async def vector_store_files(
             if current_count >= max_files:
                 return vs_obj_locked, None  # Signal limit reached
 
-            # Create local record
+            # Create local record with upstream ID
             now = timezone.now()
             vs_file_obj = VectorStoreFile(
+                id=remote_vs_file.id,
                 vector_store=vs_obj_locked,
                 file_obj=file_obj,
-                remote_id=remote_vs_file.id,
                 status=remote_vs_file.status or "in_progress",
                 usage_bytes=remote_vs_file.usage_bytes,
                 created_at=int(now.timestamp()),
@@ -258,7 +157,7 @@ async def vector_store_files(
         # Vector store not found error - clean up upstream file
         try:
             await client.vector_stores.files.delete(
-                vector_store_id=vs_obj.remote_id, file_id=remote_vs_file.id
+                vector_store_id=vs_obj.id, file_id=remote_vs_file.id
             )
         except Exception:
             pass
@@ -268,18 +167,14 @@ async def vector_store_files(
         # Limit reached - clean up upstream file
         try:
             await client.vector_stores.files.delete(
-                vector_store_id=vs_obj.remote_id, file_id=remote_vs_file.id
+                vector_store_id=vs_obj.id, file_id=remote_vs_file.id
             )
         except Exception:
             pass
         return error_response(f"Vector store file limit reached ({max_files})", status=403)
 
-    # Return upstream response with ID and vector_store_id replaced
+    # Return upstream response directly (IDs already match)
     response_data = remote_vs_file.model_dump(mode="json")
-    response_data["id"] = result.id
-    response_data["vector_store_id"] = vs_obj_locked.id
-    # Map file_id to local Aqueduct file ID
-    response_data["file_id"] = file_obj.id
 
     return JsonResponse(response_data, status=200)
 
@@ -328,11 +223,6 @@ async def vector_store_file(
     except VectorStoreFile.DoesNotExist:
         return error_response("Vector store file not found.", param="file_id", status=404)
 
-    if not vs_file_obj.remote_id:
-        return error_response(
-            "Vector store file has no remote reference.", error_type="server_error", status=500
-        )
-
     if request.method == "GET":
         # Retrieve from upstream and sync status
         try:
@@ -344,12 +234,8 @@ async def vector_store_file(
                 status=502,
             )
 
-        # Return upstream response with ID and vector_store_id replaced
+        # Return upstream response directly (IDs already match)
         response_data = remote_vs_file.model_dump(mode="json")
-        response_data["id"] = vs_file_obj.id
-        response_data["vector_store_id"] = vs_obj.id
-        # Map file_id to local Aqueduct file ID
-        response_data["file_id"] = vs_file_obj.file_obj.id if vs_file_obj.file_obj else None
 
         return JsonResponse(response_data, status=200)
 
@@ -357,7 +243,7 @@ async def vector_store_file(
         # Update file attributes
         params = pydantic_model if pydantic_model else {}
 
-        update_kwargs = {"vector_store_id": vs_obj.remote_id, "file_id": vs_file_obj.remote_id}
+        update_kwargs = {"vector_store_id": vs_obj.id, "file_id": vs_file_obj.id}
         if params.get("attributes"):
             update_kwargs["attributes"] = params["attributes"]
 
@@ -375,12 +261,8 @@ async def vector_store_file(
                 status=502,
             )
 
-        # Return upstream response with ID and vector_store_id replaced
+        # Return upstream response directly (IDs already match)
         response_data = remote_vs_file.model_dump(mode="json")
-        response_data["id"] = vs_file_obj.id
-        response_data["vector_store_id"] = vs_obj.id
-        # Map file_id to local Aqueduct file ID
-        response_data["file_id"] = vs_file_obj.file_obj.id if vs_file_obj.file_obj else None
 
         return JsonResponse(response_data, status=200)
 
@@ -397,7 +279,7 @@ async def vector_store_file(
     # Delete local record
     await sync_to_async(vs_file_obj.delete)()
 
-    # Return response with ID replaced
+    # Return response with upstream ID
     response_data = {"id": file_id, "object": "vector_store.file.deleted", "deleted": True}
 
     return JsonResponse(response_data, status=200)
@@ -438,15 +320,10 @@ async def vector_store_file_content(
     except VectorStoreFile.DoesNotExist:
         return error_response("Vector store file not found.", param="file_id", status=404)
 
-    if not vs_file_obj.remote_id:
-        return error_response(
-            "Vector store file has no remote reference.", error_type="server_error", status=500
-        )
-
     # Get content from upstream
     try:
         content_response = await client.vector_stores.files.content(
-            vector_store_id=vs_obj.remote_id, file_id=vs_file_obj.remote_id
+            vector_store_id=vs_obj.id, file_id=vs_file_obj.id
         )
     except Exception as e:
         return error_response(

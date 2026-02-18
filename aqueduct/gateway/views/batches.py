@@ -95,13 +95,10 @@ async def batches(
     except FileObject.DoesNotExist:
         return error_response("Input file not found.", param="input_file_id", status=404)
 
-    if not file_obj.remote_id:
-        return error_response("File was not uploaded to upstream API.", status=400)
-
-    # Create batch on upstream using remote file ID
+    # Create batch on upstream using file ID
     try:
         remote_batch = await client.batches.create(
-            input_file_id=file_obj.remote_id,
+            input_file_id=file_obj.id,
             endpoint=pydantic_model["endpoint"],
             completion_window=pydantic_model["completion_window"],
             metadata=pydantic_model.get("metadata"),
@@ -111,9 +108,10 @@ async def batches(
             f"Failed to create batch on upstream: {str(e)}", error_type="server_error", status=502
         )
 
-    # Create local tracking record
+    # Create local tracking record with upstream ID
     now = timezone.now()
     batch_obj = Batch(
+        id=remote_batch.id,
         completion_window=pydantic_model["completion_window"],
         created_at=int(now.timestamp()),
         endpoint=pydantic_model["endpoint"],
@@ -121,7 +119,6 @@ async def batches(
         token=token,
         status=remote_batch.status,
         metadata=pydantic_model.get("metadata"),
-        remote_id=remote_batch.id,
         expires_at=remote_batch.expires_at,
         request_counts=remote_batch.request_counts.model_dump()
         if remote_batch.request_counts
@@ -129,9 +126,8 @@ async def batches(
     )
     await sync_to_async(batch_obj.save)()
 
-    # Return response with Aqueduct IDs, not remote IDs
+    # Return upstream response directly (IDs already match)
     response_data = remote_batch.model_dump()
-    response_data["id"] = batch_obj.id
     response_data["input_file_id"] = file_obj.id
 
     return JsonResponse(response_data, status=200)
@@ -155,12 +151,6 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
     except Batch.DoesNotExist:
         return error_response("Batch not found.", param="batch_id", status=404)
 
-    remote_id = batch_obj.remote_id
-    if not remote_id:
-        return error_response(
-            "Batch has no remote reference.", error_type="server_error", status=500
-        )
-
     try:
         client = get_files_api_client()
     except ValueError:
@@ -183,12 +173,9 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
         remote_batch.error_file_id, token, client, batch_obj, "error_file"
     )
 
-    # Return response with Aqueduct IDs, not remote IDs
+    # Build response from upstream data, ensuring file IDs match our local records
     response_data = remote_batch.model_dump()
-    response_data["id"] = batch_obj.id
     response_data["input_file_id"] = batch_obj.input_file_id
-
-    # Replace remote file IDs with Aqueduct IDs (if files were synced)
     if output_file_obj:
         response_data["output_file_id"] = output_file_obj.id
     if error_file_obj:
@@ -213,19 +200,13 @@ async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args,
     except Batch.DoesNotExist:
         return error_response("Batch not found.", param="batch_id", status=404)
 
-    remote_id = batch_obj.remote_id
-    if not remote_id:
-        return error_response(
-            "Batch has no remote reference.", error_type="server_error", status=500
-        )
-
     try:
         client = get_files_api_client()
     except ValueError:
         return error_response("Files API not configured", status=503)
 
     try:
-        remote_batch = await client.batches.cancel(remote_id)
+        remote_batch = await client.batches.cancel(batch_obj.id)
     except Exception as e:
         return error_response(
             f"Failed to cancel batch on upstream: {str(e)}", error_type="server_error", status=502
@@ -239,9 +220,8 @@ async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args,
         batch_obj.cancelled_at = remote_batch.cancelled_at
     await sync_to_async(batch_obj.save)()
 
-    # Return response with Aqueduct IDs
+    # Build response from upstream data, ensuring file IDs match our local records
     response_data = remote_batch.model_dump()
-    response_data["id"] = batch_obj.id
     response_data["input_file_id"] = batch_obj.input_file_id
 
     return JsonResponse(response_data, status=200)

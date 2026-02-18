@@ -3,7 +3,6 @@ import dataclasses
 import hashlib
 import logging
 import secrets
-import uuid
 from typing import Callable, Literal, Optional
 
 import openai.types
@@ -17,6 +16,18 @@ from django.utils import timezone
 from gateway.config import resolve_model_alias
 
 log = logging.getLogger("aqueduct")
+
+
+# ── Legacy ID generators ──────────────────────────────────────────────
+# These are referenced by historical migrations (0004, 0005) and must remain
+# importable from management.models.  They are no longer used at runtime;
+# migration 0008_file_proxy removes the defaults that depend on them.
+def generate_file_id() -> str:
+    return f"file-{secrets.token_hex(12)}"
+
+
+def generate_batch_id() -> str:
+    return f"batch-{secrets.token_hex(12)}"
 
 
 @dataclasses.dataclass(frozen=True)  # frozen=True makes instances immutable
@@ -709,16 +720,6 @@ class Request(models.Model):
         return f"{self.id}"
 
 
-def generate_file_id() -> str:
-    """Generate a new FileObject primary key with a 'file-' prefix."""
-    return f"file-{uuid.uuid4().hex}"
-
-
-def generate_batch_id() -> str:
-    """Generate a new Batch primary key with a 'batch-' prefix."""
-    return f"batch-{uuid.uuid4().hex}"
-
-
 class FileObject(models.Model):
     """
     Mirrors the structure of OpenAI's FileObject type, excluding deprecated fields.
@@ -727,7 +728,6 @@ class FileObject(models.Model):
     id = models.CharField(
         max_length=100,
         primary_key=True,
-        default=generate_file_id,
         editable=False,
         help_text="The file identifier, which can be referenced in the API endpoints.",
     )
@@ -761,13 +761,6 @@ class FileObject(models.Model):
         related_name="files",
     )
 
-    remote_id = models.CharField(
-        max_length=100,
-        null=True,
-        blank=True,
-        help_text="File ID from the upstream API (e.g., 'file-abc123' from OpenAI)",
-    )
-
     preview = models.TextField(
         null=True, blank=True, help_text="Preview of file content (first 10 lines for JSONL files)"
     )
@@ -779,14 +772,6 @@ class FileObject(models.Model):
     class Meta:
         verbose_name = "File Object"
         verbose_name_plural = "File Objects"
-        indexes = [models.Index(fields=["remote_id"], name="fileobject_remote_id_idx")]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["token", "remote_id"],
-                name="unique_fileobject_token_remote_id",
-                condition=models.Q(remote_id__isnull=False),
-            )
-        ]
 
     @property
     def model(self) -> openai.types.FileObject:
@@ -810,19 +795,16 @@ class FileObject(models.Model):
             raise_on_error: If True, raises on failure; if False, logs and returns False.
 
         Returns:
-            True on success or if remote_id is None (nothing to delete).
+            True on success.
             False on failure (only if raise_on_error=False).
         """
-        if not self.remote_id:
-            return True
-
         from gateway.config import get_files_api_client
 
         if client is None:
             client = get_files_api_client()
 
         try:
-            await client.files.delete(self.remote_id)
+            await client.files.delete(self.id)
             return True
         except Exception as e:
             if raise_on_error:
@@ -841,18 +823,15 @@ class FileObject(models.Model):
             raise_on_error: If True, raises on failure; if False, logs and returns None.
 
         Returns:
-            The upstream response object on success, or None on failure/remote_id is None.
+            The upstream response object on success, or None on failure.
         """
-        if not self.remote_id:
-            return None
-
         from gateway.config import get_files_api_client
 
         if client is None:
             client = get_files_api_client()
 
         try:
-            remote = await client.files.retrieve(self.remote_id)
+            remote = await client.files.retrieve(self.id)
             self.purpose = remote.purpose
             self.expires_at = remote.expires_at
             await self.asave()
@@ -870,7 +849,7 @@ class FileObject(models.Model):
         Args:
             delete_upstream: If True, also delete from upstream API before local delete.
         """
-        if delete_upstream and self.remote_id:
+        if delete_upstream:
             import asyncio
 
             asyncio.run(self.adelete_upstream())
@@ -901,11 +880,7 @@ class Batch(models.Model):
     """
 
     id = models.CharField(
-        max_length=100,
-        primary_key=True,
-        editable=False,
-        default=generate_batch_id,
-        help_text="The batch identifier.",
+        max_length=100, primary_key=True, editable=False, help_text="The batch identifier."
     )
     completion_window = models.CharField(
         max_length=100, help_text="The time frame within which the batch should be processed."
@@ -990,10 +965,6 @@ class Batch(models.Model):
         help_text="The request counts for different statuses within the batch.",
     )
 
-    remote_id = models.CharField(
-        max_length=100, null=True, blank=True, help_text="Batch ID from the upstream API"
-    )
-
     token = models.ForeignKey(
         Token,
         on_delete=models.CASCADE,
@@ -1006,13 +977,6 @@ class Batch(models.Model):
     class Meta:
         verbose_name = "Batch"
         verbose_name_plural = "Batches"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["token", "remote_id"],
-                name="unique_batch_token_remote_id",
-                condition=models.Q(remote_id__isnull=False),
-            )
-        ]
 
     @property
     def model(self) -> openai.types.batch.Batch:
@@ -1054,18 +1018,15 @@ class Batch(models.Model):
             raise_on_error: If True, raises on failure; if False, logs and returns None.
 
         Returns:
-            The upstream response object on success, or None on failure/remote_id is None.
+            The upstream response object on success, or None on failure.
         """
-        if not self.remote_id:
-            return None
-
         from gateway.config import get_files_api_client
 
         if client is None:
             client = get_files_api_client()
 
         try:
-            remote = await client.batches.retrieve(self.remote_id)
+            remote = await client.batches.retrieve(self.id)
             self.status = remote.status
             if remote.request_counts:
                 self.request_counts = remote.request_counts.model_dump()
@@ -1091,21 +1052,6 @@ class Batch(models.Model):
         super().delete(using=using, keep_parents=keep_parents)
 
 
-def generate_vector_store_id() -> str:
-    """Generate a new VectorStore primary key with a 'vs-' prefix."""
-    return f"vs-{uuid.uuid4().hex}"
-
-
-def generate_vector_store_file_id() -> str:
-    """Generate a new VectorStoreFile primary key with a 'vsf-' prefix."""
-    return f"vsf-{uuid.uuid4().hex}"
-
-
-def generate_vector_store_file_batch_id() -> str:
-    """Generate a new VectorStoreFileBatch primary key with a 'vsb-' prefix."""
-    return f"vsb-{uuid.uuid4().hex}"
-
-
 class VectorStoreStatus(models.TextChoices):
     """Vector store status choices matching OpenAI's API."""
 
@@ -1121,17 +1067,7 @@ class VectorStore(models.Model):
     """
 
     id = models.CharField(
-        max_length=100,
-        primary_key=True,
-        default=generate_vector_store_id,
-        editable=False,
-        help_text="The vector store identifier.",
-    )
-    remote_id = models.CharField(
-        max_length=100,
-        null=True,
-        blank=True,
-        help_text="Vector store ID from the upstream API (e.g., 'vs_abc123' from OpenAI)",
+        max_length=100, primary_key=True, editable=False, help_text="The vector store identifier."
     )
     token = models.ForeignKey(Token, on_delete=models.CASCADE, related_name="vector_stores")
     name = models.CharField(max_length=255, help_text="The name of the vector store.")
@@ -1168,14 +1104,6 @@ class VectorStore(models.Model):
     class Meta:
         verbose_name = "Vector Store"
         verbose_name_plural = "Vector Stores"
-        indexes = [models.Index(fields=["remote_id"], name="vectorstore_remote_id_idx")]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["token", "remote_id"],
-                name="unique_vectorstore_token_remote_id",
-                condition=models.Q(remote_id__isnull=False),
-            )
-        ]
 
     async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
         """
@@ -1186,19 +1114,16 @@ class VectorStore(models.Model):
             raise_on_error: If True, raises on failure; if False, logs and returns False.
 
         Returns:
-            True on success or if remote_id is None (nothing to delete).
+            True on success.
             False on failure (only if raise_on_error=False).
         """
-        if not self.remote_id:
-            return True
-
         from gateway.config import get_files_api_client
 
         if client is None:
             client = get_files_api_client()
 
         try:
-            await client.vector_stores.delete(self.remote_id)
+            await client.vector_stores.delete(self.id)
             return True
         except Exception as e:
             if raise_on_error:
@@ -1217,18 +1142,15 @@ class VectorStore(models.Model):
             raise_on_error: If True, raises on failure; if False, logs and returns None.
 
         Returns:
-            The upstream response object on success, or None on failure/remote_id is None.
+            The upstream response object on success, or None on failure.
         """
-        if not self.remote_id:
-            return None
-
         from gateway.config import get_files_api_client
 
         if client is None:
             client = get_files_api_client()
 
         try:
-            remote = await client.vector_stores.retrieve(self.remote_id)
+            remote = await client.vector_stores.retrieve(self.id)
             self.status = remote.status or self.status
             self.usage_bytes = getattr(remote, "usage_bytes", self.usage_bytes)
             self.last_active_at = int(timezone.now().timestamp())
@@ -1247,7 +1169,7 @@ class VectorStore(models.Model):
         Args:
             delete_upstream: If True, also delete from upstream API before local delete.
         """
-        if delete_upstream and self.remote_id:
+        if delete_upstream:
             import asyncio
 
             asyncio.run(self.adelete_upstream())
@@ -1273,12 +1195,8 @@ class VectorStoreFile(models.Model):
     id = models.CharField(
         max_length=100,
         primary_key=True,
-        default=generate_vector_store_file_id,
         editable=False,
         help_text="The vector store file identifier.",
-    )
-    remote_id = models.CharField(
-        max_length=100, null=True, blank=True, help_text="VectorStoreFile ID from the upstream API"
     )
     vector_store = models.ForeignKey(VectorStore, on_delete=models.CASCADE, related_name="files")
     file_obj = models.ForeignKey(
@@ -1312,18 +1230,6 @@ class VectorStoreFile(models.Model):
         help_text="Bytes used in vector store (may differ from original file after chunking).",
     )
 
-    async def _get_vector_store_remote_id(self) -> Optional[str]:
-        """
-        Get the vector_store's remote_id via async DB access.
-
-        Note: Callers should use select_related("vector_store") when fetching
-        VectorStoreFile instances in sync contexts.
-        """
-        if not self.vector_store_id:
-            return None
-        vs = await VectorStore.objects.aget(pk=self.vector_store_id)
-        return vs.remote_id
-
     async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
         """
         Delete the vector store file from the upstream API.
@@ -1336,23 +1242,13 @@ class VectorStoreFile(models.Model):
             raise_on_error: If True, raises on failure; if False, logs and returns False.
 
         Returns:
-            True on success or if remote_id is None (nothing to delete).
+            True on success.
             False on failure (only if raise_on_error=False).
         """
-        if not self.remote_id:
-            return True
-
         if not self.vector_store_id:
             log.warning(f"Cannot delete vector store file {self.id}: vector_store not set")
             if raise_on_error:
                 raise ValueError("Vector store not loaded")
-            return False
-
-        vs_remote_id = await self._get_vector_store_remote_id()
-        if not vs_remote_id:
-            log.warning(f"Cannot delete vector store file {self.id}: vector_store has no remote_id")
-            if raise_on_error:
-                raise ValueError("Vector store has no remote_id")
             return False
 
         from gateway.config import get_files_api_client
@@ -1362,7 +1258,7 @@ class VectorStoreFile(models.Model):
 
         try:
             await client.vector_stores.files.delete(
-                vector_store_id=vs_remote_id, file_id=self.remote_id
+                vector_store_id=self.vector_store_id, file_id=self.id
             )
             return True
         except Exception as e:
@@ -1385,11 +1281,8 @@ class VectorStoreFile(models.Model):
             raise_on_error: If True, raises on failure; if False, logs and returns None.
 
         Returns:
-            The upstream response object on success, or None on failure/remote_id is None.
+            The upstream response object on success, or None on failure.
         """
-        if not self.remote_id:
-            return None
-
         if not self.vector_store_id:
             if raise_on_error:
                 raise ValueError("Vector store not set")
@@ -1401,16 +1294,9 @@ class VectorStoreFile(models.Model):
         if client is None:
             client = get_files_api_client()
 
-        vs_remote_id = await self._get_vector_store_remote_id()
-        if not vs_remote_id:
-            if raise_on_error:
-                raise ValueError("Vector store has no remote_id")
-            log.warning(f"Cannot reload vector store file {self.id}: vector_store has no remote_id")
-            return None
-
         try:
             remote = await client.vector_stores.files.retrieve(
-                vector_store_id=vs_remote_id, file_id=self.remote_id
+                vector_store_id=self.vector_store_id, file_id=self.id
             )
             self.status = remote.status or self.status
             self.usage_bytes = remote.usage_bytes
@@ -1431,7 +1317,7 @@ class VectorStoreFile(models.Model):
         Args:
             delete_upstream: If True, also delete from upstream API before local delete.
         """
-        if delete_upstream and self.remote_id:
+        if delete_upstream:
             import asyncio
 
             asyncio.run(self.adelete_upstream())
@@ -1440,14 +1326,6 @@ class VectorStoreFile(models.Model):
     class Meta:
         verbose_name = "Vector Store File"
         verbose_name_plural = "Vector Store Files"
-        indexes = [models.Index(fields=["remote_id"], name="vectorstorefile_remote_id_idx")]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["vector_store", "remote_id"],
-                name="unique_vector_store_remote_id",
-                condition=models.Q(remote_id__isnull=False),
-            )
-        ]
 
 
 class VectorStoreFileBatchStatus(models.TextChoices):
@@ -1467,12 +1345,8 @@ class VectorStoreFileBatch(models.Model):
     id = models.CharField(
         max_length=100,
         primary_key=True,
-        default=generate_vector_store_file_batch_id,
         editable=False,
         help_text="The vector store file batch identifier.",
-    )
-    remote_id = models.CharField(
-        max_length=100, null=True, blank=True, help_text="Batch ID from the upstream API"
     )
     vector_store = models.ForeignKey(
         VectorStore, on_delete=models.CASCADE, related_name="file_batches"
@@ -1501,12 +1375,9 @@ class VectorStoreFileBatch(models.Model):
             raise_on_error: If True, raises on failure; if False, logs and returns None.
 
         Returns:
-            The upstream response object on success, or None on failure/remote_id is None.
+            The upstream response object on success, or None on failure.
         """
-        if not self.remote_id:
-            return None
-
-        # Ensure vector_store is loaded to access remote_id
+        # Ensure vector_store is loaded
         if not self.vector_store_id:
             if raise_on_error:
                 raise ValueError("Vector store not set")
@@ -1518,20 +1389,9 @@ class VectorStoreFileBatch(models.Model):
         if client is None:
             client = get_files_api_client()
 
-        # Load vector_store via async DB access to get its remote_id
-        vs = await VectorStore.objects.aget(pk=self.vector_store_id)
-
-        if not vs.remote_id:
-            if raise_on_error:
-                raise ValueError("Vector store has no remote_id")
-            log.warning(
-                f"Cannot reload vector store file batch {self.id}: vector_store has no remote_id"
-            )
-            return None
-
         try:
             remote = await client.vector_stores.file_batches.retrieve(
-                vector_store_id=vs.remote_id, batch_id=self.remote_id
+                vector_store_id=self.vector_store_id, batch_id=self.id
             )
             self.status = remote.status or self.status
             if hasattr(remote, "file_counts") and remote.file_counts:
@@ -1547,11 +1407,3 @@ class VectorStoreFileBatch(models.Model):
     class Meta:
         verbose_name = "Vector Store File Batch"
         verbose_name_plural = "Vector Store File Batches"
-        indexes = [models.Index(fields=["remote_id"], name="vs_file_batch_remote_idx")]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["vector_store", "remote_id"],
-                name="unique_vs_file_batch_vector_store_remote_id",
-                condition=models.Q(remote_id__isnull=False),
-            )
-        ]

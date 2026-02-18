@@ -55,7 +55,7 @@ class TestUserId(MCPLiveServerTestCase):
 
         token = Token.objects.first()
         file_obj = FileObject.objects.create(
-            bytes=1, created_at=42, token=token, purpose="batch", remote_id="file-remote-123"
+            id="file-remote-123", bytes=1, created_at=42, token=token, purpose="batch"
         )
 
         url = reverse("gateway:batches")

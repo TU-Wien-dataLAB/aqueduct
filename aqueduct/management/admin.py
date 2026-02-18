@@ -380,20 +380,18 @@ class VectorStoreAdmin(admin.ModelAdmin):
         """Delete from upstream API before deleting local record."""
         # First delete all files from upstream
         for vs_file in obj.files.all():
-            if vs_file.remote_id:
-                try:
-                    client = get_files_api_client()
-                    asyncio.run(vs_file.adelete_upstream(client, raise_on_error=False))
-                except Exception:
-                    pass  # Continue even if upstream deletion fails
-
-        # Delete vector store from upstream
-        if obj.remote_id:
             try:
                 client = get_files_api_client()
-                asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+                asyncio.run(vs_file.adelete_upstream(client, raise_on_error=False))
             except Exception:
                 pass  # Continue even if upstream deletion fails
+
+        # Delete vector store from upstream
+        try:
+            client = get_files_api_client()
+            asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+        except Exception:
+            pass  # Continue even if upstream deletion fails
 
         # Now delete the local record (this will cascade to files)
         super().delete_model(request, obj)
@@ -403,20 +401,18 @@ class VectorStoreAdmin(admin.ModelAdmin):
         for obj in queryset:
             # First delete all files from upstream
             for vs_file in obj.files.all():
-                if vs_file.remote_id:
-                    try:
-                        client = get_files_api_client()
-                        asyncio.run(vs_file.adelete_upstream(client, raise_on_error=False))
-                    except Exception:
-                        pass
-
-            # Delete vector store from upstream
-            if obj.remote_id:
                 try:
                     client = get_files_api_client()
-                    asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+                    asyncio.run(vs_file.adelete_upstream(client, raise_on_error=False))
                 except Exception:
                     pass
+
+            # Delete vector store from upstream
+            try:
+                client = get_files_api_client()
+                asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+            except Exception:
+                pass
 
         # Now delete local records
         super().delete_queryset(request, queryset)
@@ -461,12 +457,11 @@ class VectorStoreFileAdmin(admin.ModelAdmin):
 
     def delete_model(self, request, obj):
         """Delete from upstream API before deleting local record."""
-        if obj.remote_id:
-            try:
-                client = get_files_api_client()
-                asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
-            except Exception:
-                pass  # Continue even if upstream deletion fails
+        try:
+            client = get_files_api_client()
+            asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+        except Exception:
+            pass  # Continue even if upstream deletion fails
 
         # Now delete the local record
         super().delete_model(request, obj)
@@ -474,12 +469,11 @@ class VectorStoreFileAdmin(admin.ModelAdmin):
     def delete_queryset(self, request, queryset):
         """Delete from upstream API before deleting local records."""
         for obj in queryset:
-            if obj.remote_id:
-                try:
-                    client = get_files_api_client()
-                    asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
-                except Exception:
-                    pass  # Continue even if upstream deletion fails
+            try:
+                client = get_files_api_client()
+                asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+            except Exception:
+                pass  # Continue even if upstream deletion fails
 
         # Now delete local records
         super().delete_queryset(request, queryset)

@@ -70,7 +70,6 @@ async def vector_store_file_batches(
 
     # Lookup all FileObjects by Aqueduct IDs
     file_objs = []
-    remote_file_ids = []
     for file_id in file_ids:
         try:
             if token.service_account:
@@ -81,24 +80,19 @@ async def vector_store_file_batches(
                 file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
         except FileObject.DoesNotExist:
             return error_response(f"File not found: {file_id}", param="file_ids", status=404)
-        if not file_obj.remote_id:
-            return error_response(
-                "File has no remote reference.", error_type="server_error", status=500
-            )
         file_objs.append(file_obj)
-        remote_file_ids.append(file_obj.remote_id)
 
     # Create batch on upstream
     try:
-        create_kwargs = {"vector_store_id": vs_obj.remote_id}
+        create_kwargs = {"vector_store_id": vs_obj.id}
         if files:
-            # Transform files to include remote file IDs
+            # Transform files to include file IDs
             create_kwargs["files"] = [
-                {"file_id": file_obj.remote_id, **{k: v for k, v in f.items() if k != "file_id"}}
+                {"file_id": file_obj.id, **{k: v for k, v in f.items() if k != "file_id"}}
                 for f, file_obj in zip(files, file_objs)
             ]
         else:
-            create_kwargs["file_ids"] = remote_file_ids
+            create_kwargs["file_ids"] = file_ids
         if params.get("chunking_strategy"):
             create_kwargs["chunking_strategy"] = params["chunking_strategy"]
         if params.get("attributes"):
@@ -111,11 +105,11 @@ async def vector_store_file_batches(
             status=502,
         )
 
-    # Create local batch record
+    # Create local batch record with upstream ID
     now = timezone.now()
     batch_obj = VectorStoreFileBatch(
+        id=remote_batch.id,
         vector_store=vs_obj,
-        remote_id=remote_batch.id,
         status=remote_batch.status or "in_progress",
         file_counts=remote_batch.file_counts.model_dump(mode="json")
         if hasattr(remote_batch, "file_counts") and remote_batch.file_counts
@@ -141,11 +135,12 @@ async def vector_store_file_batches(
                 return None
             records = []
             for file_obj in file_objs:
+                # In OpenAI API, VectorStoreFile.id equals the source File.id
                 vs_file_obj = VectorStoreFile(
+                    id=file_obj.id,
                     vector_store=vs_obj,
                     file_obj=file_obj,
                     batch=batch_obj,
-                    remote_id=None,
                     status="in_progress",
                     usage_bytes=0,
                     created_at=int(now.timestamp()),
@@ -158,10 +153,8 @@ async def vector_store_file_batches(
     if batch_file_records is None:
         return error_response("File limit exceeded", status=403)
 
-    # Return upstream response with only id and vector_store_id replaced
+    # Return upstream response directly (IDs already match)
     response_data = remote_batch.model_dump(mode="json")
-    response_data["id"] = batch_obj.id
-    response_data["vector_store_id"] = vs_obj.id
 
     return JsonResponse(response_data, status=200)
 
@@ -201,11 +194,6 @@ async def vector_store_file_batch(
     except VectorStoreFileBatch.DoesNotExist:
         return error_response("File batch not found.", param="batch_id", status=404)
 
-    if not batch_obj.remote_id:
-        return error_response(
-            "File batch has no remote reference.", error_type="server_error", status=500
-        )
-
     # Retrieve from upstream and sync status
     try:
         remote_batch = await batch_obj.areload_from_upstream(client)
@@ -217,12 +205,10 @@ async def vector_store_file_batch(
         )
 
     # Handle orphaned VectorStoreFile records when batch fails
-    # Find records with remote_id=None that were created for this batch
+    # Find records that were created for this batch but not yet completed
     if batch_obj.status in ("failed", "cancelled"):
         orphaned_files = await sync_to_async(list)(
-            VectorStoreFile.objects.filter(
-                batch=batch_obj, remote_id__isnull=True, status="in_progress"
-            )
+            VectorStoreFile.objects.filter(batch=batch_obj, status="in_progress")
         )
         if orphaned_files:
 
@@ -235,10 +221,8 @@ async def vector_store_file_batch(
 
             await mark_orphans_failed()
 
-    # Return upstream response with only id and vector_store_id replaced
+    # Return upstream response directly (IDs already match)
     response_data = remote_batch.model_dump(mode="json")
-    response_data["id"] = batch_obj.id
-    response_data["vector_store_id"] = vs_obj.id
 
     return JsonResponse(response_data, status=200)
 
@@ -278,15 +262,10 @@ async def vector_store_file_batch_cancel(
     except VectorStoreFileBatch.DoesNotExist:
         return error_response("File batch not found.", param="batch_id", status=404)
 
-    if not batch_obj.remote_id:
-        return error_response(
-            "File batch has no remote reference.", error_type="server_error", status=500
-        )
-
     # Cancel on upstream
     try:
         remote_batch = await client.vector_stores.file_batches.cancel(
-            vector_store_id=vs_obj.remote_id, batch_id=batch_obj.remote_id
+            vector_store_id=vs_obj.id, batch_id=batch_obj.id
         )
     except Exception as e:
         return error_response(
@@ -303,9 +282,7 @@ async def vector_store_file_batch_cancel(
 
     # Handle orphaned VectorStoreFile records when batch is cancelled
     orphaned_files = await sync_to_async(list)(
-        VectorStoreFile.objects.filter(
-            batch=batch_obj, remote_id__isnull=True, status="in_progress"
-        )
+        VectorStoreFile.objects.filter(batch=batch_obj, status="in_progress")
     )
     if orphaned_files:
 
@@ -318,10 +295,8 @@ async def vector_store_file_batch_cancel(
 
         await mark_orphans_cancelled()
 
-    # Return upstream response with only id and vector_store_id replaced
+    # Return upstream response directly (IDs already match)
     response_data = remote_batch.model_dump(mode="json")
-    response_data["id"] = batch_obj.id
-    response_data["vector_store_id"] = vs_obj.id
 
     return JsonResponse(response_data, status=200)
 
@@ -361,15 +336,10 @@ async def vector_store_file_batch_files(
     except VectorStoreFileBatch.DoesNotExist:
         return error_response("File batch not found.", param="batch_id", status=404)
 
-    if not batch_obj.remote_id:
-        return error_response(
-            "File batch has no remote reference.", error_type="server_error", status=500
-        )
-
     # Get files in batch from upstream
     try:
         remote_files_response = await client.vector_stores.file_batches.list_files(
-            vector_store_id=vs_obj.remote_id, batch_id=batch_obj.remote_id
+            vector_store_id=vs_obj.id, batch_id=batch_obj.id
         )
     except Exception as e:
         return error_response(
@@ -378,56 +348,11 @@ async def vector_store_file_batch_files(
             status=502,
         )
 
-    # Get all local vector store files to map remote IDs to local IDs
-    all_vs_files = await sync_to_async(list)(
-        VectorStoreFile.objects.filter(vector_store=vs_obj).select_related("file_obj")
-    )
-    remote_to_local_map = {f.remote_id: f for f in all_vs_files if f.remote_id}
-
-    # Build map of batch-created files (remote_id=None) by file_obj.remote_id
-    # Only include files from the current batch to prevent cross-batch linkage
-    batch_vs_files = [f for f in all_vs_files if f.batch_id == batch_obj.id]
-    batch_file_by_file_remote_id = {}
-    for f in batch_vs_files:
-        if f.remote_id is None and f.file_obj and f.file_obj.remote_id:
-            batch_file_by_file_remote_id[f.file_obj.remote_id] = f
-
-    # Map remote file IDs to local IDs in response
+    # Return upstream response directly (IDs already match)
     remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
     response_files = []
-    files_to_link = []
     for remote_file in remote_files:
         file_data = remote_file.model_dump(mode="json")
-        local_file = remote_to_local_map.get(remote_file.id)
-        if local_file:
-            file_data["id"] = local_file.id
-            file_data["vector_store_id"] = vs_obj.id
-            file_data["file_id"] = local_file.file_obj.id if local_file.file_obj else None
-            response_files.append(file_data)
-        else:
-            batch_file = batch_file_by_file_remote_id.get(remote_file.id)
-            if batch_file:
-                files_to_link.append((batch_file, remote_file))
-                file_data["id"] = batch_file.id
-                file_data["vector_store_id"] = vs_obj.id
-                file_data["file_id"] = batch_file.file_obj.id if batch_file.file_obj else None
-                response_files.append(file_data)
-            else:
-                logger.warning(f"Batch file {remote_file.id} has no local record, skipping")
-
-    # Update batch-created records with their upstream remote_id
-    if files_to_link:
-
-        @sync_to_async
-        def link_batch_files():
-            for local_file, remote_file in files_to_link:
-                local_file.remote_id = remote_file.id
-                local_file.status = remote_file.status or local_file.status
-                local_file.usage_bytes = remote_file.usage_bytes
-                if hasattr(remote_file, "last_error") and remote_file.last_error:
-                    local_file.last_error = remote_file.last_error
-                local_file.save()
-
-        await link_batch_files()
+        response_files.append(file_data)
 
     return JsonResponse({"object": "list", "data": response_files, "has_more": False}, status=200)

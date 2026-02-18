@@ -12,7 +12,7 @@ from openai.types.vector_store_update_params import VectorStoreUpdateParams
 from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
-from management.models import FileObject, Token, VectorStore
+from management.models import Token, VectorStore
 
 from .decorators import log_request, parse_body, token_authenticated, tos_accepted
 from .errors import error_response
@@ -115,11 +115,11 @@ async def vector_stores(
             status=502,
         )
 
-    # Create local record with remote_id
+    # Create local record with upstream ID
     now = timezone.now()
     vs_obj = VectorStore(
+        id=remote_vs.id,
         token=token,
-        remote_id=remote_vs.id,
         name=name,
         status=remote_vs.status or "completed",
         usage_bytes=getattr(remote_vs, "usage_bytes", 0),
@@ -131,9 +131,8 @@ async def vector_stores(
     )
     await sync_to_async(vs_obj.save)()
 
-    # Return upstream response with only ID replaced
+    # Return upstream response directly (ID already matches)
     response_data = remote_vs.model_dump(mode="json")
-    response_data["id"] = vs_obj.id
 
     return JsonResponse(response_data, status=200)
 
@@ -172,12 +171,6 @@ async def vector_store(
     except VectorStore.DoesNotExist:
         return error_response("Vector store not found.", param="vector_store_id", status=404)
 
-    remote_id = vs_obj.remote_id
-    if not remote_id:
-        return error_response(
-            "Vector store has no remote reference.", error_type="server_error", status=500
-        )
-
     if request.method == "GET":
         # Retrieve from upstream and sync status
         try:
@@ -189,9 +182,8 @@ async def vector_store(
                 status=502,
             )
 
-        # Return upstream response with only ID replaced
+        # Return upstream response directly (ID already matches)
         response_data = remote_vs.model_dump(mode="json")
-        response_data["id"] = str(vs_obj.id)
 
         return JsonResponse(response_data, status=200)
 
@@ -209,7 +201,7 @@ async def vector_store(
 
         if modify_kwargs:
             try:
-                remote_vs = await client.vector_stores.update(remote_id, **modify_kwargs)
+                remote_vs = await client.vector_stores.update(vs_obj.id, **modify_kwargs)
             except Exception as e:
                 return error_response(
                     f"Failed to update vector store on upstream: {str(e)}",
@@ -228,9 +220,8 @@ async def vector_store(
             vs_obj.usage_bytes = getattr(remote_vs, "usage_bytes", vs_obj.usage_bytes)
             await sync_to_async(vs_obj.save)()
 
-            # Return upstream response with only ID replaced
+            # Return upstream response directly (ID already matches)
             response_data = remote_vs.model_dump(mode="json")
-            response_data["id"] = vs_obj.id
 
             return JsonResponse(response_data, status=200)
 
@@ -238,7 +229,6 @@ async def vector_store(
         try:
             remote_vs = await vs_obj.areload_from_upstream(client)
             response_data = remote_vs.model_dump(mode="json")
-            response_data["id"] = vs_obj.id
             return JsonResponse(response_data, status=200)
         except Exception as e:
             return error_response(
@@ -257,15 +247,15 @@ async def vector_store(
             status=502,
         )
 
-    # Save the ID before deleting the object
-    vs_id_to_return = str(vs_obj.id)
+    # Capture ID before delete (Django sets pk to None after delete)
+    deleted_id = vs_obj.id
 
     # Delete local record
     await sync_to_async(vs_obj.delete)()
 
-    # Return with Aqueduct ID
+    # Return with upstream ID
     return JsonResponse(
-        {"id": vs_id_to_return, "object": "vector_store.deleted", "deleted": True}, status=200
+        {"id": deleted_id, "object": "vector_store.deleted", "deleted": True}, status=200
     )
 
 
@@ -295,12 +285,6 @@ async def vector_store_search(
     except VectorStore.DoesNotExist:
         return error_response("Vector store not found.", param="vector_store_id", status=404)
 
-    remote_id = vs_obj.remote_id
-    if not remote_id:
-        return error_response(
-            "Vector store has no remote reference.", error_type="server_error", status=500
-        )
-
     # Get search parameters from request body
     try:
         import json
@@ -314,7 +298,7 @@ async def vector_store_search(
         return error_response("Missing required parameter: query", param="query", status=400)
 
     # Prepare search kwargs
-    search_kwargs = {"vector_store_id": remote_id, "query": query}
+    search_kwargs = {"vector_store_id": vs_obj.id, "query": query}
 
     # Add optional parameters
     if body.get("filters"):
@@ -336,35 +320,7 @@ async def vector_store_search(
             status=502,
         )
 
+    # Return upstream response directly (IDs already match)
     results_data = search_results.model_dump(mode="json")
-
-    # Map upstream file_id and vector_store_id to local Aqueduct IDs
-    if "data" in results_data:
-        file_remote_ids = set()
-        for item in results_data["data"]:
-            if "file_id" in item:
-                file_remote_ids.add(item["file_id"])
-
-        if file_remote_ids:
-            if token.service_account:
-                file_objs = await sync_to_async(list)(
-                    FileObject.objects.filter(
-                        remote_id__in=file_remote_ids,
-                        token__service_account__team=token.service_account.team,
-                    )
-                )
-            else:
-                file_objs = await sync_to_async(list)(
-                    FileObject.objects.filter(remote_id__in=file_remote_ids, token__user=token.user)
-                )
-            file_id_map = {f.remote_id: f.id for f in file_objs}
-
-            for item in results_data["data"]:
-                if "file_id" in item:
-                    item["file_id"] = file_id_map.get(item["file_id"], item["file_id"])
-
-        for item in results_data["data"]:
-            if "vector_store_id" in item:
-                item["vector_store_id"] = vs_obj.id
 
     return JsonResponse(results_data, status=200)

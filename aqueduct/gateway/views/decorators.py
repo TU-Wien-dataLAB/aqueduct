@@ -460,13 +460,10 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
             if token and token.user != file_obj.token.user:
                 raise FileObject.DoesNotExist
 
-            if not file_obj.remote_id:
-                raise ValueError(f"File {file_id} has no remote reference")
-
             # Fetch content from upstream using the async client
             try:
                 client = get_files_api_client()
-                response = await client.files.content(file_obj.remote_id)
+                response = await client.files.content(file_obj.id)
                 return response.content
             except ValueError as e:
                 raise ValueError(f"Files API not configured: {e}")
@@ -820,36 +817,25 @@ def check_tool_availability(view_func):
                 case "file_search":
                     vector_store_ids = tool.get("vector_store_ids", [])
                     if vector_store_ids:
+                        # Deduplicate to avoid false negatives in count check
+                        unique_vs_ids = list(set(vector_store_ids))
+                        # Verify ownership - users can only use their own vector stores
                         if token.service_account:
-                            vs_objs = await sync_to_async(list)(
+                            vs_count = await sync_to_async(
                                 VectorStore.objects.filter(
-                                    id__in=vector_store_ids,
+                                    id__in=unique_vs_ids,
                                     token__service_account__team=token.service_account.team,
-                                )
-                            )
+                                ).count
+                            )()
                         else:
-                            vs_objs = await sync_to_async(list)(
+                            vs_count = await sync_to_async(
                                 VectorStore.objects.filter(
-                                    id__in=vector_store_ids, token__user=token.user
-                                )
-                            )
+                                    id__in=unique_vs_ids, token__user=token.user
+                                ).count
+                            )()
 
-                        id_map = {vs.id: vs.remote_id for vs in vs_objs}
-
-                        missing = [vid for vid in vector_store_ids if vid not in id_map]
-                        if missing:
-                            return error_response(
-                                f"Vector store(s) not found: {', '.join(missing)}", status=404
-                            )
-
-                        unresolved = [vid for vid in vector_store_ids if id_map[vid] is None]
-                        if unresolved:
-                            return error_response(
-                                f"Vector store(s) not yet ready: {', '.join(unresolved)}",
-                                status=400,
-                            )
-
-                        tool["vector_store_ids"] = [id_map[vid] for vid in vector_store_ids]
+                        if vs_count != len(unique_vs_ids):
+                            return error_response("One or more vector stores not found", status=404)
                 case other:
                     if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
                         return error_response(f"Invalid tool type: {other}", status=400)

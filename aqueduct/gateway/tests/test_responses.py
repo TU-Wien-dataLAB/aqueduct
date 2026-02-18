@@ -627,29 +627,28 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         token.user = MagicMock()
 
         mock_vs1 = MagicMock()
-        mock_vs1.id = "vs_local_123"
-        mock_vs1.remote_id = "vs_remote_abc"
+        mock_vs1.id = "vs_remote_abc"
 
         mock_vs2 = MagicMock()
-        mock_vs2.id = "vs_local_456"
-        mock_vs2.remote_id = "vs_remote_def"
+        mock_vs2.id = "vs_remote_def"
 
-        tool = {"type": "file_search", "vector_store_ids": ["vs_local_123", "vs_local_456"]}
+        tool = {"type": "file_search", "vector_store_ids": ["vs_remote_abc", "vs_remote_def"]}
         pydantic_model = {"tools": [tool]}
         kwargs = {"token": token, "pydantic_model": pydantic_model}
 
         mock_queryset = MagicMock()
-        mock_queryset.__iter__ = MagicMock(return_value=iter([mock_vs1, mock_vs2]))
+        mock_queryset.count = MagicMock(return_value=2)
         mock_vector_store_class.objects.filter.return_value = mock_queryset
 
         decorated_func = check_tool_availability(mock_view_func)
         result = await decorated_func(request, response_id, **kwargs)
 
         self.assertEqual(result.status_code, 200)
+        # IDs remain unchanged since we use upstream IDs directly
         self.assertEqual(tool["vector_store_ids"], ["vs_remote_abc", "vs_remote_def"])
         mock_vector_store_class.objects.filter.assert_called_once()
         call_kwargs = mock_vector_store_class.objects.filter.call_args.kwargs
-        self.assertEqual(call_kwargs["id__in"], ["vs_local_123", "vs_local_456"])
+        self.assertEqual(sorted(call_kwargs["id__in"]), ["vs_remote_abc", "vs_remote_def"])
 
     @patch("gateway.views.decorators.VectorStore")
     async def test_check_tool_availability_file_search_service_account(
@@ -676,26 +675,26 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         token.user = MagicMock()
 
         mock_vs = MagicMock()
-        mock_vs.id = "vs_local_123"
-        mock_vs.remote_id = "vs_remote_abc"
+        mock_vs.id = "vs_remote_abc"
 
-        tool = {"type": "file_search", "vector_store_ids": ["vs_local_123"]}
+        tool = {"type": "file_search", "vector_store_ids": ["vs_remote_abc"]}
         pydantic_model = {"tools": [tool]}
         kwargs = {"token": token, "pydantic_model": pydantic_model}
 
         mock_queryset = MagicMock()
-        mock_queryset.__iter__ = MagicMock(return_value=iter([mock_vs]))
+        mock_queryset.count = MagicMock(return_value=1)
         mock_vector_store_class.objects.filter.return_value = mock_queryset
 
         decorated_func = check_tool_availability(mock_view_func)
         result = await decorated_func(request, response_id, **kwargs)
 
         self.assertEqual(result.status_code, 200)
+        # IDs remain unchanged since we use upstream IDs directly
         self.assertEqual(tool["vector_store_ids"], ["vs_remote_abc"])
         mock_vector_store_class.objects.filter.assert_called_once()
         call_kwargs = mock_vector_store_class.objects.filter.call_args.kwargs
         self.assertEqual(call_kwargs["token__service_account__team"], mock_team)
-        self.assertEqual(call_kwargs["id__in"], ["vs_local_123"])
+        self.assertEqual(call_kwargs["id__in"], ["vs_remote_abc"])
 
     @patch("gateway.views.decorators.VectorStore")
     async def test_check_tool_availability_file_search_not_found(self, mock_vector_store_class):
@@ -717,7 +716,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         kwargs = {"token": token, "pydantic_model": pydantic_model}
 
         mock_queryset = MagicMock()
-        mock_queryset.__iter__ = MagicMock(return_value=iter([]))
+        mock_queryset.count = MagicMock(return_value=0)
         mock_vector_store_class.objects.filter.return_value = mock_queryset
 
         decorated_func = check_tool_availability(mock_view_func)
@@ -726,7 +725,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         self.assertEqual(result.status_code, 404)
         mock_view_func.assert_not_called()
         data = json.loads(result.content)
-        self.assertIn("Vector store(s) not found", data["error"]["message"])
+        self.assertIn("One or more vector stores not found", data["error"]["message"])
 
     async def test_check_tool_availability_file_search_empty_ids(self):
         """
@@ -752,41 +751,3 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         self.assertEqual(result.status_code, 200)
         mock_view_func.assert_called_once()
-
-    @patch("gateway.views.decorators.VectorStore")
-    async def test_check_tool_availability_file_search_unresolved_remote_id(
-        self, mock_vector_store_class
-    ):
-        """
-        Test check_tool_availability decorator with file_search tool when vector store
-        exists but remote_id is None (not yet synced upstream).
-        Should return 400 error.
-        """
-        mock_view_func = AsyncMock()
-
-        request = AsyncMock()
-        response_id = "test_response_id"
-
-        token = MagicMock()
-        token.service_account = None
-        token.user = MagicMock()
-
-        mock_vs = MagicMock()
-        mock_vs.id = "vs_local_123"
-        mock_vs.remote_id = None
-
-        tool = {"type": "file_search", "vector_store_ids": ["vs_local_123"]}
-        pydantic_model = {"tools": [tool]}
-        kwargs = {"token": token, "pydantic_model": pydantic_model}
-
-        mock_queryset = MagicMock()
-        mock_queryset.__iter__ = MagicMock(return_value=iter([mock_vs]))
-        mock_vector_store_class.objects.filter.return_value = mock_queryset
-
-        decorated_func = check_tool_availability(mock_view_func)
-        result = await decorated_func(request, response_id, **kwargs)
-
-        self.assertEqual(result.status_code, 400)
-        mock_view_func.assert_not_called()
-        data = json.loads(result.content)
-        self.assertIn("Vector store(s) not yet ready", data["error"]["message"])

@@ -198,8 +198,20 @@ class TestFilesAPI(GatewayFilesTestCase):
         # Setup: Create some files assigned to the token; 1 MB in total
         FileObjectModel.objects.bulk_create(
             [
-                FileObjectModel(bytes=512 * 1024, created_at=42, token=token, purpose="batch"),
-                FileObjectModel(bytes=512 * 1024, created_at=43, token=token, purpose="batch"),
+                FileObjectModel(
+                    id="file-storage-1",
+                    bytes=512 * 1024,
+                    created_at=42,
+                    token=token,
+                    purpose="batch",
+                ),
+                FileObjectModel(
+                    id="file-storage-2",
+                    bytes=512 * 1024,
+                    created_at=43,
+                    token=token,
+                    purpose="batch",
+                ),
             ]
         )
 

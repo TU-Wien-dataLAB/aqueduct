@@ -81,7 +81,7 @@ def delete_expired_files_and_batches(self):
     for file_obj in files_list:
         try:
             # Attempt upstream deletion first
-            if file_obj.remote_id and files_api_configured and client:
+            if files_api_configured and client:
                 success = asyncio.run(file_obj.adelete_upstream(client, raise_on_error=False))
                 if success:
                     upstream_deleted += 1

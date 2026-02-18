@@ -32,7 +32,7 @@ from gateway.authentication import token_from_request
 from gateway.config import get_files_api_client, get_mcp_config, get_router, resolve_model_alias
 from gateway.views.errors import error_response
 from gateway.views.utils import get_response_from_cache, in_wildcard
-from management.models import FileObject, Request, Token
+from management.models import FileObject, Request, Token, VectorStore
 
 log = logging.getLogger("aqueduct")
 
@@ -817,6 +817,39 @@ def check_tool_availability(view_func):
                             )
 
                         tool["server_url"] = server_config["url"]
+                case "file_search":
+                    vector_store_ids = tool.get("vector_store_ids", [])
+                    if vector_store_ids:
+                        if token.service_account:
+                            vs_objs = await sync_to_async(list)(
+                                VectorStore.objects.filter(
+                                    id__in=vector_store_ids,
+                                    token__service_account__team=token.service_account.team,
+                                )
+                            )
+                        else:
+                            vs_objs = await sync_to_async(list)(
+                                VectorStore.objects.filter(
+                                    id__in=vector_store_ids, token__user=token.user
+                                )
+                            )
+
+                        id_map = {vs.id: vs.remote_id for vs in vs_objs}
+
+                        missing = [vid for vid in vector_store_ids if vid not in id_map]
+                        if missing:
+                            return error_response(
+                                f"Vector store(s) not found: {', '.join(missing)}", status=404
+                            )
+
+                        unresolved = [vid for vid in vector_store_ids if id_map[vid] is None]
+                        if unresolved:
+                            return error_response(
+                                f"Vector store(s) not yet ready: {', '.join(unresolved)}",
+                                status=400,
+                            )
+
+                        tool["vector_store_ids"] = [id_map[vid] for vid in vector_store_ids]
                 case other:
                     if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
                         return error_response(f"Invalid tool type: {other}", status=400)

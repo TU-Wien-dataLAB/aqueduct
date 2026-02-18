@@ -1,3 +1,5 @@
+import asyncio
+
 from django import forms
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -5,7 +7,7 @@ from django.contrib.auth.models import Group, User
 from django.urls import reverse
 from django.utils.html import format_html
 
-from gateway.config import get_router_config
+from gateway.config import get_files_api_client, get_router_config
 
 from .models import (
     Batch,
@@ -374,6 +376,51 @@ class VectorStoreAdmin(admin.ModelAdmin):
 
     token_link.short_description = "Token"
 
+    def delete_model(self, request, obj):
+        """Delete from upstream API before deleting local record."""
+        # First delete all files from upstream
+        for vs_file in obj.files.all():
+            if vs_file.remote_id:
+                try:
+                    client = get_files_api_client()
+                    asyncio.run(vs_file.adelete_upstream(client, raise_on_error=False))
+                except Exception:
+                    pass  # Continue even if upstream deletion fails
+
+        # Delete vector store from upstream
+        if obj.remote_id:
+            try:
+                client = get_files_api_client()
+                asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+            except Exception:
+                pass  # Continue even if upstream deletion fails
+
+        # Now delete the local record (this will cascade to files)
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        """Delete from upstream API before deleting local records."""
+        for obj in queryset:
+            # First delete all files from upstream
+            for vs_file in obj.files.all():
+                if vs_file.remote_id:
+                    try:
+                        client = get_files_api_client()
+                        asyncio.run(vs_file.adelete_upstream(client, raise_on_error=False))
+                    except Exception:
+                        pass
+
+            # Delete vector store from upstream
+            if obj.remote_id:
+                try:
+                    client = get_files_api_client()
+                    asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+                except Exception:
+                    pass
+
+        # Now delete local records
+        super().delete_queryset(request, queryset)
+
 
 @admin.register(VectorStoreFile)
 class VectorStoreFileAdmin(admin.ModelAdmin):
@@ -411,6 +458,31 @@ class VectorStoreFileAdmin(admin.ModelAdmin):
         return format_html('<a href="{}">{}</a>', link, obj.file_obj.filename)
 
     file_obj_link.short_description = "File"
+
+    def delete_model(self, request, obj):
+        """Delete from upstream API before deleting local record."""
+        if obj.remote_id:
+            try:
+                client = get_files_api_client()
+                asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+            except Exception:
+                pass  # Continue even if upstream deletion fails
+
+        # Now delete the local record
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        """Delete from upstream API before deleting local records."""
+        for obj in queryset:
+            if obj.remote_id:
+                try:
+                    client = get_files_api_client()
+                    asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+                except Exception:
+                    pass  # Continue even if upstream deletion fails
+
+        # Now delete local records
+        super().delete_queryset(request, queryset)
 
 
 @admin.register(VectorStoreFileBatch)

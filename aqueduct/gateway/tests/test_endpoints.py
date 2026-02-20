@@ -43,7 +43,6 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         super().setUpClass()
         cls.url = reverse("gateway:embeddings")
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_embeddings(self):
         """
         Sends a simple embeddings request to the mock server using the Django test client.
@@ -817,7 +816,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         )
         self.assertIn("There is no 'model_name' with this string", response.json()["error"])
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_chat_completion_schema_generation(self):
         """
         Sends a chat completion request with a JSON schema, non-streaming.

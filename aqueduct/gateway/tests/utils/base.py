@@ -61,7 +61,7 @@ def get_mock_router(model: str = "test-model"):
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-    API_MAX_RETRIES=5,  # for some reason the OpenAI API fails with 503 sometimes...
+    API_MAX_RETRIES=1,  # for some reason, in a few tests the 1st request to the mock API fails (503)
 )
 class GatewayIntegrationTestCase(TestCase):
     """
@@ -134,7 +134,6 @@ class GatewayIntegrationTestCase(TestCase):
 @override_settings(
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    API_MAX_RETRIES=5,
 )
 class GatewayFilesTestCase(GatewayIntegrationTestCase):
     # Load default fixture (includes test Token) and set test access token

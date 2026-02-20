@@ -117,9 +117,7 @@ class MCPDaphneProcess(DaphneProcess):
         super().run()
 
 
-@override_settings(
-    OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/", API_MAX_RETRIES=5
-)
+@override_settings(OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/")
 class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     """
     Live server test case for MCP endpoints using Django's LiveServerTestCase.

@@ -1155,12 +1155,53 @@ class VectorStore(models.Model):
             self.usage_bytes = getattr(remote, "usage_bytes", self.usage_bytes)
             self.last_active_at = int(timezone.now().timestamp())
             await self.asave()
+            await self.async_file_statuses(client)
             return remote
         except Exception as e:
             if raise_on_error:
                 raise
             log.warning(f"Failed to reload vector store {self.id} from upstream: {e}")
             return None
+
+    async def async_file_statuses(self, client=None) -> tuple[int, int]:
+        """
+        Sync all VectorStoreFile statuses from upstream by listing files.
+        """
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            remote_files_response = await client.vector_stores.files.list(vector_store_id=self.id)
+            remote_files = (
+                remote_files_response.data if hasattr(remote_files_response, "data") else []
+            )
+        except Exception as e:
+            log.warning(f"Failed to list files for vector store {self.id} from upstream: {e}")
+            return 0, 0
+
+        success = 0
+        failed = 0
+
+        for remote_file in remote_files:
+            try:
+                local_file = await VectorStoreFile.objects.aget(
+                    id=remote_file.id, vector_store=self
+                )
+                local_file.status = remote_file.status or local_file.status
+                local_file.usage_bytes = remote_file.usage_bytes
+                if hasattr(remote_file, "last_error") and remote_file.last_error:
+                    local_file.last_error = remote_file.last_error
+                await local_file.asave()
+                success += 1
+            except VectorStoreFile.DoesNotExist:
+                log.debug(f"VectorStoreFile {remote_file.id} not found locally, skipping sync")
+            except Exception as e:
+                log.warning(f"Failed to sync VectorStoreFile {remote_file.id}: {e}")
+                failed += 1
+
+        return success, failed
 
     def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """

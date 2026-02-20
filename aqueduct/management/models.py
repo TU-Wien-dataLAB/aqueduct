@@ -762,11 +762,11 @@ class FileObject(models.Model):
     )
 
     preview = models.TextField(
-        null=True, blank=True, help_text="Preview of file content (first 10 lines for JSONL files)"
+        blank=True, default="", help_text="Preview of file content (first 10 lines for JSONL files)"
     )
 
     upstream_url = models.URLField(
-        null=True, blank=True, help_text="The upstream API URL this file was uploaded to"
+        blank=True, default="", help_text="The upstream API URL this file was uploaded to"
     )
 
     class Meta:
@@ -1098,7 +1098,7 @@ class VectorStore(models.Model):
         help_text="The Unix timestamp (in seconds) for when the vector store was last active.",
     )
     upstream_url = models.URLField(
-        null=True, blank=True, help_text="The upstream API URL this vector store was created on"
+        blank=True, default="", help_text="The upstream API URL this vector store was created on"
     )
 
     class Meta:

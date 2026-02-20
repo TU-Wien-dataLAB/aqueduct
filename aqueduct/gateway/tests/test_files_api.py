@@ -204,6 +204,7 @@ class TestFilesAPI(GatewayFilesTestCase):
                     created_at=42,
                     token=token,
                     purpose="batch",
+                    preview="",
                 ),
                 FileObjectModel(
                     id="file-storage-2",
@@ -211,6 +212,7 @@ class TestFilesAPI(GatewayFilesTestCase):
                     created_at=43,
                     token=token,
                     purpose="batch",
+                    preview="",
                 ),
             ]
         )

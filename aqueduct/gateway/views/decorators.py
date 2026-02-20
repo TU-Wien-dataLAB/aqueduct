@@ -941,14 +941,11 @@ def process_batch_file(view_func):
         content = uploaded.read()
 
         if purpose == "batch":
-            # Store preview (first 10 lines) before rewriting
             kwargs["file_preview"] = extract_preview(content)
-            # Rewrite model names for batch files
             kwargs["file_content"] = rewrite_batch_file_models(content)
         else:
-            # For non-batch files, pass content as-is, no preview
             kwargs["file_content"] = content
-            kwargs["file_preview"] = None
+            kwargs["file_preview"] = ""
 
         return await view_func(request, *args, **kwargs)
 

@@ -111,6 +111,7 @@ async def sync_batch_file_if_needed(
             "created_at": remote_file.created_at,
             "purpose": remote_file.purpose,
             "expires_at": local_expires_at,
+            "preview": "",
             "upstream_url": settings.AQUEDUCT_FILES_API_URL,
         },
     )

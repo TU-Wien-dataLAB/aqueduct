@@ -30,7 +30,7 @@ LOGGING_CONFIG = {
         }
     },
     "loggers": {
-        "mock_api": {
+        "mock_server": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
@@ -39,7 +39,7 @@ LOGGING_CONFIG = {
 }  # fmt: skip
 logging.config.dictConfig(LOGGING_CONFIG)
 
-logger = logging.getLogger("mock_api")
+logger = logging.getLogger("mock_server")
 
 
 class MockAPIServer:
@@ -52,7 +52,7 @@ class MockAPIServer:
         self.delays: bool = delays
         self.process: Optional[subprocess.Popen] = None
         self.log_level: str = log_level
-        self.logger = logging.getLogger("mock_api")
+        self.logger = logging.getLogger("mock_server")
 
     def start(self) -> None:
         """Start the uvicorn mock server in a subprocess"""
@@ -109,12 +109,14 @@ class MockAPIServer:
     def configure_endpoint(self, path: str, config: MockConfig) -> None:
         normalized_path = path.strip("/").removeprefix("v1/")
         url = f"{self.base_url}/configure/{normalized_path}"
+        logger.debug("Configuring the %s endpoint", normalized_path)
         response = requests.post(url, json=config.model_dump(mode="json"), timeout=1)
         response.raise_for_status()
 
     def reset_endpoint_config(self, path: str) -> None:
         normalized_path = path.strip("/").removeprefix("v1/")
         url = f"{self.base_url}/reset/{normalized_path}"
+        logger.debug("Resetting the %s endpoint", normalized_path)
         response = requests.post(url, timeout=1)
         response.raise_for_status()
 

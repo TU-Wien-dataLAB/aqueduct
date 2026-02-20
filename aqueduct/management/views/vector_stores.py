@@ -31,6 +31,9 @@ class UserVectorStoresView(BaseAqueductView, TemplateView):
             vs.created_dt = datetime.fromtimestamp(vs.created_at)
             vs.files_count = vs.files.count()
             vs.batches_count = vs.file_batches.count()
+            vs.size_bytes = sum(
+                vf.file_obj.bytes for vf in vs.files.select_related("file_obj").all() if vf.file_obj
+            )
             result.append(vs)
         return result
 
@@ -100,7 +103,15 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
             if vector_store.last_active_at:
                 vector_store.last_active_dt = datetime.fromtimestamp(vector_store.last_active_at)
 
-            # Prepare files with datetime conversion
+            # Prepare files with datetime conversion and calculate total size
+            files = []
+            total_size = 0
+            for vf in vector_store.files.all():
+                vf.created_dt = datetime.fromtimestamp(vf.created_at)
+                if vf.file_obj:
+                    total_size += vf.file_obj.bytes
+                files.append(vf)
+            vector_store.size_bytes = total_size
             files = []
             for vf in vector_store.files.all():
                 vf.created_dt = datetime.fromtimestamp(vf.created_at)

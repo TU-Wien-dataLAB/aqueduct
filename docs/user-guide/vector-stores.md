@@ -22,7 +22,7 @@ Each vector store is displayed as a card showing:
 - **Status**: A badge indicating the processing status.
 - **Files**: The number of files in the store (e.g., "2/1000").
 - **Batches**: The number of file batches.
-- **Usage**: Storage usage in bytes.
+- **Size**: Total size of files in the vector store.
 - **Created**: The creation date (e.g., "2026-02-19").
 - **Refresh**: Button to update the card's data.
 

@@ -32,7 +32,7 @@ from gateway.authentication import token_from_request
 from gateway.config import get_files_api_client, get_mcp_config, get_router, resolve_model_alias
 from gateway.views.errors import error_response
 from gateway.views.utils import get_response_from_cache, in_wildcard
-from management.models import FileObject, Request, Token
+from management.models import FileObject, Request, Token, VectorStore
 
 log = logging.getLogger("aqueduct")
 
@@ -460,13 +460,10 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
             if token and token.user != file_obj.token.user:
                 raise FileObject.DoesNotExist
 
-            if not file_obj.remote_id:
-                raise ValueError(f"File {file_id} has no remote reference")
-
             # Fetch content from upstream using the async client
             try:
                 client = get_files_api_client()
-                response = await client.files.content(file_obj.remote_id)
+                response = await client.files.content(file_obj.id)
                 return response.content
             except ValueError as e:
                 raise ValueError(f"Files API not configured: {e}")
@@ -817,6 +814,28 @@ def check_tool_availability(view_func):
                             )
 
                         tool["server_url"] = server_config["url"]
+                case "file_search":
+                    vector_store_ids = tool.get("vector_store_ids", [])
+                    if vector_store_ids:
+                        # Deduplicate to avoid false negatives in count check
+                        unique_vs_ids = list(set(vector_store_ids))
+                        # Verify ownership - users can only use their own vector stores
+                        if token.service_account:
+                            vs_count = await sync_to_async(
+                                VectorStore.objects.filter(
+                                    id__in=unique_vs_ids,
+                                    token__service_account__team=token.service_account.team,
+                                ).count
+                            )()
+                        else:
+                            vs_count = await sync_to_async(
+                                VectorStore.objects.filter(
+                                    id__in=unique_vs_ids, token__user=token.user
+                                ).count
+                            )()
+
+                        if vs_count != len(unique_vs_ids):
+                            return error_response("One or more vector stores not found", status=404)
                 case other:
                     if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
                         return error_response(f"Invalid tool type: {other}", status=400)
@@ -922,14 +941,11 @@ def process_batch_file(view_func):
         content = uploaded.read()
 
         if purpose == "batch":
-            # Store preview (first 10 lines) before rewriting
             kwargs["file_preview"] = extract_preview(content)
-            # Rewrite model names for batch files
             kwargs["file_content"] = rewrite_batch_file_models(content)
         else:
-            # For non-batch files, pass content as-is, no preview
             kwargs["file_content"] = content
-            kwargs["file_preview"] = None
+            kwargs["file_preview"] = ""
 
         return await view_func(request, *args, **kwargs)
 

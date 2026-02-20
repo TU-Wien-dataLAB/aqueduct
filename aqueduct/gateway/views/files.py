@@ -28,7 +28,7 @@ from .errors import error_response
 
 class FilesCreateParams(BaseModel):
     file: bytes
-    purpose: Literal["batch", "user_data"]
+    purpose: Literal["assistants", "batch", "user_data"]
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -84,9 +84,9 @@ async def sync_batch_file_if_needed(
     if not remote_file_id:
         return None
 
-    # Check if we already have a local record for this remote_id
+    # Check if we already have a local record for this upstream file
     try:
-        return await FileObject.objects.aget(remote_id=remote_file_id)
+        return await FileObject.objects.aget(id=remote_file_id, token=token)
     except FileObject.DoesNotExist:
         pass
 
@@ -97,20 +97,24 @@ async def sync_batch_file_if_needed(
         # File may have been deleted upstream, skip
         return None
 
-    # Create local record with same ownership as batch
+    # Create local record with same ownership as batch.
+    # Use get_or_create to prevent duplicate records from concurrent requests
+    # (e.g., two GET /batches/{id} requests polling the same completed batch).
     local_expires_at = calculate_expires_at(remote_file.expires_at)
 
-    file_obj = FileObject(
+    file_obj, _ = await sync_to_async(FileObject.objects.get_or_create)(
+        id=remote_file.id,
         token=token,
-        bytes=remote_file.bytes,
-        filename=remote_file.filename,
-        created_at=remote_file.created_at,
-        purpose=remote_file.purpose,
-        expires_at=local_expires_at,
-        remote_id=remote_file.id,
-        upstream_url=settings.AQUEDUCT_FILES_API_URL,
+        defaults={
+            "bytes": remote_file.bytes,
+            "filename": remote_file.filename,
+            "created_at": remote_file.created_at,
+            "purpose": remote_file.purpose,
+            "expires_at": local_expires_at,
+            "preview": "",
+            "upstream_url": settings.AQUEDUCT_FILES_API_URL,
+        },
     )
-    await sync_to_async(file_obj.save)()
 
     # Update batch record with linked file if batch_obj provided
     if batch_obj:
@@ -142,11 +146,18 @@ async def files(
         return error_response("Files API not configured", status=503)
 
     if request.method == "GET":
-        file_objects = await sync_to_async(list)(
-            FileObject.objects.filter(token__user=token.user)
-            .order_by("-created_at")
-            .select_related("token")
-        )
+        if token.service_account:
+            file_objects = await sync_to_async(list)(
+                FileObject.objects.filter(token__service_account__team=token.service_account.team)
+                .order_by("-created_at")
+                .select_related("token")
+            )
+        else:
+            file_objects = await sync_to_async(list)(
+                FileObject.objects.filter(token__user=token.user)
+                .order_by("-created_at")
+                .select_related("token")
+            )
 
         return JsonResponse(
             {
@@ -171,9 +182,14 @@ async def files(
         )
 
     # Enforce per-token total storage limit
-    sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(
-        sum_bytes=Sum("bytes")
-    )
+    if token.service_account:
+        sum_res = await FileObject.objects.filter(
+            token__service_account__team=token.service_account.team
+        ).aaggregate(sum_bytes=Sum("bytes"))
+    else:
+        sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(
+            sum_bytes=Sum("bytes")
+        )
     current_total = sum_res.get("sum_bytes") or 0
     max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB * 1024 * 1024
     if current_total + len(file_content) > max_total_bytes:
@@ -203,19 +219,19 @@ async def files(
     local_expires_at = calculate_expires_at(remote_file.expires_at)
 
     file_obj = FileObject(
+        id=remote_file.id,
         token=token,
         bytes=len(file_content),
         filename=filename,
         created_at=int(timezone.now().timestamp()),
         purpose=purpose,
         expires_at=local_expires_at,
-        remote_id=remote_file.id,
         preview=file_preview,
         upstream_url=settings.AQUEDUCT_FILES_API_URL,
     )
     await sync_to_async(file_obj.save)()
 
-    # IMPORTANT: Return response with Aqueduct ID, not remote ID
+    # Return response with upstream ID
     response_data = file_obj.model.model_dump(exclude_none=True, exclude_unset=True)
 
     return JsonResponse(response_data, status=200)
@@ -233,15 +249,14 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     Returns 404 if file not found or not owned by user - NEVER falls back to upstream.
     """
     try:
-        file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
+        if token.service_account:
+            file_obj = await FileObject.objects.aget(
+                id=file_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
     except FileObject.DoesNotExist:
         return error_response("File not found.", param="file_id", status=404)
-
-    remote_id = file_obj.remote_id
-    if not remote_id:
-        return error_response(
-            "File has no remote reference.", error_type="server_error", status=500
-        )
 
     try:
         client = get_files_api_client()
@@ -251,7 +266,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     if request.method == "GET":
         # Fetch current status from upstream
         try:
-            remote_file = await client.files.retrieve(remote_id)
+            remote_file = await file_obj.areload_from_upstream(client)
         except Exception as e:
             return error_response(
                 f"Failed to retrieve file from upstream: {str(e)}",
@@ -259,14 +274,13 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
                 status=502,
             )
 
-        # Return response with Aqueduct ID
+        # Return response with upstream ID (same as file_obj.id)
         response_data = remote_file.model_dump()
-        response_data["id"] = file_obj.id  # Replace remote ID with Aqueduct ID
         return JsonResponse(response_data, status=200)
 
     # DELETE /files/{file_id}
     try:
-        delete_response = await client.files.delete(remote_id)
+        await file_obj.adelete_upstream(client)
     except Exception as e:
         return error_response(
             f"Failed to delete file from upstream: {str(e)}", error_type="server_error", status=502
@@ -275,9 +289,8 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     # Delete local record
     await sync_to_async(file_obj.delete)()
 
-    # Return response with Aqueduct ID
-    response_data = delete_response.model_dump()
-    response_data["id"] = file_obj.id
+    # Return response with upstream ID
+    response_data = {"id": file_obj.id, "object": "file", "deleted": True}
     return JsonResponse(response_data, status=200)
 
 
@@ -293,15 +306,14 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
     Returns 404 if file not found or not owned by user - NEVER falls back to upstream.
     """
     try:
-        file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
+        if token.service_account:
+            file_obj = await FileObject.objects.aget(
+                id=file_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            file_obj = await FileObject.objects.aget(id=file_id, token__user=token.user)
     except FileObject.DoesNotExist:
         return error_response("File not found.", param="file_id", status=404)
-
-    remote_id = file_obj.remote_id
-    if not remote_id:
-        return error_response(
-            "File has no remote reference.", error_type="server_error", status=500
-        )
 
     try:
         client = get_files_api_client()
@@ -310,7 +322,7 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
 
     try:
         # Returns HttpxBinaryResponseContent, use .content to get bytes
-        response = await client.files.content(remote_id)
+        response = await client.files.content(file_obj.id)
     except Exception as e:
         return error_response(
             f"Failed to retrieve file content from upstream: {str(e)}",

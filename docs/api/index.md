@@ -25,6 +25,15 @@ or plain HTTP clients (e.g., `curl`) to make requests.
 | `/batches/{batch_id}/cancel` | POST        | Cancel a batch job                      |
 | `/audio/speech`              | POST        | Generate audio from text                |
 | `/images/generations`        | POST        | Generate images from text               |
+| `/vector_stores`             | GET, POST   | Create and list vector stores           |
+| `/vector_stores/{id}`        | GET, POST, DELETE | Manage vector stores                    |
+| `/vector_stores/{id}/search` | POST        | Search vector stores                    |
+| `/vector_stores/{id}/files`  | GET, POST   | Add and list files in vector stores     |
+| `/vector_stores/{id}/files/{file_id}` | GET, POST, DELETE | Manage files in vector stores         |
+| `/vector_stores/{id}/files/{file_id}/content` | GET | Download file content               |
+| `/vector_stores/{id}/file_batches`  | POST        | Create file batches                    |
+| `/vector_stores/{id}/file_batches/{batch_id}` | GET, POST | Retrieve or cancel batches      |
+| `/vector_stores/{id}/file_batches/{batch_id}/files` | GET | List files in batch            |
 | `/mcp-servers/{name}/mcp`    | GET, POST, DELETE | Model Context Protocol server interaction |
 
 Click an endpoint below to learn more:
@@ -35,6 +44,7 @@ Click an endpoint below to learn more:
 - [List Models](models.md)
 - [Files](files.md)
 - [Batches](batches.md)
+- [Vector Stores](vector-stores.md)
 - [Audio Speech](speech.md)
 - [Image generation](image_generation.md)
 - [Model Context Protocol (MCP)](mcp.md)

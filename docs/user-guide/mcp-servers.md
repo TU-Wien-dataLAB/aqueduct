@@ -1,7 +1,7 @@
 ---
 title: MCP Servers
 parent: User Guide
-nav_order: 8
+nav_order: 9
 ---
 
 # MCP Servers

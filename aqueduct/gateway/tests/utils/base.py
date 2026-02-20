@@ -113,13 +113,8 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls._write_router_config()
         super().setUpClass()
-        if INTEGRATION_TEST_BACKEND == "openai":
-            if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError(
-                    "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
-                )
+        cls._write_router_config()
         # Prepare auth headers for file API
         headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
         # Remove Content-Type header to allow multipart file upload
@@ -145,7 +140,7 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-    MAX_USER_BATCHES=3,
+    MAX_USER_BATCHES=10,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
     AQUEDUCT_FILES_API_URL="https://api.openai.com",
     AQUEDUCT_FILES_API_KEY="test_key",

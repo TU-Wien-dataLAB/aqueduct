@@ -72,18 +72,6 @@ def delete_expired_files_and_batches(self):
         files_api_configured = False
         print("Files API not configured - will skip upstream deletion")
 
-    async def delete_upstream_file(remote_id: str) -> bool:
-        """Attempt to delete a file from upstream. Returns True on success."""
-        if not files_api_configured or not client or not remote_id:
-            return True  # Nothing to delete upstream
-        try:
-            await client.files.delete(remote_id)
-            return True
-        except Exception as e:
-            # Log but don't fail - file may already be deleted upstream
-            print(f"Failed to delete upstream file {remote_id}: {e}")
-            return False
-
     # Expired files
     files_qs = FileObject.objects.filter(expires_at__isnull=False, expires_at__lt=now_ts)
     files_list = list(files_qs)
@@ -93,8 +81,8 @@ def delete_expired_files_and_batches(self):
     for file_obj in files_list:
         try:
             # Attempt upstream deletion first
-            if file_obj.remote_id:
-                success = asyncio.run(delete_upstream_file(file_obj.remote_id))
+            if files_api_configured and client:
+                success = asyncio.run(file_obj.adelete_upstream(client, raise_on_error=False))
                 if success:
                     upstream_deleted += 1
             # Always delete local record
@@ -107,6 +95,5 @@ def delete_expired_files_and_batches(self):
     # Expired batches - just delete local records
     # (batch resources are managed by the upstream provider)
     batches_qs = Batch.objects.filter(expires_at__isnull=False, expires_at__lt=now_ts)
-    batches_count = batches_qs.count()
-    batches_qs.delete()
+    batches_count, _ = batches_qs.delete()
     print(f"Deleted {batches_count} expired batches.")

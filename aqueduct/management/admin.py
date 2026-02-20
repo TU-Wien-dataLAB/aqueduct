@@ -1,3 +1,5 @@
+import asyncio
+
 from django import forms
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -5,7 +7,7 @@ from django.contrib.auth.models import Group, User
 from django.urls import reverse
 from django.utils.html import format_html
 
-from gateway.config import get_router_config
+from gateway.config import get_files_api_client, get_router_config
 
 from .models import (
     Batch,
@@ -17,6 +19,9 @@ from .models import (
     TeamMembership,
     Token,
     UserProfile,
+    VectorStore,
+    VectorStoreFile,
+    VectorStoreFileBatch,
 )
 
 
@@ -302,9 +307,17 @@ class TokenAdmin(admin.ModelAdmin):
 class FileObjectAdmin(admin.ModelAdmin):
     """Admin panel registration for FileObject model."""
 
-    list_display = ("id", "filename", "purpose", "bytes", "created_at", "expires_at")
+    list_display = ("id", "filename", "purpose", "bytes_formatted", "created_at", "expires_at")
     list_filter = ("purpose", "token__user__email")
     search_fields = ("id", "filename")
+
+    def bytes_formatted(self, obj):
+        from django.template.defaultfilters import filesizeformat
+
+        return filesizeformat(obj.bytes)
+
+    bytes_formatted.short_description = "Size"
+    bytes_formatted.admin_order_field = "bytes"
 
 
 @admin.register(Batch)
@@ -312,5 +325,181 @@ class BatchAdmin(admin.ModelAdmin):
     """Admin panel registration for Batch model."""
 
     list_display = ("id", "status", "created_at", "completion_window", "endpoint", "input_file")
-    list_filter = ("status", "input_file__token__user__email")
+    list_filter = ("status", "token__user__email")
     search_fields = ("id",)
+
+
+@admin.register(VectorStore)
+class VectorStoreAdmin(admin.ModelAdmin):
+    """Admin panel registration for VectorStore model."""
+
+    list_display = (
+        "id",
+        "name",
+        "status",
+        "usage_bytes_formatted",
+        "file_count",
+        "token_link",
+        "created_at",
+    )
+    list_filter = ("status", "token__user__email")
+    search_fields = ("id", "name", "remote_id")
+    list_select_related = ["token", "token__user"]
+    readonly_fields = ("id", "created_at")
+
+    def get_queryset(self, request):
+        from django.db.models import Count
+
+        return super().get_queryset(request).annotate(file_count=Count("files"))
+
+    def file_count(self, obj):
+        return obj.file_count
+
+    file_count.short_description = "Files"
+    file_count.admin_order_field = "file_count"
+
+    def usage_bytes_formatted(self, obj):
+        from django.template.defaultfilters import filesizeformat
+
+        return filesizeformat(obj.usage_bytes)
+
+    usage_bytes_formatted.short_description = "Usage"
+    usage_bytes_formatted.admin_order_field = "usage_bytes"
+
+    def token_link(self, obj):
+        link = reverse("admin:management_token_change", args=[obj.token.id])
+        if obj.token.service_account:
+            return format_html(
+                '<a href="{}">{} ({})</a>', link, obj.token.name, obj.token.service_account.name
+            )
+        return format_html('<a href="{}">{}</a>', link, obj.token.name)
+
+    token_link.short_description = "Token"
+
+    def delete_model(self, request, obj):
+        """Delete from upstream API before deleting local record."""
+        # First delete all files from upstream
+        for vs_file in obj.files.all():
+            try:
+                client = get_files_api_client()
+                asyncio.run(vs_file.adelete_upstream(client, raise_on_error=False))
+            except Exception:
+                pass  # Continue even if upstream deletion fails
+
+        # Delete vector store from upstream
+        try:
+            client = get_files_api_client()
+            asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+        except Exception:
+            pass  # Continue even if upstream deletion fails
+
+        # Now delete the local record (this will cascade to files)
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        """Delete from upstream API before deleting local records."""
+        for obj in queryset:
+            # First delete all files from upstream
+            for vs_file in obj.files.all():
+                try:
+                    client = get_files_api_client()
+                    asyncio.run(vs_file.adelete_upstream(client, raise_on_error=False))
+                except Exception:
+                    pass
+
+            # Delete vector store from upstream
+            try:
+                client = get_files_api_client()
+                asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+            except Exception:
+                pass
+
+        # Now delete local records
+        super().delete_queryset(request, queryset)
+
+
+@admin.register(VectorStoreFile)
+class VectorStoreFileAdmin(admin.ModelAdmin):
+    """Admin panel registration for VectorStoreFile model."""
+
+    list_display = (
+        "id",
+        "vector_store_link",
+        "file_obj_link",
+        "status",
+        "usage_bytes_formatted",
+        "created_at",
+    )
+    list_filter = ("status", "vector_store__name")
+    search_fields = ("id", "remote_id")
+    list_select_related = ["vector_store", "file_obj"]
+    readonly_fields = ("id", "created_at")
+
+    def usage_bytes_formatted(self, obj):
+        from django.template.defaultfilters import filesizeformat
+
+        return filesizeformat(obj.usage_bytes)
+
+    usage_bytes_formatted.short_description = "Size"
+    usage_bytes_formatted.admin_order_field = "usage_bytes"
+
+    def vector_store_link(self, obj):
+        link = reverse("admin:management_vectorstore_change", args=[obj.vector_store.id])
+        return format_html('<a href="{}">{}</a>', link, obj.vector_store.name)
+
+    vector_store_link.short_description = "Vector Store"
+
+    def file_obj_link(self, obj):
+        link = reverse("admin:management_fileobject_change", args=[obj.file_obj.id])
+        return format_html('<a href="{}">{}</a>', link, obj.file_obj.filename)
+
+    file_obj_link.short_description = "File"
+
+    def delete_model(self, request, obj):
+        """Delete from upstream API before deleting local record."""
+        try:
+            client = get_files_api_client()
+            asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+        except Exception:
+            pass  # Continue even if upstream deletion fails
+
+        # Now delete the local record
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        """Delete from upstream API before deleting local records."""
+        for obj in queryset:
+            try:
+                client = get_files_api_client()
+                asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
+            except Exception:
+                pass  # Continue even if upstream deletion fails
+
+        # Now delete local records
+        super().delete_queryset(request, queryset)
+
+
+@admin.register(VectorStoreFileBatch)
+class VectorStoreFileBatchAdmin(admin.ModelAdmin):
+    """Admin panel registration for VectorStoreFileBatch model."""
+
+    list_display = ("id", "vector_store_link", "status", "file_counts_formatted", "created_at")
+    list_filter = ("status", "vector_store__name")
+    search_fields = ("id", "remote_id")
+    list_select_related = ["vector_store"]
+    readonly_fields = ("id", "created_at")
+
+    def file_counts_formatted(self, obj):
+        counts = obj.file_counts or {}
+        total = counts.get("total", 0)
+        completed = counts.get("completed", 0)
+        failed = counts.get("failed", 0)
+        return f"{completed}/{total} (failed: {failed})"
+
+    file_counts_formatted.short_description = "Progress"
+
+    def vector_store_link(self, obj):
+        link = reverse("admin:management_vectorstore_change", args=[obj.vector_store.id])
+        return format_html('<a href="{}">{}</a>', link, obj.vector_store.name)
+
+    vector_store_link.short_description = "Vector Store"

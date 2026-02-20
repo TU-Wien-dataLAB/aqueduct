@@ -65,6 +65,13 @@
                                     MCP Servers
                                 </a>
                             </li>
+                            <li>
+                                <a href="{% url 'vector_stores' %}" class="flex items-center gap-1 font-semibold">
+                                    <img src="{% static 'icons/vector_store.svg' %}" alt="Vector Stores"
+                                         class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    Vector Stores
+                                </a>
+                            </li>
                             {% if user.is_superuser %}
                                 {% if settings.SILKY_ENABLED %}
                                     <li>

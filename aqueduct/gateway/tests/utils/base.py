@@ -59,7 +59,6 @@ def get_mock_router(model: str = "test-model"):
 
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     API_MAX_RETRIES=1,  # for some reason, in a few tests the 1st request to the mock API fails (503)
 )
@@ -78,14 +77,7 @@ class GatewayIntegrationTestCase(TestCase):
     mock_server: MockAPIServer = None
 
     @classmethod
-    def _write_router_config(cls):
-        os.makedirs(os.path.dirname(ROUTER_CONFIG_PATH), exist_ok=True)
-        with open(ROUTER_CONFIG_PATH, "w") as f:
-            f.write(ROUTER_CONFIG)
-
-    @classmethod
     def setUpClass(cls):
-        cls._write_router_config()
         super().setUpClass()
         if INTEGRATION_TEST_BACKEND == "openai" and not settings.TESTS_USE_MOCK_API:
             # When running tests against the real OpenAI API, the API key has to be set
@@ -131,14 +123,8 @@ class GatewayIntegrationTestCase(TestCase):
         return token_value, new_user.id
 
 
-@override_settings(
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
-    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-)
+@override_settings(AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT)
 class GatewayFilesTestCase(GatewayIntegrationTestCase):
-    # Load default fixture (includes test Token) and set test access token
-    fixtures = ["gateway_data.json"]
-
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -159,13 +145,10 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
 
 @override_settings(
     AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
-    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=lambda: 2,
-    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     MAX_USER_BATCHES=3,
     AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=3 / 60,
     AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=2,
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
 )
 class GatewayBatchesTestCase(GatewayIntegrationTestCase):
     def tearDown(self):
@@ -182,11 +165,6 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
         async_to_sync(run_batch_processing)()
 
 
-@override_settings(
-    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
-    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-)
 class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
     tts_model = "gpt-4o-mini-tts"
@@ -206,13 +184,7 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
         cls.url_stt = reverse("gateway:transcriptions")
 
 
-@override_settings(
-    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
-    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-    TOS_ENABLED=True,
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
-)
+@override_settings(TOS_ENABLED=True)
 class TOSGatewayTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
 

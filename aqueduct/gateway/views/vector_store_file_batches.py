@@ -21,6 +21,29 @@ from .errors import error_response
 logger = logging.getLogger(__name__)
 
 
+async def mark_orphaned_files(batch_obj, status: str, error_msg: str):
+    """Mark in-progress files in a batch as failed when the batch fails or is cancelled.
+
+    Args:
+        batch_obj: The VectorStoreFileBatch whose orphaned files should be marked.
+        status: The new status to set on orphaned files (typically "failed").
+        error_msg: The error message to set on orphaned files.
+    """
+    orphaned_files = await sync_to_async(list)(
+        VectorStoreFile.objects.filter(batch=batch_obj, status="in_progress")
+    )
+    if orphaned_files:
+
+        @sync_to_async
+        def _bulk_update_orphans():
+            for vs_file in orphaned_files:
+                vs_file.status = status
+                vs_file.last_error = error_msg
+            VectorStoreFile.objects.bulk_update(orphaned_files, ["status", "last_error"])
+
+        await _bulk_update_orphans()
+
+
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
@@ -64,8 +87,8 @@ async def vector_store_file_batches(
         )
 
     # Handle both file_ids and files formats
+    # Extract file_ids for lookup; pass full files dicts to upstream to preserve attributes and chunking_strategy
     if files:
-        # files format: list of dicts with file_id, attributes, chunking_strategy
         file_ids = [f["file_id"] for f in files]
 
     # Lookup all FileObjects by Aqueduct IDs
@@ -86,11 +109,8 @@ async def vector_store_file_batches(
     try:
         create_kwargs = {"vector_store_id": vs_obj.id}
         if files:
-            # Transform files to include file IDs
-            create_kwargs["files"] = [
-                {"file_id": file_obj.id, **{k: v for k, v in f.items() if k != "file_id"}}
-                for f, file_obj in zip(files, file_objs)
-            ]
+            # Pass full files dicts with attributes and chunking_strategy
+            create_kwargs["files"] = files
         else:
             create_kwargs["file_ids"] = file_ids
         if params.get("chunking_strategy"):
@@ -133,10 +153,8 @@ async def vector_store_file_batches(
             current_count = VectorStoreFile.objects.filter(vector_store=vs_obj).count()
             if current_count + len(file_objs) > max_files:
                 return None
-            records = []
-            for file_obj in file_objs:
-                # In OpenAI API, VectorStoreFile.id equals the source File.id
-                vs_file_obj = VectorStoreFile(
+            records = [
+                VectorStoreFile(
                     id=file_obj.id,
                     vector_store=vs_obj,
                     file_obj=file_obj,
@@ -145,9 +163,9 @@ async def vector_store_file_batches(
                     usage_bytes=0,
                     created_at=int(now.timestamp()),
                 )
-                vs_file_obj.save()
-                records.append(vs_file_obj)
-            return records
+                for file_obj in file_objs
+            ]
+            return VectorStoreFile.objects.bulk_create(records)
 
     batch_file_records = await create_batch_files()
     if batch_file_records is None:
@@ -204,22 +222,13 @@ async def vector_store_file_batch(
             status=502,
         )
 
-    # Handle orphaned VectorStoreFile records when batch fails
-    # Find records that were created for this batch but not yet completed
+    # Handle orphaned VectorStoreFile records when batch fails or is cancelled
     if batch_obj.status in ("failed", "cancelled"):
-        orphaned_files = await sync_to_async(list)(
-            VectorStoreFile.objects.filter(batch=batch_obj, status="in_progress")
+        await mark_orphaned_files(
+            batch_obj,
+            status="failed",
+            error_msg=f"Batch {batch_obj.status}: files were not processed",
         )
-        if orphaned_files:
-
-            @sync_to_async
-            def mark_orphans_failed():
-                for vs_file in orphaned_files:
-                    vs_file.status = "failed"
-                    vs_file.last_error = f"Batch {batch_obj.status}: files were not processed"
-                    vs_file.save()
-
-            await mark_orphans_failed()
 
     # Return upstream response directly (IDs already match)
     response_data = remote_batch.model_dump(mode="json")
@@ -281,19 +290,9 @@ async def vector_store_file_batch_cancel(
     await sync_to_async(batch_obj.save)()
 
     # Handle orphaned VectorStoreFile records when batch is cancelled
-    orphaned_files = await sync_to_async(list)(
-        VectorStoreFile.objects.filter(batch=batch_obj, status="in_progress")
+    await mark_orphaned_files(
+        batch_obj, status="failed", error_msg="Batch cancelled: files were not processed"
     )
-    if orphaned_files:
-
-        @sync_to_async
-        def mark_orphans_cancelled():
-            for vs_file in orphaned_files:
-                vs_file.status = "failed"
-                vs_file.last_error = "Batch cancelled: files were not processed"
-                vs_file.save()
-
-        await mark_orphans_cancelled()
 
     # Return upstream response directly (IDs already match)
     response_data = remote_batch.model_dump(mode="json")

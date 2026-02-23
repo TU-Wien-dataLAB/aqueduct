@@ -3,10 +3,13 @@ from typing import Optional
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
+from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
+from openai.types import VectorStore as OpenAIVectorStore
+from openai.types.vector_store import FileCounts as VectorStoreFileCounts
 from openai.types.vector_store_create_params import VectorStoreCreateParams
 from openai.types.vector_store_update_params import VectorStoreUpdateParams
 from pydantic import TypeAdapter
@@ -14,7 +17,13 @@ from pydantic import TypeAdapter
 from gateway.config import get_files_api_client
 from management.models import Token, VectorStore
 
-from .decorators import log_request, parse_body, token_authenticated, tos_accepted
+from .decorators import (
+    log_request,
+    parse_body,
+    require_files_api_client,
+    token_authenticated,
+    tos_accepted,
+)
 from .errors import error_response
 
 
@@ -46,26 +55,39 @@ async def vector_stores(
             vector_stores_qs = VectorStore.objects.filter(token__user=token.user)
 
         vector_stores_list = await sync_to_async(list)(
-            vector_stores_qs.order_by("-created_at").select_related("token")
+            vector_stores_qs.order_by("-created_at")
+            .select_related("token")
+            .annotate(
+                file_count_total=Count("files"),
+                file_count_completed=Count("files", filter=Q(files__status="completed")),
+                file_count_failed=Count("files", filter=Q(files__status="failed")),
+                file_count_in_progress=Count("files", filter=Q(files__status="in_progress")),
+                file_count_cancelled=Count("files", filter=Q(files__status="cancelled")),
+            )
         )
 
-        # Get all remote IDs and fetch upstream data
-        # For list, we return local data but need to sync with upstream
-        # This maintains OpenAI compatibility while tracking ownership
         return JsonResponse(
             {
                 "object": "list",
                 "data": [
-                    {
-                        "id": vs.id,
-                        "object": "vector_store",
-                        "name": vs.name,
-                        "status": vs.status,
-                        "usage_bytes": vs.usage_bytes,
-                        "created_at": vs.created_at,
-                        "metadata": vs.metadata,
-                        "expires_after": vs.expires_after,
-                    }
+                    OpenAIVectorStore(
+                        id=vs.id,
+                        object="vector_store",
+                        name=vs.name,
+                        status=vs.status,
+                        usage_bytes=vs.usage_bytes,
+                        created_at=vs.created_at,
+                        metadata=vs.metadata,
+                        expires_after=vs.expires_after,
+                        file_counts=VectorStoreFileCounts(
+                            total=vs.file_count_total,
+                            completed=vs.file_count_completed,
+                            failed=vs.file_count_failed,
+                            in_progress=vs.file_count_in_progress,
+                            cancelled=vs.file_count_cancelled,
+                        ),
+                        last_active_at=vs.last_active_at,
+                    ).model_dump(mode="json")
                     for vs in vector_stores_list
                 ],
                 "has_more": False,
@@ -143,11 +165,13 @@ async def vector_stores(
 @tos_accepted
 @parse_body(model=TypeAdapter(VectorStoreUpdateParams))
 @log_request
+@require_files_api_client
 async def vector_store(
     request: ASGIRequest,
     token: Token,
     vector_store_id: str,
     pydantic_model: Optional[dict] = None,
+    client=None,
     *args,
     **kwargs,
 ):
@@ -156,10 +180,6 @@ async def vector_store(
     POST /v1/vector_stores/{vector_store_id} - Modify vector store
     DELETE /v1/vector_stores/{vector_store_id} - Delete vector store
     """
-    try:
-        client = get_files_api_client()
-    except ValueError:
-        return error_response("Vector Store API not configured", status=503)
 
     try:
         if token.service_account:
@@ -191,13 +211,8 @@ async def vector_store(
         # Modify vector store
         params = pydantic_model if pydantic_model else {}
 
-        modify_kwargs = {}
-        if params.get("name"):
-            modify_kwargs["name"] = params["name"]
-        if params.get("expires_after"):
-            modify_kwargs["expires_after"] = params["expires_after"]
-        if params.get("metadata"):
-            modify_kwargs["metadata"] = params["metadata"]
+        updatable_fields = ("name", "expires_after", "metadata")
+        modify_kwargs = {k: params[k] for k in updatable_fields if params.get(k)}
 
         if modify_kwargs:
             try:
@@ -210,14 +225,10 @@ async def vector_store(
                 )
 
             # Update local record
-            if params.get("name"):
-                vs_obj.name = params["name"]
-            if params.get("metadata"):
-                vs_obj.metadata = params["metadata"]
-            if params.get("expires_after"):
-                vs_obj.expires_after = params["expires_after"]
-            vs_obj.status = remote_vs.status or vs_obj.status
-            vs_obj.usage_bytes = getattr(remote_vs, "usage_bytes", vs_obj.usage_bytes)
+            for field, value in modify_kwargs.items():
+                setattr(vs_obj, field, value)
+            vs_obj.status = remote_vs.status
+            vs_obj.usage_bytes = remote_vs.usage_bytes
             await sync_to_async(vs_obj.save)()
 
             # Return upstream response directly (ID already matches)

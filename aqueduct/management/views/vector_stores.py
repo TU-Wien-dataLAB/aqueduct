@@ -112,10 +112,6 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
                     total_size += vf.file_obj.bytes
                 files.append(vf)
             vector_store.size_bytes = total_size
-            files = []
-            for vf in vector_store.files.all():
-                vf.created_dt = datetime.fromtimestamp(vf.created_at)
-                files.append(vf)
 
             # Prepare batches with progress calculation
             batches = []
@@ -192,7 +188,7 @@ class VectorStoreCardRefreshView(BaseAqueductView, View):
         return redirect(reverse("vector_stores"))
 
 
-class VectorStoreDetailRefreshView(BaseAqueductView, View):
+class VectorStoreDetailRefreshView(BaseAqueductView):
     """
     POST-only view that refreshes a specific vector store and all its files
     from the upstream API, then redirects back to the detail page.

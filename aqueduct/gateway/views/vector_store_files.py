@@ -97,10 +97,10 @@ async def vector_store_files(
     except FileObject.DoesNotExist:
         return error_response("File not found.", param="file_id", status=404)
 
-    # Use transaction with select_for_update to prevent race conditions on file limit
     max_files = settings.MAX_VECTOR_STORE_FILES
 
-    # Create upstream file FIRST (outside transaction to minimize lock duration)
+    # Create upstream file first, then atomically check the limit and insert locally.
+    # If a concurrent request filled the last slot, we clean up the upstream file.
     try:
         create_kwargs = {"vector_store_id": vs_obj.id, "file_id": file_obj.id}
         if params.get("chunking_strategy"):
@@ -115,62 +115,55 @@ async def vector_store_files(
             status=502,
         )
 
-    # Use sync_to_async wrapper with transaction.atomic for the lock
+    # Atomically check the file limit and create the local record.
+    # If a concurrent request filled the last slot while the upstream call was in flight,
+    # we reject and clean up the upstream file below.
     @sync_to_async
-    def create_file_with_lock():
+    def create_local_file_with_recheck():
         with transaction.atomic():
-            # Re-fetch vector store with lock
+            # Re-acquire lock and re-check limit
             try:
                 if token.service_account:
-                    vs_obj_locked = VectorStore.objects.select_for_update().get(
+                    vs_locked = VectorStore.objects.select_for_update().get(
                         id=vector_store_id, token__service_account__team=token.service_account.team
                     )
                 else:
-                    vs_obj_locked = VectorStore.objects.select_for_update().get(
+                    vs_locked = VectorStore.objects.select_for_update().get(
                         id=vector_store_id, token__user=token.user
                     )
             except VectorStore.DoesNotExist:
-                return None, None  # Vector store not found
+                return None, "not_found"
 
-            # Check limit inside locked transaction
-            current_count = VectorStoreFile.objects.filter(vector_store=vs_obj_locked).count()
-
+            current_count = VectorStoreFile.objects.filter(vector_store=vs_locked).count()
             if current_count >= max_files:
-                return vs_obj_locked, None  # Signal limit reached
+                return None, "limit_reached"
 
-            # Create local record with upstream ID
             now = timezone.now()
             vs_file_obj = VectorStoreFile(
                 id=remote_vs_file.id,
-                vector_store=vs_obj_locked,
+                vector_store=vs_locked,
                 file_obj=file_obj,
                 status=remote_vs_file.status or "in_progress",
                 usage_bytes=remote_vs_file.usage_bytes,
                 created_at=int(now.timestamp()),
             )
             vs_file_obj.save()
-            return vs_obj_locked, vs_file_obj
+            return vs_file_obj, "ok"
 
-    vs_obj_locked, result = await create_file_with_lock()
+    result, recheck_status = await create_local_file_with_recheck()
 
-    if vs_obj_locked is None:
-        # Vector store not found error - clean up upstream file
-        try:
-            await client.vector_stores.files.delete(
-                vector_store_id=vs_obj.id, file_id=remote_vs_file.id
-            )
-        except Exception:
-            pass
+    if recheck_status == "not_found":
         return error_response("Vector store not found.", param="vector_store_id", status=404)
 
-    if result is None:
-        # Limit reached - clean up upstream file
+    if recheck_status == "limit_reached":
+        # Upstream file was already created but limit was exceeded by a concurrent request.
+        # Clean up the upstream file.
         try:
             await client.vector_stores.files.delete(
                 vector_store_id=vs_obj.id, file_id=remote_vs_file.id
             )
         except Exception:
-            pass
+            pass  # Best-effort cleanup
         return error_response(f"Vector store file limit reached ({max_files})", status=403)
 
     # Return upstream response directly (IDs already match)

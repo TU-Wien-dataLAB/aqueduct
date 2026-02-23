@@ -11,7 +11,7 @@ from openai.types.batch_request_counts import BatchRequestCounts
 
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.base import GatewayBatchesTestCase
-from management.models import Token
+from management.models import Org, ServiceAccount, Team, Token, UserProfile
 
 
 def make_mock_batch(
@@ -188,7 +188,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def test_list_batches_different_tokens(
         self, mock_get_files_client_batches, mock_get_files_client_files
     ):
-        """Batches created under one token should not be visible under another."""
+        """Personal token sees user-scoped batches; SA token sees team-scoped batches."""
         mock_get_files_client_files.return_value = create_mock_batch_client()
         mock_get_files_client_batches.return_value = create_mock_batch_client()
         # Prepare a simple JSONL file in batch API format
@@ -199,7 +199,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         wrapped = {"custom_id": 1, "method": "POST", "url": self.url_chat, "body": payload}
         content = json.dumps(wrapped).encode() + b"\n"
         f1 = SimpleUploadedFile("t1.jsonl", content, content_type="application/jsonl")
-        # Create batch under token1 (self.headers)
+        # Create batch under token1 (personal token, self.headers)
         resp = self.client.post("/files", {"file": f1, "purpose": "batch"}, headers=self.headers)
         fid1 = resp.json()["id"]
         resp = self.client.post(
@@ -212,7 +212,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         )
         b1 = resp.json()["id"]
 
-        # Build headers for a second token (from fixture pk=2)
+        # Build headers for a second token (from fixture pk=2, SA token for TUna)
         token2 = Token.objects.get(pk=2)
         # Generate a fresh secret for token2 (update key_hash/preview) and authenticate with raw key
         secret2 = token2._set_new_key()
@@ -220,7 +220,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         headers2 = _build_chat_headers(secret2)
         headers2.pop("Content-Type", None)
 
-        # Create batch under token2
+        # Create batch under token2 (SA token)
         f2 = SimpleUploadedFile("t2.jsonl", content, content_type="application/jsonl")
         resp = self.client.post("/files", {"file": f2, "purpose": "batch"}, headers=headers2)
         fid2 = resp.json()["id"]
@@ -234,20 +234,20 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         )
         b2 = resp.json()["id"]
 
-        # Token1 should see all batches
+        # Personal token (token1) sees all batches from user=1 (both tokens have user=1)
         resp = self.client.get("/batches", headers=self.headers)
         ids1 = [b["id"] for b in resp.json().get("data", [])]
         self.assertCountEqual(ids1, [b1, b2])
 
-        # Token2 should see all batches
+        # SA token (token2) only sees team-scoped batches (only b2, not the personal b1)
         resp = self.client.get("/batches", headers=headers2)
         ids2 = [b["id"] for b in resp.json().get("data", [])]
-        self.assertCountEqual(ids2, [b2, b1])
+        self.assertCountEqual(ids2, [b2])
 
     @patch("gateway.views.batches.get_files_api_client")
     @patch("gateway.views.files.get_files_api_client")
     def test_max_user_batches_limit(
-        self, mock_get_files_client_batches, mock_get_files_client_files
+        self, mock_get_files_client_files, mock_get_files_client_batches
     ):
         """POST /batches should enforce MAX_USER_BATCHES and reject the fourth batch."""
         mock_get_files_client_files.return_value = create_mock_batch_client()
@@ -379,3 +379,306 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         body = resp.json()
         error = body.get("error", {})
         self.assertEqual(error.get("message"), "Batch not found.")
+
+
+class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
+    """Tests for service account team-scoped access control on the batches API."""
+
+    url_chat = reverse("gateway:v1_chat_completions")
+
+    def _make_jsonl_content(self):
+        """Create valid JSONL content for batch upload."""
+        payload = _build_chat_payload(
+            self.model,
+            messages=[{"role": "system", "content": "Hi"}, {"role": "user", "content": "Test"}],
+        )
+        wrapped = {"custom_id": "1", "method": "POST", "url": self.url_chat, "body": payload}
+        return json.dumps(wrapped).encode() + b"\n"
+
+    def _setup_two_sa_tokens_same_team(self):
+        """
+        Set up two service account tokens on the same team (Whale).
+
+        Returns (sa_token1_headers, sa_token2_headers, sa1, sa2, token1, token2).
+        Token pk=2 is already SA for TUna on team Whale (from fixture).
+        We create a second SA on the same team with a new token.
+        """
+        team = Team.objects.get(name="Whale")
+
+        # Token pk=2 is already a SA token for TUna on team Whale
+        token1 = Token.objects.get(pk=2)
+        sa1 = token1.service_account
+        secret1 = token1._set_new_key()
+        token1.save(update_fields=["key_hash", "key_preview"])
+        headers1 = _build_chat_headers(secret1)
+        headers1.pop("Content-Type", None)
+
+        # Create a second service account on the same team
+        sa2 = ServiceAccount.objects.create(name="SecondSA", team=team)
+        user = token1.user  # same user for simplicity
+        token2 = Token(name="Token for SecondSA", user=user, service_account=sa2)
+        secret2 = token2._set_new_key()
+        token2.save()
+        headers2 = _build_chat_headers(secret2)
+        headers2.pop("Content-Type", None)
+
+        return headers1, headers2, sa1, sa2, token1, token2
+
+    def _setup_cross_team_sa_token(self):
+        """
+        Set up a service account token on a different team.
+
+        Returns (other_team_headers, other_sa, other_token).
+        """
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+
+        org = Org.objects.get(name="E060")
+        other_team = Team.objects.create(name="Dolphin", org=org)
+
+        # Create a new user for the other team
+        other_user = User.objects.create_user(username="OtherTeamUser", email="other@team.com")
+        UserProfile.objects.create(user=other_user, org=org)
+
+        other_sa = ServiceAccount.objects.create(name="OtherTeamSA", team=other_team)
+        other_token = Token(name="Other team token", user=other_user, service_account=other_sa)
+        other_secret = other_token._set_new_key()
+        other_token.save()
+        other_headers = _build_chat_headers(other_secret)
+        other_headers.pop("Content-Type", None)
+
+        return other_headers, other_sa, other_token
+
+    @patch("gateway.views.batches.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_create_batch_sa_cross_token_file(self, mock_files_client, mock_batches_client):
+        """SA token can create a batch using a file uploaded by another SA token on the same team."""
+        mock_files_client.return_value = create_mock_batch_client()
+        mock_batches_client.return_value = create_mock_batch_client()
+
+        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        content = self._make_jsonl_content()
+
+        # Upload file with SA token 1
+        f = SimpleUploadedFile("sa1.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": f, "purpose": "batch"}, headers=headers1)
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+
+        # Create batch with SA token 2 using SA token 1's file
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(
+                {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
+            ),
+            headers=headers2,
+            content_type="application/json",
+        )
+        self.assertEqual(
+            resp.status_code, 200, f"Expected 200, got {resp.status_code}: {resp.json()}"
+        )
+
+    @patch("gateway.views.batches.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_create_batch_sa_cross_team_denied(self, mock_files_client, mock_batches_client):
+        """SA token cannot create a batch using a file from a different team."""
+        mock_files_client.return_value = create_mock_batch_client()
+        mock_batches_client.return_value = create_mock_batch_client()
+
+        headers1, _, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        other_headers, other_sa, other_token = self._setup_cross_team_sa_token()
+        content = self._make_jsonl_content()
+
+        # Upload file with SA token on team Whale
+        f = SimpleUploadedFile("whale.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": f, "purpose": "batch"}, headers=headers1)
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+
+        # Try to create batch with SA token on team Dolphin using Whale's file
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(
+                {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
+            ),
+            headers=other_headers,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.json()["error"]["message"], "Input file not found.")
+
+    @patch("gateway.views.batches.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_list_batches_sa_team_scope(self, mock_files_client, mock_batches_client):
+        """SA tokens on the same team can see each other's batches."""
+        mock_files_client.return_value = create_mock_batch_client()
+        mock_batches_client.return_value = create_mock_batch_client()
+
+        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        content = self._make_jsonl_content()
+
+        # Upload file and create batch with SA token 1
+        f1 = SimpleUploadedFile("sa1.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": f1, "purpose": "batch"}, headers=headers1)
+        file_id1 = resp.json()["id"]
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(
+                {"input_file_id": file_id1, "completion_window": "24h", "endpoint": self.url_chat}
+            ),
+            headers=headers1,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        batch_id1 = resp.json()["id"]
+
+        # Upload file and create batch with SA token 2
+        f2 = SimpleUploadedFile("sa2.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": f2, "purpose": "batch"}, headers=headers2)
+        file_id2 = resp.json()["id"]
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(
+                {"input_file_id": file_id2, "completion_window": "24h", "endpoint": self.url_chat}
+            ),
+            headers=headers2,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        batch_id2 = resp.json()["id"]
+
+        # SA token 1 should see both batches
+        resp = self.client.get("/batches", headers=headers1)
+        self.assertEqual(resp.status_code, 200)
+        ids = [b["id"] for b in resp.json()["data"]]
+        self.assertCountEqual(ids, [batch_id1, batch_id2])
+
+        # SA token 2 should also see both batches
+        resp = self.client.get("/batches", headers=headers2)
+        self.assertEqual(resp.status_code, 200)
+        ids = [b["id"] for b in resp.json()["data"]]
+        self.assertCountEqual(ids, [batch_id1, batch_id2])
+
+    @patch("gateway.views.batches.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_retrieve_batch_sa_team_scope(self, mock_files_client, mock_batches_client):
+        """SA token can retrieve a batch created by another SA token on the same team."""
+        mock_files_client.return_value = create_mock_batch_client()
+        mock_batches_client.return_value = create_mock_batch_client()
+
+        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        content = self._make_jsonl_content()
+
+        # Upload file and create batch with SA token 1
+        f = SimpleUploadedFile("sa1.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": f, "purpose": "batch"}, headers=headers1)
+        file_id = resp.json()["id"]
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(
+                {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
+            ),
+            headers=headers1,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        batch_id = resp.json()["id"]
+
+        # SA token 2 should be able to retrieve it
+        resp = self.client.get(f"/batches/{batch_id}", headers=headers2)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["id"], batch_id)
+
+    @patch("gateway.views.batches.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_cancel_batch_sa_team_scope(self, mock_files_client, mock_batches_client):
+        """SA token can cancel a batch created by another SA token on the same team."""
+        mock_client = create_mock_batch_client()
+        mock_files_client.return_value = mock_client
+        mock_batches_client.return_value = mock_client
+
+        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        content = self._make_jsonl_content()
+
+        # Upload file and create batch with SA token 1
+        f = SimpleUploadedFile("sa1.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": f, "purpose": "batch"}, headers=headers1)
+        file_id = resp.json()["id"]
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(
+                {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
+            ),
+            headers=headers1,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        batch_id = resp.json()["id"]
+
+        # SA token 2 should be able to cancel it
+        resp = self.client.post(f"/batches/{batch_id}/cancel", headers=headers2)
+        self.assertEqual(resp.status_code, 200)
+
+    @patch("gateway.views.batches.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_personal_token_cannot_see_sa_team_batches(
+        self, mock_files_client, mock_batches_client
+    ):
+        """A personal token cannot see batches created by SA tokens, even if same user."""
+        mock_files_client.return_value = create_mock_batch_client()
+        mock_batches_client.return_value = create_mock_batch_client()
+
+        # Token pk=2 is a SA token (TUna, team Whale, user=1)
+        sa_token = Token.objects.get(pk=2)
+        sa_secret = sa_token._set_new_key()
+        sa_token.save(update_fields=["key_hash", "key_preview"])
+        sa_headers = _build_chat_headers(sa_secret)
+        sa_headers.pop("Content-Type", None)
+        content = self._make_jsonl_content()
+
+        # Upload file and create batch with SA token
+        f = SimpleUploadedFile("sa.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": f, "purpose": "batch"}, headers=sa_headers)
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+        resp = self.client.post(
+            "/batches",
+            data=json.dumps(
+                {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
+            ),
+            headers=sa_headers,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        sa_batch_id = resp.json()["id"]
+
+        # Create a new personal token for a different user so it can't see SA batches
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        other_user = User.objects.create_user(username="PersonalUser", email="personal@test.com")
+        from django.contrib.auth.models import Group
+
+        other_user.groups.add(Group.objects.get(name="user"))
+        org = Org.objects.get(name="E060")
+        UserProfile.objects.create(user=other_user, org=org)
+        personal_token = Token(name="PersonalToken", user=other_user)
+        personal_secret = personal_token._set_new_key()
+        personal_token.save()
+        personal_headers = _build_chat_headers(personal_secret)
+        personal_headers.pop("Content-Type", None)
+
+        # Personal token should not see the SA batch
+        resp = self.client.get("/batches", headers=personal_headers)
+        self.assertEqual(resp.status_code, 200)
+        ids = [b["id"] for b in resp.json()["data"]]
+        self.assertNotIn(sa_batch_id, ids)
+
+        # Personal token should not be able to retrieve the SA batch
+        resp = self.client.get(f"/batches/{sa_batch_id}", headers=personal_headers)
+        self.assertEqual(resp.status_code, 404)
+
+        # Personal token should not be able to cancel the SA batch
+        resp = self.client.post(f"/batches/{sa_batch_id}/cancel", headers=personal_headers)
+        self.assertEqual(resp.status_code, 404)

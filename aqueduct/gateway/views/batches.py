@@ -34,11 +34,13 @@ async def batches(
     POST /batches - create a new batch on upstream
     """
     if request.method == "GET":
-        # Users only see their own batches, not all batches from upstream
+        if token.service_account:
+            batch_qs = Batch.objects.filter(token__service_account__team=token.service_account.team)
+        else:
+            batch_qs = Batch.objects.filter(token__user=token.user)
+
         batch_objects = await sync_to_async(list)(
-            Batch.objects.filter(token__user=token.user)
-            .order_by("-created_at")
-            .select_related("input_file")
+            batch_qs.order_by("-created_at").select_related("input_file")
         )
 
         return JsonResponse(
@@ -89,9 +91,15 @@ async def batches(
 
     # Get the input file's remote ID
     try:
-        file_obj = await FileObject.objects.aget(
-            id=pydantic_model["input_file_id"], token__user=token.user
-        )
+        if token.service_account:
+            file_obj = await FileObject.objects.aget(
+                id=pydantic_model["input_file_id"],
+                token__service_account__team=token.service_account.team,
+            )
+        else:
+            file_obj = await FileObject.objects.aget(
+                id=pydantic_model["input_file_id"], token__user=token.user
+            )
     except FileObject.DoesNotExist:
         return error_response("Input file not found.", param="input_file_id", status=404)
 
@@ -147,7 +155,14 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
     response but don't have local FileObject records, create them lazily.
     """
     try:
-        batch_obj = await Batch.objects.select_related("input_file").aget(id=batch_id, token=token)
+        if token.service_account:
+            batch_obj = await Batch.objects.select_related("input_file").aget(
+                id=batch_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            batch_obj = await Batch.objects.select_related("input_file").aget(
+                id=batch_id, token__user=token.user
+            )
     except Batch.DoesNotExist:
         return error_response("Batch not found.", param="batch_id", status=404)
 
@@ -196,7 +211,14 @@ async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args,
     Returns 404 if batch not found or not owned by user - NEVER falls back to upstream.
     """
     try:
-        batch_obj = await Batch.objects.select_related("input_file").aget(id=batch_id, token=token)
+        if token.service_account:
+            batch_obj = await Batch.objects.select_related("input_file").aget(
+                id=batch_id, token__service_account__team=token.service_account.team
+            )
+        else:
+            batch_obj = await Batch.objects.select_related("input_file").aget(
+                id=batch_id, token__user=token.user
+            )
     except Batch.DoesNotExist:
         return error_response("Batch not found.", param="batch_id", status=404)
 

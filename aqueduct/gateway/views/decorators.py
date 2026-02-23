@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import re
+import sys
 import time
 from datetime import timedelta
 from functools import wraps
@@ -369,7 +370,6 @@ def resolve_alias(view_func):
 
         model_or_alias: str | None = pydantic_model.get("model", None)
         if model_or_alias:
-            # Resolve alias to actual model name
             resolved_model = resolve_model_alias(model_or_alias)
             pydantic_model["model"] = resolved_model
             log.debug(f"Resolved model '{model_or_alias}' to '{resolved_model}'")
@@ -456,9 +456,16 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
     elif file_id:
         # file is given as an id of a file object
         try:
-            file_obj = await FileObject.objects.select_related("token__user").aget(id=file_id)
-            if token and token.user != file_obj.token.user:
-                raise FileObject.DoesNotExist
+            if token and token.service_account:
+                file_obj = await FileObject.objects.select_related("token__user").aget(
+                    id=file_id, token__service_account__team=token.service_account.team
+                )
+            elif token:
+                file_obj = await FileObject.objects.select_related("token__user").aget(
+                    id=file_id, token__user=token.user
+                )
+            else:
+                file_obj = await FileObject.objects.select_related("token__user").aget(id=file_id)
 
             # Fetch content from upstream using the async client
             try:
@@ -840,6 +847,30 @@ def check_tool_availability(view_func):
                     if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
                         return error_response(f"Invalid tool type: {other}", status=400)
 
+        return await view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+def require_files_api_client(view_func):
+    """Decorator that injects a files API client into the view kwargs, or returns 503.
+
+    Uses late-bound import of get_files_api_client so that tests can
+    patch it on the calling module (e.g. gateway.views.vector_stores).
+    """
+
+    @wraps(view_func)
+    async def wrapper(request, *args, **kwargs):
+        # Look up get_files_api_client from the module where view_func is defined,
+        # so tests patching that module's reference will be respected.
+        view_module = sys.modules.get(view_func.__module__)
+        _get_client = getattr(view_module, "get_files_api_client", get_files_api_client)
+
+        try:
+            client = _get_client()
+        except ValueError:
+            return error_response("Vector Store API not configured", status=503)
+        kwargs["client"] = client
         return await view_func(request, *args, **kwargs)
 
     return wrapper

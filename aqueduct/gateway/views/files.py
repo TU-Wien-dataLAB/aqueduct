@@ -68,7 +68,7 @@ async def sync_batch_file_if_needed(
     token: Token,
     client: AsyncOpenAI,
     batch_obj: Optional["Batch"] = None,
-    field_name: str = "output_file",
+    field_name: Literal["output_file", "error_file"] = "output_file",
 ) -> Optional[FileObject]:
     """
     Ensure a local FileObject record exists for a batch output/error file.

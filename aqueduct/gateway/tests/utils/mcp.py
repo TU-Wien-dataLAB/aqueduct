@@ -6,6 +6,7 @@ import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import wraps
+from typing import Optional
 from unittest.mock import patch
 
 from asgiref.sync import sync_to_async
@@ -130,13 +131,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     ProtocolServerProcess = MCPDaphneProcess
 
     fixtures = ["gateway_data.json"]
-    mcp_server_process = None
-
-    @property
-    def headers(self):
-        # ChannelsLiveServerTestCase raises AppRegistryNotReady if I try to access model classes (through import)
-        # -> so we hard-code the headers here again
-        return {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
+    mcp_server_process: Optional[subprocess.Popen] = None
 
     @property
     def mcp_url(self):
@@ -181,9 +176,6 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         port = get_available_port()
 
         cls.mcp_server_port = port
-        global mcp_server_port
-        mcp_server_port = port
-
         cls._update_mcp_config_port(port)
 
         print(f"\nStarting MCP everything server on port {port}...")
@@ -207,6 +199,10 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             raise RuntimeError(
                 "npx command not found. Please ensure Node.js and npm are installed."
             )
+
+        global mcp_server_port, shared_mcp_server_process
+        shared_mcp_server_process = cls.mcp_server_process
+        mcp_server_port = cls.mcp_server_port
 
         # Wait for server to be ready by checking if it accepts connections
         print(f"Waiting for MCP server to accept connections on port {port}...")
@@ -236,39 +232,19 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             f"MCP server did not accept connections within {timeout} seconds. Last error: {last_error}"
         )
 
-    # @classmethod
-    # def _stop_mcp_server(cls):
-    #     """Stop the MCP everything server."""
-    #     if cls.mcp_server_process and cls.mcp_server_process.poll() is None:
-    #         print("Stopping MCP everything server...")
-    #         cls.mcp_server_process.terminate()
-    #         try:
-    #             cls.mcp_server_process.wait(timeout=10)
-    #             print("MCP server stopped successfully")
-    #         except subprocess.TimeoutExpired:
-    #             print("MCP server did not stop gracefully, forcing kill")
-    #             cls.mcp_server_process.kill()
-    #             cls.mcp_server_process.wait()
-    #         cls.mcp_server_process = None
-
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        cls.headers = {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
 
-        global shared_mcp_server_process, mcp_server_port
+        # If another test class has already created the MCP server, it will be reused.
+        # Otherwise, write MCP config, create the MCP server process, and set necessary
+        # global variables. Next tests to use the `MCPLiveServerTestCase` class as base
+        # class will reuse the same process.
+        # Note: Teardown is handled by the test runner, after all the tests finished running.
         if shared_mcp_server_process is None:
             cls._write_mcp_config()
-            try:
-                cls._start_mcp_server()
-            except RuntimeError as err:
-                print(err)
-                print(f"Failed to connect to the MCP server! Interrupting the {cls.__name__}")
-                # In case of any errors during setup, `tearDownClass` is not called, which means that
-                # the Daphne process (child process of the main test process) is *not* terminated and
-                # continues to run in the background even after the test process exists.
-                cls.tearDownClass()
-                raise
-            shared_mcp_server_process = cls.mcp_server_process
+            cls._start_mcp_server()
         else:
             assert mcp_server_port is not None, (
                 "Global MCP test server port is not set, even though the server process "
@@ -276,8 +252,3 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             )
             cls.mcp_server_process = shared_mcp_server_process
             cls.mcp_server_port = mcp_server_port
-
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        # MCP server is stopped by the test runner, after all tests have finished

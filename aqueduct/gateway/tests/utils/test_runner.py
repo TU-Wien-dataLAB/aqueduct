@@ -27,39 +27,13 @@ def get_shared_mock_server():
     return _shared_mock_server
 
 
-# def get_shared_mcp_server_process():
-#     """Get the mock server process shared by all tests in the suite."""
-#     global shared_mcp_server_process
-#     if shared_mcp_server_process is None:
-#         raise RuntimeError(
-#             "MCP server not initialized. Use MockServerTestRunner. "
-#             # "Did you set `--no-mcp` flag in the test command?"
-#         )
-#     return shared_mcp_server_process
-
-
 class MockServerTestRunner(DiscoverRunner):
     """
     Custom Django test runner that starts a single mock server instance
     for the entire test suite.
-    """
 
-    # def __init__(self, **kwargs):
-    #     self.no_mcp = kwargs.pop("no_mcp", False)
-    #     super().__init__(**kwargs)
-    #
-    # @classmethod
-    # def add_arguments(cls, parser: ArgumentParser):
-    #     super().add_arguments(parser)
-    #     parser.add_argument(
-    #         "--no-mcp",
-    #         action="store_true",
-    #         dest="no_mcp",
-    #         help=(
-    #             "Disables starting of the mock MCP server. This can speed up the test suite "
-    #             "when only a subset of tests is specified and they do not need the MCP server."
-    #         ),
-    #     )
+    It also stops the test MCP server if it has been started by any tests that needed it.
+    """
 
     def setup_test_environment(self, **kwargs):
         """Set up the test environment, starting the mock API server."""
@@ -81,16 +55,11 @@ class MockServerTestRunner(DiscoverRunner):
         else:
             logger.warning("Skipping the initialisation of the mock server.")
 
-        # if self.no_mcp:
-        #     # Do not start the MCP server
-        #     logger.warning("Skipping the initialisation of the MCP server.")
-        #     return
-
-        # Ensure the MCP server is stopped even if tests crash
+        # If the MCP server has been started, ensure it is stopped even if tests crash
         atexit.register(self._cleanup_mcp_server)
 
     def teardown_test_environment(self, **kwargs):
-        """Tear down the test environment, stopping the mock server."""
+        """Tear down the test environment, stopping the mock and MCP server."""
         super().teardown_test_environment(**kwargs)
         self._cleanup_mock_server()
         self._cleanup_mcp_server()

@@ -53,6 +53,7 @@ def get_mock_router(model: str = "test-model"):
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     API_MAX_RETRIES=5,  # for some reason the OpenAI API fails with 503 sometimes...
+    AQUEDUCT_FILES_API_URL="https://api.openai.com",
 )
 class GatewayIntegrationTestCase(TransactionTestCase):
     """

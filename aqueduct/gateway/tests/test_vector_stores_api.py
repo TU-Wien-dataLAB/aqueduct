@@ -283,6 +283,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             filename="test.txt",
             purpose="user_data",
             token=token,
+            upstream_url="https://api.openai.com/v1",
         )
         return file_obj
 

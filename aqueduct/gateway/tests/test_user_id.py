@@ -19,6 +19,7 @@ ROOT_DIR = Path(__file__).parent.parent.parent.parent
 @override_settings(
     OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/",
     LITELLM_ROUTER_CONFIG_FILE_PATH=Path(ROOT_DIR / "example_router_config.yaml"),
+    AQUEDUCT_FILES_API_URL="https://api.openai.com",
 )
 class TestUserId(MCPLiveServerTestCase):
     @classmethod
@@ -55,7 +56,12 @@ class TestUserId(MCPLiveServerTestCase):
 
         token = Token.objects.first()
         file_obj = FileObject.objects.create(
-            id="file-remote-123", bytes=1, created_at=42, token=token, purpose="batch"
+            id="file-remote-123",
+            bytes=1,
+            created_at=42,
+            token=token,
+            purpose="batch",
+            upstream_url="https://api.openai.com/v1",
         )
 
         url = reverse("gateway:batches")

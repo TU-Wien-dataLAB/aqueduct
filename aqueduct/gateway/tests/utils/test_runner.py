@@ -1,7 +1,6 @@
 import atexit
 import logging
 import subprocess
-from argparse import ArgumentParser
 from typing import Optional
 
 from django.conf import settings
@@ -15,7 +14,7 @@ logger = logging.getLogger("aqueduct")
 # Tests need access to the global mock server instance
 _shared_mock_server: Optional[MockAPIServer] = None
 # TODO: this is a process; do we want a separate server class?
-_shared_mcp_server: Optional[subprocess.Popen] = None
+shared_mcp_server_process: Optional[subprocess.Popen] = None
 
 
 def get_shared_mock_server():
@@ -26,15 +25,15 @@ def get_shared_mock_server():
     return _shared_mock_server
 
 
-def get_shared_mcp_server():
-    """Get the mock server instance shared by all tests in the suite."""
-    global _shared_mcp_server
-    if _shared_mcp_server is None:
+def get_shared_mcp_server_process():
+    """Get the mock server process shared by all tests in the suite."""
+    global shared_mcp_server_process
+    if shared_mcp_server_process is None:
         raise RuntimeError(
             "MCP server not initialized. Use MockServerTestRunner. "
-            "Did you set `--no-mcp` flag in the test command?"
+            # "Did you set `--no-mcp` flag in the test command?"
         )
-    return _shared_mcp_server
+    return shared_mcp_server_process
 
 
 class MockServerTestRunner(DiscoverRunner):
@@ -43,22 +42,22 @@ class MockServerTestRunner(DiscoverRunner):
     for the entire test suite.
     """
 
-    def __init__(self, **kwargs):
-        self.no_mcp = kwargs.pop("no_mcp", False)
-        super().__init__(**kwargs)
-
-    @classmethod
-    def add_arguments(cls, parser: ArgumentParser):
-        super().add_arguments(parser)
-        parser.add_argument(
-            "--no-mcp",
-            action="store_true",
-            dest="no_mcp",
-            help=(
-                "Disables starting of the mock MCP server. This can speed up the test suite "
-                "when only a subset of tests is specified and they do not need the MCP server."
-            ),
-        )
+    # def __init__(self, **kwargs):
+    #     self.no_mcp = kwargs.pop("no_mcp", False)
+    #     super().__init__(**kwargs)
+    #
+    # @classmethod
+    # def add_arguments(cls, parser: ArgumentParser):
+    #     super().add_arguments(parser)
+    #     parser.add_argument(
+    #         "--no-mcp",
+    #         action="store_true",
+    #         dest="no_mcp",
+    #         help=(
+    #             "Disables starting of the mock MCP server. This can speed up the test suite "
+    #             "when only a subset of tests is specified and they do not need the MCP server."
+    #         ),
+    #     )
 
     def setup_test_environment(self, **kwargs):
         """Set up the test environment, starting the mock API server."""
@@ -80,21 +79,10 @@ class MockServerTestRunner(DiscoverRunner):
         else:
             logger.warning("Skipping the initialisation of the mock server.")
 
-        if self.no_mcp:
-            # Do not start the MCP server
-            logger.warning("Skipping the initialisation of the MCP server.")
-            return
-
-        # Start the MCP server once for the entire test suite
-        # TODO!
-        global _shared_mcp_server
-        _shared_mcp_server = ...
-        try:
-            ...
-            logger.info(f"✓ MCP server started on {_shared_mcp_server.base_url}.")
-        except RuntimeError as err:
-            logger.error(f"✗ Failed to start MCP server: {err}")
-            raise
+        # if self.no_mcp:
+        #     # Do not start the MCP server
+        #     logger.warning("Skipping the initialisation of the MCP server.")
+        #     return
 
         # Ensure the MCP server is stopped even if tests crash
         atexit.register(self._cleanup_mcp_server)
@@ -103,6 +91,7 @@ class MockServerTestRunner(DiscoverRunner):
         """Tear down the test environment, stopping the mock server."""
         super().teardown_test_environment(**kwargs)
         self._cleanup_mock_server()
+        self._cleanup_mcp_server()
 
     def _cleanup_mock_server(self):
         """Stop the mock server if it's running."""
@@ -114,8 +103,15 @@ class MockServerTestRunner(DiscoverRunner):
 
     def _cleanup_mcp_server(self):
         """Stop the MCP server if it's running."""
-        global _shared_mcp_server
-        if _shared_mcp_server is not None and _shared_mcp_server.process:  # TODO!
-            logger.info("\nStopping MCP server...")
-            _shared_mcp_server.stop()
-            _shared_mcp_server = None
+        global shared_mcp_server_process
+        if shared_mcp_server_process is not None and shared_mcp_server_process.poll() is None:
+            logger.info("\nStopping MCP everything server...")
+            shared_mcp_server_process.terminate()
+            try:
+                shared_mcp_server_process.wait(timeout=10)
+                logger.info("MCP server stopped successfully")
+            except subprocess.TimeoutExpired:
+                logger.warning("MCP server did not stop gracefully, forcing kill")
+                shared_mcp_server_process.kill()
+                shared_mcp_server_process.wait()
+            shared_mcp_server_process = None

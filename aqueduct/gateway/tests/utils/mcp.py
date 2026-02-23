@@ -17,6 +17,8 @@ from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_c
 
 from mock_api.helpers import get_available_port
 
+from .test_runner import shared_mcp_server_process
+
 MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {
     "mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}
@@ -231,39 +233,44 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             f"MCP server did not accept connections within {timeout} seconds. Last error: {last_error}"
         )
 
-    @classmethod
-    def _stop_mcp_server(cls):
-        """Stop the MCP everything server."""
-        if cls.mcp_server_process and cls.mcp_server_process.poll() is None:
-            print("Stopping MCP everything server...")
-            cls.mcp_server_process.terminate()
-            try:
-                cls.mcp_server_process.wait(timeout=10)
-                print("MCP server stopped successfully")
-            except subprocess.TimeoutExpired:
-                print("MCP server did not stop gracefully, forcing kill")
-                cls.mcp_server_process.kill()
-                cls.mcp_server_process.wait()
-            cls.mcp_server_process = None
+    # @classmethod
+    # def _stop_mcp_server(cls):
+    #     """Stop the MCP everything server."""
+    #     if cls.mcp_server_process and cls.mcp_server_process.poll() is None:
+    #         print("Stopping MCP everything server...")
+    #         cls.mcp_server_process.terminate()
+    #         try:
+    #             cls.mcp_server_process.wait(timeout=10)
+    #             print("MCP server stopped successfully")
+    #         except subprocess.TimeoutExpired:
+    #             print("MCP server did not stop gracefully, forcing kill")
+    #             cls.mcp_server_process.kill()
+    #             cls.mcp_server_process.wait()
+    #         cls.mcp_server_process = None
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         cls._write_mcp_config()
-        try:
-            cls._start_mcp_server()
-        except RuntimeError as err:
-            print(err)
-            print(f"Failed to connect to the MCP server! Interrupting the {cls.__name__}")
-            # In case of any errors during setup, `tearDownClass` is not called, which means that
-            # the Daphne process (child process of the main test process) is *not* terminated and
-            # continues to run in the background even after the test process exists.
-            cls.tearDownClass()
-            raise
+
+        # global shared_mcp_server_process
+        if shared_mcp_server_process is None:
+            try:
+                cls._start_mcp_server()
+            except RuntimeError as err:
+                print(err)
+                print(f"Failed to connect to the MCP server! Interrupting the {cls.__name__}")
+                # In case of any errors during setup, `tearDownClass` is not called, which means that
+                # the Daphne process (child process of the main test process) is *not* terminated and
+                # continues to run in the background even after the test process exists.
+                cls.tearDownClass()
+                raise
+        else:
+            cls.mcp_server_process = shared_mcp_server_process
 
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
-        cls._stop_mcp_server()
+        # MCP server is stopped by the test runner, after all tests have finished
         if os.path.exists(MCP_CONFIG_PATH):
             os.remove(MCP_CONFIG_PATH)

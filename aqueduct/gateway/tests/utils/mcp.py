@@ -17,7 +17,7 @@ from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_c
 
 from mock_api.helpers import get_available_port
 
-from .test_runner import shared_mcp_server_process
+from .test_runner import mcp_server_port, shared_mcp_server_process
 
 MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {
@@ -181,6 +181,9 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         port = get_available_port()
 
         cls.mcp_server_port = port
+        global mcp_server_port
+        mcp_server_port = port
+
         cls._update_mcp_config_port(port)
 
         print(f"\nStarting MCP everything server on port {port}...")
@@ -251,10 +254,10 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls._write_mcp_config()
 
-        # global shared_mcp_server_process
+        global shared_mcp_server_process, mcp_server_port
         if shared_mcp_server_process is None:
+            cls._write_mcp_config()
             try:
                 cls._start_mcp_server()
             except RuntimeError as err:
@@ -265,12 +268,16 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 # continues to run in the background even after the test process exists.
                 cls.tearDownClass()
                 raise
+            shared_mcp_server_process = cls.mcp_server_process
         else:
+            assert mcp_server_port is not None, (
+                "Global MCP test server port is not set, even though the server process "
+                "exists already. This should not happen!"
+            )
             cls.mcp_server_process = shared_mcp_server_process
+            cls.mcp_server_port = mcp_server_port
 
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
         # MCP server is stopped by the test runner, after all tests have finished
-        if os.path.exists(MCP_CONFIG_PATH):
-            os.remove(MCP_CONFIG_PATH)

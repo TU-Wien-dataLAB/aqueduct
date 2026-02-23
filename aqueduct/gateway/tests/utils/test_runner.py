@@ -1,5 +1,6 @@
 import atexit
 import logging
+import os
 import subprocess
 from typing import Optional
 
@@ -15,6 +16,7 @@ logger = logging.getLogger("aqueduct")
 _shared_mock_server: Optional[MockAPIServer] = None
 # TODO: this is a process; do we want a separate server class?
 shared_mcp_server_process: Optional[subprocess.Popen] = None
+mcp_server_port: Optional[int] = None
 
 
 def get_shared_mock_server():
@@ -25,15 +27,15 @@ def get_shared_mock_server():
     return _shared_mock_server
 
 
-def get_shared_mcp_server_process():
-    """Get the mock server process shared by all tests in the suite."""
-    global shared_mcp_server_process
-    if shared_mcp_server_process is None:
-        raise RuntimeError(
-            "MCP server not initialized. Use MockServerTestRunner. "
-            # "Did you set `--no-mcp` flag in the test command?"
-        )
-    return shared_mcp_server_process
+# def get_shared_mcp_server_process():
+#     """Get the mock server process shared by all tests in the suite."""
+#     global shared_mcp_server_process
+#     if shared_mcp_server_process is None:
+#         raise RuntimeError(
+#             "MCP server not initialized. Use MockServerTestRunner. "
+#             # "Did you set `--no-mcp` flag in the test command?"
+#         )
+#     return shared_mcp_server_process
 
 
 class MockServerTestRunner(DiscoverRunner):
@@ -115,3 +117,8 @@ class MockServerTestRunner(DiscoverRunner):
                 shared_mcp_server_process.kill()
                 shared_mcp_server_process.wait()
             shared_mcp_server_process = None
+
+        from gateway.tests.utils.mcp import MCP_CONFIG_PATH
+
+        if os.path.exists(MCP_CONFIG_PATH):
+            os.remove(MCP_CONFIG_PATH)

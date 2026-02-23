@@ -9,12 +9,13 @@ from functools import wraps
 from typing import Optional
 from unittest.mock import patch
 
+import httpx
 from asgiref.sync import sync_to_async
 from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
 from django.test import override_settings
 from mcp import ClientSession
-from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_client
+from mcp.client.streamable_http import StreamableHTTPTransport, streamable_http_client
 
 from mock_api.helpers import get_available_port
 
@@ -139,13 +140,16 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     @asynccontextmanager
     async def client_session(self):
-        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
-            read_stream,
-            write_stream,
-            _,
+        async with (
+            httpx.AsyncClient(headers=self.headers) as client,
+            streamable_http_client(self.mcp_url, http_client=client) as (
+                read_stream,
+                write_stream,
+                _,
+            ),
+            ClientSession(read_stream, write_stream) as session,
         ):
-            async with ClientSession(read_stream, write_stream) as session:
-                yield session
+            yield session
 
     async def assertRequestLogged(self, n: int = 1):
         from management.models import Request

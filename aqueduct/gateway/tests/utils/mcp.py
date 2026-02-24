@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import wraps
 from typing import Optional
-from unittest.mock import patch
 
 import httpx
 from asgiref.sync import sync_to_async
@@ -15,7 +14,7 @@ from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
 from django.test import override_settings
 from mcp import ClientSession
-from mcp.client.streamable_http import StreamableHTTPTransport, streamable_http_client
+from mcp.client.streamable_http import streamable_http_client
 
 from gateway.tests.utils.test_runner import (
     get_mcp_server_port,
@@ -28,19 +27,6 @@ MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {
     "mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}
 }
-
-
-# patch: https://github.com/modelcontextprotocol/python-sdk/pull/1670
-def patch_mcp_sse_issue(view_func):
-    @wraps(view_func)
-    async def wrapper(*args, **kwargs):
-        sse = args[1]
-        if not sse.data:
-            return False
-        else:
-            return await view_func(*args, **kwargs)
-
-    return wrapper
 
 
 def _is_cancel_scope_error(exc):
@@ -90,10 +76,6 @@ def skip_on_cancel_scope_error(test_func):
 
 
 class MCPDaphneProcess(DaphneProcess):
-    @patch(
-        "mcp.client.streamable_http.StreamableHTTPTransport._handle_sse_event",
-        new=patch_mcp_sse_issue(StreamableHTTPTransport._handle_sse_event),
-    )
     def run(self):
         from django.conf import settings
 

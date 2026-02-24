@@ -1,6 +1,7 @@
 import atexit
 import logging
 import os
+import signal
 import subprocess
 from typing import Optional
 
@@ -76,9 +77,9 @@ class MockServerTestRunner(DiscoverRunner):
 
     def teardown_test_environment(self, **kwargs):
         """Tear down the test environment, stopping the mock and MCP server."""
-        super().teardown_test_environment(**kwargs)
         self._cleanup_mock_server()
         self._cleanup_mcp_server()
+        super().teardown_test_environment(**kwargs)
 
     def _cleanup_mock_server(self):
         """Stop the mock server if it's running."""
@@ -94,14 +95,23 @@ class MockServerTestRunner(DiscoverRunner):
 
         if _shared_mcp_server_process is not None and _shared_mcp_server_process.poll() is None:
             logger.info("\nStopping MCP everything server...")
-            _shared_mcp_server_process.terminate()
+
+            # Kill the entire process group (npx spawns child processes)
             try:
-                _shared_mcp_server_process.wait(timeout=10)
+                os.killpg(os.getpgid(_shared_mcp_server_process.pid), signal.SIGTERM)
+                _shared_mcp_server_process.wait(timeout=5)
                 logger.info("MCP server stopped successfully")
             except subprocess.TimeoutExpired:
                 logger.warning("MCP server did not stop gracefully, forcing kill")
-                _shared_mcp_server_process.kill()
-                _shared_mcp_server_process.wait()
+                try:
+                    os.killpg(os.getpgid(_shared_mcp_server_process.pid), signal.SIGKILL)
+                    _shared_mcp_server_process.wait()
+                    logger.info("MCP server stopped successfully (forced)")
+                except ProcessLookupError:
+                    logger.info("Process group already terminated")
+            except ProcessLookupError:
+                logger.info("Process already terminated")
+
             _shared_mcp_server_process = None
             _mcp_server_port = None
 

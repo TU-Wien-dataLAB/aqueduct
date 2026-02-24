@@ -201,6 +201,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 text=True,
                 env=env,
                 cwd=os.path.dirname(MCP_CONFIG_PATH),
+                preexec_fn=os.setsid,  # Create new process group for Unix
             )
         except FileNotFoundError:
             raise RuntimeError(

@@ -17,9 +17,12 @@ from django.test import override_settings
 from mcp import ClientSession
 from mcp.client.streamable_http import StreamableHTTPTransport, streamable_http_client
 
+from gateway.tests.utils.test_runner import (
+    get_mcp_server_port,
+    get_shared_mcp_server_process,
+    set_shared_mcp_server,
+)
 from mock_api.helpers import get_available_port
-
-from .test_runner import mcp_server_port, shared_mcp_server_process
 
 MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {
@@ -204,9 +207,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 "npx command not found. Please ensure Node.js and npm are installed."
             )
 
-        global mcp_server_port, shared_mcp_server_process
-        shared_mcp_server_process = cls.mcp_server_process
-        mcp_server_port = cls.mcp_server_port
+        # Set global variables enabling the tests to share the MCP server process
+        set_shared_mcp_server(cls.mcp_server_process, cls.mcp_server_port)
 
         # Wait for server to be ready by checking if it accepts connections
         print(f"Waiting for MCP server to accept connections on port {port}...")
@@ -246,13 +248,14 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         # global variables. Next tests to use the `MCPLiveServerTestCase` class as base
         # class will reuse the same process.
         # Note: Teardown is handled by the test runner, after all the tests finished running.
-        if shared_mcp_server_process is None:
+        mcp_process = get_shared_mcp_server_process()
+        if mcp_process is None:
             cls._write_mcp_config()
             cls._start_mcp_server()
         else:
-            assert mcp_server_port is not None, (
+            assert (mcp_port := get_mcp_server_port()) is not None, (
                 "Global MCP test server port is not set, even though the server process "
                 "exists already. This should not happen!"
             )
-            cls.mcp_server_process = shared_mcp_server_process
-            cls.mcp_server_port = mcp_server_port
+            cls.mcp_server_process = mcp_process
+            cls.mcp_server_port = mcp_port

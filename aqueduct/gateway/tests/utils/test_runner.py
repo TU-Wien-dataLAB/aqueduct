@@ -14,17 +14,33 @@ logger = logging.getLogger("aqueduct")
 
 # Tests need access to the global mock server instance
 _shared_mock_server: Optional[MockAPIServer] = None
-# TODO: this is a process; do we want a separate server class?
-shared_mcp_server_process: Optional[subprocess.Popen] = None
-mcp_server_port: Optional[int] = None
+# ...and some tests also need a running MCP server
+_shared_mcp_server_process: Optional[subprocess.Popen] = None
+_mcp_server_port: Optional[int] = None
 
 
-def get_shared_mock_server():
+def get_shared_mock_server() -> Optional[MockAPIServer]:
     """Get the mock server instance shared by all tests in the suite."""
-    global _shared_mock_server
     if _shared_mock_server is None:
         raise RuntimeError("Mock server not initialized. Use MockServerTestRunner.")
     return _shared_mock_server
+
+
+def get_shared_mcp_server_process() -> Optional[subprocess.Popen]:
+    """Get the global MCP server process shared by all MCP-related tests."""
+    return _shared_mcp_server_process
+
+
+def get_mcp_server_port() -> Optional[int]:
+    """Get the port used by the global MCP server."""
+    return _mcp_server_port
+
+
+def set_shared_mcp_server(process: subprocess.Popen, port: int) -> None:
+    """Set the global MCP server process and port."""
+    global _shared_mcp_server_process, _mcp_server_port
+    _shared_mcp_server_process = process
+    _mcp_server_port = port
 
 
 class MockServerTestRunner(DiscoverRunner):
@@ -74,18 +90,20 @@ class MockServerTestRunner(DiscoverRunner):
 
     def _cleanup_mcp_server(self):
         """Stop the MCP server if it's running."""
-        global shared_mcp_server_process
-        if shared_mcp_server_process is not None and shared_mcp_server_process.poll() is None:
+        global _shared_mcp_server_process, _mcp_server_port
+
+        if _shared_mcp_server_process is not None and _shared_mcp_server_process.poll() is None:
             logger.info("\nStopping MCP everything server...")
-            shared_mcp_server_process.terminate()
+            _shared_mcp_server_process.terminate()
             try:
-                shared_mcp_server_process.wait(timeout=10)
+                _shared_mcp_server_process.wait(timeout=10)
                 logger.info("MCP server stopped successfully")
             except subprocess.TimeoutExpired:
                 logger.warning("MCP server did not stop gracefully, forcing kill")
-                shared_mcp_server_process.kill()
-                shared_mcp_server_process.wait()
-            shared_mcp_server_process = None
+                _shared_mcp_server_process.kill()
+                _shared_mcp_server_process.wait()
+            _shared_mcp_server_process = None
+            _mcp_server_port = None
 
         from gateway.tests.utils.mcp import MCP_CONFIG_PATH
 

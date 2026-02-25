@@ -8,6 +8,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
+from openai import AsyncOpenAI
 from openai.types import VectorStore as OpenAIVectorStore
 from openai.types.vector_store import FileCounts as VectorStoreFileCounts
 from openai.types.vector_store_create_params import VectorStoreCreateParams
@@ -171,7 +172,7 @@ async def vector_store(
     token: Token,
     vector_store_id: str,
     pydantic_model: Optional[dict] = None,
-    client=None,
+    client: Optional[AsyncOpenAI] = None,
     *args,
     **kwargs,
 ):

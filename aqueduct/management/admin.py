@@ -407,8 +407,8 @@ class VectorStoreAdmin(admin.ModelAdmin):
         except ValueError:
             client = None
 
-        for obj in queryset:
-            if client:
+        if client:
+            for obj in queryset:
                 # First delete all files from upstream
                 for vs_file in obj.files.all():
                     try:

@@ -574,6 +574,24 @@ def catch_router_exceptions(view_func):
         s = re.sub(r"Lite-?[lL][lL][mM]", "Aqueduct", s)  # uppercase
         return re.sub(r"lite-?[lL][lL][mM]", "aqueduct", s)  # lowercase
 
+    def _exception_response(e: Exception, status: int) -> HttpResponse:
+        """Convert an openai/litellm exception to an OpenAI-compatible JsonResponse.
+
+        The openai SDK parses ``code``, ``param``, and ``type`` from the
+        response body when available (see ``openai.APIError.__init__``).
+        LiteLLM exceptions inherit from the corresponding openai classes
+        but typically pass ``body=None``, so these will be ``None`` for
+        most litellm errors.  We forward whatever is available.
+        """
+        code = getattr(e, "code", None)
+        return error_response(
+            message=_r(e),
+            error_type=getattr(e, "type", None),
+            param=getattr(e, "param", None),
+            code=str(code) if code is not None else None,
+            status=status,
+        )
+
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         # https://docs.litellm.ai/docs/exception_mapping#litellm-exceptions
@@ -582,40 +600,40 @@ def catch_router_exceptions(view_func):
             return await view_func(request, *args, **kwargs)
         except (litellm.BadRequestError, openai.BadRequestError) as e:
             log.error(f"Bad request - {_r(e)}")
-            return error_response(_r(e), status=400)
+            return _exception_response(e, status=400)
         except (litellm.AuthenticationError, openai.AuthenticationError) as e:
             log.error(f"Authentication error - {_r(e)}")
-            return error_response(_r(e), status=401)
+            return _exception_response(e, status=401)
         except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
             log.error(f"Permission denied - {_r(e)}")
-            return error_response(_r(e), status=403)
+            return _exception_response(e, status=403)
         except (litellm.NotFoundError, openai.NotFoundError) as e:
             log.error(f"Not found - {_r(e)}")
-            return error_response(_r(e), status=404)
+            return _exception_response(e, status=404)
         except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
             log.error(f"Unprocessable entity - {_r(e)}")
-            return error_response(_r(e), status=422)
+            return _exception_response(e, status=422)
         except (litellm.RateLimitError, openai.RateLimitError) as e:
             log.error(f"Rate limit exceeded - {_r(e)}")
-            return error_response(_r(e), status=429)
+            return _exception_response(e, status=429)
         except (litellm.Timeout, openai.APITimeoutError) as e:
             log.error(f"Timeout - {_r(e)}")
-            return error_response(_r(e), status=504)
+            return _exception_response(e, status=504)
         except (
             litellm.ServiceUnavailableError,
             litellm.APIConnectionError,
             openai.APIConnectionError,
         ) as e:
             log.error(f"Service unavailable - {_r(e)}")
-            return error_response(_r(e), status=503)
+            return _exception_response(e, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
             log.error(f"Internal server error - {_r(e)}")
-            return error_response(_r(e), status=500)
+            return _exception_response(e, status=500)
         except (litellm.APIError, openai.APIError) as e:
             # APIError is raised e.g. when user sends extra kwargs in the request body,
             # so we return a 400 Bad request.
             log.error(f"API error - {_r(e)}")
-            return error_response(_r(e), status=400)
+            return _exception_response(e, status=400)
         except Exception as e:
             log.error(f"Unexpected error - {_r(e)}")
             return error_response(_r(e), status=500)

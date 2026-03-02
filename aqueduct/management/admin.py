@@ -160,6 +160,20 @@ def delete_tos_cache(modeladmin, request, queryset):
         cache.delete(f"django:tos:agreed:{user.id}", version=key_version)
 
 
+@admin.action(description="Reload from upstream")
+def reload_from_upstream(modeladmin, request, queryset):
+    async def reload_all():
+        async def reload_obj(obj):
+            try:
+                await obj.areload_from_upstream(raise_on_error=False)
+            except Exception:
+                pass
+
+        await asyncio.gather(*[reload_obj(obj) for obj in queryset])
+
+    asyncio.run(reload_all())
+
+
 # Define a new User admin
 class UserAdmin(BaseUserAdmin):
     inlines = (ProfileInline,)
@@ -329,6 +343,7 @@ class FileObjectAdmin(admin.ModelAdmin):
     )
     list_filter = ("purpose", "token__user__email")
     search_fields = ("id", "filename")
+    actions = [reload_from_upstream]
 
     def bytes_formatted(self, obj):
         from django.template.defaultfilters import filesizeformat
@@ -365,6 +380,7 @@ class BatchAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "token__user__email")
     search_fields = ("id",)
+    actions = [reload_from_upstream]
 
     def created_at_formatted(self, obj):
         return format_unix_timestamp(obj.created_at)
@@ -390,6 +406,7 @@ class VectorStoreAdmin(admin.ModelAdmin):
     search_fields = ("id", "name", "remote_id")
     list_select_related = ["token", "token__user"]
     readonly_fields = ("id", "created_at_formatted")
+    actions = [reload_from_upstream]
 
     def get_queryset(self, request):
         from django.db.models import Count
@@ -492,6 +509,7 @@ class VectorStoreFileAdmin(admin.ModelAdmin):
     search_fields = ("id", "remote_id")
     list_select_related = ["vector_store", "file_obj"]
     readonly_fields = ("id", "created_at_formatted")
+    actions = [reload_from_upstream]
 
     def usage_bytes_formatted(self, obj):
         from django.template.defaultfilters import filesizeformat
@@ -563,6 +581,7 @@ class VectorStoreFileBatchAdmin(admin.ModelAdmin):
     search_fields = ("id", "remote_id")
     list_select_related = ["vector_store"]
     readonly_fields = ("id", "created_at_formatted")
+    actions = [reload_from_upstream]
 
     def file_counts_formatted(self, obj):
         counts = obj.file_counts or {}

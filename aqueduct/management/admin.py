@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime
 
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
 from django.urls import reverse
@@ -162,16 +162,27 @@ def delete_tos_cache(modeladmin, request, queryset):
 
 @admin.action(description="Reload from upstream")
 def reload_from_upstream(modeladmin, request, queryset):
+    objects = list(queryset)
+    errors = []
+
     async def reload_all():
         async def reload_obj(obj):
             try:
-                await obj.areload_from_upstream(raise_on_error=False)
-            except Exception:
-                pass
+                await obj.areload_from_upstream(raise_on_error=True)
+                return None
+            except Exception as e:
+                return str(e)
 
-        await asyncio.gather(*[reload_obj(obj) for obj in queryset])
+        results = await asyncio.gather(*[reload_obj(obj) for obj in objects])
+        errors.extend(r for r in results if r)
 
     asyncio.run(reload_all())
+
+    if errors:
+        for error in errors:
+            messages.error(request, f"Reload failed: {error}")
+    else:
+        messages.success(request, f"Successfully reloaded {len(objects)} object(s).")
 
 
 # Define a new User admin

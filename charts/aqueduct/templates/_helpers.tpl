@@ -61,13 +61,12 @@ Usage:
     secretKeyRef:
       name: {{ .Values.oidc.existingSecret }}
       key: {{ .Values.oidc.secretKeys.clientSecretKey | default "clientSecret" }}
-{{- else }}
+ {{- else }}
 - name: OIDC_RP_CLIENT_ID
   value: {{ .Values.oidc.clientId | quote }}
 - name: OIDC_RP_CLIENT_SECRET
   value: {{ .Values.oidc.clientSecret | quote }}
 {{- end }}
-{{- if .Values.oidc.existingSecret }}
 - name: CELERY_BROKER_URL
   value: {{ .Values.celery.brokerUrl | quote }}
 - name: CELERY_WORKER_CONCURRENCY
@@ -76,16 +75,23 @@ Usage:
   value: {{ .Values.celery.requestRetentionDays | quote }}
 - name: REQUEST_RETENTION_SCHEDULE
   value: {{ .Values.celery.schedule | quote }}
-{{- end }}
 - name: SILKY_ENABLED
 {{- if .Values.silk.enabled }}
   value: "True"
 {{- else }}
   value: "False"
 {{- end }}
-{{- if .Values.persistence.files.enabled }}
-- name: AQUEDUCT_FILES_API_ROOT
-  value: {{ .Values.persistence.files.mountPath | quote }}
+- name: AQUEDUCT_FILES_API_URL
+  value: {{ .Values.filesApi.url | quote }}
+{{- if .Values.filesApi.apiKey }}
+- name: AQUEDUCT_FILES_API_KEY
+  value: {{ .Values.filesApi.apiKey | quote }}
+{{- else if .Values.filesApi.existingSecret }}
+- name: AQUEDUCT_FILES_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filesApi.existingSecret }}
+      key: {{ .Values.filesApi.secretKeys.apiKey }}
 {{- end }}
 {{- if .Values.tika.enabled }}
 - name: TIKA_SERVER_URL

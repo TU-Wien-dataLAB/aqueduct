@@ -51,7 +51,6 @@ async def image_generation(
             pydantic_model.get("model"),
             llm_provider=None,
         )
-    # update if it was None
     pydantic_model["response_format"] = response_format
 
     client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)

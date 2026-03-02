@@ -1,10 +1,8 @@
 import os
-import shutil
 from pathlib import Path
 from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
-from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TransactionTestCase, override_settings
@@ -37,9 +35,6 @@ with open(ROUTER_CONFIG_PATH) as f:
 
 User = get_user_model()
 
-TEST_FILES_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "files_root")
-os.makedirs(TEST_FILES_ROOT, exist_ok=True)
-
 
 def get_mock_router(model: str = "test-model"):
     router = MagicMock(spec=Router)
@@ -56,9 +51,9 @@ def get_mock_router(model: str = "test-model"):
 
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     API_MAX_RETRIES=5,  # for some reason the OpenAI API fails with 503 sometimes...
+    AQUEDUCT_FILES_API_URL="https://api.openai.com",
 )
 class GatewayIntegrationTestCase(TransactionTestCase):
     """
@@ -107,18 +102,20 @@ class GatewayIntegrationTestCase(TransactionTestCase):
 
 
 @override_settings(
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     API_MAX_RETRIES=5,
+    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
+    AQUEDUCT_FILES_API_URL="https://api.openai.com",
+    AQUEDUCT_FILES_API_KEY=os.environ.get("OPENAI_API_KEY"),
 )
-class GatewayFilesTestCase(TransactionTestCase):
+class GatewayFilesTestCase(GatewayIntegrationTestCase):
     # Load default fixture (includes test Token) and set test access token
     fixtures = ["gateway_data.json"]
-    AQUEDUCT_ACCESS_TOKEN = GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        cls._write_router_config()
         # Prepare auth headers for file API
         headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
         # Remove Content-Type header to allow multipart file upload
@@ -126,42 +123,39 @@ class GatewayFilesTestCase(TransactionTestCase):
         cls.headers = headers
         cls.url_files = reverse("gateway:files")
 
+    def setUp(self):
+        super().setUp()
+        # Clear the cached client so it picks up the test settings (override_settings)
+        from gateway.config import get_files_api_client
+
+        get_files_api_client.cache_clear()
+
     def tearDown(self):
+        # Clear the cached client so it doesn't affect other tests
+        from gateway.config import get_files_api_client
+
+        get_files_api_client.cache_clear()
         super().tearDown()
-        # Clean up the file storage directory after each test
-        if os.path.exists(TEST_FILES_ROOT):
-            shutil.rmtree(TEST_FILES_ROOT)
-            os.makedirs(TEST_FILES_ROOT, exist_ok=True)
 
 
 @override_settings(
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_BATCH_PROCESSING_CONCURRENCY=lambda: 2,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-    MAX_USER_BATCHES=3,
-    AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES=3 / 60,
-    AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS=2,
+    MAX_USER_BATCHES=10,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    AQUEDUCT_FILES_API_URL="https://api.openai.com",
+    AQUEDUCT_FILES_API_KEY="test_key",
+    AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB=1000000,  # Limit set high to avoid conflicts
 )
 class GatewayBatchesTestCase(GatewayIntegrationTestCase):
-    def tearDown(self):
-        super().tearDown()
-        # Clean up the file storage directory after each test
-        if os.path.exists(TEST_FILES_ROOT):
-            shutil.rmtree(TEST_FILES_ROOT)
-            os.makedirs(TEST_FILES_ROOT, exist_ok=True)
-
-    @staticmethod
-    def run_batch_processing_loop():
-        from gateway.views.batches import run_batch_processing
-
-        async_to_sync(run_batch_processing)()
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.headers.pop("Content-Type", None)
 
 
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
 )
 class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
@@ -185,7 +179,6 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
 
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    AQUEDUCT_FILES_API_ROOT=TEST_FILES_ROOT,
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     TOS_ENABLED=True,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},

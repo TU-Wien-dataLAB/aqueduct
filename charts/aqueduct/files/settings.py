@@ -9,6 +9,7 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
+
 import logging
 import os
 import sys
@@ -99,8 +100,12 @@ LOGIN_URL = "/login/"  # Where to redirect if user is not logged in
 MAX_USER_TOKENS = 3
 MAX_SERVICE_ACCOUNTS_PER_TEAM = 10
 
-MAX_USER_BATCHES = 3
-MAX_TEAM_BATCHES = 10
+MAX_USER_BATCHES = int(os.environ.get("MAX_USER_BATCHES", 10))
+MAX_TEAM_BATCHES = int(os.environ.get("MAX_TEAM_BATCHES", 25))
+
+MAX_USER_VECTOR_STORES = int(os.environ.get("MAX_USER_VECTOR_STORES", 10))
+MAX_TEAM_VECTOR_STORES = int(os.environ.get("MAX_TEAM_VECTOR_STORES", 50))
+MAX_VECTOR_STORE_FILES = int(os.environ.get("MAX_VECTOR_STORE_FILES", 1000))
 
 OIDC_PROVIDER = "SSO"
 
@@ -135,52 +140,30 @@ LITELLM_ROUTER_CONFIG_FILE_PATH = os.environ.get("LITELLM_ROUTER_CONFIG_FILE_PAT
 AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST: list[str] = []
 AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST: list[str] = []
 
-AQUEDUCT_FILES_API_ROOT = os.environ.get("AQUEDUCT_FILES_API_ROOT", "/tmp")
+# External Files/Batches API endpoint (required)
+AQUEDUCT_FILES_API_URL = os.environ.get("AQUEDUCT_FILES_API_URL")
+AQUEDUCT_FILES_API_KEY = os.environ.get("AQUEDUCT_FILES_API_KEY", None)
+
 AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB", 8))
-AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 32))
+AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB = int(
+    os.environ.get("AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB", 32)
+)
 AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB = int(
     os.environ.get("AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB", 1024)
 )
 AQUEDUCT_FILES_API_EXPIRY_DAYS = int(os.environ.get("AQUEDUCT_FILES_API_EXPIRY_DAYS", 7))
-AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB = int(os.environ.get("AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB", 10))
+AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB = int(
+    os.environ.get("AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB", 10)
+)
 AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB = int(
     os.environ.get("AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB", 32)
 )
 # This variable is in bytes, unlike the Aqueduct-specific size limits!
-DATA_UPLOAD_MAX_MEMORY_SIZE = max(
-    AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB, AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB,
-) * 1024 * 1024
-
-AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES = int(
-    os.environ.get("AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES", 15)
+DATA_UPLOAD_MAX_MEMORY_SIZE = (
+    max(AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB, AQUEDUCT_CHAT_COMPLETIONS_MAX_TOTAL_SIZE_MB)
+    * 1024
+    * 1024
 )
-assert AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES > 10
-AQUEDUCT_BATCH_PROCESSING_CRONTAB = crontab(minute=f"*/{AQUEDUCT_BATCH_PROCESSING_RUNTIME_MINUTES}")
-AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS = int(
-    os.environ.get("AQUEDUCT_BATCH_PROCESSING_TIMEOUT_SECONDS", 5 * 60)
-)
-AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS = int(
-    os.environ.get("AQUEDUCT_BATCH_PROCESSING_RELOAD_INTERVAL_SECONDS", 30)
-)
-
-AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY = os.environ.get(
-    "AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY", 16
-)
-AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY = os.environ.get(
-    "AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY", 4
-)
-
-
-def batch_processing_concurrency():
-    """Is called when starting a batch processing run and returns the size of the concurrency queue,
-    so how many requests run in parallel."""
-    dt = datetime.now()
-    min_c = AQUEDUCT_BATCH_PROCESSING_MIN_CONCURRENCY
-    max_c = AQUEDUCT_BATCH_PROCESSING_MAX_CONCURRENCY
-    return max_c if dt.hour > 20 or dt.hour < 5 else min_c
-
-
-AQUEDUCT_BATCH_PROCESSING_CONCURRENCY = batch_processing_concurrency
 
 TIKA_SERVER_URL = os.environ.get("TIKA_SERVER_URL", "http://localhost:9998")
 
@@ -197,9 +180,13 @@ MCP_ALLOWED_ORIGINS = os.getenv(
     "MCP_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:*"
 ).split(",")
 
-RESPONSES_API_TTL_SECONDS = int(os.getenv("RESPONSES_API_TTL_SECONDS", f"{60 * 60 * 24 * 30}")) # 30-day default
+RESPONSES_API_TTL_SECONDS = int(
+    os.getenv("RESPONSES_API_TTL_SECONDS", f"{60 * 60 * 24 * 30}")
+)  # 30-day default
 RESPONSES_API_ALLOWED_NATIVE_TOOLS = os.getenv("RESPONSES_API_ALLOWED_NATIVE_TOOLS", "").split(",")
-RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS = os.getenv("RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS", "False").lower() == "true"
+RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS = (
+    os.getenv("RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS", "False").lower() == "true"
+)
 
 API_MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "0"))
 
@@ -236,10 +223,6 @@ CELERY_BEAT_SCHEDULE = {
     "delete-expired-files-and-batches": {
         "task": "aqueduct.celery.delete_expired_files_and_batches",
         "schedule": crontab.from_string(REQUEST_RETENTION_SCHEDULE),
-    },
-    "process-batches": {
-        "task": "aqueduct.celery.process_batches",
-        "schedule": AQUEDUCT_BATCH_PROCESSING_CRONTAB,
     },
 }
 
@@ -326,11 +309,7 @@ CACHES = {
 }
 
 if TESTING:
-    CACHES = {
-        "default": {
-            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        }
-    }
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

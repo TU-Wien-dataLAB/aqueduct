@@ -1,0 +1,204 @@
+{% extends "management/base.html" %}
+{% load static %}
+
+{% block title %}{{ vector_store.name|default:"Vector Store Detail" }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto p-6">
+    {% if vector_store %}
+        {# Breadcrumb navigation #}
+        <div class="breadcrumbs mb-4 text-sm">
+            <ul>
+                <li><a href="{% url 'vector_stores' %}">Vector Stores</a></li>
+                <li class="font-semibold">{{ vector_store.name }}</li>
+            </ul>
+        </div>
+
+        {# Header with back link #}
+        <div class="mb-6">
+            <div class="flex items-center justify-between mb-2">
+                <a href="{% url 'vector_stores' %}" class="btn btn-sm btn-ghost">
+                    ← Back to Vector Stores
+                </a>
+                <form method="post" action="{% url 'vector_store_detail_refresh' id=vector_store.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-soft btn-primary gap-1"
+                            title="Sync from upstream API">
+                        <img src="{% static 'icons/sync.svg' %}" alt="Sync"
+                             class="h-4 w-4 [[data-theme=dark]_&]:invert">
+                        Refresh
+                    </button>
+                </form>
+            </div>
+            <div class="flex items-start gap-4">
+                <img src="{% static 'icons/vector_store.svg' %}" alt="Vector Store" 
+                     class="h-12 w-12 object-contain [[data-theme=dark]_&]:invert">
+                <div>
+                    <h1 class="text-3xl font-bold">{{ vector_store.name }}</h1>
+                    <p class="text-xs text-base-content/50 font-mono">{{ vector_store.id }}</p>
+                    <div class="mt-2">
+                        {% if vector_store.status == 'completed' %}
+                            <span class="badge badge-success">{{ vector_store.status }}</span>
+                        {% elif vector_store.status == 'in_progress' %}
+                            <span class="badge badge-warning">{{ vector_store.status }}</span>
+                        {% elif vector_store.status == 'expired' %}
+                            <span class="badge badge-error">{{ vector_store.status }}</span>
+                        {% else %}
+                            <span class="badge badge-ghost">{{ vector_store.status }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# Stats cards #}
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="stat bg-base-100 border border-base-300 rounded-lg p-4">
+                <div class="stat-title text-sm">Files</div>
+                <div class="stat-value text-2xl">{{ files|length }}<span class="text-base-content/50 text-lg">/{{ files_limit }}</span></div>
+            </div>
+            <div class="stat bg-base-100 border border-base-300 rounded-lg p-4">
+                <div class="stat-title text-sm">Batches</div>
+                <div class="stat-value text-2xl">{{ batches|length }}</div>
+            </div>
+            <div class="stat bg-base-100 border border-base-300 rounded-lg p-4">
+                <div class="stat-title text-sm">Size</div>
+                <div class="stat-value text-2xl">{{ vector_store.size_bytes|filesizeformat }}</div>
+            </div>
+            <div class="stat bg-base-100 border border-base-300 rounded-lg p-4">
+                <div class="stat-title text-sm">Created</div>
+                <div class="stat-value text-lg">{{ vector_store.created_dt|date:"Y-m-d H:i" }}</div>
+            </div>
+        </div>
+
+        {# Files section #}
+        <div class="mb-8">
+            <h2 class="text-2xl font-bold mb-4">Files</h2>
+            {% if files %}
+                <div class="overflow-x-auto bg-base-100 border border-base-300 rounded-lg">
+                    <table class="table table-sm w-full">
+                        <thead>
+                            <tr class="bg-base-200">
+                                <th>ID</th>
+                                <th>Filename</th>
+                                <th>Status</th>
+                                <th>Size</th>
+                                <th>Added</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for vf in files %}
+                                <tr>
+                                    <td class="font-mono text-xs">{{ vf.id }}</td>
+                                    <td class="max-w-xs truncate" title="{{ vf.file_obj.filename }}">
+                                        {{ vf.file_obj.filename }}
+                                    </td>
+                                    <td>
+                                        {% if vf.status == 'completed' %}
+                                            <span class="badge badge-success badge-sm">{{ vf.status }}</span>
+                                        {% elif vf.status == 'in_progress' %}
+                                            <span class="badge badge-warning badge-sm">{{ vf.status }}</span>
+                                        {% elif vf.status == 'failed' %}
+                                            <span class="badge badge-error badge-sm">{{ vf.status }}</span>
+                                        {% elif vf.status == 'cancelled' %}
+                                            <span class="badge badge-ghost badge-sm">{{ vf.status }}</span>
+                                        {% else %}
+                                            <span class="badge badge-sm">{{ vf.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ vf.usage_bytes|filesizeformat }}</td>
+                                    <td>{{ vf.created_dt|date:"Y-m-d H:i" }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
+                         class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
+                    <span>No files in this vector store.</span>
+                </div>
+            {% endif %}
+        </div>
+
+        {# Batches section #}
+        <div>
+            <h2 class="text-2xl font-bold mb-4">File Batches</h2>
+            {% if batches %}
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {% for batch in batches %}
+                        <div class="card bg-base-100 border border-base-300">
+                            <div class="card-body p-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-mono text-xs text-base-content/50">{{ batch.id }}</span>
+                                    {% if batch.status == 'completed' %}
+                                        <span class="badge badge-success badge-sm">{{ batch.status }}</span>
+                                    {% elif batch.status == 'in_progress' %}
+                                        <span class="badge badge-warning badge-sm">{{ batch.status }}</span>
+                                    {% elif batch.status == 'failed' %}
+                                        <span class="badge badge-error badge-sm">{{ batch.status }}</span>
+                                    {% elif batch.status == 'cancelled' %}
+                                        <span class="badge badge-ghost badge-sm">{{ batch.status }}</span>
+                                    {% else %}
+                                        <span class="badge badge-sm">{{ batch.status }}</span>
+                                    {% endif %}
+                                </div>
+                                
+                                {# Linear progress bar #}
+                                <div class="mb-3">
+                                    <div class="flex justify-between text-sm mb-1">
+                                        <span class="text-base-content/70">Progress</span>
+                                        <span class="font-semibold">{{ batch.progress_pct }}%</span>
+                                    </div>
+                                    <div class="w-full bg-base-300 rounded-full h-2">
+                                        <div class="bg-primary h-2 rounded-full transition-all duration-300" 
+                                             style="width: {{ batch.progress_pct }}%"></div>
+                                    </div>
+                                </div>
+
+                                {# File counts breakdown #}
+                                <div class="grid grid-cols-3 gap-2 text-center text-sm">
+                                    <div class="bg-success/10 rounded p-2">
+                                        <p class="text-success font-semibold">{{ batch.completed_files }}</p>
+                                        <p class="text-xs text-base-content/50">Completed</p>
+                                    </div>
+                                    <div class="bg-error/10 rounded p-2">
+                                        <p class="text-error font-semibold">{{ batch.failed_files }}</p>
+                                        <p class="text-xs text-base-content/50">Failed</p>
+                                    </div>
+                                    <div class="bg-warning/10 rounded p-2">
+                                        <p class="text-warning font-semibold">{{ batch.in_progress_files }}</p>
+                                        <p class="text-xs text-base-content/50">In Progress</p>
+                                    </div>
+                                </div>
+
+                                <div class="mt-3 text-xs text-base-content/50">
+                                    Created: {{ batch.created_dt|date:"Y-m-d H:i" }}
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
+                         class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
+                    <span>No batches for this vector store.</span>
+                </div>
+            {% endif %}
+        </div>
+    {% else %}
+        <div class="alert alert-error">
+            <img src="{% static 'icons/error.svg' %}" alt="Error Icon"
+                 class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
+            <span>Vector store not found or you do not have access.</span>
+        </div>
+        <div class="mt-4">
+            <a href="{% url 'vector_stores' %}" class="btn btn-primary">
+                Back to Vector Stores
+            </a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

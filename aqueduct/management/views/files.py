@@ -27,8 +27,6 @@ class UserFilesView(BaseAqueductView, TemplateView):
 
         for f in files:
             f.created_dt = datetime.fromtimestamp(f.created_at)
-            # file preview (first lines)
-            f.preview = f.preview()
 
         context["files"] = files
         return context

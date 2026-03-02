@@ -69,7 +69,7 @@ class TOSTestCase(TOSGatewayTestCase):
         # Verify the response contains an error message about TOS
         response_json = response.json()
         self.assertIn("error", response_json)
-        self.assertIn("terms of service", response_json["error"].lower())
+        self.assertIn("terms of service", response_json["error"]["message"].lower())
 
     def test_tos_user_skip(self):
         """Tests that admin users are skipped in the decorator check."""

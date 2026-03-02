@@ -33,8 +33,8 @@ from .utils import _get_token_usage, _openai_stream
 @parse_body(model=TypeAdapter(openai.types.chat.CompletionCreateParams))
 @process_file_content
 @ensure_usage
-@log_request
 @resolve_alias
+@log_request
 @check_model_availability
 @catch_router_exceptions
 async def chat_completions(

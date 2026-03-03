@@ -29,8 +29,8 @@ log = logging.getLogger("aqueduct")
 @token_authenticated(token_auth_only=True)
 @check_limits
 @parse_body(model=TypeAdapter(ImageGenerateParams, config=ConfigDict(extra="forbid")))
-@log_request
 @resolve_alias
+@log_request
 @check_model_availability
 @catch_router_exceptions
 async def image_generation(

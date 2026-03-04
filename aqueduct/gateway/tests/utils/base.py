@@ -1,11 +1,12 @@
 import os
 from pathlib import Path
 from typing import Literal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import TransactionTestCase, override_settings
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from litellm import Router
 from litellm.types.llms.openai import HttpxBinaryResponseContent
@@ -19,7 +20,9 @@ from litellm.types.utils import (
 from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers
+from gateway.tests.utils.test_runner import get_shared_mock_server
 from management.models import Org, Token, UserProfile
+from mock_api.mock_server import MockAPIServer
 
 INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
     "INTEGRATION_TEST_BACKEND", "openai"
@@ -52,12 +55,12 @@ def get_mock_router(model: str = "test-model"):
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-    API_MAX_RETRIES=5,  # for some reason the OpenAI API fails with 503 sometimes...
+    API_MAX_RETRIES=1,  # for some reason, in a few tests the 1st request to the mock API fails (503)
     AQUEDUCT_FILES_API_URL="https://api.openai.com",
 )
-class GatewayIntegrationTestCase(TransactionTestCase):
+class GatewayIntegrationTestCase(TestCase):
     """
-    Integration tests using the embedded RemoteOpenAIServer (with httpx).
+    Integration tests for gateway endpoints, using the mock OpenAI server.
     """
 
     model = "gpt-4.1-nano"
@@ -67,23 +70,38 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     AQUEDUCT_ACCESS_TOKEN = "sk-123abc"
 
     fixtures = ["gateway_data.json"]
-
-    @classmethod
-    def _write_router_config(cls):
-        os.makedirs(os.path.dirname(ROUTER_CONFIG_PATH), exist_ok=True)
-        with open(ROUTER_CONFIG_PATH, "w") as f:
-            f.write(ROUTER_CONFIG)
+    mock_server: MockAPIServer = None
 
     @classmethod
     def setUpClass(cls):
-        cls._write_router_config()
         super().setUpClass()
-        if INTEGRATION_TEST_BACKEND == "openai":
+        if INTEGRATION_TEST_BACKEND == "openai" and not settings.TESTS_USE_MOCK_API:
+            # When running tests against the real OpenAI API, the API key has to be set
             if not os.environ.get("OPENAI_API_KEY"):
                 raise RuntimeError(
                     "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
                 )
+
+        if settings.TESTS_USE_MOCK_API:
+            # Mock all requests to the external OpenAI API
+            cls.mock_server = get_shared_mock_server()
+            # OpenAI's AsyncClient first tries to get the base url and API key from the router
+            # config, and only falls back to env variables if they are not set there.
+            # The patching is not strictly necessary if the router config defines these values,
+            # but it's here as a safety measure.
+            cls._patcher = patch.dict(
+                "os.environ",
+                {"OPENAI_BASE_URL": cls.mock_server.base_url, "OPENAI_API_KEY": "fake_openai_key"},
+            )
+            cls._patcher.start()
+
         cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
+
+    @classmethod
+    def tearDownClass(cls):
+        if hasattr(cls, "_patcher") and cls._patcher:
+            cls._patcher.stop()
+        super().tearDownClass()
 
     @staticmethod
     def create_new_user() -> tuple[str, int]:
@@ -102,20 +120,13 @@ class GatewayIntegrationTestCase(TransactionTestCase):
 
 
 @override_settings(
-    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    API_MAX_RETRIES=5,
-    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     AQUEDUCT_FILES_API_URL="https://api.openai.com",
     AQUEDUCT_FILES_API_KEY=os.environ.get("OPENAI_API_KEY"),
 )
 class GatewayFilesTestCase(GatewayIntegrationTestCase):
-    # Load default fixture (includes test Token) and set test access token
-    fixtures = ["gateway_data.json"]
-
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls._write_router_config()
         # Prepare auth headers for file API
         headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
         # Remove Content-Type header to allow multipart file upload
@@ -139,8 +150,6 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
 
 
 @override_settings(
-    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     MAX_USER_BATCHES=10,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
     AQUEDUCT_FILES_API_URL="https://api.openai.com",
@@ -154,10 +163,6 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
         cls.headers.pop("Content-Type", None)
 
 
-@override_settings(
-    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-)
 class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
     tts_model = "gpt-4o-mini-tts"
@@ -177,12 +182,7 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
         cls.url_stt = reverse("gateway:transcriptions")
 
 
-@override_settings(
-    AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
-    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-    TOS_ENABLED=True,
-    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
-)
+@override_settings(TOS_ENABLED=True)
 class TOSGatewayTestCase(GatewayIntegrationTestCase):
     fixtures = ["gateway_data.json"]
 

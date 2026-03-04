@@ -37,6 +37,9 @@ TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split()
 
+TEST_RUNNER = "gateway.tests.utils.test_runner.MockServerTestRunner"
+TESTS_USE_MOCK_API = os.getenv("TESTS_USE_MOCK_API", "True").lower() == "true"
+
 # Application definition
 
 INSTALLED_APPS = [

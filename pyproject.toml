@@ -31,6 +31,7 @@ vllm = [
 [dependency-groups]
 dev = [
     "channels[daphne]>=4.3.1",
+    "fastapi>=0.115.12",
     "pre-commit>=4.2.0",
     "ruff>=0.13.3",
     "tbump>=6.11.0",
@@ -49,7 +50,7 @@ docstring-code-format = true
 skip-magic-trailing-comma = true
 
 [tool.ruff.lint.isort]
-known-first-party = ["aqueduct", "gateway", "management"]
+known-first-party = ["aqueduct", "gateway", "management", "mock_api"]
 
 [tool.ruff.lint.per-file-ignores]
 # Ignore `F401` (imported but unused) in all `__init__.py` files

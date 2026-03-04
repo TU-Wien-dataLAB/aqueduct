@@ -24,10 +24,10 @@ async def _read_streaming_response_lines(response) -> List[str]:
     async for chunk in response.streaming_content:
         if isinstance(chunk, bytes):
             chunk = chunk.decode("utf-8")
-        for line in chunk.splitlines():
+        for line in chunk.strip().splitlines():
             line = line.strip()
             if line.startswith("data: "):
-                data = line[len("data: ") :]
+                data = line.removeprefix("data: ")
                 if data == "[DONE]":
                     continue
                 streamed_lines.append(data)

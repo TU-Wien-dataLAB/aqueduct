@@ -9,9 +9,12 @@ from asgiref.sync import sync_to_async
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
+from openai.types import ImagesResponse
 from openai.types.audio import Transcription
 
+from gateway.tests.utils.base import get_mock_router
 from gateway.tests.utils.mcp import MCPLiveServerTestCase
+from management.models import Request
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
@@ -82,9 +85,6 @@ class TestUserId(MCPLiveServerTestCase):
         self.assertEqual(req.user_id, user_id)
 
     def test_completions_with_user_id(self):
-        from gateway.tests.utils.base import get_mock_router
-        from management.models import Request
-
         url = reverse("gateway:completions")
         user_id = "testuser"
         payload = {"model": self.model, "prompt": "Hello", "user_id": user_id}
@@ -98,9 +98,6 @@ class TestUserId(MCPLiveServerTestCase):
         self.assertEqual(req.user_id, user_id)
 
     def test_chat_completions_with_user_id(self):
-        from gateway.tests.utils.base import get_mock_router
-        from management.models import Request
-
         url = reverse("gateway:chat_completions")
         user_id = "testuser"
         messages = [
@@ -124,9 +121,6 @@ class TestUserId(MCPLiveServerTestCase):
         self.assertEqual(req.user_id, user_id)
 
     def test_embeddings_with_user_id(self):
-        from gateway.tests.utils.base import get_mock_router
-        from management.models import Request
-
         url = reverse("gateway:embeddings")
         user_id = "testuser"
         payload = {
@@ -146,8 +140,6 @@ class TestUserId(MCPLiveServerTestCase):
 
     @patch("gateway.views.files.get_files_api_client")
     def test_file_upload_with_user_id(self, mock_get_files_client):
-        from management.models import Request
-
         # Setup mock for file upload
         mock_remote_file = MagicMock()
         mock_remote_file.id = "file-mock-remote-123"
@@ -170,8 +162,6 @@ class TestUserId(MCPLiveServerTestCase):
         self.assertEqual(req.user_id, user_id)
 
     def test_image_generation_with_user_id(self):
-        from management.models import Request
-
         url = reverse("gateway:image_generation")
         user_id = "testuser"
         img_model = "dall-e-2"
@@ -183,15 +173,10 @@ class TestUserId(MCPLiveServerTestCase):
             "user_id": user_id,
         }
 
-        with patch("gateway.views.utils.get_openai_client") as mock_client:
-            mock_openai_client = AsyncMock()
+        mock_client = AsyncMock()
+        mock_client.images.generate.return_value = ImagesResponse(created=12345)
 
-            mock_retrieve_response = MagicMock()
-            mock_retrieve_response.model_dump.return_value = {}
-            mock_openai_client.images.generate.return_value = mock_retrieve_response
-
-            mock_client.return_value = mock_openai_client
-
+        with patch("gateway.views.utils.get_openai_client", return_value=mock_client):
             resp = self.client.post(
                 url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
             )
@@ -201,8 +186,6 @@ class TestUserId(MCPLiveServerTestCase):
         self.assertEqual(req.user_id, user_id)
 
     async def test_mcp_with_user_id_in_body(self):
-        from management.models import Request
-
         user_id = "testuser"
         payload = {
             "jsonrpc": "2.0",
@@ -227,9 +210,6 @@ class TestUserId(MCPLiveServerTestCase):
         self.assertEqual(req.user_id, user_id)
 
     def test_speech_with_user_id_in_body(self):
-        from gateway.tests.utils.base import get_mock_router
-        from management.models import Request
-
         url = reverse("gateway:speech")
         user_id = "testuser"
 
@@ -251,19 +231,16 @@ class TestUserId(MCPLiveServerTestCase):
         self.assertEqual(req.user_id, user_id)
 
     def test_transcriptions_with_user_id_in_body(self):
-        from management.models import Request
-
         url = reverse("gateway:transcriptions")
         user_id = "testuser"
         file = SimpleUploadedFile("test.oga", b"", content_type="audio/ogg")
 
-        with patch("gateway.views.utils.get_openai_client") as mock_client:
-            mock_openai_client = AsyncMock()
-            mock_openai_client.audio.transcriptions.create.return_value = Transcription(
-                text="How much is the fish?"
-            )
-            mock_client.return_value = mock_openai_client
+        mock_client = AsyncMock()
+        mock_client.audio.transcriptions.create.return_value = Transcription(
+            text="How much is the fish?"
+        )
 
+        with patch("gateway.views.utils.get_openai_client", return_value=mock_client):
             resp = self.client.post(
                 url,
                 {"file": file, "model": "whisper-1", "user_id": user_id},
@@ -275,9 +252,6 @@ class TestUserId(MCPLiveServerTestCase):
         self.assertEqual(req.user_id, user_id)
 
     def test_valid_user_id_values(self):
-        from gateway.tests.utils.base import get_mock_router
-        from management.models import Request
-
         url = reverse("gateway:completions")
         user_ids = [
             42,  # int will be converted to str

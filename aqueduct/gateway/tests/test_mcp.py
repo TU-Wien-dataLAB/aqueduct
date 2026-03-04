@@ -56,7 +56,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
         async with self.client_session() as session:
             await session.initialize()
             tool_name = "longRunningOperation"
-            result = await session.call_tool(tool_name, {"duration": 3, "steps": 5})
+            result = await session.call_tool(tool_name, {"duration": 0.1, "steps": 5})
 
             self.assertIsNotNone(result)
             self.assertIsInstance(result.content, list)
@@ -248,7 +248,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             await session.initialize()
             tool_name = "longRunningOperation"
             result = await session.call_tool(
-                tool_name, {"duration": 2, "steps": 3}, progress_callback=progress_callback
+                tool_name, {"duration": 0.5, "steps": 3}, progress_callback=progress_callback
             )
 
             self.assertIsNotNone(result)

@@ -2,6 +2,7 @@ import json
 from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -13,7 +14,7 @@ from openai.types.vector_stores import VectorStoreFile, VectorStoreFileBatch, Ve
 from openai.types.vector_stores.vector_store_file_batch import FileCounts
 
 from gateway.tests.utils.base import GatewayFilesTestCase
-from management.models import FileObject, Token
+from management.models import FileObject, ServiceAccount, Team, Token
 from management.models import VectorStore as VectorStoreModel
 from management.models import VectorStoreFile as VectorStoreFileModel
 from management.models import VectorStoreFileBatch as VectorStoreFileBatchModel
@@ -725,6 +726,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertIn("file_counts", data)
         self.assertEqual(data["file_counts"]["total"], 2)
 
+    @override_settings(MAX_VECTOR_STORE_FILES=10)
     @patch("gateway.views.vector_store_files.get_files_api_client")
     def test_max_vector_store_files_limit(self, mock_get_client):
         """Test that MAX_VECTOR_STORE_FILES limit is enforced when adding files."""
@@ -737,7 +739,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
 
         # Create MAX_VECTOR_STORE_FILES files (set to 100 in settings)
         file_objs = []
-        for i in range(100):
+        for i in range(10):
             file_obj = self._create_file_object(f"file-mock-{i}")
             file_objs.append(file_obj)
 
@@ -1235,11 +1237,6 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
     @patch("gateway.views.files.get_files_api_client")
     def test_service_account_file_operations(self, mock_get_client):
         """Test that the files API works with service account tokens."""
-        from django.core.files.uploadedfile import SimpleUploadedFile
-
-        from gateway.tests.utils.base import GatewayIntegrationTestCase
-        from management.models import ServiceAccount, Team
-
         mock_client = MagicMock()
 
         async def mock_file_create(*args, **kwargs):
@@ -1301,9 +1298,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         team = Team.objects.get(name="Whale")
         service_account = ServiceAccount.objects.create(team=team, name="Test Service Account")
 
-        token = Token.objects.get(
-            key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
-        )
+        token = Token.objects.get(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
         token.service_account = service_account
         token.save()
 

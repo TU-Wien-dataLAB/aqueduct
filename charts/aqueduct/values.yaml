@@ -84,6 +84,17 @@ routerConfig: { }
 # MCP configuration
 mcpConfig: { }
 
+# Files API configuration (external API for file upload and batch processing)
+filesApi:
+  # External API URL (required) - used for both Files and Batches API
+  url: ""  # e.g., "https://api.openai.com"
+  # API key for external endpoint
+  apiKey: ""
+  # Or use existing secret
+  existingSecret: ""
+  secretKeys:
+    apiKey: ""
+
 service:
   type: ClusterIP
   port: 8000
@@ -129,10 +140,4 @@ tika:
   enabled: true
 
 
-# PVC for files API root
-persistence:
-  files:
-    enabled: true
-    mountPath: /var/lib/aqueduct/files
-    size: 10Gi
-    storageClass: null
+

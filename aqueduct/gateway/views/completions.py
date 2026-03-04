@@ -31,8 +31,8 @@ from .utils import _get_token_usage, _openai_stream
 @check_limits
 @parse_body(model=TypeAdapter(openai.types.CompletionCreateParams))
 @ensure_usage
-@log_request
 @resolve_alias
+@log_request
 @check_model_availability
 @catch_router_exceptions
 async def completions(

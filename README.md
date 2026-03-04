@@ -28,7 +28,7 @@ We aim to achieve this by:
 
 For more information, please read the [Documentation](https://tu-wien-datalab.github.io/aqueduct/).
 
-If you don’t need user self-service, take a look at [Envoy AI Gateway](https://aigateway.envoyproxy.io) instead!
+If you don't need user self-service, take a look at [Envoy AI Gateway](https://aigateway.envoyproxy.io) instead!
 
 ![AI Gateway Architecture](./docs/assets/screenshot.png "AI Gateway Architecture")
 
@@ -102,66 +102,67 @@ flowchart TB
     subgraph Gateway["Gateway (Django)"]
         Auth[Authentication &<br/>Authorization]
         Middleware[Request Processing<br/>Rate Limits / Access Control / Logging]
-        
+
         API[OpenAI-Compatible API<br/>Chat Completions / Embeddings<br/>Files / Batches <br/>TTS / STT / Image Generation]
         MCPProxy[MCP Proxy]
-        
+
         LiteLLM[LiteLLM Router]
-        
+
         Admin[Management UI<br/>Token Creation / Usage Dashboard<br/>User Management]:::mgmtStyle
     end
-    
+
     subgraph Config["Configuration Files"]
         RouterConfig[router_config.yaml]
         MCPConfig[mcp.json]
     end
-    
+
     subgraph Storage["Storage & Workers"]
         DB[(PostgreSQL)]
-        FileStorage[File Storage<br/>Directory]
         Cache[(Redis)]
         Workers[Celery / Tika]
     end
-    
+
     subgraph External["External Services"]
         Models[AI Model Providers]
+        FilesBatches[Files/Batches API]
         MCP[MCP Servers]
     end
 
     OAIClients -->|API Requests| Auth
     MCPClients -->|MCP Protocol| Auth
-    
+
     Auth --> Middleware
     Middleware --> API
     Middleware --> MCPProxy
-    
+
     API --> LiteLLM
     LiteLLM --> Models
-    
+
+    API <-->|Files / Batches| FilesBatches
+
     MCPProxy --> MCP
-    
+
     RouterConfig -.->|Configure| LiteLLM
     MCPConfig -.->|Configure| MCPProxy
-    
+
     Admin -.->|View Usage| DB
     Middleware -.->|Log Usage| DB
-    
-    API -.->|Store/Read Files| FileStorage
-    API -.->|Queue Batch Jobs| Workers
+
+    API -.->|Queue Jobs| Workers
     Workers -.-> Cache
-    
+
     classDef clientStyle fill:#e1f5ff,stroke:#01579b,stroke-width:2px
     classDef gatewayStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
     classDef mgmtStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     classDef configStyle fill:#fff9c4,stroke:#f57f17,stroke-width:2px
     classDef storageStyle fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
     classDef externalStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    
+
     class Client,OAIClients,MCPClients clientStyle
     class Gateway,Auth,Middleware,API,MCPProxy,LiteLLM gatewayStyle
     class Config,RouterConfig,MCPConfig configStyle
-    class Storage,DB,FileStorage,Cache,Workers storageStyle
-    class External,Models,MCP externalStyle
+    class Storage,DB,Cache,Workers storageStyle
+    class External,Models,FilesBatches,MCP externalStyle
 ```
 
 ### Core Features
@@ -182,7 +183,7 @@ flowchart TB
 - Chat completions with file content support
 - Embeddings generation
 - Batch API for high-throughput workloads
-- File upload and processing
+- File upload and processing (via upstream Files API)
 - Audio speech synthesis and transcription
 - Image generation
 

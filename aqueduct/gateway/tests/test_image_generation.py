@@ -141,7 +141,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
-        self.assertIn("Invalid 'prompt': empty string", response.json()["error"])
+        self.assertIn("Invalid 'prompt': empty string", response.json()["error"]["message"])
 
     def test_image_generation_endpoint_with_multiple_images(self):
         """Test image generation endpoint with multiple images (n parameter)."""
@@ -218,7 +218,9 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
-        self.assertIn("Aqueduct does not support image streaming.", response.json()["error"])
+        self.assertIn(
+            "Aqueduct does not support image streaming.", response.json()["error"]["message"]
+        )
 
     def test_image_generation_with_extra_fields_in_body(self):
         """Extra fields in the request body are not allowed."""
@@ -233,4 +235,4 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
-        self.assertIn("Extra inputs are not permitted", response.json()["error"])
+        self.assertIn("Extra inputs are not permitted", response.json()["error"]["message"])

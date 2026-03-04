@@ -28,6 +28,7 @@ from gateway.views.decorators import (
     token_authenticated,
     tos_accepted,
 )
+from gateway.views.errors import error_response
 
 log = logging.getLogger("aqueduct")
 
@@ -518,17 +519,15 @@ def _validate_session(
 ) -> JsonResponse | None:
     if not session:
         log.warning(f"Session {session_id} not found for MCP server '{name}'")
-        return JsonResponse({"error": "Session not found"}, status=404)
+        return error_response("Session not found", status=404)
     if session.terminated:
         log.warning(f"Session {session_id} is terminated for MCP server '{name}'")
-        return JsonResponse({"error": "Session terminated"}, status=410)
+        return error_response("Session terminated", status=410)
     if not session.is_ready():
         log.warning(
             f"Session {session_id} not ready for MCP server '{name}' (state: {session.state.value})"
         )
-        return JsonResponse(
-            {"error": f"Session not ready (state: {session.state.value})"}, status=503
-        )
+        return error_response(f"Session not ready (state: {session.state.value})", status=503)
 
     return None
 
@@ -627,7 +626,7 @@ async def handle_post_request(
     await _ensure_session_manager_started()
 
     if json_rpc_message is None:
-        return JsonResponse({"error": "Missing JSON-RPC message"}, status=400)
+        return error_response("Missing JSON-RPC message", status=400)
 
     message_type = json_rpc_message.root.__class__.__name__
     log.info(f"MCP POST {name} - Session: {session_id}, Method: {message_type}")
@@ -642,7 +641,7 @@ async def handle_post_request(
             log.info(f"Session {session_id} initialized")
         except (KeyError, RuntimeError) as e:
             log.error(f"MCP server '{name}' not found: {str(e)}")
-            return JsonResponse({"error": f"MCP server '{name}' not found: {str(e)}"}, status=404)
+            return error_response(f"MCP server '{name}' not found: {str(e)}", status=404)
 
     session = await session_manager.get_session_with_retry(session_id)
 
@@ -676,8 +675,8 @@ async def handle_post_request(
     except (ClosedResourceError, httpx.HTTPStatusError, MCPSessionError) as e:
         # Transport errors should be converted to JSON-RPC errors
         log.error(f"Transport error for MCP server '{name}': {str(e)}")
-        error_response = parse_session_message(e, request_id, session_id, json=False)
-        response = JsonResponse(error_response, status=200)  # 200 for JSON-RPC errors
+        session_error_response = parse_session_message(e, request_id, session_id, json=False)
+        response = JsonResponse(session_error_response, status=200)  # 200 for JSON-RPC errors
     finally:
         if operation_registered:
             session.register_operation_done()

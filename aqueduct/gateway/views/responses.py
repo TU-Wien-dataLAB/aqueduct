@@ -38,8 +38,8 @@ from .utils import (
 @check_limits
 @parse_body(model=TypeAdapter(openai.types.responses.ResponseCreateParams))
 @tos_accepted
-@log_request
 @resolve_alias
+@log_request
 @check_model_availability
 @check_tool_availability
 @catch_router_exceptions

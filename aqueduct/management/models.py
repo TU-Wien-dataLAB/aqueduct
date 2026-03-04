@@ -1,14 +1,9 @@
 # models.py
 import dataclasses
 import hashlib
-import json
 import logging
 import secrets
-import threading
-import uuid
-from collections import deque
-from pathlib import Path
-from typing import Any, Callable, Dict, Literal, Optional
+from typing import Callable, Literal, Optional
 
 import openai.types
 from django.conf import settings
@@ -21,6 +16,18 @@ from django.utils import timezone
 from gateway.config import resolve_model_alias
 
 log = logging.getLogger("aqueduct")
+
+
+# ── Legacy ID generators ──────────────────────────────────────────────
+# These are referenced by historical migrations (0004, 0005) and must remain
+# importable from management.models.  They are no longer used at runtime;
+# migration 0008_file_proxy removes the defaults that depend on them.
+def generate_file_id() -> str:
+    return f"file-{secrets.token_hex(12)}"
+
+
+def generate_batch_id() -> str:
+    return f"batch-{secrets.token_hex(12)}"
 
 
 @dataclasses.dataclass(frozen=True)  # frozen=True makes instances immutable
@@ -713,27 +720,14 @@ class Request(models.Model):
         return f"{self.id}"
 
 
-def generate_file_id() -> str:
-    """Generate a new FileObject primary key with a 'file-' prefix."""
-    return f"file-{uuid.uuid4().hex}"
-
-
-def generate_batch_id() -> str:
-    """Generate a new Batch primary key with a 'batch-' prefix."""
-    return f"batch-{uuid.uuid4().hex}"
-
-
 class FileObject(models.Model):
     """
     Mirrors the structure of OpenAI's FileObject type, excluding deprecated fields.
     """
 
-    FILES_ROOT = Path(settings.AQUEDUCT_FILES_API_ROOT).absolute()
-
     id = models.CharField(
         max_length=100,
         primary_key=True,
-        default=generate_file_id,
         editable=False,
         help_text="The file identifier, which can be referenced in the API endpoints.",
     )
@@ -767,6 +761,14 @@ class FileObject(models.Model):
         related_name="files",
     )
 
+    preview = models.TextField(
+        blank=True, default="", help_text="Preview of file content (first 10 lines for JSONL files)"
+    )
+
+    upstream_url = models.URLField(
+        blank=True, default="", help_text="The upstream API URL this file was uploaded to"
+    )
+
     class Meta:
         verbose_name = "File Object"
         verbose_name_plural = "File Objects"
@@ -784,92 +786,74 @@ class FileObject(models.Model):
             status="processed",
         )
 
-    def path(self) -> Path:
-        """Get the file system path for this file."""
-        subdir = (
-            str(self.token.service_account.team.id)
-            if self.token.service_account
-            else str(self.token.user.id)
-        )
-        return self.FILES_ROOT / subdir / self.id
+    async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
+        """
+        Delete the file from the upstream API.
 
-    def read(self) -> bytes:
-        """Read the file contents."""
-        path = self.path()
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns False.
+
+        Returns:
+            True on success.
+            False on failure (only if raise_on_error=False).
+        """
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
         try:
-            with path.open("rb") as f:
-                return f.read()
-        except FileNotFoundError:
-            raise ObjectDoesNotExist(f"File not found at {path}")
+            await client.files.delete(self.id)
+            return True
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to delete file {self.id} from upstream: {e}")
+            return False
 
-    def write(self, data: bytes):
-        """Write the file contents."""
-        path = self.path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("wb") as f:
-            f.write(data)
-        # Update stored size
-        self.bytes = len(data)
-        self.save(update_fields=["bytes"])
+    async def areload_from_upstream(
+        self, client=None, raise_on_error=True
+    ) -> Optional[openai.types.FileObject]:
+        """
+        Fetch current state from upstream and update local DB fields.
 
-    def append(self, data: bytes):
-        """Append content to the file."""
-        # Ensure directory exists and append bytes, creating file if needed
-        path = self.path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("ab") as f:
-            f.write(data)
-        # Update stored size
-        self.bytes = path.stat().st_size
-        self.save(update_fields=["bytes"])
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns None.
 
-    def delete_file(self):
-        """Delete the file."""
-        path = self.path()
+        Returns:
+            The upstream response object on success, or None on failure.
+        """
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
         try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
+            remote = await client.files.retrieve(self.id)
+            self.purpose = remote.purpose
+            self.expires_at = remote.expires_at
+            await self.asave()
+            return remote
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload file {self.id} from upstream: {e}")
+            return None
 
-    def delete(self, using=None, keep_parents=False):
-        """Override ORM delete to also remove the file from disk."""
-        # Remove the physical file first
-        try:
-            self.delete_file()
-        except Exception:
-            # Ignore errors deleting the file
-            pass
-        # Then delete the database record
+    def delete(self, using=None, keep_parents=False, delete_upstream=False):
+        """
+        Override ORM delete - files are stored upstream, so we only delete the local DB record.
+
+        Args:
+            delete_upstream: If True, also delete from upstream API before local delete.
+        """
+        if delete_upstream:
+            import asyncio
+
+            asyncio.run(self.adelete_upstream())
         super().delete(using=using, keep_parents=keep_parents)
-
-    def __fspath__(self):
-        return self.path()
-
-    def lines(self) -> list[str]:
-        """Get the number of lines in the file."""
-        try:
-            return self.read().decode("utf-8").splitlines()
-        except ObjectDoesNotExist:
-            return ["File not found..."]
-
-    def num_lines(self) -> int:
-        def _make_gen(reader):
-            while True:
-                b = reader(2**16)
-                if not b:
-                    break
-                yield b
-
-        try:
-            with open(self.path(), "rb") as f:
-                count = sum(buf.count(b"\n") for buf in _make_gen(f.raw.read))
-            return count
-        except FileNotFoundError:
-            return 0
-
-    def preview(self, num_lines: int = 15) -> str:
-        """Get the preview of the file."""
-        return "\n".join(self.lines()[:num_lines])
 
     def __str__(self):
         return self.id
@@ -896,11 +880,7 @@ class Batch(models.Model):
     """
 
     id = models.CharField(
-        max_length=100,
-        primary_key=True,
-        editable=False,
-        default=generate_batch_id,
-        help_text="The batch identifier.",
+        max_length=100, primary_key=True, editable=False, help_text="The batch identifier."
     )
     completion_window = models.CharField(
         max_length=100, help_text="The time frame within which the batch should be processed."
@@ -916,6 +896,22 @@ class Batch(models.Model):
         on_delete=models.CASCADE,
         related_name="batches",
         help_text="The input file for the batch.",
+    )
+    output_file = models.ForeignKey(
+        FileObject,
+        on_delete=models.SET_NULL,
+        related_name="output_batches",
+        null=True,
+        blank=True,
+        help_text="The output file for the batch (set when batch completes).",
+    )
+    error_file = models.ForeignKey(
+        FileObject,
+        on_delete=models.SET_NULL,
+        related_name="error_batches",
+        null=True,
+        blank=True,
+        help_text="The error file for the batch (set when batch completes with errors).",
     )
     status = models.CharField(
         max_length=20, choices=BatchStatus.choices, help_text="The current status of the batch."
@@ -935,15 +931,6 @@ class Batch(models.Model):
         blank=True,
         help_text="The Unix timestamp (in seconds) for when the batch was completed.",
     )
-    error_file = models.ForeignKey(
-        FileObject,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="batch_error_files",
-        help_text="The file containing the outputs of requests with errors.",
-    )
-    errors = JSONField(null=True, blank=True, help_text="List of errors for the batch.")
     expired_at = models.PositiveIntegerField(
         null=True,
         blank=True,
@@ -970,20 +957,21 @@ class Batch(models.Model):
         help_text="The Unix timestamp (in seconds) for when the batch started processing.",
     )
     metadata = JSONField(null=True, blank=True, help_text="Metadata attached to the batch.")
-    output_file = models.ForeignKey(
-        FileObject,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="batch_output_files",
-        help_text="The file containing the outputs of successfully executed requests.",
-    )
     # {"input": 0, "total": 0, "completed": 0, "failed": 0 }
     request_counts = JSONField(
         default=default_request_counts,
         null=True,
         blank=True,
         help_text="The request counts for different statuses within the batch.",
+    )
+
+    token = models.ForeignKey(
+        Token,
+        on_delete=models.CASCADE,
+        related_name="batches",
+        null=True,
+        blank=True,
+        help_text="The token (API key) that created this batch.",
     )
 
     class Meta:
@@ -1003,15 +991,15 @@ class Batch(models.Model):
             cancelled_at=self.cancelled_at,
             cancelling_at=self.cancelling_at,
             completed_at=self.completed_at,
-            error_file_id=self.error_file_id,
-            errors=self.errors,
+            error_file_id=self.error_file_id if self.error_file else None,
+            errors=None,
             expired_at=self.expired_at,
             expires_at=self.expires_at,
             failed_at=self.failed_at,
             finalizing_at=self.finalizing_at,
             in_progress_at=self.in_progress_at,
             metadata=self.metadata,
-            output_file_id=self.output_file_id,
+            output_file_id=self.output_file_id if self.output_file else None,
             request_counts=openai.types.BatchRequestCounts(
                 total=self.request_counts.get("total", 0),
                 completed=self.request_counts.get("completed", 0),
@@ -1019,100 +1007,444 @@ class Batch(models.Model):
             ),
         )
 
+    async def areload_from_upstream(
+        self, client=None, raise_on_error=True
+    ) -> Optional[openai.types.Batch]:
+        """
+        Fetch current state from upstream and update local DB fields.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns None.
+
+        Returns:
+            The upstream response object on success, or None on failure.
+        """
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            remote = await client.batches.retrieve(self.id)
+            self.status = remote.status
+            if remote.request_counts:
+                self.request_counts = remote.request_counts.model_dump()
+            self.completed_at = remote.completed_at
+            self.failed_at = remote.failed_at
+            self.cancelled_at = remote.cancelled_at
+            self.cancelling_at = remote.cancelling_at
+            self.expired_at = remote.expired_at
+            self.in_progress_at = remote.in_progress_at
+            self.finalizing_at = remote.finalizing_at
+            await self.asave()
+            return remote
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload batch {self.id} from upstream: {e}")
+            return None
+
     def delete(self, using=None, keep_parents=False):
         """
-        Override delete to also remove associated batch files (input, error, output).
+        Override delete - files are stored upstream, so we only delete the local DB record.
         """
-        for file_obj in (self.input_file, self.error_file, self.output_file):
-            try:
-                if file_obj:
-                    file_obj.delete()
-            except Exception:
-                # Ignore errors deleting file records and physical files
-                pass
         super().delete(using=using, keep_parents=keep_parents)
 
-    def input_file_lines(self) -> deque[str]:
+
+class VectorStoreStatus(models.TextChoices):
+    """Vector store status choices matching OpenAI's API."""
+
+    EXPIRED = "expired", "expired"
+    IN_PROGRESS = "in_progress", "in_progress"
+    COMPLETED = "completed", "completed"
+
+
+class VectorStore(models.Model):
+    """
+    Mirrors the structure of OpenAI's VectorStore type.
+    Stores metadata for vector stores with upstream relay.
+    """
+
+    id = models.CharField(
+        max_length=100, primary_key=True, editable=False, help_text="The vector store identifier."
+    )
+    token = models.ForeignKey(Token, on_delete=models.CASCADE, related_name="vector_stores")
+    name = models.CharField(max_length=255, help_text="The name of the vector store.")
+    expires_after = models.JSONField(
+        null=True, blank=True, help_text="Expiration policy for the vector store."
+    )
+    chunking_strategy = models.JSONField(
+        null=True, blank=True, help_text="Chunking configuration for the vector store."
+    )
+    metadata = models.JSONField(
+        null=True, blank=True, help_text="Custom metadata for the vector store."
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=VectorStoreStatus.choices,
+        default=VectorStoreStatus.IN_PROGRESS,
+        help_text="The current status of the vector store.",
+    )
+    usage_bytes = models.BigIntegerField(
+        default=0, help_text="The total number of bytes used by the vector store."
+    )
+    created_at = models.PositiveIntegerField(
+        help_text="The Unix timestamp (in seconds) for when the vector store was created."
+    )
+    last_active_at = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The Unix timestamp (in seconds) for when the vector store was last active.",
+    )
+    upstream_url = models.URLField(
+        blank=True, default="", help_text="The upstream API URL this vector store was created on"
+    )
+
+    class Meta:
+        verbose_name = "Vector Store"
+        verbose_name_plural = "Vector Stores"
+
+    async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
         """
-        Iterate over the input JSONL file, skipping lines already processed.
-        Yields parsed JSON dict or None for invalid lines.
+        Delete the vector store from the upstream API.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns False.
+
+        Returns:
+            True on success.
+            False on failure (only if raise_on_error=False).
         """
-        # Read all lines from the input file
-        raw: list[str] = self.input_file.lines()
-        # Determine how many requests have been counted so far
-        total = (self.request_counts or {}).get("total", 0)
-        return deque(raw[total:])
+        from gateway.config import get_files_api_client
 
-    # Use a threading lock to guard append operations in synchronous context
-    append_lock = threading.Lock()
+        if client is None:
+            client = get_files_api_client()
 
-    def append(self, result: Dict[str, Any], error: bool = False):
-        with self.append_lock:
-            log.info(f"Appending result to batch: {self.id}")
-            self.refresh_from_db(fields=["request_counts", "status", "output_file", "error_file"])
-            counts = self.request_counts or {}
-            if error:
-                self._append_error(result)
-                counts["total"] = counts.get("total", 0) + 1
-                counts["failed"] = counts.get("failed", 0) + 1
-            else:
-                self._append_output(result)
-                counts["total"] = counts.get("total", 0) + 1
-                counts["completed"] = counts.get("completed", 0) + 1
+        try:
+            await client.vector_stores.delete(self.id)
+            return True
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to delete vector store {self.id} from upstream: {e}")
+            return False
 
-            if counts["total"] == counts.get("input", 0):
-                now_ts = int(timezone.now().timestamp())
-                self.completed_at = now_ts
-                self.status = BatchStatus.COMPLETED
-
-            self.request_counts = counts
-            self.save(update_fields=["request_counts", "status"])
-
-    def _append_output(self, result: Dict[str, Any]):
+    async def areload_from_upstream(
+        self, client=None, raise_on_error=True
+    ) -> Optional[openai.types.VectorStore]:
         """
-        Append a result JSON object as a new line to the output file.
-        Creates the output FileObject if not already present.
+        Fetch current state from upstream and update local DB fields.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns None.
+
+        Returns:
+            The upstream response object on success, or None on failure.
         """
-        # Prepare line data
-        line = json.dumps(result, separators=(",", ":")).encode("utf-8") + b"\n"
-        # Ensure output_file exists
-        if not self.output_file:
-            now_ts = int(timezone.now().timestamp())
-            filename = f"{self.id}-output.jsonl"
-            file_obj = FileObject(
-                token=self.input_file.token,
-                bytes=0,
-                filename=filename,
-                created_at=now_ts,
-                purpose="batch_output",
-                expires_at=self.expires_at,
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            remote = await client.vector_stores.retrieve(self.id)
+            self.status = remote.status or self.status
+            self.usage_bytes = getattr(remote, "usage_bytes", self.usage_bytes)
+            self.last_active_at = int(timezone.now().timestamp())
+            await self.asave()
+            await self.async_file_statuses(client)
+            return remote
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload vector store {self.id} from upstream: {e}")
+            return None
+
+    async def async_file_statuses(self, client=None) -> tuple[int, int]:
+        """
+        Sync all VectorStoreFile statuses from upstream by listing files.
+        """
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            remote_files_response = await client.vector_stores.files.list(vector_store_id=self.id)
+            remote_files = (
+                remote_files_response.data if hasattr(remote_files_response, "data") else []
             )
-            file_obj.save()
-            self.output_file = file_obj
-            self.save(update_fields=["output_file"])
-        # Append to file
-        self.output_file.append(line)
+        except Exception as e:
+            log.warning(f"Failed to list files for vector store {self.id} from upstream: {e}")
+            return 0, 0
 
-    def _append_error(self, error_result: Dict[str, Any]):
+        success = 0
+        failed = 0
+
+        for remote_file in remote_files:
+            try:
+                local_file = await VectorStoreFile.objects.aget(
+                    id=remote_file.id, vector_store=self
+                )
+                local_file.status = remote_file.status or local_file.status
+                local_file.usage_bytes = remote_file.usage_bytes
+                if hasattr(remote_file, "last_error") and remote_file.last_error:
+                    local_file.last_error = remote_file.last_error
+                await local_file.asave()
+                success += 1
+            except VectorStoreFile.DoesNotExist:
+                log.debug(f"VectorStoreFile {remote_file.id} not found locally, skipping sync")
+            except Exception as e:
+                log.warning(f"Failed to sync VectorStoreFile {remote_file.id}: {e}")
+                failed += 1
+
+        return success, failed
+
+    def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
-        Append an error JSON object as a new line to the error file.
-        Creates the error FileObject if not already present.
+        Override ORM delete - vector stores are stored upstream, so we only delete the local DB record.
+
+        Args:
+            delete_upstream: If True, also delete from upstream API before local delete.
         """
-        line = json.dumps(error_result, separators=(",", ":")).encode("utf-8") + b"\n"
-        # Ensure error_file exists
-        if not self.error_file:
-            now_ts = int(timezone.now().timestamp())
-            filename = f"{self.id}-error.jsonl"
-            file_obj = FileObject(
-                token=self.input_file.token,
-                bytes=0,
-                filename=filename,
-                created_at=now_ts,
-                purpose="batch_output",
-                expires_at=self.expires_at,
+        if delete_upstream:
+            import asyncio
+
+            asyncio.run(self.adelete_upstream())
+        super().delete(using=using, keep_parents=keep_parents)
+
+
+class VectorStoreFileStatus(models.TextChoices):
+    """Vector store file processing status choices."""
+
+    IN_PROGRESS = "in_progress", "in_progress"
+    COMPLETED = "completed", "completed"
+    FAILED = "failed", "failed"
+    CANCELLED = "cancelled", "cancelled"
+
+
+class VectorStoreFile(models.Model):
+    """
+    Represents a file within a vector store.
+    This is NOT the same as FileObject - it's a join table that tracks
+    a FileObject's association with a specific VectorStore.
+    """
+
+    id = models.CharField(
+        max_length=100,
+        primary_key=True,
+        editable=False,
+        help_text="The vector store file identifier.",
+    )
+    vector_store = models.ForeignKey(VectorStore, on_delete=models.CASCADE, related_name="files")
+    file_obj = models.ForeignKey(
+        FileObject,
+        on_delete=models.CASCADE,
+        related_name="vector_store_files",
+        help_text="Reference to the actual file object.",
+    )
+    batch = models.ForeignKey(
+        "VectorStoreFileBatch",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="files",
+        help_text="The batch that created this file, if any.",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=VectorStoreFileStatus.choices,
+        default=VectorStoreFileStatus.IN_PROGRESS,
+        help_text="Processing status of the file in the vector store.",
+    )
+    last_error = models.JSONField(
+        null=True, blank=True, help_text="Error details if processing failed."
+    )
+    created_at = models.PositiveIntegerField(
+        help_text="The Unix timestamp (in seconds) for when the file was added to the vector store."
+    )
+    usage_bytes = models.BigIntegerField(
+        default=0,
+        help_text="Bytes used in vector store (may differ from original file after chunking).",
+    )
+
+    async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
+        """
+        Delete the vector store file from the upstream API.
+
+        Note: Callers should use select_related("vector_store") when fetching
+        VectorStoreFile instances to avoid extra queries.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns False.
+
+        Returns:
+            True on success.
+            False on failure (only if raise_on_error=False).
+        """
+        if not self.vector_store_id:
+            log.warning(f"Cannot delete vector store file {self.id}: vector_store not set")
+            if raise_on_error:
+                raise ValueError("Vector store not loaded")
+            return False
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            await client.vector_stores.files.delete(
+                vector_store_id=self.vector_store_id, file_id=self.id
             )
-            file_obj.save()
-            self.error_file = file_obj
-            self.save(update_fields=["error_file"])
-        # Append to file
-        self.error_file.append(line)
+            return True
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to delete vector store file {self.id} from upstream: {e}")
+            return False
+
+    async def areload_from_upstream(
+        self, client=None, raise_on_error=True
+    ) -> Optional["openai.types.vector_stores.VectorStoreFile"]:
+        """
+        Fetch current state from upstream and update local DB fields.
+
+        Note: Callers should use select_related("vector_store") when fetching
+        VectorStoreFile instances to avoid extra queries.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns None.
+
+        Returns:
+            The upstream response object on success, or None on failure.
+        """
+        if not self.vector_store_id:
+            if raise_on_error:
+                raise ValueError("Vector store not set")
+            log.warning(f"Cannot reload vector store file {self.id}: vector_store not set")
+            return None
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            remote = await client.vector_stores.files.retrieve(
+                vector_store_id=self.vector_store_id, file_id=self.id
+            )
+            self.status = remote.status or self.status
+            self.usage_bytes = remote.usage_bytes
+            if hasattr(remote, "last_error") and remote.last_error:
+                self.last_error = remote.last_error
+            await self.asave()
+            return remote
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload vector store file {self.id} from upstream: {e}")
+            return None
+
+    def delete(self, using=None, keep_parents=False, delete_upstream=False):
+        """
+        Override ORM delete.
+
+        Args:
+            delete_upstream: If True, also delete from upstream API before local delete.
+        """
+        if delete_upstream:
+            import asyncio
+
+            asyncio.run(self.adelete_upstream())
+        super().delete(using=using, keep_parents=keep_parents)
+
+    class Meta:
+        verbose_name = "Vector Store File"
+        verbose_name_plural = "Vector Store Files"
+
+
+class VectorStoreFileBatchStatus(models.TextChoices):
+    """Vector store file batch status choices."""
+
+    IN_PROGRESS = "in_progress", "in_progress"
+    COMPLETED = "completed", "completed"
+    FAILED = "failed", "failed"
+    CANCELLED = "cancelled", "cancelled"
+
+
+class VectorStoreFileBatch(models.Model):
+    """
+    Represents a batch operation for adding files to a vector store.
+    """
+
+    id = models.CharField(
+        max_length=100,
+        primary_key=True,
+        editable=False,
+        help_text="The vector store file batch identifier.",
+    )
+    vector_store = models.ForeignKey(
+        VectorStore, on_delete=models.CASCADE, related_name="file_batches"
+    )
+    file_counts = models.JSONField(
+        default=dict, help_text="Processing counts (completed/failed/total/cancelled/in_progress)."
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=VectorStoreFileBatchStatus.choices,
+        default=VectorStoreFileBatchStatus.IN_PROGRESS,
+        help_text="The current status of the batch.",
+    )
+    created_at = models.PositiveIntegerField(
+        help_text="The Unix timestamp (in seconds) for when the batch was created."
+    )
+
+    async def areload_from_upstream(
+        self, client=None, raise_on_error=True
+    ) -> Optional["openai.types.vector_stores.VectorStoreFileBatch"]:
+        """
+        Fetch current state from upstream and update local DB fields.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+            raise_on_error: If True, raises on failure; if False, logs and returns None.
+
+        Returns:
+            The upstream response object on success, or None on failure.
+        """
+        # Ensure vector_store is loaded
+        if not self.vector_store_id:
+            if raise_on_error:
+                raise ValueError("Vector store not set")
+            log.warning(f"Cannot reload vector store file batch {self.id}: vector_store not set")
+            return None
+
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        try:
+            remote = await client.vector_stores.file_batches.retrieve(
+                vector_store_id=self.vector_store_id, batch_id=self.id
+            )
+            self.status = remote.status or self.status
+            if hasattr(remote, "file_counts") and remote.file_counts:
+                self.file_counts = remote.file_counts.model_dump()
+            await self.asave()
+            return remote
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload vector store file batch {self.id} from upstream: {e}")
+            return None
+
+    class Meta:
+        verbose_name = "Vector Store File Batch"
+        verbose_name_plural = "Vector Store File Batches"

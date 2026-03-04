@@ -2,13 +2,14 @@ import base64
 import json
 from http import HTTPStatus
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from httpx import Request as HttpxRequest
 from httpx import Response
 from litellm.types.utils import ModelResponse, Usage
@@ -33,6 +34,54 @@ from management.models import Org, Request, ServiceAccount, Team, Token, UserPro
 from mock_api.mock_configs import MockConfig, MockStreamingConfig, convert_to_stream_data
 
 User = get_user_model()
+
+
+def create_mock_file_for_chat_completion(
+    id_suffix: str = "123",
+    filename: str = "test.jsonl",
+    purpose: str = "user_data",
+    bytes_size: int = 100,
+) -> MagicMock:
+    """Create a mock file object matching OpenAI's FileObject structure."""
+    mock_file = MagicMock()
+    mock_file.id = f"file-mock-{id_suffix}"
+    mock_file.filename = filename
+    mock_file.bytes = bytes_size
+    mock_file.purpose = purpose
+    mock_file.created_at = int(timezone.now().timestamp())
+    mock_file.expires_at = None
+    mock_file.status = "processed"
+    mock_file.model_dump = MagicMock(
+        return_value={
+            "id": mock_file.id,
+            "filename": mock_file.filename,
+            "bytes": mock_file.bytes,
+            "purpose": mock_file.purpose,
+            "created_at": mock_file.created_at,
+            "expires_at": mock_file.expires_at,
+            "status": mock_file.status,
+        }
+    )
+    return mock_file
+
+
+def create_mock_file_client_with_content(file_content: bytes):
+    """Create a fully mocked OpenAI client for files API with custom content."""
+    mock_client = MagicMock()
+    file_counter = [0]
+
+    async def mock_create(*args, **kwargs):
+        file_counter[0] += 1
+        return create_mock_file_for_chat_completion(id_suffix=str(file_counter[0]))
+
+    mock_client.files.create = AsyncMock(side_effect=mock_create)
+    mock_client.files.retrieve = AsyncMock(return_value=create_mock_file_for_chat_completion())
+
+    mock_content_response = MagicMock()
+    mock_content_response.content = file_content
+    mock_client.files.content = AsyncMock(return_value=mock_content_response)
+
+    return mock_client
 
 
 class EmbeddingTest(GatewayIntegrationTestCase):
@@ -246,13 +295,18 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             req.output_tokens, 0, "output_tokens should be > 0 for base64 file input"
         )
 
-    def test_chat_completion_file_id_input(self):
+    @patch("gateway.views.files.get_files_api_client")
+    @patch("gateway.views.decorators.get_files_api_client")
+    def test_chat_completion_file_id_input(self, mock_decorators_client, mock_files_client):
         """
         Sends a chat completion request with file_id input.
         Tests the file upload functionality using a file ID from the files API.
         """
-        # First, upload a file using the files API
         file_content = b'{"custom_id": "test_file_id_input"}\n'
+        mock_files_client.return_value = create_mock_file_client_with_content(file_content)
+        mock_decorators_client.return_value = create_mock_file_client_with_content(file_content)
+
+        # First, upload a file using the files API
         upload_file = SimpleUploadedFile(
             "test_file_id.jsonl", file_content, content_type="application/jsonl"
         )
@@ -357,13 +411,20 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             f"Expected 404 Not Found, got {response.status_code}: {response.content}",
         )
 
-    def test_chat_completion_file_id_different_user(self):
+    @patch("gateway.views.decorators.get_files_api_client")
+    @patch("gateway.views.files.get_files_api_client")
+    def test_chat_completion_file_id_different_user(
+        self, mock_files_client, mock_decorators_client
+    ):
         """
         Sends a chat completion request with a file_id that was created by a different user.
         Should raise a 404 error.
         """
-        # First, upload a file using the files API with the default user
         file_content = b'{"custom_id": "test_file_id_input"}\n'
+        mock_files_client.return_value = create_mock_file_client_with_content(file_content)
+        mock_decorators_client.return_value = create_mock_file_client_with_content(file_content)
+
+        # First, upload a file using the files API with the default user
         upload_file = SimpleUploadedFile(
             "test_file_id.jsonl", file_content, content_type="application/jsonl"
         )
@@ -569,7 +630,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             400,
             f"Expected 400, got {response.status_code}: {response.content}",
         )
-        self.assertIn("Tika error extracting text from file", response.json()["error"])
+        self.assertIn("Tika error extracting text from file", response.json()["error"]["message"])
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     def test_chat_completion_timeout(self):
@@ -1893,4 +1954,165 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
             response_uppercase.status_code,
             [400, 404],
             f"Wrong case alias 'Main' should fail, got {response_uppercase.status_code}",
+        )
+
+    def test_request_stores_resolved_model_name(self):
+        """
+        Test that when a request is made with an alias, the Request object
+        stored in the database has the actual model name, not the alias.
+        All endpoints are mocked to avoid real API calls.
+        """
+        from litellm.types.llms.openai import HttpxBinaryResponseContent
+        from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse
+
+        endpoints = [
+            {
+                "name": "chat_completions",
+                "path": "/chat/completions",
+                "alias": "main",
+                "resolved_model": "gpt-4.1-nano",
+                "payload": {
+                    "model": "main",
+                    "messages": [{"role": "user", "content": "Test"}],
+                    "max_tokens": 5,
+                },
+                "mock_target": "gateway.config.get_router",
+                "mock_attr": "acompletion",
+                "mock_return": ModelResponse(),
+            },
+            {
+                "name": "completions",
+                "path": "/completions",
+                "alias": "main",
+                "resolved_model": "gpt-4.1-nano",
+                "payload": {"model": "main", "prompt": "Test prompt", "max_tokens": 5},
+                "mock_target": "gateway.config.get_router",
+                "mock_attr": "atext_completion",
+                "mock_return": TextCompletionResponse(),
+            },
+            {
+                "name": "embeddings",
+                "path": "/embeddings",
+                "alias": "embedding",
+                "resolved_model": "text-embedding-ada-002",
+                "payload": {"model": "embedding", "input": ["Test input"]},
+                "mock_target": "gateway.config.get_router",
+                "mock_attr": "aembedding",
+                "mock_return": EmbeddingResponse(),
+            },
+            {
+                "name": "speech",
+                "path": "/audio/speech",
+                "alias": "tts",
+                "resolved_model": "gpt-4o-mini-tts",
+                "payload": {"model": "tts", "input": "Test", "voice": "alloy"},
+                "mock_target": "gateway.config.get_router",
+                "mock_attr": "aspeech",
+                "mock_return": HttpxBinaryResponseContent(response=MagicMock()),
+            },
+            {
+                "name": "image_generation",
+                "path": "/images/generations",
+                "alias": "image",
+                "resolved_model": "dall-e-2",
+                "payload": {"model": "image", "prompt": "Test image", "size": "256x256"},
+                "mock_target": "gateway.views.utils.get_openai_client",
+                "mock_attr": "images.generate",
+                "mock_return": ImagesResponse(
+                    data=[Image(b64_json="test", revised_prompt="test")], created=123456789
+                ),
+            },
+            {
+                "name": "transcriptions",
+                "path": "/audio/transcriptions",
+                "alias": "stt",
+                "resolved_model": "whisper-1",
+                "payload": None,
+                "mock_target": "gateway.views.utils.get_openai_client",
+                "mock_attr": "audio.transcriptions.create",
+                "mock_return": Transcription(text="Test transcription"),
+                "multipart": True,
+            },
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint["name"]):
+                Request.objects.all().delete()
+
+                with patch(endpoint["mock_target"]) as mock_factory:
+                    mock_instance = AsyncMock()
+
+                    if "." in endpoint["mock_attr"]:
+                        parts = endpoint["mock_attr"].split(".")
+                        obj = mock_instance
+                        for part in parts[:-1]:
+                            obj = getattr(obj, part)
+                        setattr(obj, parts[-1], AsyncMock(return_value=endpoint["mock_return"]))
+                    else:
+                        setattr(
+                            mock_instance,
+                            endpoint["mock_attr"],
+                            AsyncMock(return_value=endpoint["mock_return"]),
+                        )
+
+                    mock_factory.return_value = mock_instance
+
+                    if endpoint.get("multipart"):
+                        test_file = SimpleUploadedFile(
+                            "test.mp3", b"mock audio", content_type="audio/mp3"
+                        )
+                        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+                        headers.pop("Content-Type", None)
+                        response = self.client.post(
+                            endpoint["path"],
+                            {"file": test_file, "model": endpoint["alias"]},
+                            headers=headers,
+                        )
+                    else:
+                        response = self.client.post(
+                            endpoint["path"],
+                            data=json.dumps(endpoint["payload"]),
+                            headers=self.headers,
+                            content_type="application/json",
+                        )
+
+                    self.assertEqual(
+                        response.status_code,
+                        200,
+                        f"{endpoint['name']}: Expected 200, got {response.status_code}",
+                    )
+
+                    request_log = Request.objects.first()
+                    self.assertIsNotNone(
+                        request_log, f"{endpoint['name']}: Request should be logged"
+                    )
+                    self.assertEqual(
+                        request_log.model,
+                        endpoint["resolved_model"],
+                        f"{endpoint['name']}: Request model should be '{endpoint['resolved_model']}' "
+                        f"(resolved from alias '{endpoint['alias']}'), got '{request_log.model}'",
+                    )
+
+    def test_invalid_alias_returns_error_and_logs_request(self):
+        """
+        Test that requests with invalid aliases return appropriate error
+        and the request is logged with the unresolved model name.
+        """
+        messages = [{"role": "user", "content": "Test"}]
+        payload = {"model": "nonexistent-alias-xyz", "messages": messages, "max_tokens": 5}
+
+        response = self.client.post(
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        request_log = Request.objects.first()
+        self.assertIsNotNone(request_log, "Request should be logged even for invalid alias")
+        self.assertEqual(
+            request_log.model,
+            "nonexistent-alias-xyz",
+            "Invalid alias should be stored as-is since it cannot be resolved",
         )

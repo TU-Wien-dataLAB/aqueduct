@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 from celery import Celery
@@ -52,48 +53,47 @@ def delete_silk_models(self):
 @app.task(bind=True, ignore_result=True)
 def delete_expired_files_and_batches(self):
     """
-    Deletes expired FileObject and Batch records (and associated on-disk files) whose expires_at
-    timestamp is past.
-    """
-    from django.utils import timezone
+    Deletes expired FileObject and Batch records.
 
+    For files with a remote_id, attempts to delete the file from the upstream
+    provider before deleting the local database record. If upstream deletion
+    fails (e.g., file already deleted, network error), the local record is
+    still deleted to prevent infinite retry loops.
+    """
+    from gateway.config import get_files_api_client
     from management.models import Batch, FileObject
 
     now_ts = int(timezone.now().timestamp())
+    try:
+        client = get_files_api_client()
+        files_api_configured = True
+    except ValueError:
+        client = None
+        files_api_configured = False
+        print("Files API not configured - will skip upstream deletion")
+
     # Expired files
     files_qs = FileObject.objects.filter(expires_at__isnull=False, expires_at__lt=now_ts)
     files_list = list(files_qs)
     files_count = len(files_list)
+    upstream_deleted = 0
+
     for file_obj in files_list:
         try:
+            # Attempt upstream deletion first
+            if files_api_configured and client:
+                success = asyncio.run(file_obj.adelete_upstream(client, raise_on_error=False))
+                if success:
+                    upstream_deleted += 1
+            # Always delete local record
             file_obj.delete()
-        except Exception:
-            print(f"Failed to delete expired file {file_obj.id}")
-            pass
-    print(f"Deleted {files_count} expired files (expires before {now_ts}).")
+        except Exception as e:
+            print(f"Failed to delete expired file {file_obj.id}: {e}")
 
-    # Expired batches
+    print(f"Deleted {files_count} expired files ({upstream_deleted} from upstream).")
+
+    # Expired batches - just delete local records
+    # (batch resources are managed by the upstream provider)
     batches_qs = Batch.objects.filter(expires_at__isnull=False, expires_at__lt=now_ts)
-    batches_list = list(batches_qs)
-    batches_count = len(batches_list)
-    for batch_obj in batches_list:
-        try:
-            batch_obj.delete()
-        except Exception:
-            print(f"Failed to delete expired batch {batch_obj.id}")
-            pass
-    print(f"Deleted {batches_count} expired batches (expires before {now_ts}).")
-
-
-@app.task(bind=True, ignore_result=True)
-def process_batches(self):
-    """
-    Periodic task to process pending batches via run_batch_processing.
-    """
-    # Import here to avoid startup-time issues
-    import asyncio
-
-    from gateway.views.batches import run_batch_processing
-
-    # Execute the async batch runner
-    asyncio.run(run_batch_processing())
+    batches_count, _ = batches_qs.delete()
+    print(f"Deleted {batches_count} expired batches.")

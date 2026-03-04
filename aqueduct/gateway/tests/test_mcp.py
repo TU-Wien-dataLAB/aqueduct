@@ -427,7 +427,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             # Should return 421 for invalid Host header
             self.assertEqual(response.status_code, 421)
             self.assertIn("error", response.json())
-            self.assertIn("Invalid Host header", response.json()["error"])
+            self.assertIn("Invalid Host header", response.json()["error"]["message"])
 
         await self.assertRequestLogged(n=0)
 
@@ -454,7 +454,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             # Should return 403 for invalid Origin header
             self.assertEqual(response.status_code, 403)
             self.assertIn("error", response.json())
-            self.assertIn("Invalid Origin header", response.json()["error"])
+            self.assertIn("Invalid Origin header", response.json()["error"]["message"])
 
         await self.assertRequestLogged(0)
 
@@ -479,7 +479,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
 
             self.assertEqual(response.status_code, 415)
             self.assertIn("error", response.json())
-            self.assertIn("Unsupported Content-Type", response.json()["error"])
+            self.assertIn("Unsupported Content-Type", response.json()["error"]["message"])
 
         await self.assertRequestLogged(n=0)
 

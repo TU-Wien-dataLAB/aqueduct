@@ -29,8 +29,8 @@ log = logging.getLogger("aqueduct")
 @token_authenticated(token_auth_only=True)
 @check_limits
 @parse_body(model=TypeAdapter(ImageGenerateParams, config=ConfigDict(extra="forbid")))
-@log_request
 @resolve_alias
+@log_request
 @check_model_availability
 @catch_router_exceptions
 async def image_generation(
@@ -51,7 +51,6 @@ async def image_generation(
             pydantic_model.get("model"),
             llm_provider=None,
         )
-    # update if it was None
     pydantic_model["response_format"] = response_format
 
     client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)

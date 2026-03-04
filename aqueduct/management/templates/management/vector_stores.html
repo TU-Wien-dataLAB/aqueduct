@@ -1,0 +1,61 @@
+{% extends "management/base.html" %}
+{% load static %}
+
+{% block title %}Vector Stores{% endblock %}
+
+{% block content %}
+<div class="container mx-auto p-6">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold mb-2">Vector Stores</h1>
+        <p class="text-lg text-base-content/70">
+            Vector stores for file search and retrieval.
+        </p>
+    </div>
+
+    {# Personal vector stores section #}
+    <div class="mb-8">
+        <div class="flex items-baseline justify-between mb-4">
+            <h2 class="text-xl font-bold">Your Vector Stores</h2>
+            <span class="text-base text-base-content/70">{{ user_vector_store_count }}/{{ user_vector_store_limit }} used</span>
+        </div>
+
+        {% if user_vector_stores %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% for vs in user_vector_stores %}
+            {% include "management/_vector_store_card.html" %}
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-info shadow-lg">
+            <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
+                 class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
+            <span>No personal vector stores found.</span>
+        </div>
+        {% endif %}
+    </div>
+
+    {# Team vector stores sections #}
+    {% for section in team_sections %}
+    <div class="mb-8">
+        <div class="flex items-baseline justify-between mb-4">
+            <h2 class="text-xl font-bold">{{ section.team.name }}</h2>
+            <span class="text-base text-base-content/70">{{ section.count }}/{{ section.limit }} used</span>
+        </div>
+
+        {% if section.vector_stores %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% for vs in section.vector_stores %}
+            {% include "management/_vector_store_card.html" %}
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-info shadow-lg">
+            <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
+                 class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
+            <span>No vector stores for this team.</span>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

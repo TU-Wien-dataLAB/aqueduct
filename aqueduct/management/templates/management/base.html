@@ -22,6 +22,7 @@
                          class="alert
             {% if message.tags == 'success' %}alert-success
             {% elif message.tags == 'error' %}alert-error
+            {% elif message.tags == 'warning' %}alert-warning
             {% else %}alert-info
             {% endif %}
             shadow-lg">
@@ -32,6 +33,9 @@
 
                         {% elif message.tags == 'error' %}
                             <img src="{% static 'icons/error.svg' %}" alt="Error Icon" class="h-6 w-6 shrink-0">
+
+                        {% elif message.tags == 'warning' %}
+                            <img src="{% static 'icons/warning.svg' %}" alt="Warning Icon" class="h-6 w-6 shrink-0">
 
                         {% else %} {# Info or default icon #}
                             <img src="{% static 'icons/info.svg' %}" alt="Info Icon" class="h-6 w-6 shrink-0">

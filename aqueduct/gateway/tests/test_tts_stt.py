@@ -75,7 +75,9 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         self.assertEqual(
             response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
         )
-        self.assertIn("There is no 'model_name' with this string", response.json()["error"])
+        self.assertIn(
+            "There is no 'model_name' with this string", response.json()["error"]["message"]
+        )
 
     def test_speech_endpoint_missing_required_fields(self):
         """Test speech endpoint with missing required fields."""
@@ -98,8 +100,7 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         self.assertEqual(
             response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
         )
-        self.assertIn("validation error for SpeechCreateParams", response.json()["error"])
-        self.assertIn("Field required", response.json()["error"])
+        self.assertIn("input: Field required", response.json()["error"]["message"])
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     def test_speech_endpoint_timeout(self):
@@ -195,8 +196,10 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
         self.assertEqual(
             response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
         )
-        self.assertIn("TranscriptionCreateParamsStreaming.file", response.json()["error"])
-        self.assertIn("Field required", response.json()["error"])
+        self.assertIn(
+            "TranscriptionCreateParamsStreaming: Field required",
+            response.json()["error"]["message"],
+        )
 
     def test_transcriptions_endpoint_with_language(self):
         """Test transcriptions endpoint with language parameter."""

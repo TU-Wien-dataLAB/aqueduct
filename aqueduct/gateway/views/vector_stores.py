@@ -225,7 +225,7 @@ async def vector_store(
                 f"Failed to retrieve vector store from upstream: {e!s}", error_type="server_error", status=502
             )
 
-    # DELETE /v1/vector_stores/{vector_store_id}
+    # DELETE /v1/vector_stores/{vector_store_id}  # noqa: ERA001
     try:
         await vs_obj.adelete_upstream(client)
     except Exception as e:

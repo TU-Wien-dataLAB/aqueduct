@@ -55,8 +55,6 @@ class TokenCreateView(BaseAqueductView, CreateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
-        # Don't set user here, it's done in form_valid
-        # form.instance.user = self.request.user
         return form
 
     @transaction.atomic
@@ -197,7 +195,6 @@ class TokenRegenerateView(BaseAqueductView, View):
             # Redirect to a default page if token not found
             redirect_url = reverse_lazy("tokens")
         except Exception as e:
-            # logger.error(f"Error regenerating token {token_id}: {e}", exc_info=True)
             messages.error(request, f"An unexpected error occurred while regenerating the token: {e}")
             # Try to determine redirect URL based on what we know, default if necessary
             try:

@@ -65,8 +65,9 @@ select = [
     "TRY",    # tryceratops
     "EM",     # flake8-errmsg
     "DTZ",    # flake8-datetimez
+    "ERA",    # flake8-eraduate commented-out code
 ]
-ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301"]
+ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -84,10 +85,13 @@ known-first-party = ["aqueduct", "gateway", "management"]
 # DJ012: Model ordering is a style preference, not critical for functionality
 "**/models.py" = ["DJ012"]
 # DJ001: null=True on Request.model with noqa comment - per-file ignore as fallback
-"**/management/models.py" = ["DJ001", "BLE001"]
+# ERA001: JSON structure example comment is useful documentation
+"**/management/models.py" = ["DJ001", "BLE001", "ERA"]
 # SIM117: Nested async with statements in tests - this pattern is correct and readable
-"**/tests/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001"]
-"**/tests/**/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "S607"]
+# PT: Using unittest-style assertions (self.assertEqual) in unittest test classes
+# FIX: TODO/FIXME comments are useful for tracking work
+"**/tests/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "PT", "FIX"]
+"**/tests/**/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "S607", "PT", "FIX"]
 # SIM105: suppress(Exception) may mask too much, prefer explicit error handling
 "**/management/*.py" = ["SIM105"]
 # SIM108: Ternary operator may reduce clarity for boolean logic with hasattr
@@ -97,8 +101,8 @@ known-first-party = ["aqueduct", "gateway", "management"]
 # RET504: Explicit return of form in view pattern is intentional
 "**/management/views/tokens.py" = ["RET504"]
 # Examples directory and debug scripts: exceptions allowed for code clarity
-"examples/*.py" = ["PTH", "SIM", "SIM115", "BLE001"]
-"file_id_debug.py" = ["PTH", "SIM", "SIM115"]
+"examples/*.py" = ["PTH", "SIM", "SIM115", "BLE001", "ERA"]
+"file_id_debug.py" = ["PTH", "SIM", "SIM115", "ERA"]
 # BLE001: Blind except is intentional in views to return proper error responses
 "**/views/*.py" = ["BLE001"]
 # Phase 3: Additional BLE001 ignores

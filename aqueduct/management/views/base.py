@@ -7,8 +7,6 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
 
-# from django.conf import settings # No longer needed in this file
-# Import your models (assuming they are in '..models')
 from ..models import Org, ServiceAccount, Team, UserProfile
 
 

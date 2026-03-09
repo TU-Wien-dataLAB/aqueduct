@@ -222,11 +222,10 @@ admin.site.register(User, UserAdmin)
 
 
 # Inline class for Membership
-class TeamMembershipInline(admin.TabularInline):  # or admin.StackedInline for a different layout
+class TeamMembershipInline(admin.TabularInline):
     model = TeamMembership
-    extra = 1  # How many empty rows to show for adding new members
-    # autocomplete_fields = ('user_profile',)  # Easier selection of users
-    fields = ("user_profile", "is_admin", "date_added")  # Fields to display in the inline
+    extra = 1
+    fields = ("user_profile", "is_admin", "date_added")
     readonly_fields = ("date_added",)  # Make date_joined read-only as it's auto-set
 
 

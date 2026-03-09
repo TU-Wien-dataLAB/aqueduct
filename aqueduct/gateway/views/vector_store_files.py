@@ -235,7 +235,7 @@ async def vector_store_file(
 
         return JsonResponse(response_data, status=200)
 
-    # DELETE /v1/vector_stores/{vector_store_id}/files/{file_id}
+    # DELETE /v1/vector_stores/{vector_store_id}/files/{file_id}  # noqa: ERA001
     try:
         await vs_file_obj.adelete_upstream(client)
     except Exception as e:

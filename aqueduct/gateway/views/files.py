@@ -260,7 +260,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
         response_data = remote_file.model_dump()
         return JsonResponse(response_data, status=200)
 
-    # DELETE /files/{file_id}
+    # DELETE /files/{file_id}  # noqa: ERA001
     try:
         await file_obj.adelete_upstream(client)
     except Exception as e:

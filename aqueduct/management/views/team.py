@@ -170,8 +170,6 @@ class TeamAdminManagementView(OrgAdminRequiredMixin, BaseTeamView, View):
             )
             return redirect(reverse("team", kwargs={"id": team.id}))
 
-        # membership, created = team.teammembership_set.get_or_create(user_profile=profile, team=team) # Old logic
-
         if action == "add":
             if membership.is_admin:
                 messages.info(request, f"{profile.user.email} is already a team admin.")
@@ -296,8 +294,6 @@ class TeamDetailView(BaseTeamView, DetailView):
                 # This message covers both not found and wrong org cases due to the filter.
                 messages.error(request, "User profile to add not found or not in this team's organization.")
             except Exception:
-                # Log the exception here for debugging
-                # logger.error(f"Error adding user to team {team.id}: {e}", exc_info=True)
                 messages.error(request, "An unexpected error occurred while adding the user.")
 
         # --- Action: Remove User ---
@@ -335,8 +331,6 @@ class TeamDetailView(BaseTeamView, DetailView):
                 # Covers not found or wrong org
                 messages.error(request, "User profile to remove not found or not in this team's organization.")
             except Exception:
-                # Log the exception here for debugging
-                # logger.error(f"Error removing user from team {team.id}: {e}", exc_info=True)
                 messages.error(request, "An unexpected error occurred while removing the user.")
 
         # --- No valid action ---

@@ -97,7 +97,6 @@ class ServiceAccountDeleteView(BaseServiceAccountView, DeleteView):
     Inherits SA/Team fetching and permission checks from BaseServiceAccountView.
     """
 
-    # model = ServiceAccount # Inherited from BaseServiceAccountView
     pk_url_kwarg = "service_account_id"  # Tell base view how to find the SA ID
     template_name = "management/common/confirm_delete.html"
     context_object_name = "object"  # Used by DeleteView template
@@ -145,9 +144,6 @@ class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
     Uses ServiceAccountForm for validation.
     """
 
-    # model = ServiceAccount # Inherited from BaseServiceAccountView
-    form_class = ServiceAccountForm
-    template_name = "management/edit/service_account.html"
     pk_url_kwarg = "service_account_id"  # Tell base view how to find the SA ID
     context_object_name = "service_account"  # Match template usage
 
@@ -320,11 +316,6 @@ class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
         except Token.DoesNotExist:
             messages.error(request, f"No token found for Service Account '{sa.name}'. Cannot transfer.")
         except Exception as e:
-            # Log error e
-            # logger.error(
-            #     f"Error transferring token for SA {sa.id} to profile {target_profile_id}: {e}",
-            #     exc_info=True,
-            # )
             messages.error(request, f"An unexpected error occurred during token transfer: {e}")
             # Consider redirecting back to form or team page depending on error
             return redirect(request.path)  # Redirect back to form on generic error

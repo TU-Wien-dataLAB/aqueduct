@@ -105,7 +105,6 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         response_json = response.json()
-        # print(f"\nEmbeddings response: {response_json}")
 
         # OpenAI-style embeddings response should have 'data' and 'embedding' fields
         self.assertIn("data", response_json)
@@ -176,8 +175,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
 
-        # print(f"\nChat completion response: {chat_completion}")
-
         self.assertIsNotNone(chat_completion)
         self.assertTrue(chat_completion.choices)
         self.assertIsInstance(chat_completion.choices, list)
@@ -188,9 +185,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsNotNone(first_choice.message)
         self.assertTrue(hasattr(first_choice.message, "content"))
         self.assertIsNotNone(first_choice.message.content)
-
-        # response_text = first_choice.message.content.strip()
-        # print(response_text)
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
@@ -628,7 +622,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         # Parse each chunk as JSON and collect content pieces
         content_pieces = _parse_streamed_content_pieces(streamed_lines)
         full_content = "".join(content_pieces).strip()
-        # print(f"Full streamed content: {full_content}")
         self.assertTrue(full_content, "Streamed content should not be empty.")
 
         # Check that the database contains one request and endpoint matches
@@ -748,7 +741,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 {"role": "system", "content": "You produce JSON output based on a schema."},
                 {"role": "user", "content": "Generate JSON matching the provided schema."},
             ],
-            # { "type": "json_schema", "json_schema": {...} }
             "response_format": {"type": "json_schema", "json_schema": {"name": "schema", "schema": json_schema}},
             "max_completion_tokens": 50,
         }
@@ -884,7 +876,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         response_json = response.json()
-        # print(f"\nList models response: {response_json}")
 
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
@@ -893,7 +884,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]
-        # print(f"Available model IDs: {model_ids}")
         self.assertIn(self.model, model_ids)
 
         # Check that the database contains one request and endpoint matches
@@ -938,7 +928,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         response_json = response.json()
-        # print(f"\nList models response: {response_json}")
 
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
@@ -946,7 +935,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]
-        # print(f"Available model IDs: {model_ids}")
         self.assertEqual(len(model_ids), len(model_list) - 1)
         self.assertNotIn(self.model, model_ids)
 

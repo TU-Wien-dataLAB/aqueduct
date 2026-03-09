@@ -123,7 +123,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
     try:
         client: openai.AsyncClient = get_openai_client(model)
     except ValueError:
-        log.error(f"Incompatible model '{model}'! Is model id set in router config?")
+        log.exception(f"Incompatible model '{model}'! Is model id set in router config?")
         raise openai.NotFoundError(
             message=f"Incompatible model '{model}'!",
             response=httpx.Response(
@@ -159,18 +159,17 @@ class ResponseRegistrationWrapper:
             else:
                 # Handle iterator-like objects
                 chunk = next(self.streaming_content)
-
+        except StopAsyncIteration:
+            raise
+        except StopIteration:
+            raise StopAsyncIteration from None
+        else:
             if not self._registered and chunk:
                 response_id = self.extract_response_id_from_chunk(chunk)
                 if response_id:
                     register_response_in_cache(response_id, self.model_name, self.user_email)
                     self._registered = True
-
             return chunk
-        except StopAsyncIteration:
-            raise
-        except StopIteration:
-            raise StopAsyncIteration from None
 
     @staticmethod
     def extract_response_id_from_chunk(chunk: bytes) -> str | None:

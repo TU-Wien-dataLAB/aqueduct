@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import ClassVar
 
 from django import forms
@@ -33,7 +33,7 @@ def format_unix_timestamp(timestamp: int | None) -> str:
     if timestamp is None:
         return "-"
     try:
-        dt = datetime.fromtimestamp(timestamp)
+        dt = datetime.fromtimestamp(timestamp, tz=UTC)
         return dt.strftime("%Y-%m-%d %H:%M:%S")
     except (ValueError, OSError):
         return str(timestamp)
@@ -171,9 +171,10 @@ def reload_from_upstream(modeladmin, request, queryset):
         async def reload_obj(obj):
             try:
                 await obj.areload_from_upstream(raise_on_error=True)
-                return None
             except Exception as e:
                 return str(e)
+            else:
+                return None
 
         results = await asyncio.gather(*[reload_obj(obj) for obj in objects])
         errors.extend(r for r in results if r)
@@ -526,28 +527,23 @@ class VectorStoreFileAdmin(admin.ModelAdmin):
 
     def delete_model(self, request, obj):
         """Delete from upstream API before deleting local record."""
-        try:
+        with suppress(Exception):
             client = get_files_api_client()
             asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
-        except Exception:
-            pass  # Continue even if upstream deletion fails
 
         # Now delete the local record
         super().delete_model(request, obj)
 
     def delete_queryset(self, request, queryset):
         """Delete from upstream API before deleting local records."""
-        try:
+        client = None
+        with suppress(ValueError):
             client = get_files_api_client()
-        except ValueError:
-            client = None
 
         if client:
             for obj in queryset:
-                try:
+                with suppress(Exception):
                     asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
-                except Exception:
-                    pass  # Continue even if upstream deletion fails
 
         # Now delete local records
         super().delete_queryset(request, queryset)

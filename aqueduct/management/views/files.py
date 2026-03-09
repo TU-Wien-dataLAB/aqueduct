@@ -1,3 +1,5 @@
+from datetime import UTC
+
 from django.db.models import Q
 from django.views.generic import TemplateView
 
@@ -26,7 +28,7 @@ class UserFilesView(BaseAqueductView, TemplateView):
         from datetime import datetime
 
         for f in files:
-            f.created_dt = datetime.fromtimestamp(f.created_at)
+            f.created_dt = datetime.fromtimestamp(f.created_at, tz=UTC)
 
         context["files"] = files
         return context

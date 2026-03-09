@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from asgiref.sync import async_to_sync
 from django.conf import settings
@@ -28,7 +28,7 @@ class UserVectorStoresView(BaseAqueductView, TemplateView):
         """Add computed fields to vector store instances for template rendering."""
         result = []
         for vs in vector_stores:
-            vs.created_dt = datetime.fromtimestamp(vs.created_at)
+            vs.created_dt = datetime.fromtimestamp(vs.created_at, tz=UTC)
             vs.files_count = vs.files.count()
             vs.batches_count = vs.file_batches.count()
             vs.size_bytes = sum(vf.file_obj.bytes for vf in vs.files.select_related("file_obj").all() if vf.file_obj)
@@ -94,15 +94,15 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
 
         if vector_store:
             # Convert timestamps to datetime
-            vector_store.created_dt = datetime.fromtimestamp(vector_store.created_at)
+            vector_store.created_dt = datetime.fromtimestamp(vector_store.created_at, tz=UTC)
             if vector_store.last_active_at:
-                vector_store.last_active_dt = datetime.fromtimestamp(vector_store.last_active_at)
+                vector_store.last_active_dt = datetime.fromtimestamp(vector_store.last_active_at, tz=UTC)
 
             # Prepare files with datetime conversion and calculate total size
             files = []
             total_size = 0
             for vf in vector_store.files.all():
-                vf.created_dt = datetime.fromtimestamp(vf.created_at)
+                vf.created_dt = datetime.fromtimestamp(vf.created_at, tz=UTC)
                 if vf.file_obj:
                     total_size += vf.file_obj.bytes
                 files.append(vf)
@@ -111,7 +111,7 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
             # Prepare batches with progress calculation
             batches = []
             for batch in vector_store.file_batches.all():
-                batch.created_dt = datetime.fromtimestamp(batch.created_at)
+                batch.created_dt = datetime.fromtimestamp(batch.created_at, tz=UTC)
                 file_counts = batch.file_counts or {}
                 total = file_counts.get("total", 0)
                 completed = file_counts.get("completed", 0)
@@ -149,10 +149,11 @@ def _refresh_vector_store(vs):
     """
     try:
         result = async_to_sync(vs.areload_from_upstream)(raise_on_error=False)
-        return result is not None
     except Exception:
         log.exception(f"Failed to refresh vector store {vs.id} from upstream")
         return False
+    else:
+        return result is not None
 
 
 class VectorStoreCardRefreshView(BaseAqueductView, View):

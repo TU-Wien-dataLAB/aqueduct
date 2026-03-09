@@ -58,7 +58,7 @@ async def image_generation(
         resp: ImagesResponse = await client.images.generate(**pydantic_model)
     except TypeError as err:
         # Sending extra fields in the data makes `AsyncImages.generate()` error out
-        log.error(err)
+        log.exception(err)
         raise BadRequestError(
             "Unexpected argument in request body", pydantic_model.get("model"), llm_provider=None
         ) from err

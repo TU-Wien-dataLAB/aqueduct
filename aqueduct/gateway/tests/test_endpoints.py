@@ -1209,7 +1209,12 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("gateway.config.Path") as mock_path_class,
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
+            mock_path_class.return_value.open.return_value.__enter__ = lambda self: self
+            mock_path_class.return_value.open.return_value.__exit__ = lambda self, *args: None
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()
@@ -1250,7 +1255,12 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("gateway.config.Path") as mock_path_class,
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
+            mock_path_class.return_value.open.return_value.__enter__ = lambda self: self
+            mock_path_class.return_value.open.return_value.__exit__ = lambda self, *args: None
             get_router_config.cache_clear()
 
             # Should raise RuntimeError due to duplicate aliases
@@ -1276,7 +1286,12 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("gateway.config.Path") as mock_path_class,
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
+            mock_path_class.return_value.open.return_value.__enter__ = lambda self: self
+            mock_path_class.return_value.open.return_value.__exit__ = lambda self, *args: None
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()
@@ -1316,7 +1331,12 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("gateway.config.Path") as mock_path_class,
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
+            mock_path_class.return_value.open.return_value.__enter__ = lambda self: self
+            mock_path_class.return_value.open.return_value.__exit__ = lambda self, *args: None
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()

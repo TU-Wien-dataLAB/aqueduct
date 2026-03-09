@@ -537,7 +537,7 @@ async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenera
             yield f"data: {end_msg}\n\n"
             break  # Session is gone, stop the stream
         except Exception as e:
-            log.error(f"SSE stream for session {session_id} unexpected error: {e!s}")
+            log.exception(f"SSE stream for session {session_id} unexpected error: {e!s}")
             error_msg = parse_session_message(e, request_id, session_id, json=True)
             yield f"data: {error_msg}\n\n"
             continue  # Keep streaming
@@ -605,7 +605,7 @@ async def handle_post_request(
             session_id = await session_manager.create_session(url)
             log.info(f"Session {session_id} initialized")
         except (KeyError, RuntimeError) as e:
-            log.error(f"MCP server '{name}' not found: {e!s}")
+            log.exception(f"MCP server '{name}' not found: {e!s}")
             return error_response(f"MCP server '{name}' not found: {e!s}", status=404)
 
     session = await session_manager.get_session_with_retry(session_id)
@@ -637,7 +637,7 @@ async def handle_post_request(
 
     except (ClosedResourceError, httpx.HTTPStatusError, MCPSessionError) as e:
         # Transport errors should be converted to JSON-RPC errors
-        log.error(f"Transport error for MCP server '{name}': {e!s}")
+        log.exception(f"Transport error for MCP server '{name}': {e!s}")
         session_error_response = parse_session_message(e, request_id, session_id, json=False)
         response = JsonResponse(session_error_response, status=200)  # 200 for JSON-RPC errors
     finally:

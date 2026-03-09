@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from django.db.models import Q
 from django.views.generic import TemplateView
@@ -26,7 +26,7 @@ class UserBatchesView(BaseAqueductView, TemplateView):
 
         # Convert Unix timestamp to datetime for template date filter
         for b in batches:
-            b.created_dt = datetime.fromtimestamp(b.created_at)
+            b.created_dt = datetime.fromtimestamp(b.created_at, tz=UTC)
             # input file preview (first lines)
             b.input_file_preview = b.input_file.preview or ""
             # short preview of file id for display

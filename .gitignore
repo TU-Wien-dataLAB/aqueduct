@@ -8,6 +8,7 @@ uploads
 examples/k8s/.*.yaml
 dump.rdb
 *.db
+*.sqlite3
 aqueduct/gateway/tests/files_root/**/*
 
 .tasks

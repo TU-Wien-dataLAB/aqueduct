@@ -21,14 +21,15 @@ def token_from_request(request) -> str | None:
         token_key = auth_header.split(" ")[1]
         if not token_key:
             raise IndexError
+    except IndexError:
+        logger.warning("Authentication failed: Empty or badly formatted Bearer token in header.")
+        return None
+    else:
         logger.debug(
             "TokenAuthenticationBackend: Attempting to authenticate with token starting with %s",
             Token._generate_preview(token_key),
         )
         return token_key
-    except IndexError:
-        logger.warning("Authentication failed: Empty or badly formatted Bearer token in header.")
-        return None
 
 
 class TokenAuthenticationBackend(BaseBackend):

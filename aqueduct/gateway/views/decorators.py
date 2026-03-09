@@ -163,7 +163,7 @@ def parse_body(model: TypeAdapter):
                 try:
                     data = json.loads(body)
                 except json.JSONDecodeError as e:
-                    log.error(f"JSON decode error: {e!s}, body was: {request.body!r}")
+                    log.exception(f"JSON decode error: {e!s}, body was: {request.body!r}")
                     return error_response(f"Invalid JSON: {e!s}", status=400)
             elif content_type.startswith("multipart/form-data"):
                 try:
@@ -183,13 +183,13 @@ def parse_body(model: TypeAdapter):
             try:
                 model.validate_python(data)
             except ValidationError as e:
-                log.error(f"Validation error: {e}")
+                log.exception(f"Validation error: {e}")
                 error_messages = ", ".join(
                     f"{err['loc'][0] if err['loc'] else 'field'}: {err['msg']}" for err in e.errors()
                 )
                 return error_response(error_messages, status=HTTPStatus.BAD_REQUEST)
             except Exception as e:
-                log.error(f"Request body parse error: {e!s}, data was: {data!r}")
+                log.exception(f"Request body parse error: {e!s}, data was: {data!r}")
                 return error_response(f"Failed to parse the request body: {e!s}", status=400)
 
             # If there are files sent with the request (i.e. content type is "multipart/form-data"),
@@ -292,7 +292,7 @@ def check_limits(view_func):
 
         except Exception as e:
             log.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
-            log.error("Internal gateway error checking rate limits")
+            log.exception("Internal gateway error checking rate limits")
             return error_response("Internal gateway error checking rate limits", status=500)
 
         return await view_func(request, *args, **kwargs)
@@ -443,11 +443,12 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
             try:
                 client = get_files_api_client()
                 response = await client.files.content(file_obj.id)
-                return response.content
             except ValueError as e:
                 raise ValueError(f"Files API not configured: {e}") from e
-        except FileObject.DoesNotExist as e:
-            raise e
+            else:
+                return response.content
+        except FileObject.DoesNotExist:
+            raise
         except Exception as e:
             raise ValueError(f"Failed to read file with id {file_id}: {e}") from e
     else:
@@ -486,11 +487,11 @@ def process_file_content(view_func):
                     try:
                         file_bytes = await file_to_bytes(token, file)
                     except FileObject.DoesNotExist:
-                        log.error("File not found")
+                        log.exception("File not found")
                         return error_response("File not found", status=404)
                     except Exception as e:
                         # return json response here if there was an error
-                        log.error(f"Error processing file - {e!s}")
+                        log.exception(f"Error processing file - {e!s}")
                         return error_response(f"Error processing file: {e!s}", status=400)
 
                     if len(file_bytes) > max_file_bytes:
@@ -519,7 +520,7 @@ def process_file_content(view_func):
                         extracted_text = await extract_text_with_tika(file_bytes)
                     except httpx.HTTPStatusError as e:
                         # return json response here if there was a tika request error
-                        log.error(f"Tika error extracting text from file - {e!s}")
+                        log.exception(f"Tika error extracting text from file - {e!s}")
                         return error_response(f"Tika error extracting text from file: {e!s}", status=400)
 
                     extracted_text = (
@@ -568,39 +569,39 @@ def catch_router_exceptions(view_func):
         try:
             return await view_func(request, *args, **kwargs)
         except (litellm.BadRequestError, openai.BadRequestError) as e:
-            log.error(f"Bad request - {_r(e)}")
+            log.exception(f"Bad request - {_r(e)}")
             return _exception_response(e, status=400)
         except (litellm.AuthenticationError, openai.AuthenticationError) as e:
-            log.error(f"Authentication error - {_r(e)}")
+            log.exception(f"Authentication error - {_r(e)}")
             return _exception_response(e, status=401)
         except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
-            log.error(f"Permission denied - {_r(e)}")
+            log.exception(f"Permission denied - {_r(e)}")
             return _exception_response(e, status=403)
         except (litellm.NotFoundError, openai.NotFoundError) as e:
-            log.error(f"Not found - {_r(e)}")
+            log.exception(f"Not found - {_r(e)}")
             return _exception_response(e, status=404)
         except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
-            log.error(f"Unprocessable entity - {_r(e)}")
+            log.exception(f"Unprocessable entity - {_r(e)}")
             return _exception_response(e, status=422)
         except (litellm.RateLimitError, openai.RateLimitError) as e:
-            log.error(f"Rate limit exceeded - {_r(e)}")
+            log.exception(f"Rate limit exceeded - {_r(e)}")
             return _exception_response(e, status=429)
         except (litellm.Timeout, openai.APITimeoutError) as e:
-            log.error(f"Timeout - {_r(e)}")
+            log.exception(f"Timeout - {_r(e)}")
             return _exception_response(e, status=504)
         except (litellm.ServiceUnavailableError, litellm.APIConnectionError, openai.APIConnectionError) as e:
-            log.error(f"Service unavailable - {_r(e)}")
+            log.exception(f"Service unavailable - {_r(e)}")
             return _exception_response(e, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
-            log.error(f"Internal server error - {_r(e)}")
+            log.exception(f"Internal server error - {_r(e)}")
             return _exception_response(e, status=500)
         except (litellm.APIError, openai.APIError) as e:
             # APIError is raised e.g. when user sends extra kwargs in the request body,
             # so we return a 400 Bad request.
-            log.error(f"API error - {_r(e)}")
+            log.exception(f"API error - {_r(e)}")
             return _exception_response(e, status=400)
         except Exception as e:
-            log.error(f"Unexpected error - {_r(e)}")
+            log.exception(f"Unexpected error - {_r(e)}")
             return error_response(_r(e), status=500)
 
     return wrapper
@@ -780,7 +781,7 @@ def check_tool_availability(view_func):
                     except KeyError:
                         # the user wants to access an externally managed MCP server
                         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-                            log.error(f"MCP server not found - {server_name}")
+                            log.exception(f"MCP server not found - {server_name}")
                             return error_response(f"MCP server not found - {server_name}", status=404)
                     else:
                         expected_url = request.build_absolute_uri(

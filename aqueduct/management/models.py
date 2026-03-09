@@ -286,10 +286,11 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
             # Django ensures 'teammembership_set' exists if TeamMembership has a ForeignKey
             # to UserProfile.
             membership = self.teammembership_set.get(team=team_to_check)
-            return membership.is_admin
         except ObjectDoesNotExist:
             # No specific membership record found for this user and team
             return False
+        else:
+            return membership.is_admin
         # Removed overly defensive AttributeError check. If 'teammembership_set' is missing,
         # it indicates a fundamental model setup error that should not be caught here.
 
@@ -628,7 +629,7 @@ class Request(models.Model):
     def token_usage(self, usage: Usage):
         """Set input_tokens and output_tokens from a Usage dataclass instance."""
         if not isinstance(usage, Usage):
-            raise ValueError("token_usage must be a Usage dataclass instance")
+            raise TypeError("token_usage must be a Usage dataclass instance")
         self.input_tokens = usage.input_tokens
         self.output_tokens = usage.output_tokens
 
@@ -758,12 +759,13 @@ class FileObject(models.Model):
 
         try:
             await client.files.delete(self.id)
-            return True
         except Exception as e:
             if raise_on_error:
                 raise
             log.warning(f"Failed to delete file {self.id} from upstream: {e}")
             return False
+        else:
+            return True
 
     async def areload_from_upstream(self, client=None, raise_on_error=True) -> openai.types.FileObject | None:
         """
@@ -783,15 +785,16 @@ class FileObject(models.Model):
 
         try:
             remote = await client.files.retrieve(self.id)
-            self.purpose = remote.purpose
-            self.expires_at = remote.expires_at
-            await self.asave()
-            return remote
         except Exception as e:
             if raise_on_error:
                 raise
             log.warning(f"Failed to reload file {self.id} from upstream: {e}")
             return None
+        else:
+            self.purpose = remote.purpose
+            self.expires_at = remote.expires_at
+            await self.asave()
+            return remote
 
     def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
@@ -954,6 +957,12 @@ class Batch(models.Model):
 
         try:
             remote = await client.batches.retrieve(self.id)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload batch {self.id} from upstream: {e}")
+            return None
+        else:
             self.status = remote.status
             if remote.request_counts:
                 self.request_counts = remote.request_counts.model_dump()
@@ -966,11 +975,6 @@ class Batch(models.Model):
             self.finalizing_at = remote.finalizing_at
             await self.asave()
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload batch {self.id} from upstream: {e}")
-            return None
 
     def delete(self, using=None, keep_parents=False):
         """
@@ -1041,12 +1045,13 @@ class VectorStore(models.Model):
 
         try:
             await client.vector_stores.delete(self.id)
-            return True
         except Exception as e:
             if raise_on_error:
                 raise
             log.warning(f"Failed to delete vector store {self.id} from upstream: {e}")
             return False
+        else:
+            return True
 
     async def areload_from_upstream(self, client=None, raise_on_error=True) -> openai.types.VectorStore | None:
         """
@@ -1066,17 +1071,18 @@ class VectorStore(models.Model):
 
         try:
             remote = await client.vector_stores.retrieve(self.id)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload vector store {self.id} from upstream: {e}")
+            return None
+        else:
             self.status = remote.status or self.status
             self.usage_bytes = getattr(remote, "usage_bytes", self.usage_bytes)
             self.last_active_at = int(timezone.now().timestamp())
             await self.asave()
             await self.async_file_statuses(client)
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload vector store {self.id} from upstream: {e}")
-            return None
 
     async def async_file_statuses(self, client=None) -> tuple[int, int]:
         """
@@ -1207,12 +1213,13 @@ class VectorStoreFile(models.Model):
 
         try:
             await client.vector_stores.files.delete(vector_store_id=self.vector_store_id, file_id=self.id)
-            return True
         except Exception as e:
             if raise_on_error:
                 raise
             log.warning(f"Failed to delete vector store file {self.id} from upstream: {e}")
             return False
+        else:
+            return True
 
     async def areload_from_upstream(
         self, client=None, raise_on_error=True
@@ -1243,17 +1250,18 @@ class VectorStoreFile(models.Model):
 
         try:
             remote = await client.vector_stores.files.retrieve(vector_store_id=self.vector_store_id, file_id=self.id)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning(f"Failed to reload vector store file {self.id} from upstream: {e}")
+            return None
+        else:
             self.status = remote.status or self.status
             self.usage_bytes = remote.usage_bytes
             if hasattr(remote, "last_error") and remote.last_error:
                 self.last_error = remote.last_error
             await self.asave()
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload vector store file {self.id} from upstream: {e}")
-            return None
 
     def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
@@ -1336,16 +1344,17 @@ class VectorStoreFileBatch(models.Model):
             remote = await client.vector_stores.file_batches.retrieve(
                 vector_store_id=self.vector_store_id, batch_id=self.id
             )
-            self.status = remote.status or self.status
-            if hasattr(remote, "file_counts") and remote.file_counts:
-                self.file_counts = remote.file_counts.model_dump()
-            await self.asave()
-            return remote
         except Exception as e:
             if raise_on_error:
                 raise
             log.warning(f"Failed to reload vector store file batch {self.id} from upstream: {e}")
             return None
+        else:
+            self.status = remote.status or self.status
+            if hasattr(remote, "file_counts") and remote.file_counts:
+                self.file_counts = remote.file_counts.model_dump()
+            await self.asave()
+            return remote
 
     def __str__(self) -> str:
         return self.id

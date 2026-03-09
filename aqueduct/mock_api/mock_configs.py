@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any
 
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse, Usage
-from openai.types import Batch, Embedding, FileObject, Image, ImagesResponse
+from openai.types import Batch, BatchRequestCounts, Embedding, FileObject, Image, ImagesResponse
 from openai.types.audio import Transcription
 from openai.types.audio.transcription import UsageDuration
 from openai.types.images_response import Usage as ImageUsage
@@ -90,6 +90,7 @@ default_post_configs = {
             input_file_id="file-123456789",
             metadata={"custom_id": "my-batch"},
             object="batch",
+            request_counts=BatchRequestCounts(completed=0, failed=0, total=0),
             status="validating",
         ).model_dump()
     ),
@@ -110,6 +111,7 @@ default_post_configs = {
             input_file_id="file-123456789",
             metadata={"custom_id": "my-batch"},
             object="batch",
+            request_counts=BatchRequestCounts(completed=0, failed=0, total=0),
             status="cancelled",
         ).model_dump()
     ),
@@ -440,6 +442,7 @@ default_get_configs = {
             input_file_id="file-123456789",
             metadata={"custom_id": "my-batch"},
             object="batch",
+            request_counts=BatchRequestCounts(completed=0, failed=0, total=0),
             status="validating",
         ).model_dump()
     ),

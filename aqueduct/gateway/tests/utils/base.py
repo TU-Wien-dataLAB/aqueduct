@@ -56,7 +56,6 @@ def get_mock_router(model: str = "test-model"):
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
     API_MAX_RETRIES=1,  # for some reason, in a few tests the 1st request to the mock API fails (503)
-    AQUEDUCT_FILES_API_URL="https://api.openai.com",
 )
 class GatewayIntegrationTestCase(TestCase):
     """
@@ -95,6 +94,10 @@ class GatewayIntegrationTestCase(TestCase):
             )
             cls._patcher.start()
 
+            # We want to override the files API url for all tests.
+            settings.AQUEDUCT_FILES_API_URL = cls.mock_server.base_url
+            settings.AQUEDUCT_FILES_API_KEY = "test_key"
+
         cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
 
     @classmethod
@@ -119,9 +122,6 @@ class GatewayIntegrationTestCase(TestCase):
         return token_value, new_user.id
 
 
-@override_settings(
-    AQUEDUCT_FILES_API_URL="https://api.openai.com", AQUEDUCT_FILES_API_KEY="test_key"
-)
 class GatewayFilesTestCase(GatewayIntegrationTestCase):
     @classmethod
     def setUpClass(cls):
@@ -149,10 +149,8 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
 
 
 @override_settings(
-    MAX_USER_BATCHES=10,
+    MAX_USER_BATCHES=3,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
-    AQUEDUCT_FILES_API_URL="https://api.openai.com",
-    AQUEDUCT_FILES_API_KEY="test_key",
     AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB=1000000,  # Limit set high to avoid conflicts
 )
 class GatewayBatchesTestCase(GatewayIntegrationTestCase):

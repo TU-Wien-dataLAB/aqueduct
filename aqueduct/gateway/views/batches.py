@@ -55,7 +55,7 @@ async def batches(
     # POST /batches
 
     # Check batch limit before creating batch (for upstream quota management)
-    max_batches = getattr(settings, "MAX_USER_BATCHES", 10)
+    max_batches = settings.MAX_USER_BATCHES
     if token.service_account:
         active_count = await sync_to_async(
             Batch.objects.filter(
@@ -67,7 +67,7 @@ async def batches(
                 ],
             ).count
         )()
-        limit = getattr(settings, "MAX_TEAM_BATCHES", 50)
+        limit = settings.MAX_TEAM_BATCHES
     else:
         active_count = await sync_to_async(
             Batch.objects.filter(

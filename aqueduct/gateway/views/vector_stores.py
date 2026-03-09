@@ -188,7 +188,7 @@ async def vector_store(
 
         return JsonResponse(response_data, status=200)
 
-    elif request.method == "POST":
+    if request.method == "POST":
         # Modify vector store
         params = pydantic_model if pydantic_model else {}
 

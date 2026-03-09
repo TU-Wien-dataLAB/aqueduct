@@ -6,6 +6,7 @@ import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import wraps
+from pathlib import Path
 from typing import ClassVar
 from unittest.mock import patch
 
@@ -16,7 +17,7 @@ from django.test import override_settings
 from mcp import ClientSession
 from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_client
 
-MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
+MCP_CONFIG_PATH = Path("/tmp/aqueduct/test-mcp-config.json")
 MCP_TEST_CONFIG = {"mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}}
 
 
@@ -27,8 +28,7 @@ def patch_mcp_sse_issue(view_func):
         sse = args[1]
         if not sse.data:
             return False
-        else:
-            return await view_func(*args, **kwargs)
+        return await view_func(*args, **kwargs)
 
     return wrapper
 
@@ -149,17 +149,16 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     @classmethod
     def _write_mcp_config(cls):
-        os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
-        with open(MCP_CONFIG_PATH, "w") as f:
+        MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with MCP_CONFIG_PATH.open("w") as f:
             json.dump(MCP_TEST_CONFIG, f)
 
     @classmethod
     def _update_mcp_config_port(cls, port: int):
         config = deepcopy(MCP_TEST_CONFIG)
         config["mcpServers"]["test-server"]["url"] = f"http://localhost:{port}/mcp"
-
-        os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
-        with open(MCP_CONFIG_PATH, "w") as f:
+        MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with MCP_CONFIG_PATH.open("w") as f:
             json.dump(config, f)
 
     @classmethod
@@ -184,7 +183,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 stderr=subprocess.STDOUT,
                 text=True,
                 env=env,
-                cwd=os.path.dirname(MCP_CONFIG_PATH),
+                cwd=MCP_CONFIG_PATH.parent,
             )
         except FileNotFoundError:
             raise RuntimeError("npx command not found. Please ensure Node.js and npm are installed.") from None
@@ -249,5 +248,5 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     def tearDownClass(cls):
         super().tearDownClass()
         cls._stop_mcp_server()
-        if os.path.exists(MCP_CONFIG_PATH):
-            os.remove(MCP_CONFIG_PATH)
+        if MCP_CONFIG_PATH.exists():
+            MCP_CONFIG_PATH.unlink()

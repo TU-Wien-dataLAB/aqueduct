@@ -51,10 +51,9 @@ def validate_batch_file(data: bytes):
         custom_id = d.get("custom_id")
         if not custom_id:
             raise ValueError(f"No custom_id found at line {i + 1}")
-        elif custom_id in custom_ids:
+        if custom_id in custom_ids:
             raise ValueError(f"Duplicate custom_id found at line {i + 1}")
-        else:
-            custom_ids.add(custom_id)
+        custom_ids.add(custom_id)
 
 
 async def sync_batch_file_if_needed(

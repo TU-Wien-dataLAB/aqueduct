@@ -1,3 +1,4 @@
+from contextlib import suppress
 from typing import TypedDict
 
 from asgiref.sync import sync_to_async
@@ -143,10 +144,8 @@ async def vector_store_files(
     if recheck_status == "limit_reached":
         # Upstream file was already created but limit was exceeded by a concurrent request.
         # Clean up the upstream file.
-        try:
+        with suppress(Exception):
             await client.vector_stores.files.delete(vector_store_id=vs_obj.id, file_id=remote_vs_file.id)
-        except Exception:
-            pass  # Best-effort cleanup
         return error_response(f"Vector store file limit reached ({max_files})", status=403)
 
     # Return upstream response directly (IDs already match)
@@ -213,7 +212,7 @@ async def vector_store_file(
 
         return JsonResponse(response_data, status=200)
 
-    elif request.method == "POST":
+    if request.method == "POST":
         # Update file attributes
         params = pydantic_model if pydantic_model else {}
 
@@ -316,10 +315,7 @@ async def vector_store_file_content(
         content_type = "application/octet-stream"
     else:
         # Assume it's already bytes or string
-        if isinstance(content_response, str):
-            content = content_response.encode("utf-8")
-        else:
-            content = content_response
+        content = content_response.encode("utf-8") if isinstance(content_response, str) else content_response
         content_type = "application/octet-stream"
 
     return HttpResponse(content, content_type=content_type)

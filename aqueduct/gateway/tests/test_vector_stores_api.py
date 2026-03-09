@@ -270,7 +270,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         """Helper to create a FileObject for testing."""
 
         token = Token.objects.first()
-        file_obj = FileObject.objects.create(
+        return FileObject.objects.create(
             id=file_id,
             bytes=100,
             created_at=int(timezone.now().timestamp()),
@@ -279,7 +279,6 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             token=token,
             upstream_url="https://api.openai.com/v1",
         )
-        return file_obj
 
     @patch("gateway.views.vector_stores.get_files_api_client")
     def test_vector_store_lifecycle(self, mock_get_client):

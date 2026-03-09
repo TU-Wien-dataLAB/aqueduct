@@ -66,13 +66,12 @@ async def create_response(
             ),
             content_type="text/event-stream",
         )
-    elif isinstance(resp, Response):
+    if isinstance(resp, Response):
         register_response_in_cache(resp.id, model=model, email=token.user.email)
         data = resp.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)
         return JsonResponse(data=data, status=200)
-    else:
-        raise NotImplementedError(f"Completion for response type {type(resp)} is not implemented.")
+    raise NotImplementedError(f"Completion for response type {type(resp)} is not implemented.")
 
 
 @csrf_exempt
@@ -92,7 +91,7 @@ async def response(request: ASGIRequest, response_id: str, token: Token, *args, 
         resp = await client.responses.retrieve(response_id=response_id)
         data = resp.model_dump(exclude_none=True, exclude_unset=True)
         return JsonResponse(data=data, status=200)
-    elif request.method == "DELETE":
+    if request.method == "DELETE":
         resp = await client.responses.delete(response_id=response_id)
         delete_response_from_cache(response_id=response_id)
         if resp is None:
@@ -100,6 +99,7 @@ async def response(request: ASGIRequest, response_id: str, token: Token, *args, 
             return JsonResponse({"deleted": True}, status=200)
         data = resp.model_dump(exclude_none=True, exclude_unset=True)
         return JsonResponse(data=data, status=200)
+    return None
 
 
 @csrf_exempt

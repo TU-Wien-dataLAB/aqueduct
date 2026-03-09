@@ -24,8 +24,7 @@ def get_org_name_from_groups(groups):
     """
     if hasattr(settings, "ORG_NAME_FROM_OIDC_GROUPS_FUNCTION"):
         return settings.ORG_NAME_FROM_OIDC_GROUPS_FUNCTION(groups)
-    else:
-        return default_org_name_from_groups(groups)
+    return default_org_name_from_groups(groups)
 
 
 class OIDCBackend(OIDCAuthenticationBackend):

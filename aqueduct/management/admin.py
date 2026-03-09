@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import suppress
 from datetime import datetime
 from typing import ClassVar
 
@@ -447,16 +448,12 @@ class VectorStoreAdmin(admin.ModelAdmin):
         if client:
             # First delete all files from upstream
             for vs_file in obj.files.all():
-                try:
+                with suppress(Exception):
                     asyncio.run(vs_file.adelete_upstream(client, raise_on_error=False))
-                except Exception:
-                    pass  # Continue even if upstream deletion fails
 
             # Delete vector store from upstream
-            try:
+            with suppress(Exception):
                 asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
-            except Exception:
-                pass  # Continue even if upstream deletion fails
 
         # Now delete the local record (this will cascade to files)
         super().delete_model(request, obj)
@@ -472,16 +469,12 @@ class VectorStoreAdmin(admin.ModelAdmin):
             for obj in queryset:
                 # First delete all files from upstream
                 for vs_file in obj.files.all():
-                    try:
+                    with suppress(Exception):
                         asyncio.run(vs_file.adelete_upstream(client, raise_on_error=False))
-                    except Exception:
-                        pass
 
                 # Delete vector store from upstream
-                try:
+                with suppress(Exception):
                     asyncio.run(obj.adelete_upstream(client, raise_on_error=False))
-                except Exception:
-                    pass
 
         # Now delete local records
         super().delete_queryset(request, queryset)

@@ -158,8 +158,7 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
         Helper to send a streaming chat completion request using Django async test client.
         """
         request = self._build_chat_completion_request(messages, stream=True, **payload_kwargs)
-        response = await self.async_client.post(**request, content_type="application/json")
-        return response
+        return await self.async_client.post(**request, content_type="application/json")
 
 
 class ChatCompletionsIntegrationTest(ChatCompletionsBase):
@@ -782,7 +781,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase to manage multiple servers!"
             )
 
-        with open(Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg", "rb") as image_file:
+        with (Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg").open("rb") as image_file:
             img_b64 = base64.b64encode(image_file.read()).decode("utf-8")
 
         payload = {
@@ -971,7 +970,7 @@ class TokenLimitTest(ChatCompletionsBase):
             setattr(org, field, value)
             org.save(update_fields=[field])
             return org
-        elif kind == "team":
+        if kind == "team":
             team = Team.objects.get(name="Whale")
             setattr(team, field, value)
             team.save(update_fields=[field])
@@ -995,14 +994,13 @@ class TokenLimitTest(ChatCompletionsBase):
                 )
             # Otherwise, already associated with the correct service account, do nothing
             return team
-        elif kind == "user":
+        if kind == "user":
             user = User.objects.get(username="Me")
             profile = user.profile if hasattr(user, "profile") else UserProfile.objects.get(user=user)
             setattr(profile, field, value)
             profile.save(update_fields=[field])
             return profile
-        else:
-            raise ValueError(f"Unknown kind: {kind}")
+        raise ValueError(f"Unknown kind: {kind}")
 
     def _rate_limit_test_template(self, kind: str, field: str, value: int, messages, max_completion_tokens, limit_desc):
         """
@@ -1211,22 +1209,21 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"):
-            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
-                get_router_config.cache_clear()
+        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+            get_router_config.cache_clear()
 
-                loaded_config = get_router_config()
+            loaded_config = get_router_config()
 
-                # Config should load without errors
-                self.assertIsInstance(loaded_config, dict)
-                self.assertIn("model_list", loaded_config)
+            # Config should load without errors
+            self.assertIsInstance(loaded_config, dict)
+            self.assertIn("model_list", loaded_config)
 
-                # Verify aliases are in the config
-                first_model = loaded_config["model_list"][0]
-                self.assertIn("model_info", first_model)
-                self.assertIn("aliases", first_model["model_info"])
-                self.assertEqual(first_model["model_info"]["aliases"], ["main", "coding"])
-                mock_load.assert_called_once()
+            # Verify aliases are in the config
+            first_model = loaded_config["model_list"][0]
+            self.assertIn("model_info", first_model)
+            self.assertIn("aliases", first_model["model_info"])
+            self.assertEqual(first_model["model_info"]["aliases"], ["main", "coding"])
+            mock_load.assert_called_once()
 
     def test_config_load_with_duplicate_aliases_raises_error(self):
         """
@@ -1253,18 +1250,17 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"):
-            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
-                get_router_config.cache_clear()
+        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+            get_router_config.cache_clear()
 
-                # Should raise RuntimeError due to duplicate aliases
-                with self.assertRaises(RuntimeError) as context:
-                    get_router_config()
+            # Should raise RuntimeError due to duplicate aliases
+            with self.assertRaises(RuntimeError) as context:
+                get_router_config()
 
-                # Verify the error message mentions the duplicate alias
-                self.assertIn("Duplicate alias", str(context.exception))
-                self.assertIn("main", str(context.exception))
-                mock_load.assert_called_once()
+            # Verify the error message mentions the duplicate alias
+            self.assertIn("Duplicate alias", str(context.exception))
+            self.assertIn("main", str(context.exception))
+            mock_load.assert_called_once()
 
     def test_config_load_with_multiple_aliases_per_model(self):
         """
@@ -1280,19 +1276,18 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"):
-            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
-                get_router_config.cache_clear()
+        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+            get_router_config.cache_clear()
 
-                loaded_config = get_router_config()
+            loaded_config = get_router_config()
 
-                # Config should load without errors
-                self.assertIsInstance(loaded_config, dict)
-                model = loaded_config["model_list"][0]
-                self.assertEqual(len(model["model_info"]["aliases"]), 4)
-                self.assertIn("main", model["model_info"]["aliases"])
-                self.assertIn("primary", model["model_info"]["aliases"])
-                mock_load.assert_called_once()
+            # Config should load without errors
+            self.assertIsInstance(loaded_config, dict)
+            model = loaded_config["model_list"][0]
+            self.assertEqual(len(model["model_info"]["aliases"]), 4)
+            self.assertIn("main", model["model_info"]["aliases"])
+            self.assertIn("primary", model["model_info"]["aliases"])
+            mock_load.assert_called_once()
 
     def test_alias_case_sensitivity(self):
         """
@@ -1321,26 +1316,25 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"):
-            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
-                get_router_config.cache_clear()
+        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+            get_router_config.cache_clear()
 
-                loaded_config = get_router_config()
+            loaded_config = get_router_config()
 
-                # Should load successfully since "Main" and "main" are different
-                self.assertIsInstance(loaded_config, dict)
+            # Should load successfully since "Main" and "main" are different
+            self.assertIsInstance(loaded_config, dict)
 
-                # Collect all aliases
-                all_aliases = []
-                for model in loaded_config["model_list"]:
-                    if "model_info" in model and "aliases" in model["model_info"]:
-                        all_aliases.extend(model["model_info"]["aliases"])
+            # Collect all aliases
+            all_aliases = []
+            for model in loaded_config["model_list"]:
+                if "model_info" in model and "aliases" in model["model_info"]:
+                    all_aliases.extend(model["model_info"]["aliases"])
 
-                # Both should be present and distinct
-                self.assertIn("Main", all_aliases)
-                self.assertIn("main", all_aliases)
-                self.assertEqual(len([a for a in all_aliases if a.lower() == "main"]), 2)
-                mock_load.assert_called_once()
+            # Both should be present and distinct
+            self.assertIn("Main", all_aliases)
+            self.assertIn("main", all_aliases)
+            self.assertEqual(len([a for a in all_aliases if a.lower() == "main"]), 2)
+            mock_load.assert_called_once()
 
 
 class ModelAliasRoutingTest(GatewayIntegrationTestCase):

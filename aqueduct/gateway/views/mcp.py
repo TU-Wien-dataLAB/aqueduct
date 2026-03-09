@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import AsyncGenerator
+from contextlib import suppress
 from enum import Enum
 
 import anyio
@@ -36,25 +37,17 @@ log = logging.getLogger("aqueduct")
 class MCPSessionError(Exception):
     """Base exception for MCP session errors."""
 
-    pass
-
 
 class SessionNotFoundError(MCPSessionError):
     """Raised when a session is not found."""
-
-    pass
 
 
 class SessionNotReadyError(MCPSessionError):
     """Raised when a session is not ready for operations."""
 
-    pass
-
 
 class SessionNotStartedError(MCPSessionError):
     """Raised when a session has not been started."""
-
-    pass
 
 
 class SessionState(Enum):
@@ -114,7 +107,6 @@ class MockCancelScope:
 
     def cancel(self):
         """Mock cancel - does nothing since we don't have cancel scopes."""
-        pass
 
 
 MCP_SESSION_ID = "mcp-session-id"
@@ -273,10 +265,8 @@ class ManagedMCPSession:
         if self._get_stream_task and not self._get_stream_task.done():
             log.debug(f"Cancelling get_stream task for session {self.session_id}")
             self._get_stream_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._get_stream_task  # type: ignore
-            except asyncio.CancelledError:
-                pass
 
         # Cancel any remaining tasks in task group
         if self._task_group:
@@ -475,10 +465,8 @@ class MCPSessionManager:
         if self._cleanup_task:
             log.debug("Cancelling MCP session cleanup task")
             self._cleanup_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
         log.info("All MCP sessions shutdown complete")
 
 
@@ -495,8 +483,7 @@ def parse_session_message(
 
     if json:
         return jsonrpc_message.model_dump_json(exclude_none=True)
-    else:
-        return jsonrpc_message.model_dump(exclude_none=True)
+    return jsonrpc_message.model_dump(exclude_none=True)
 
 
 def _validate_session(session: ManagedMCPSession | None, session_id: str | None, name: str) -> JsonResponse | None:
@@ -706,7 +693,7 @@ async def mcp_server(
 
     if request.method == "GET":
         return await handle_get_request(name, request_id=request_id, session_id=session_id)
-    elif request.method == "POST":
+    if request.method == "POST":
         return await handle_post_request(
             name,
             json_rpc_message=json_rpc_message,
@@ -714,5 +701,6 @@ async def mcp_server(
             session_id=session_id,
             is_initialize=is_initialize,
         )
-    elif request.method == "DELETE":
+    if request.method == "DELETE":
         return await handle_delete_request(name, session_id=session_id)
+    return None

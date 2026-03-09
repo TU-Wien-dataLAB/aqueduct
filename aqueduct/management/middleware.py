@@ -19,8 +19,7 @@ class UserAgreementMiddleware(TOSUserAgreementMiddleware):
         response = self.process_request(request)
         if response is None:
             return self.get_response(request)
-        else:
-            return response
+        return response
 
     def should_fast_skip(self, request: ASGIRequest):
         if request.path_info.rstrip("/") == "/oidc/callback":

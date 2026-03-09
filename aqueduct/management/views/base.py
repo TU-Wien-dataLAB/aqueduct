@@ -66,10 +66,9 @@ class BaseAqueductView(LoginRequiredMixin, View):
         if self.is_org_admin():
             # Org admin sees all teams in their organization.
             return self.org.teams.all()
-        else:
-            # Regular user sees only teams they are a member of via the ManyToManyField.
-            # The 'teams' attribute is guaranteed to exist due to the M2M definition.
-            return self.profile.teams.all()
+        # Regular user sees only teams they are a member of via the ManyToManyField.
+        # The 'teams' attribute is guaranteed to exist due to the M2M definition.
+        return self.profile.teams.all()
 
 
 # --- Mixins for Permission Checks ---

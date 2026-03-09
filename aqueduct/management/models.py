@@ -205,12 +205,11 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
         g = self.user.groups
         if g.filter(name="admin").exists():
             return "admin"
-        elif g.filter(name="org-admin").exists():
+        if g.filter(name="org-admin").exists():
             return "org-admin"
-        elif g.filter(name="user").exists():
+        if g.filter(name="user").exists():
             return "user"
-        else:
-            raise ValidationError("User has no group")
+        raise ValidationError("User has no group")
 
     @group.setter
     def group(self, group: Literal["admin", "org-admin", "user"]):
@@ -424,8 +423,7 @@ class Token(models.Model):
     def __str__(self):
         if self.service_account:
             return f"'{self.name}' ({self.service_account.name})"
-        else:
-            return f"'{self.name}'"
+        return f"'{self.name}'"
 
     @staticmethod
     def _generate_secret_key(prefix="sk-") -> str:
@@ -499,11 +497,10 @@ class Token(models.Model):
             team = token_instance.service_account.team  # Team holds specific SA limits
             org = team.org  # Team's Org holds fallback limits
             return retrieval_function(team, org)
-        else:
-            # Path for standard User Tokens
-            profile = token_instance.user.profile  # UserProfile holds specific user limits
-            org = profile.org  # Profile's Org holds fallback limits
-            return retrieval_function(profile, org)
+        # Path for standard User Tokens
+        profile = token_instance.user.profile  # UserProfile holds specific user limits
+        org = profile.org  # Profile's Org holds fallback limits
+        return retrieval_function(profile, org)
 
     def get_limit(self) -> "LimitSet":
         """
@@ -640,6 +637,7 @@ class Request(models.Model):
         on_delete=models.CASCADE,  # If Token is deleted, delete its associated Requests
         related_name="requests",
     )
+    # django: DJ001 - null=True on CharField may cause SQL NULL instead of empty string
     model = models.CharField(max_length=255, null=True, blank=True, help_text="Model used in request")
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
 
@@ -906,6 +904,9 @@ class Batch(models.Model):
         verbose_name = "Batch"
         verbose_name_plural = "Batches"
 
+    def __str__(self) -> str:
+        return self.id
+
     @property
     def model(self) -> openai.types.batch.Batch:
         return openai.types.batch.Batch(
@@ -1113,6 +1114,9 @@ class VectorStore(models.Model):
 
         return success, failed
 
+    def __str__(self) -> str:
+        return self.id
+
     def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
         Override ORM delete - vector stores are stored upstream, so we only delete the local DB record.
@@ -1268,6 +1272,9 @@ class VectorStoreFile(models.Model):
         verbose_name = "Vector Store File"
         verbose_name_plural = "Vector Store Files"
 
+    def __str__(self) -> str:
+        return self.id
+
 
 class VectorStoreFileBatchStatus(models.TextChoices):
     """Vector store file batch status choices."""
@@ -1339,6 +1346,9 @@ class VectorStoreFileBatch(models.Model):
                 raise
             log.warning(f"Failed to reload vector store file batch {self.id} from upstream: {e}")
             return None
+
+    def __str__(self) -> str:
+        return self.id
 
     class Meta:
         verbose_name = "Vector Store File Batch"

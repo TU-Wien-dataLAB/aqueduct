@@ -21,9 +21,8 @@ if INTEGRATION_TEST_BACKEND not in ["vllm", "openai"]:
     raise ValueError("Integration test backend must be one of 'vllm' or 'openai'.")
 
 ROOT = Path(__file__).parent.parent.parent.parent.parent
-
-ROUTER_CONFIG_PATH = str(ROOT / "example_router_config.yaml")
-with open(ROUTER_CONFIG_PATH) as f:
+ROUTER_CONFIG_PATH = ROOT / "example_router_config.yaml"
+with ROUTER_CONFIG_PATH.open() as f:
     ROUTER_CONFIG = f.read()
 
 User = get_user_model()
@@ -61,17 +60,16 @@ class GatewayIntegrationTestCase(TransactionTestCase):
 
     @classmethod
     def _write_router_config(cls):
-        os.makedirs(os.path.dirname(ROUTER_CONFIG_PATH), exist_ok=True)
-        with open(ROUTER_CONFIG_PATH, "w") as f:
+        ROUTER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with ROUTER_CONFIG_PATH.open("w") as f:
             f.write(ROUTER_CONFIG)
 
     @classmethod
     def setUpClass(cls):
         cls._write_router_config()
         super().setUpClass()
-        if INTEGRATION_TEST_BACKEND == "openai":
-            if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError("OPENAI_API_KEY environment variable has to be set for OpenAI integration.")
+        if INTEGRATION_TEST_BACKEND == "openai" and not os.environ.get("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY environment variable has to be set for OpenAI integration.")
         cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
 
     @staticmethod

@@ -50,8 +50,7 @@ def _get_token_usage(content: bytes | dict) -> Usage:
         input_tokens = usage_dict.get("prompt_tokens") or usage_dict.get("input_tokens", 0)
         output_tokens = usage_dict.get("completion_tokens") or usage_dict.get("output_tokens", 0)
         return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
-    else:
-        return Usage(input_tokens=0, output_tokens=0)
+    return Usage(input_tokens=0, output_tokens=0)
 
 
 def _openai_stream(

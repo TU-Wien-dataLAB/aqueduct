@@ -81,8 +81,6 @@ def token_authenticated(token_auth_only: bool):
 class FileSizeError(Exception):
     """Raised when file size limits are exceeded."""
 
-    pass
-
 
 def _parse_multipart_body(request: ASGIRequest) -> dict:
     """
@@ -217,18 +215,17 @@ def parse_body(model: TypeAdapter):
 def ensure_usage(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        model: dict | None = kwargs.get("pydantic_model", None)
+        model: dict | None = kwargs.get("pydantic_model")
         if not model:
             return await view_func(request, *args, **kwargs)
-        else:
-            stream = model.get("stream", False)
-            if stream:
-                stream_options = model.get("stream_options", None)
-                if not stream_options:
-                    model["stream_options"] = ChatCompletionStreamOptionsParam(include_usage=True)
-                else:
-                    model["stream_options"]["include_usage"] = True
-            return await view_func(request, *args, **kwargs)
+        stream = model.get("stream", False)
+        if stream:
+            stream_options = model.get("stream_options", None)
+            if not stream_options:
+                model["stream_options"] = ChatCompletionStreamOptionsParam(include_usage=True)
+            else:
+                model["stream_options"]["include_usage"] = True
+        return await view_func(request, *args, **kwargs)
 
     return wrapper
 
@@ -236,7 +233,7 @@ def ensure_usage(view_func):
 def check_limits(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get("token", None)
+        token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_limits decorator used without @token_authenticated decorator")
             return error_response("Internal server error", status=500)
@@ -312,8 +309,8 @@ def log_request(view_func):
             kwargs["request_log"] = None
             return await view_func(request, *args, **kwargs)
 
-        pydantic_model: dict | None = kwargs.get("pydantic_model", None)
-        token = kwargs.get("token", None)
+        pydantic_model: dict | None = kwargs.get("pydantic_model")
+        token = kwargs.get("token")
         request_log = Request(
             token=token,
             model=None if not pydantic_model else pydantic_model.get("model", None),
@@ -349,7 +346,7 @@ def resolve_alias(view_func):
 
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        pydantic_model: dict | None = kwargs.get("pydantic_model", None)
+        pydantic_model: dict | None = kwargs.get("pydantic_model")
         if not pydantic_model:
             return await view_func(request, *args, **kwargs)
 
@@ -367,22 +364,20 @@ def resolve_alias(view_func):
 def check_model_availability(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get("token", None)
+        token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_model_availability decorator used without @token_authenticated decorator")
             return error_response("Internal server error", status=500)
-        body: dict | None = kwargs.get("pydantic_model", None)
+        body: dict | None = kwargs.get("pydantic_model")
         if not body:
             return await view_func(request, *args, **kwargs)
-        else:
-            model: str | None = body.get("model", None)
-            if not model:
-                return await view_func(request, *args, **kwargs)
-            else:
-                if await sync_to_async(token.model_excluded)(model):
-                    log.error(f"Model not found - {model}")
-                    return error_response("Model not found!", status=404)
-                return await view_func(request, *args, **kwargs)
+        model: str | None = body.get("model", None)
+        if not model:
+            return await view_func(request, *args, **kwargs)
+        if await sync_to_async(token.model_excluded)(model):
+            log.error(f"Model not found - {model}")
+            return error_response("Model not found!", status=404)
+        return await view_func(request, *args, **kwargs)
 
     return wrapper
 
@@ -390,18 +385,17 @@ def check_model_availability(view_func):
 def check_mcp_server_availability(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get("token", None)
+        token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_mcp_server_availability decorator used without @token_authenticated decorator")
             return error_response("Internal server error", status=500)
-        server_name: str | None = kwargs.get("name", None)
+        server_name: str | None = kwargs.get("name")
         if not server_name:
             return await view_func(request, *args, **kwargs)
-        else:
-            if await sync_to_async(token.mcp_server_excluded)(server_name):
-                log.error(f"MCP server not found - {server_name}")
-                return error_response("MCP server not found!", status=404)
-            return await view_func(request, *args, **kwargs)
+        if await sync_to_async(token.mcp_server_excluded)(server_name):
+            log.error(f"MCP server not found - {server_name}")
+            return error_response("MCP server not found!", status=404)
+        return await view_func(request, *args, **kwargs)
 
     return wrapper
 
@@ -427,8 +421,7 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
             header, file_b64 = file_data.split(",", maxsplit=1)  # removes data uri (data:application/pdf;base64,<b64>)
             if not header.startswith("data:"):
                 raise ValueError("Incorrect data URI for base64 encoded file.")
-            file_bytes = base64.b64decode(file_b64)
-            return file_bytes
+            return base64.b64decode(file_b64)
         except Exception as e:
             raise ValueError(f"Failed to decode base64 file data: {e}") from e
 
@@ -466,8 +459,8 @@ def process_file_content(view_func):
 
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get("token", None)
-        pydantic_model: dict | None = kwargs.get("pydantic_model", None)
+        token: Token | None = kwargs.get("token")
+        pydantic_model: dict | None = kwargs.get("pydantic_model")
         if not pydantic_model:
             log.error("Invalid request - missing request body")
             return error_response("Invalid request: missing request body", status=400)
@@ -733,7 +726,7 @@ def parse_jsonrpc_message(view_func):
 def validate_response_id(view_func):
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs):
-        token = kwargs.get("token", None)
+        token = kwargs.get("token")
         if not token:
             log.error("validate_response_id decorator used without @token_authenticated decorator")
             return error_response("Internal server error", status=500)
@@ -765,8 +758,8 @@ def check_tool_availability(view_func):
 
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get("token", None)
-        pydantic_model: ResponseCreateParams | None = kwargs.get("pydantic_model", None)
+        token: Token | None = kwargs.get("token")
+        pydantic_model: ResponseCreateParams | None = kwargs.get("pydantic_model")
         if not token or not pydantic_model:
             return error_response("Invalid request", status=400)
 

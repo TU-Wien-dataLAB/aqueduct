@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayBatchesTestCase
-from management.models import Batch as BatchORM
+from management.models import Batch as BatchModel
 from management.models import BatchStatus, Org, ServiceAccount, Team, Token, UserProfile
 
 User = get_user_model()
@@ -60,7 +60,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         # Create batch under token1 (personal token, self.headers)
         fid1 = self._create_jsonl_file()
         token1 = Token.objects.get(pk=1)
-        b1 = BatchORM.objects.create(
+        b1 = BatchModel.objects.create(
             completion_window="24h",
             created_at=1773058900,
             endpoint=self.url_chat,
@@ -80,7 +80,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         # Create batch under token2 (SA token)
         fid2 = self._create_jsonl_file(headers=headers2)
-        b2 = BatchORM.objects.create(
+        b2 = BatchModel.objects.create(
             completion_window="24h",
             created_at=1773058900,
             endpoint=self.url_chat,
@@ -110,7 +110,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         token = Token.objects.get(pk=1)
         for i in range(settings.MAX_USER_BATCHES):
             existing_batches.append(
-                BatchORM(
+                BatchModel(
                     completion_window="24h",
                     created_at=1773058900,
                     endpoint=self.url_chat,
@@ -121,7 +121,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
                 )
             )
             created_ids.append(f"batch-mock-{i}")
-        BatchORM.objects.bulk_create(existing_batches)
+        BatchModel.objects.bulk_create(existing_batches)
 
         # The next batch should be rejected with 403
         batch_payload = {
@@ -155,7 +155,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         token = Token.objects.get(pk=1)
         for i in range(settings.MAX_USER_BATCHES):
             existing_batches.append(
-                BatchORM(
+                BatchModel(
                     completion_window="24h",
                     created_at=1773058900,
                     endpoint=self.url_chat,
@@ -165,7 +165,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
                     token=token,
                 )
             )
-        BatchORM.objects.bulk_create(existing_batches)
+        BatchModel.objects.bulk_create(existing_batches)
 
         # Next batch should be blocked
         batch_payload = {
@@ -290,7 +290,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
             resp.status_code, 200, f"Expected 200, got {resp.status_code}: {resp.json()}"
         )
         batch_id = resp.json()["id"]
-        batch = BatchORM.objects.get(id=batch_id)
+        batch = BatchModel.objects.get(id=batch_id)
         self.assertEqual(batch.token, token2)
         self.assertEqual(batch.input_file_id, file_id)
 
@@ -322,7 +322,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
 
         # Upload file and create batch with SA token 1
         file_id1 = self._create_jsonl_file(name="sa1", headers=headers1)
-        b1 = BatchORM.objects.create(
+        b1 = BatchModel.objects.create(
             completion_window="24h",
             created_at=1773058900,
             endpoint=self.url_chat,
@@ -335,7 +335,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
 
         # Upload file and create batch with SA token 2
         file_id2 = self._create_jsonl_file(name="sa2", headers=headers2)
-        b2 = BatchORM.objects.create(
+        b2 = BatchModel.objects.create(
             completion_window="24h",
             created_at=1773058900,
             endpoint=self.url_chat,
@@ -379,7 +379,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
         # SA token 2 should be able to retrieve it
         resp = self.client.get(f"/batches/{batch_id}", headers=headers2)
         self.assertEqual(resp.status_code, 200)
-        batch = BatchORM.objects.get(id=batch_id)
+        batch = BatchModel.objects.get(id=batch_id)
         self.assertEqual(batch.token, token1)
 
     def test_cancel_batch_sa_team_scope(self):
@@ -403,7 +403,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
         # SA token 2 should be able to cancel it
         resp = self.client.post(f"/batches/{batch_id}/cancel", headers=headers2)
         self.assertEqual(resp.status_code, 200)
-        batch = BatchORM.objects.get(id=batch_id)
+        batch = BatchModel.objects.get(id=batch_id)
         self.assertEqual(batch.status, BatchStatus.CANCELLED)
 
     def test_personal_token_cannot_see_sa_team_batches(self):

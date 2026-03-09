@@ -86,7 +86,7 @@ async def response(request: ASGIRequest, response_id: str, token: Token, *args, 
     """Combined handler for GET and DELETE /v1/responses/{response_id}"""
     response = get_response_from_cache(response_id)
     model = response["model"]
-    client, model_relay = oai_client_from_body(model, request)
+    client, _model_relay = oai_client_from_body(model, request)
 
     if request.method == "GET":
         resp = await client.responses.retrieve(response_id=response_id)
@@ -109,13 +109,11 @@ async def response(request: ASGIRequest, response_id: str, token: Token, *args, 
 @log_request
 @validate_response_id
 @catch_router_exceptions
-async def get_response_input_items(
-    request: ASGIRequest, response_id: str, token: Token, *args, **kwargs
-):
+async def get_response_input_items(request: ASGIRequest, response_id: str, token: Token, *args, **kwargs):
     """Handler for GET /v1/responses/{response_id}/input_items"""
     response = get_response_from_cache(response_id)
     model = response["model"]
-    client, model_relay = oai_client_from_body(model, request)
+    client, _model_relay = oai_client_from_body(model, request)
     resp = await client.responses.input_items.list(response_id=response_id)
     data = resp.model_dump(exclude_none=True, exclude_unset=True)
     return JsonResponse(data=data, status=200)

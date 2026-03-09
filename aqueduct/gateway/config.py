@@ -57,7 +57,7 @@ def get_router_config() -> dict:
         with open(path) as f:
             data = yaml.safe_load(f)
     except (FileNotFoundError, TypeError):
-        raise RuntimeError(f"Unable to load router config from {path}")
+        raise RuntimeError(f"Unable to load router config from {path}") from None
 
     _validate_router_config(data)
 
@@ -132,4 +132,4 @@ def get_mcp_config() -> dict[str, MCPServerConfig]:
             data = json.load(f)["mcpServers"]
             return {server: MCPServerConfig(**config) for server, config in data.items()}
     except (FileNotFoundError, TypeError, json.JSONDecodeError, KeyError):
-        raise RuntimeError(f"Unable to load MCP config from {path}")
+        raise RuntimeError(f"Unable to load MCP config from {path}") from None

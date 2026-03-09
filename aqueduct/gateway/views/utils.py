@@ -1,8 +1,9 @@
 import json
 import logging
 import time
+from collections.abc import AsyncGenerator
 from contextlib import contextmanager
-from typing import Any, AsyncGenerator
+from typing import Any
 
 import httpx
 import litellm
@@ -73,7 +74,7 @@ def _openai_stream(
             try:
                 yield f"data: {chunk_str}\n\n"
             except Exception as e:
-                yield f"data: {str(e)}\n\n"
+                yield f"data: {e!s}\n\n"
 
         request_log.token_usage = token_usage
         request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
@@ -127,16 +128,15 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
         raise openai.NotFoundError(
             message=f"Incompatible model '{model}'!",
             response=httpx.Response(
-                request=httpx.Request(method=request.method, url=request.build_absolute_uri()),
-                status_code=404,
+                request=httpx.Request(method=request.method, url=request.build_absolute_uri()), status_code=404
             ),
             body=None,
-        )
+        ) from None
 
     router = get_router()
     deployment: litellm.Deployment = router.get_deployment(model_id=model)
 
-    model_relay, provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
+    model_relay, _provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
     return client, model_relay
 
 
@@ -171,7 +171,7 @@ class ResponseRegistrationWrapper:
         except StopAsyncIteration:
             raise
         except StopIteration:
-            raise StopAsyncIteration
+            raise StopAsyncIteration from None
 
     @staticmethod
     def extract_response_id_from_chunk(chunk: bytes) -> str | None:

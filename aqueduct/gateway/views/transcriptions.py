@@ -36,9 +36,7 @@ class TranscriptionCreateParams(RootModel):
 @log_request
 @check_model_availability
 @catch_router_exceptions
-async def transcriptions(
-    request: ASGIRequest, pydantic_model: dict, request_log: Request, *args, **kwargs
-):
+async def transcriptions(request: ASGIRequest, pydantic_model: dict, request_log: Request, *args, **kwargs):
     client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay
 
@@ -52,11 +50,7 @@ async def transcriptions(
         return JsonResponse(data=data, status=200)
     elif isinstance(transcription, str):
         # Text-based formats (VTT, SRT, text) return plain strings
-        return HttpResponse(
-            content=transcription.encode("utf-8"),
-            content_type="text/plain; charset=utf-8",
-            status=200,
-        )
+        return HttpResponse(content=transcription.encode("utf-8"), content_type="text/plain; charset=utf-8", status=200)
     elif isinstance(transcription, openai.AsyncStream):
         return StreamingHttpResponse(
             streaming_content=_openai_stream(stream=transcription, request_log=request_log),

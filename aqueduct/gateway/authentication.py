@@ -59,8 +59,7 @@ class TokenAuthenticationBackend(BaseBackend):
 
         if not token_instance:
             logger.warning(
-                "Authentication failed: Invalid token provided (starts with %s). "
-                "Token.find_by_key returned None.",
+                "Authentication failed: Invalid token provided (starts with %s). Token.find_by_key returned None.",
                 Token._generate_preview(token_key),
             )
             return None
@@ -68,17 +67,14 @@ class TokenAuthenticationBackend(BaseBackend):
         # Optional: Check for token expiry
         if token_instance.expires_at and token_instance.expires_at < timezone.now():
             logger.warning(
-                f"Authentication failed: Token {token_instance.name} ({token_instance.key_preview}) "
-                f"has expired."
+                f"Authentication failed: Token {token_instance.name} ({token_instance.key_preview}) has expired."
             )
             return None
 
         # Token is valid, return the associated user
         # Ensure the related user exists (should always be true due to ForeignKey constraints)
         if not token_instance.user:
-            logger.error(
-                f"Critical: Valid token {token_instance.id} found but has no associated user."
-            )
+            logger.error(f"Critical: Valid token {token_instance.id} found but has no associated user.")
             return None
 
         logger.info(

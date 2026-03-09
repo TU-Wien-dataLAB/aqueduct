@@ -5,10 +5,10 @@ import logging
 import re
 import sys
 import time
+from collections.abc import Iterable
 from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
-from typing import Iterable
 
 import httpx
 import litellm
@@ -52,10 +52,7 @@ def token_authenticated(token_auth_only: bool):
                 request.user = await request.auser()
 
             if not getattr(request, "user", None) or not request.user.is_authenticated:
-                log.error(
-                    "Authentication check failed in ai_gateway_view: request.user "
-                    "is not authenticated."
-                )
+                log.error("Authentication check failed in ai_gateway_view: request.user is not authenticated.")
                 return unauthorized_response
             log.debug(f"User {request.user.email} authenticated.")
 
@@ -168,8 +165,8 @@ def parse_body(model: TypeAdapter):
                 try:
                     data = json.loads(body)
                 except json.JSONDecodeError as e:
-                    log.error(f"JSON decode error: {str(e)}, body was: {request.body!r}")
-                    return error_response(f"Invalid JSON: {str(e)}", status=400)
+                    log.error(f"JSON decode error: {e!s}, body was: {request.body!r}")
+                    return error_response(f"Invalid JSON: {e!s}", status=400)
             elif content_type.startswith("multipart/form-data"):
                 try:
                     data = _parse_multipart_body(request)
@@ -178,8 +175,7 @@ def parse_body(model: TypeAdapter):
             else:
                 log.error(f"Unsupported Content-Type: {content_type}")
                 return error_response(
-                    f"Unsupported Content-Type: {content_type}",
-                    status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                    f"Unsupported Content-Type: {content_type}", status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE
                 )
 
             # "user_id" can be sent in the body (it is saved in the request log),
@@ -191,13 +187,12 @@ def parse_body(model: TypeAdapter):
             except ValidationError as e:
                 log.error(f"Validation error: {e}")
                 error_messages = ", ".join(
-                    f"{err['loc'][0] if err['loc'] else 'field'}: {err['msg']}"
-                    for err in e.errors()
+                    f"{err['loc'][0] if err['loc'] else 'field'}: {err['msg']}" for err in e.errors()
                 )
                 return error_response(error_messages, status=HTTPStatus.BAD_REQUEST)
             except Exception as e:
-                log.error(f"Request body parse error: {str(e)}, data was: {data!r}")
-                return error_response(f"Failed to parse the request body: {str(e)}", status=400)
+                log.error(f"Request body parse error: {e!s}, data was: {data!r}")
+                return error_response(f"Failed to parse the request body: {e!s}", status=400)
 
             # If there are files sent with the request (i.e. content type is "multipart/form-data"),
             # update bytes to BytesIO because pydantic TypeAdapter has problems with BytesIO.
@@ -280,29 +275,19 @@ def check_limits(view_func):
                 # --- Check Limits ---
                 exceeded = []
 
-                if (
-                    limits.requests_per_minute is not None
-                    and request_count >= limits.requests_per_minute
-                ):
+                if limits.requests_per_minute is not None and request_count >= limits.requests_per_minute:
                     exceeded.append(f"Request limit ({limits.requests_per_minute}/min)")
 
-                if (
-                    limits.input_tokens_per_minute is not None
-                    and total_input >= limits.input_tokens_per_minute
-                ):
+                if limits.input_tokens_per_minute is not None and total_input >= limits.input_tokens_per_minute:
                     exceeded.append(f"Input token limit ({limits.input_tokens_per_minute}/min)")
 
-                if (
-                    limits.output_tokens_per_minute is not None
-                    and total_output >= limits.output_tokens_per_minute
-                ):
+                if limits.output_tokens_per_minute is not None and total_output >= limits.output_tokens_per_minute:
                     exceeded.append(f"Output token limit ({limits.output_tokens_per_minute}/min)")
 
                 if len(exceeded) > 0:
                     error_message = "Rate limit exceeded. " + ", ".join(exceeded) + "."
                     log.warning(
-                        f"Rate limit exceeded for Token '{token.name}' (ID: {token.id}). "
-                        f"Details: {error_message}"
+                        f"Rate limit exceeded for Token '{token.name}' (ID: {token.id}). Details: {error_message}"
                     )
                     log.error(f"Rate limit exceeded - {error_message}")
                     # Return 429 Too Many Requests
@@ -384,9 +369,7 @@ def check_model_availability(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
-            log.error(
-                "check_model_availability decorator used without @token_authenticated decorator"
-            )
+            log.error("check_model_availability decorator used without @token_authenticated decorator")
             return error_response("Internal server error", status=500)
         body: dict | None = kwargs.get("pydantic_model", None)
         if not body:
@@ -409,9 +392,7 @@ def check_mcp_server_availability(view_func):
     async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token", None)
         if not token:
-            log.error(
-                "check_mcp_server_availability decorator used without @token_authenticated decorator"
-            )
+            log.error("check_mcp_server_availability decorator used without @token_authenticated decorator")
             return error_response("Internal server error", status=500)
         server_name: str | None = kwargs.get("name", None)
         if not server_name:
@@ -443,15 +424,13 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
     if file_data:
         # file data contains b64 encoded files -> decode as bytes
         try:
-            header, file_b64 = file_data.split(
-                ",", maxsplit=1
-            )  # removes data uri (data:application/pdf;base64,<b64>)
+            header, file_b64 = file_data.split(",", maxsplit=1)  # removes data uri (data:application/pdf;base64,<b64>)
             if not header.startswith("data:"):
                 raise ValueError("Incorrect data URI for base64 encoded file.")
             file_bytes = base64.b64decode(file_b64)
             return file_bytes
         except Exception as e:
-            raise ValueError(f"Failed to decode base64 file data: {e}")
+            raise ValueError(f"Failed to decode base64 file data: {e}") from e
 
     elif file_id:
         # file is given as an id of a file object
@@ -473,11 +452,11 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
                 response = await client.files.content(file_obj.id)
                 return response.content
             except ValueError as e:
-                raise ValueError(f"Files API not configured: {e}")
+                raise ValueError(f"Files API not configured: {e}") from e
         except FileObject.DoesNotExist as e:
             raise e
         except Exception as e:
-            raise ValueError(f"Failed to read file with id {file_id}: {e}")
+            raise ValueError(f"Failed to read file with id {file_id}: {e}") from e
     else:
         raise RuntimeError("Neither 'file_data' nor 'file_id' are given.")
 
@@ -518,13 +497,12 @@ def process_file_content(view_func):
                         return error_response("File not found", status=404)
                     except Exception as e:
                         # return json response here if there was an error
-                        log.error(f"Error processing file - {str(e)}")
-                        return error_response(f"Error processing file: {str(e)}", status=400)
+                        log.error(f"Error processing file - {e!s}")
+                        return error_response(f"Error processing file: {e!s}", status=400)
 
                     if len(file_bytes) > max_file_bytes:
                         log.error(
-                            f"File processing error - File too large (individual file must be "
-                            f"<= {max_file_mb}MB)"
+                            f"File processing error - File too large (individual file must be <= {max_file_mb}MB)"
                         )
                         return error_response(
                             f"Error processing file content: File too large. "
@@ -548,10 +526,8 @@ def process_file_content(view_func):
                         extracted_text = await extract_text_with_tika(file_bytes)
                     except httpx.HTTPStatusError as e:
                         # return json response here if there was a tika request error
-                        log.error(f"Tika error extracting text from file - {str(e)}")
-                        return error_response(
-                            f"Tika error extracting text from file: {str(e)}", status=400
-                        )
+                        log.error(f"Tika error extracting text from file - {e!s}")
+                        return error_response(f"Tika error extracting text from file: {e!s}", status=400)
 
                     extracted_text = (
                         f"Content of user-uploaded file '{file.get('filename', 'unknown filename')}':"
@@ -619,11 +595,7 @@ def catch_router_exceptions(view_func):
         except (litellm.Timeout, openai.APITimeoutError) as e:
             log.error(f"Timeout - {_r(e)}")
             return _exception_response(e, status=504)
-        except (
-            litellm.ServiceUnavailableError,
-            litellm.APIConnectionError,
-            openai.APIConnectionError,
-        ) as e:
+        except (litellm.ServiceUnavailableError, litellm.APIConnectionError, openai.APIConnectionError) as e:
             log.error(f"Service unavailable - {_r(e)}")
             return _exception_response(e, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
@@ -649,9 +621,7 @@ def tos_accepted(view_func):
             key_version = cache.get("django:tos:key_version")
             user_id = token.user.id
 
-            skip: bool = cache.get(
-                f"django:tos:skip_tos_check:{user_id}", False, version=key_version
-            )
+            skip: bool = cache.get(f"django:tos:skip_tos_check:{user_id}", False, version=key_version)
 
             if not skip:
                 user_agreed = cache.get(f"django:tos:agreed:{user_id}", None, version=key_version)
@@ -661,8 +631,7 @@ def tos_accepted(view_func):
                 if not user_agreed:
                     log.error("Terms of service agreement required")
                     return error_response(
-                        "In order to use the API you have to agree to the terms of service!",
-                        status=403,
+                        "In order to use the API you have to agree to the terms of service!", status=403
                     )
 
         return await view_func(request, *args, **kwargs)
@@ -741,16 +710,13 @@ def parse_jsonrpc_message(view_func):
                 log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
                 return error_response("Mcp-Session-Id header required", status=400)
 
-            return await view_func(request, request_log=None, *args, **kwargs)
+            return await view_func(request, *args, request_log=None, **kwargs)
 
         data = kwargs["pydantic_model"]
         # For mcp requests, timeout should not be passed to the JSON RPC Message
         data.pop("timeout", None)
         json_rpc_message = JSONRPCMessage.model_validate(data)
-        is_initialize = (
-            hasattr(json_rpc_message.root, "method")
-            and json_rpc_message.root.method == "initialize"
-        )
+        is_initialize = hasattr(json_rpc_message.root, "method") and json_rpc_message.root.method == "initialize"
 
         if not is_initialize and not session_id:
             log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
@@ -822,20 +788,15 @@ def check_tool_availability(view_func):
                         # the user wants to access an externally managed MCP server
                         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
                             log.error(f"MCP server not found - {server_name}")
-                            return error_response(
-                                f"MCP server not found - {server_name}", status=404
-                            )
+                            return error_response(f"MCP server not found - {server_name}", status=404)
                     else:
                         expected_url = request.build_absolute_uri(
                             reverse("gateway:mcp_server", kwargs={"name": server_name})
                         )
                         if tool.get("server_url") != expected_url:
-                            log.error(
-                                "The server_url of the tool does not match the Aqueduct MCP server url."
-                            )
+                            log.error("The server_url of the tool does not match the Aqueduct MCP server url.")
                             return error_response(
-                                "The server_url of the tool does not match the Aqueduct MCP server url.",
-                                status=400,
+                                "The server_url of the tool does not match the Aqueduct MCP server url.", status=400
                             )
 
                         tool["server_url"] = server_config["url"]
@@ -848,15 +809,12 @@ def check_tool_availability(view_func):
                         if token.service_account:
                             vs_count = await sync_to_async(
                                 VectorStore.objects.filter(
-                                    id__in=unique_vs_ids,
-                                    token__service_account__team=token.service_account.team,
+                                    id__in=unique_vs_ids, token__service_account__team=token.service_account.team
                                 ).count
                             )()
                         else:
                             vs_count = await sync_to_async(
-                                VectorStore.objects.filter(
-                                    id__in=unique_vs_ids, token__user=token.user
-                                ).count
+                                VectorStore.objects.filter(id__in=unique_vs_ids, token__user=token.user).count
                             )()
 
                         if vs_count != len(unique_vs_ids):

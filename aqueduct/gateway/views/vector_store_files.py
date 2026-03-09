@@ -1,4 +1,4 @@
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -31,12 +31,7 @@ class FileUpdateBody(TypedDict, total=False):
 @parse_body(model=TypeAdapter(FileCreateParams))
 @log_request
 async def vector_store_files(
-    request: ASGIRequest,
-    token: Token,
-    vector_store_id: str,
-    pydantic_model: Optional[dict] = None,
-    *args,
-    **kwargs,
+    request: ASGIRequest, token: Token, vector_store_id: str, pydantic_model: dict | None = None, *args, **kwargs
 ):
     """
     GET /v1/vector_stores/{vector_store_id}/files - List files in vector store
@@ -62,13 +57,9 @@ async def vector_store_files(
         # List files in vector store - return upstream data directly
         try:
             remote_files_response = await client.vector_stores.files.list(vector_store_id=vs_obj.id)
-            remote_files = (
-                remote_files_response.data if hasattr(remote_files_response, "data") else []
-            )
+            remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
         except Exception:
-            return error_response(
-                "Failed to retrieve files from upstream.", error_type="server_error", status=502
-            )
+            return error_response("Failed to retrieve files from upstream.", error_type="server_error", status=502)
 
         # Return upstream data directly (IDs already match)
         response_files = []
@@ -76,9 +67,7 @@ async def vector_store_files(
             file_data = remote_file.model_dump(mode="json")
             response_files.append(file_data)
 
-        return JsonResponse(
-            {"object": "list", "data": response_files, "has_more": False}, status=200
-        )
+        return JsonResponse({"object": "list", "data": response_files, "has_more": False}, status=200)
 
     # POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
     params = pydantic_model if pydantic_model else {}
@@ -110,9 +99,7 @@ async def vector_store_files(
         remote_vs_file = await client.vector_stores.files.create(**create_kwargs)
     except Exception as e:
         return error_response(
-            f"Failed to add file to vector store on upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
+            f"Failed to add file to vector store on upstream: {e!s}", error_type="server_error", status=502
         )
 
     # Atomically check the file limit and create the local record.
@@ -128,9 +115,7 @@ async def vector_store_files(
                         id=vector_store_id, token__service_account__team=token.service_account.team
                     )
                 else:
-                    vs_locked = VectorStore.objects.select_for_update().get(
-                        id=vector_store_id, token__user=token.user
-                    )
+                    vs_locked = VectorStore.objects.select_for_update().get(id=vector_store_id, token__user=token.user)
             except VectorStore.DoesNotExist:
                 return None, "not_found"
 
@@ -150,7 +135,7 @@ async def vector_store_files(
             vs_file_obj.save()
             return vs_file_obj, "ok"
 
-    result, recheck_status = await create_local_file_with_recheck()
+    _result, recheck_status = await create_local_file_with_recheck()
 
     if recheck_status == "not_found":
         return error_response("Vector store not found.", param="vector_store_id", status=404)
@@ -159,9 +144,7 @@ async def vector_store_files(
         # Upstream file was already created but limit was exceeded by a concurrent request.
         # Clean up the upstream file.
         try:
-            await client.vector_stores.files.delete(
-                vector_store_id=vs_obj.id, file_id=remote_vs_file.id
-            )
+            await client.vector_stores.files.delete(vector_store_id=vs_obj.id, file_id=remote_vs_file.id)
         except Exception:
             pass  # Best-effort cleanup
         return error_response(f"Vector store file limit reached ({max_files})", status=403)
@@ -183,7 +166,7 @@ async def vector_store_file(
     token: Token,
     vector_store_id: str,
     file_id: str,
-    pydantic_model: Optional[dict] = None,
+    pydantic_model: dict | None = None,
     *args,
     **kwargs,
 ):
@@ -222,9 +205,7 @@ async def vector_store_file(
             remote_vs_file = await vs_file_obj.areload_from_upstream(client)
         except Exception as e:
             return error_response(
-                f"Failed to retrieve vector store file from upstream: {str(e)}",
-                error_type="server_error",
-                status=502,
+                f"Failed to retrieve vector store file from upstream: {e!s}", error_type="server_error", status=502
             )
 
         # Return upstream response directly (IDs already match)
@@ -241,17 +222,13 @@ async def vector_store_file(
             update_kwargs["attributes"] = params["attributes"]
 
         if not params.get("attributes"):
-            return error_response(
-                "Missing required parameter: attributes", param="attributes", status=400
-            )
+            return error_response("Missing required parameter: attributes", param="attributes", status=400)
 
         try:
             remote_vs_file = await client.vector_stores.files.update(**update_kwargs)
         except Exception as e:
             return error_response(
-                f"Failed to update file attributes on upstream: {str(e)}",
-                error_type="server_error",
-                status=502,
+                f"Failed to update file attributes on upstream: {e!s}", error_type="server_error", status=502
             )
 
         # Return upstream response directly (IDs already match)
@@ -264,9 +241,7 @@ async def vector_store_file(
         await vs_file_obj.adelete_upstream(client)
     except Exception as e:
         return error_response(
-            f"Failed to delete vector store file from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
+            f"Failed to delete vector store file from upstream: {e!s}", error_type="server_error", status=502
         )
 
     # Delete local record
@@ -307,22 +282,16 @@ async def vector_store_file_content(
 
     # Get the vector store file
     try:
-        vs_file_obj = await VectorStoreFile.objects.select_related("file_obj").aget(
-            id=file_id, vector_store=vs_obj
-        )
+        vs_file_obj = await VectorStoreFile.objects.select_related("file_obj").aget(id=file_id, vector_store=vs_obj)
     except VectorStoreFile.DoesNotExist:
         return error_response("Vector store file not found.", param="file_id", status=404)
 
     # Get content from upstream
     try:
-        content_response = await client.vector_stores.files.content(
-            vector_store_id=vs_obj.id, file_id=vs_file_obj.id
-        )
+        content_response = await client.vector_stores.files.content(vector_store_id=vs_obj.id, file_id=vs_file_obj.id)
     except Exception as e:
         return error_response(
-            f"Failed to retrieve file content from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
+            f"Failed to retrieve file content from upstream: {e!s}", error_type="server_error", status=502
         )
 
     # Return content directly as binary response

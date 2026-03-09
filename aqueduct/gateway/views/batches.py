@@ -22,13 +22,7 @@ from .files import sync_batch_file_if_needed
 @tos_accepted
 @parse_body(TypeAdapter(BatchCreateParams))
 @log_request
-async def batches(
-    request: ASGIRequest,
-    token: Token,
-    pydantic_model: BatchCreateParams | None = None,
-    *args,
-    **kwargs,
-):
+async def batches(request: ASGIRequest, token: Token, pydantic_model: BatchCreateParams | None = None, *args, **kwargs):
     """
     GET /batches - list user's batches from local DB
     POST /batches - create a new batch on upstream
@@ -39,17 +33,10 @@ async def batches(
         else:
             batch_qs = Batch.objects.filter(token__user=token.user)
 
-        batch_objects = await sync_to_async(list)(
-            batch_qs.order_by("-created_at").select_related("input_file")
-        )
+        batch_objects = await sync_to_async(list)(batch_qs.order_by("-created_at").select_related("input_file"))
 
         return JsonResponse(
-            {
-                "object": "list",
-                "data": [b.model.model_dump() for b in batch_objects],
-                "has_more": False,
-            },
-            status=200,
+            {"object": "list", "data": [b.model.model_dump() for b in batch_objects], "has_more": False}, status=200
         )
 
     # POST /batches
@@ -60,11 +47,7 @@ async def batches(
         active_count = await sync_to_async(
             Batch.objects.filter(
                 token__service_account__team=token.service_account.team,
-                status__in=[
-                    BatchStatus.VALIDATING,
-                    BatchStatus.IN_PROGRESS,
-                    BatchStatus.CANCELLING,
-                ],
+                status__in=[BatchStatus.VALIDATING, BatchStatus.IN_PROGRESS, BatchStatus.CANCELLING],
             ).count
         )()
         limit = getattr(settings, "MAX_TEAM_BATCHES", 50)
@@ -72,11 +55,7 @@ async def batches(
         active_count = await sync_to_async(
             Batch.objects.filter(
                 token__user=token.user,
-                status__in=[
-                    BatchStatus.VALIDATING,
-                    BatchStatus.IN_PROGRESS,
-                    BatchStatus.CANCELLING,
-                ],
+                status__in=[BatchStatus.VALIDATING, BatchStatus.IN_PROGRESS, BatchStatus.CANCELLING],
             ).count
         )()
         limit = max_batches
@@ -93,13 +72,10 @@ async def batches(
     try:
         if token.service_account:
             file_obj = await FileObject.objects.aget(
-                id=pydantic_model["input_file_id"],
-                token__service_account__team=token.service_account.team,
+                id=pydantic_model["input_file_id"], token__service_account__team=token.service_account.team
             )
         else:
-            file_obj = await FileObject.objects.aget(
-                id=pydantic_model["input_file_id"], token__user=token.user
-            )
+            file_obj = await FileObject.objects.aget(id=pydantic_model["input_file_id"], token__user=token.user)
     except FileObject.DoesNotExist:
         return error_response("Input file not found.", param="input_file_id", status=404)
 
@@ -112,9 +88,7 @@ async def batches(
             metadata=pydantic_model.get("metadata"),
         )
     except Exception as e:
-        return error_response(
-            f"Failed to create batch on upstream: {str(e)}", error_type="server_error", status=502
-        )
+        return error_response(f"Failed to create batch on upstream: {e!s}", error_type="server_error", status=502)
 
     # Create local tracking record with upstream ID
     now = timezone.now()
@@ -128,9 +102,7 @@ async def batches(
         status=remote_batch.status,
         metadata=pydantic_model.get("metadata"),
         expires_at=remote_batch.expires_at,
-        request_counts=remote_batch.request_counts.model_dump()
-        if remote_batch.request_counts
-        else {},
+        request_counts=remote_batch.request_counts.model_dump() if remote_batch.request_counts else {},
     )
     await sync_to_async(batch_obj.save)()
 
@@ -160,9 +132,7 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
                 id=batch_id, token__service_account__team=token.service_account.team
             )
         else:
-            batch_obj = await Batch.objects.select_related("input_file").aget(
-                id=batch_id, token__user=token.user
-            )
+            batch_obj = await Batch.objects.select_related("input_file").aget(id=batch_id, token__user=token.user)
     except Batch.DoesNotExist:
         return error_response("Batch not found.", param="batch_id", status=404)
 
@@ -174,19 +144,13 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
     try:
         remote_batch = await batch_obj.areload_from_upstream(client)
     except Exception as e:
-        return error_response(
-            f"Failed to retrieve batch from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+        return error_response(f"Failed to retrieve batch from upstream: {e!s}", error_type="server_error", status=502)
 
     # Create local FileObject records for output/error files if missing (inherit ownership from input_file token)
     output_file_obj = await sync_batch_file_if_needed(
         remote_batch.output_file_id, token, client, batch_obj, "output_file"
     )
-    error_file_obj = await sync_batch_file_if_needed(
-        remote_batch.error_file_id, token, client, batch_obj, "error_file"
-    )
+    error_file_obj = await sync_batch_file_if_needed(remote_batch.error_file_id, token, client, batch_obj, "error_file")
 
     # Build response from upstream data, ensuring file IDs match our local records
     response_data = remote_batch.model_dump()
@@ -216,9 +180,7 @@ async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args,
                 id=batch_id, token__service_account__team=token.service_account.team
             )
         else:
-            batch_obj = await Batch.objects.select_related("input_file").aget(
-                id=batch_id, token__user=token.user
-            )
+            batch_obj = await Batch.objects.select_related("input_file").aget(id=batch_id, token__user=token.user)
     except Batch.DoesNotExist:
         return error_response("Batch not found.", param="batch_id", status=404)
 
@@ -230,9 +192,7 @@ async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args,
     try:
         remote_batch = await client.batches.cancel(batch_obj.id)
     except Exception as e:
-        return error_response(
-            f"Failed to cancel batch on upstream: {str(e)}", error_type="server_error", status=502
-        )
+        return error_response(f"Failed to cancel batch on upstream: {e!s}", error_type="server_error", status=502)
 
     # Update local record
     batch_obj.status = remote_batch.status

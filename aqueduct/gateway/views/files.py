@@ -16,13 +16,7 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter
 from gateway.config import get_files_api_client
 from management.models import Batch, FileObject, Token
 
-from .decorators import (
-    log_request,
-    parse_body,
-    process_batch_file,
-    token_authenticated,
-    tos_accepted,
-)
+from .decorators import log_request, parse_body, process_batch_file, token_authenticated, tos_accepted
 from .errors import error_response
 
 
@@ -32,7 +26,7 @@ class FilesCreateParams(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-def calculate_expires_at(remote_expires_at: Optional[int]) -> int:
+def calculate_expires_at(remote_expires_at: int | None) -> int:
     """Calculate local expiry timestamp, using earlier of local or upstream expiry."""
     now = timezone.now()
     expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
@@ -53,7 +47,7 @@ def validate_batch_file(data: bytes):
         try:
             d = json.loads(line)
         except json.decoder.JSONDecodeError:
-            raise ValueError(f"Invalid JSON at line {i + 1}")
+            raise ValueError(f"Invalid JSON at line {i + 1}") from None
         custom_id = d.get("custom_id")
         if not custom_id:
             raise ValueError(f"No custom_id found at line {i + 1}")
@@ -64,12 +58,12 @@ def validate_batch_file(data: bytes):
 
 
 async def sync_batch_file_if_needed(
-    remote_file_id: Optional[str],
+    remote_file_id: str | None,
     token: Token,
     client: AsyncOpenAI,
     batch_obj: Optional["Batch"] = None,
     field_name: Literal["output_file", "error_file"] = "output_file",
-) -> Optional[FileObject]:
+) -> FileObject | None:
     """
     Ensure a local FileObject record exists for a batch output/error file.
 
@@ -134,9 +128,9 @@ async def sync_batch_file_if_needed(
 async def files(
     request: ASGIRequest,
     token: Token,
-    pydantic_model: Optional[dict] = None,
-    file_content: Optional[bytes] = None,
-    file_preview: Optional[str] = None,
+    pydantic_model: dict | None = None,
+    file_content: bytes | None = None,
+    file_preview: str | None = None,
     *args,
     **kwargs,
 ):
@@ -154,17 +148,13 @@ async def files(
             )
         else:
             file_objects = await sync_to_async(list)(
-                FileObject.objects.filter(token__user=token.user)
-                .order_by("-created_at")
-                .select_related("token")
+                FileObject.objects.filter(token__user=token.user).order_by("-created_at").select_related("token")
             )
 
         return JsonResponse(
             {
                 "object": "list",
-                "data": [
-                    f.model.model_dump(exclude_none=True, exclude_unset=True) for f in file_objects
-                ],
+                "data": [f.model.model_dump(exclude_none=True, exclude_unset=True) for f in file_objects],
                 "has_more": False,
             },
             status=200,
@@ -177,25 +167,20 @@ async def files(
 
     # Validate file extension for batch files
     if purpose == "batch" and not filename.endswith(".jsonl"):
-        return error_response(
-            "Only .jsonl files are currently supported for purpose 'batch'.", status=400
-        )
+        return error_response("Only .jsonl files are currently supported for purpose 'batch'.", status=400)
 
     # Enforce per-token total storage limit
     if token.service_account:
-        sum_res = await FileObject.objects.filter(
-            token__service_account__team=token.service_account.team
-        ).aaggregate(sum_bytes=Sum("bytes"))
-    else:
-        sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(
+        sum_res = await FileObject.objects.filter(token__service_account__team=token.service_account.team).aaggregate(
             sum_bytes=Sum("bytes")
         )
+    else:
+        sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(sum_bytes=Sum("bytes"))
     current_total = sum_res.get("sum_bytes") or 0
     max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB * 1024 * 1024
     if current_total + len(file_content) > max_total_bytes:
         return error_response(
-            f"Total files size exceeds {settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB}MB limit.",
-            status=413,
+            f"Total files size exceeds {settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB}MB limit.", status=413
         )
 
     # Validate batch file format (valid JSON, unique custom_ids)
@@ -203,7 +188,7 @@ async def files(
         try:
             validate_batch_file(file_content)
         except ValueError as e:
-            return error_response(f"Batch file validation failed: {str(e)}", status=400)
+            return error_response(f"Batch file validation failed: {e!s}", status=400)
 
     # file_content is already read and processed by @process_batch_file decorator
     # For batch files: model names are rewritten
@@ -269,9 +254,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
             remote_file = await file_obj.areload_from_upstream(client)
         except Exception as e:
             return error_response(
-                f"Failed to retrieve file from upstream: {str(e)}",
-                error_type="server_error",
-                status=502,
+                f"Failed to retrieve file from upstream: {e!s}", error_type="server_error", status=502
             )
 
         # Return response with upstream ID (same as file_obj.id)
@@ -282,9 +265,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     try:
         await file_obj.adelete_upstream(client)
     except Exception as e:
-        return error_response(
-            f"Failed to delete file from upstream: {str(e)}", error_type="server_error", status=502
-        )
+        return error_response(f"Failed to delete file from upstream: {e!s}", error_type="server_error", status=502)
 
     # Delete local record
     await sync_to_async(file_obj.delete)()
@@ -325,9 +306,7 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
         response = await client.files.content(file_obj.id)
     except Exception as e:
         return error_response(
-            f"Failed to retrieve file content from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
+            f"Failed to retrieve file content from upstream: {e!s}", error_type="server_error", status=502
         )
 
     return HttpResponse(response.content, content_type="application/octet-stream", status=200)

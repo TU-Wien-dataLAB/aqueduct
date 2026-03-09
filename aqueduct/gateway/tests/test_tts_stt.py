@@ -26,10 +26,7 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         }
 
         response = await self.async_client.post(
-            self.url_tts,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
+            self.url_tts, data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
@@ -46,9 +43,7 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
 
         # Check that the database contains one request
         requests = await sync_to_async(list)(Request.objects.all())
-        self.assertEqual(
-            len(requests), 1, "There should be exactly one request after speech generation."
-        )
+        self.assertEqual(len(requests), 1, "There should be exactly one request after speech generation.")
         req = requests[0]
         self.assertIn("speech", req.path, "Request endpoint should be for speech.")
         self.assertIsNotNone(req.token_usage)
@@ -58,22 +53,13 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("TTS tests require OpenAI backend")
 
-        payload = {
-            "model": "invalid-tts-model",
-            "input": "Hello, this is a test.",
-            "voice": "alloy",
-        }
+        payload = {"model": "invalid-tts-model", "input": "Hello, this is a test.", "voice": "alloy"}
 
         response = self.client.post(
-            self.url_tts,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
+            self.url_tts, data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
 
-        self.assertEqual(
-            response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}")
 
     def test_speech_endpoint_missing_required_fields(self):
         """Test speech endpoint with missing required fields."""
@@ -87,15 +73,10 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         }
 
         response = self.client.post(
-            self.url_tts,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
+            self.url_tts, data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
 
-        self.assertEqual(
-            response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}")
 
     def test_speech_endpoint_non_tts_model(self):
         """Test speech endpoint with a model that doesn't support TTS."""
@@ -109,15 +90,10 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         }
 
         response = self.client.post(
-            self.url_tts,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
+            self.url_tts, data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
 
-        self.assertEqual(
-            response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}")
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
     def test_speech_endpoint_timeout(self):
@@ -128,15 +104,10 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         payload = {"model": self.tts_model, "input": "Hello, this is a test.", "voice": "alloy"}
 
         response = self.client.post(
-            self.url_tts,
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
+            self.url_tts, data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
 
-        self.assertEqual(
-            response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}")
 
 
 class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
@@ -150,9 +121,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
     def setUp(self):
         super().setUp()
-        self.test_audio_file = SimpleUploadedFile(
-            "Eraserhead.mp3", self.test_audio_content, content_type="audio/mp3"
-        )
+        self.test_audio_file = SimpleUploadedFile("Eraserhead.mp3", self.test_audio_content, content_type="audio/mp3")
 
     def test_transcriptions_endpoint_basic(self):
         """Test basic transcription with valid audio file."""
@@ -160,25 +129,17 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
             self.skipTest("STT tests require OpenAI backend")
 
         response = self.client.post(
-            self.url_stt,
-            {"file": self.test_audio_file, "model": self.stt_model},
-            headers=self.multipart_headers,
+            self.url_stt, {"file": self.test_audio_file, "model": self.stt_model}, headers=self.multipart_headers
         )
 
-        self.assertEqual(
-            response.status_code,
-            200,
-            f"Expected 200 OK, got {response.status_code}: {response.content}",
-        )
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         response_json = response.json()
         self.assertIn("text", response_json, "Response should contain 'text' field")
 
         # Check that the database contains one request
         requests = list(Request.objects.all())
-        self.assertEqual(
-            len(requests), 1, "There should be exactly one request after transcription."
-        )
+        self.assertEqual(len(requests), 1, "There should be exactly one request after transcription.")
         req = requests[0]
         self.assertIn("transcriptions", req.path, "Request endpoint should be for transcriptions.")
         self.assertIsNotNone(req.token_usage)
@@ -189,14 +150,10 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
             self.skipTest("STT tests require OpenAI backend")
 
         response = self.client.post(
-            self.url_stt,
-            {"file": self.test_audio_file, "model": "invalid-stt-model"},
-            headers=self.multipart_headers,
+            self.url_stt, {"file": self.test_audio_file, "model": "invalid-stt-model"}, headers=self.multipart_headers
         )
 
-        self.assertEqual(
-            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}")
         self.assertIn("Incompatible model", response.json()["error"]["message"])
 
     def test_transcriptions_endpoint_missing_file(self):
@@ -210,9 +167,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
             headers=self.multipart_headers,
         )
 
-        self.assertEqual(
-            response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}")
 
     def test_transcriptions_endpoint_non_stt_model(self):
         """Test transcriptions endpoint with a model that doesn't support STT."""
@@ -225,9 +180,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
             headers=self.multipart_headers,
         )
 
-        self.assertEqual(
-            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}")
 
     def test_transcriptions_endpoint_with_language(self):
         """Test transcriptions endpoint with language parameter."""
@@ -251,11 +204,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
         response = self.client.post(
             self.url_stt,
-            {
-                "file": self.test_audio_file,
-                "model": self.stt_model,
-                "response_format": "verbose_json",
-            },
+            {"file": self.test_audio_file, "model": self.stt_model, "response_format": "verbose_json"},
             headers=self.multipart_headers,
         )
 
@@ -284,8 +233,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
         # VTT files should start with "WEBVTT"
         self.assertTrue(
-            vtt_content.startswith("WEBVTT"),
-            f"VTT content should start with 'WEBVTT', got: {vtt_content[:50]}",
+            vtt_content.startswith("WEBVTT"), f"VTT content should start with 'WEBVTT', got: {vtt_content[:50]}"
         )
 
         # Should contain some transcribed text
@@ -293,9 +241,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
         # Check that the database contains one request
         requests = list(Request.objects.all())
-        self.assertEqual(
-            len(requests), 1, "There should be exactly one request after transcription."
-        )
+        self.assertEqual(len(requests), 1, "There should be exactly one request after transcription.")
         req = requests[0]
         self.assertIn("transcriptions", req.path, "Request endpoint should be for transcriptions.")
 
@@ -320,8 +266,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
         # SRT files should start with a number (subtitle index)
         self.assertTrue(
-            srt_content.strip().startswith("1"),
-            f"SRT content should start with '1', got: {srt_content[:50]}",
+            srt_content.strip().startswith("1"), f"SRT content should start with '1', got: {srt_content[:50]}"
         )
 
         # Should contain some transcribed text
@@ -329,9 +274,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
         # Check that the database contains one request
         requests = list(Request.objects.all())
-        self.assertEqual(
-            len(requests), 1, "There should be exactly one request after transcription."
-        )
+        self.assertEqual(len(requests), 1, "There should be exactly one request after transcription.")
         req = requests[0]
         self.assertIn("transcriptions", req.path, "Request endpoint should be for transcriptions.")
 
@@ -359,9 +302,7 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
 
         # Check that the database contains one request
         requests = list(Request.objects.all())
-        self.assertEqual(
-            len(requests), 1, "There should be exactly one request after transcription."
-        )
+        self.assertEqual(len(requests), 1, "There should be exactly one request after transcription.")
         req = requests[0]
         self.assertIn("transcriptions", req.path, "Request endpoint should be for transcriptions.")
 
@@ -372,14 +313,10 @@ class TranscriptionsEndpointTest(GatewayTTSSTTestCase):
             self.skipTest("STT tests require OpenAI backend")
 
         response = self.client.post(
-            self.url_stt,
-            {"file": self.test_audio_file, "model": self.stt_model},
-            headers=self.multipart_headers,
+            self.url_stt, {"file": self.test_audio_file, "model": self.stt_model}, headers=self.multipart_headers
         )
 
-        self.assertEqual(
-            response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}")
 
 
 class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
@@ -393,28 +330,16 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest("TTS/STT lifecycle tests require OpenAI backend")
 
-        original_text = (
-            "Hello, this is a test of the complete text-to-speech and speech-to-text lifecycle."
-        )
+        original_text = "Hello, this is a test of the complete text-to-speech and speech-to-text lifecycle."
 
         # Generate speech using TTS endpoint
-        tts_payload = {
-            "model": self.tts_model,
-            "input": original_text,
-            "voice": "alloy",
-            "response_format": "mp3",
-        }
+        tts_payload = {"model": self.tts_model, "input": original_text, "voice": "alloy", "response_format": "mp3"}
 
         tts_response = await self.async_client.post(
-            self.url_tts,
-            data=json.dumps(tts_payload),
-            headers=self.headers,
-            content_type="application/json",
+            self.url_tts, data=json.dumps(tts_payload), headers=self.headers, content_type="application/json"
         )
 
-        self.assertEqual(
-            tts_response.status_code, 200, f"TTS request failed: {tts_response.status_code}"
-        )
+        self.assertEqual(tts_response.status_code, 200, f"TTS request failed: {tts_response.status_code}")
 
         # Collect the audio data from streaming response
         audio_data = b""
@@ -436,9 +361,7 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
             self.url_stt, {"file": buffer, "model": self.stt_model}, headers=self.multipart_headers
         )
 
-        self.assertEqual(
-            stt_response.status_code, 200, f"STT request failed: {stt_response.status_code}"
-        )
+        self.assertEqual(stt_response.status_code, 200, f"STT request failed: {stt_response.status_code}")
 
         stt_response_json = stt_response.json()
         self.assertIn("text", stt_response_json, "STT response should contain 'text' field")
@@ -448,18 +371,14 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
         self.assertGreater(len(transcribed_text), 0, "Transcribed text should not be empty")
 
         # Check STT request was logged
-        stt_requests = await sync_to_async(list)(
-            Request.objects.filter(path__contains="transcriptions")
-        )
+        stt_requests = await sync_to_async(list)(Request.objects.filter(path__contains="transcriptions"))
         self.assertEqual(len(stt_requests), 1, "There should be exactly one STT request.")
         stt_request = stt_requests[0]
         self.assertIsNotNone(stt_request.token_usage)
 
         # Verify the complete lifecycle: total requests should be 2 (TTS + STT)
         total_requests = await sync_to_async(list)(Request.objects.all())
-        self.assertEqual(
-            len(total_requests), 2, "There should be exactly two requests in the lifecycle."
-        )
+        self.assertEqual(len(total_requests), 2, "There should be exactly two requests in the lifecycle.")
 
         # The transcribed text should contain some of the original content
         # (exact match may not be possible due to audio compression/transcription accuracy)
@@ -499,16 +418,11 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
                 }
 
                 tts_response = await self.async_client.post(
-                    self.url_tts,
-                    data=json.dumps(tts_payload),
-                    headers=self.headers,
-                    content_type="application/json",
+                    self.url_tts, data=json.dumps(tts_payload), headers=self.headers, content_type="application/json"
                 )
 
                 self.assertEqual(
-                    tts_response.status_code,
-                    200,
-                    f"TTS request failed for voice {voice}: {tts_response.status_code}",
+                    tts_response.status_code, 200, f"TTS request failed for voice {voice}: {tts_response.status_code}"
                 )
 
                 # Collect audio data
@@ -516,51 +430,27 @@ class TTSTSTLifecycleTest(GatewayTTSSTTestCase):
                 async for chunk in tts_response.streaming_content:
                     audio_data += chunk
 
-                self.assertGreater(
-                    len(audio_data), 0, f"TTS should generate audio data for voice {voice}"
-                )
+                self.assertGreater(len(audio_data), 0, f"TTS should generate audio data for voice {voice}")
 
                 # Step 2: Transcribe the audio
-                audio_file = SimpleUploadedFile(
-                    f"generated_speech_{voice}.mp3", audio_data, content_type="audio/mpeg"
-                )
+                audio_file = SimpleUploadedFile(f"generated_speech_{voice}.mp3", audio_data, content_type="audio/mpeg")
 
                 stt_response = await self.async_client.post(
-                    self.url_stt,
-                    {"file": audio_file, "model": self.stt_model},
-                    headers=self.multipart_headers,
+                    self.url_stt, {"file": audio_file, "model": self.stt_model}, headers=self.multipart_headers
                 )
 
                 self.assertEqual(
-                    stt_response.status_code,
-                    200,
-                    f"STT request failed for voice {voice}: {stt_response.status_code}",
+                    stt_response.status_code, 200, f"STT request failed for voice {voice}: {stt_response.status_code}"
                 )
 
                 stt_response_json = stt_response.json()
-                self.assertIn(
-                    "text",
-                    stt_response_json,
-                    f"STT response should contain 'text' field for voice {voice}",
-                )
+                self.assertIn("text", stt_response_json, f"STT response should contain 'text' field for voice {voice}")
 
                 transcribed_text = stt_response_json["text"]
-                self.assertGreater(
-                    len(transcribed_text),
-                    0,
-                    f"Transcribed text should not be empty for voice {voice}",
-                )
+                self.assertGreater(len(transcribed_text), 0, f"Transcribed text should not be empty for voice {voice}")
 
                 # Verify requests were logged
-                tts_requests = await sync_to_async(list)(
-                    Request.objects.filter(path__contains="speech")
-                )
-                stt_requests = await sync_to_async(list)(
-                    Request.objects.filter(path__contains="transcriptions")
-                )
-                self.assertEqual(
-                    len(tts_requests), 1, f"There should be one TTS request for voice {voice}"
-                )
-                self.assertEqual(
-                    len(stt_requests), 1, f"There should be one STT request for voice {voice}"
-                )
+                tts_requests = await sync_to_async(list)(Request.objects.filter(path__contains="speech"))
+                stt_requests = await sync_to_async(list)(Request.objects.filter(path__contains="transcriptions"))
+                self.assertEqual(len(tts_requests), 1, f"There should be one TTS request for voice {voice}")
+                self.assertEqual(len(stt_requests), 1, f"There should be one STT request for voice {voice}")

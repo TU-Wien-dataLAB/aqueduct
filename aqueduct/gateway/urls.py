@@ -49,16 +49,8 @@ urlpatterns = [
     path("v1/responses", views.create_response, name="v1_responses"),
     path("responses/<str:response_id>", views.response, name="response"),
     path("v1/responses/<str:response_id>", views.response, name="v1_response"),
-    path(
-        "responses/<str:response_id>/input_items",
-        views.get_response_input_items,
-        name="response_input_items",
-    ),
-    path(
-        "v1/responses/<str:response_id>/input_items",
-        views.get_response_input_items,
-        name="v1_response_input_items",
-    ),
+    path("responses/<str:response_id>/input_items", views.get_response_input_items, name="response_input_items"),
+    path("v1/responses/<str:response_id>/input_items", views.get_response_input_items, name="v1_response_input_items"),
     # MCP server endpoints
     path("mcp-servers/<str:name>/mcp", mcp_views.mcp_server, name="mcp_server"),
     # Vector Stores endpoints
@@ -66,21 +58,9 @@ urlpatterns = [
     path("v1/vector_stores", views.vector_stores, name="v1_vector_stores"),
     path("vector_stores/<str:vector_store_id>", views.vector_store, name="vector_store"),
     path("v1/vector_stores/<str:vector_store_id>", views.vector_store, name="v1_vector_store"),
-    path(
-        "vector_stores/<str:vector_store_id>/files",
-        views.vector_store_files,
-        name="vector_store_files",
-    ),
-    path(
-        "v1/vector_stores/<str:vector_store_id>/files",
-        views.vector_store_files,
-        name="v1_vector_store_files",
-    ),
-    path(
-        "vector_stores/<str:vector_store_id>/files/<str:file_id>",
-        views.vector_store_file,
-        name="vector_store_file",
-    ),
+    path("vector_stores/<str:vector_store_id>/files", views.vector_store_files, name="vector_store_files"),
+    path("v1/vector_stores/<str:vector_store_id>/files", views.vector_store_files, name="v1_vector_store_files"),
+    path("vector_stores/<str:vector_store_id>/files/<str:file_id>", views.vector_store_file, name="vector_store_file"),
     path(
         "v1/vector_stores/<str:vector_store_id>/files/<str:file_id>",
         views.vector_store_file,
@@ -117,16 +97,8 @@ urlpatterns = [
         name="v1_vector_store_file_batch_cancel",
     ),
     # New endpoints for OpenAI compatibility
-    path(
-        "vector_stores/<str:vector_store_id>/search",
-        views.vector_store_search,
-        name="vector_store_search",
-    ),
-    path(
-        "v1/vector_stores/<str:vector_store_id>/search",
-        views.vector_store_search,
-        name="v1_vector_store_search",
-    ),
+    path("vector_stores/<str:vector_store_id>/search", views.vector_store_search, name="vector_store_search"),
+    path("v1/vector_stores/<str:vector_store_id>/search", views.vector_store_search, name="v1_vector_store_search"),
     path(
         "vector_stores/<str:vector_store_id>/files/<str:file_id>/content",
         views.vector_store_file_content,

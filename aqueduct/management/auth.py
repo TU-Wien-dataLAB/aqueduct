@@ -36,7 +36,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         org_name = get_org_name_from_groups(groups)
         if not org_name:
             return None  # Authentication fails if no org can be determined
-        org, created = Org.objects.get_or_create(name=org_name)
+        org, _created = Org.objects.get_or_create(name=org_name)
         return org
 
     def create_user(self, claims):
@@ -45,7 +45,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         if not org:
             return None  # Authentication fails if no org can be determined
 
-        user = super(OIDCBackend, self).create_user(claims)
+        user = super().create_user(claims)
         profile = UserProfile.objects.create(user=user, org=org)
 
         # Check if user is admin

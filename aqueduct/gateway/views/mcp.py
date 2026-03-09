@@ -1,8 +1,8 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import AsyncGenerator
 from enum import Enum
-from typing import AsyncGenerator, Dict
 
 import anyio
 import httpx
@@ -196,17 +196,11 @@ class ManagedMCPSession:
 
         # Create memory streams (exactly like streamablehttp_client does)
         log.debug(f"{self.session_id}: Creating memory streams")
-        self._read_stream_writer, self.read_stream = anyio.create_memory_object_stream[
-            SessionMessage | Exception
-        ](0)
-        self.write_stream, self._write_stream_reader = anyio.create_memory_object_stream[
-            SessionMessage
-        ](0)
+        self._read_stream_writer, self.read_stream = anyio.create_memory_object_stream[SessionMessage | Exception](0)
+        self.write_stream, self._write_stream_reader = anyio.create_memory_object_stream[SessionMessage](0)
 
         # Create httpx client
-        self._httpx_client = httpx.AsyncClient(
-            headers=self._mcp_headers(), timeout=httpx.Timeout(30, read=5 * 60)
-        )
+        self._httpx_client = httpx.AsyncClient(headers=self._mcp_headers(), timeout=httpx.Timeout(30, read=5 * 60))
 
         # Create simple task group
         self._task_group = SimpleTaskGroup(asyncio.get_event_loop())
@@ -245,16 +239,12 @@ class ManagedMCPSession:
 
         # Wait for active operations to complete
         if self.has_active_operations():
-            log.info(
-                f"Session {self.session_id}: waiting for {self._active_operations} active operations to complete"
-            )
+            log.info(f"Session {self.session_id}: waiting for {self._active_operations} active operations to complete")
             try:
                 await asyncio.wait_for(self._operation_done_event.wait(), timeout=5.0)
                 log.info(f"Session {self.session_id}: all operations completed")
-            except asyncio.TimeoutError:
-                log.warning(
-                    f"Session {self.session_id}: timeout waiting for operations to complete, forcing shutdown"
-                )
+            except TimeoutError:
+                log.warning(f"Session {self.session_id}: timeout waiting for operations to complete, forcing shutdown")
 
         # Terminate session via DELETE request
         if self.transport.session_id and self._httpx_client:
@@ -325,7 +315,7 @@ class ManagedMCPSession:
         self.last_accessed_at = timezone.now()
 
         if isinstance(message, Exception):
-            log.warning(f"{self.session_id}: Received exception: {str(message)}")
+            log.warning(f"{self.session_id}: Received exception: {message!s}")
         else:
             message_type = message.message.root.__class__.__name__
             log.info(f"{self.session_id}: Received {message_type}")
@@ -337,7 +327,7 @@ class MCPSessionManager:
     """Manages MCP sessions using Daphne's event loop."""
 
     def __init__(self):
-        self._sessions: Dict[str, ManagedMCPSession] = {}
+        self._sessions: dict[str, ManagedMCPSession] = {}
         self._lock = asyncio.Lock()
         self._cleanup_task = None
 
@@ -493,17 +483,12 @@ class MCPSessionManager:
 
 
 def parse_session_message(
-    received_message: SessionMessage | Exception,
-    reqeust_id: str | int,
-    session_id: str,
-    json: bool = False,
+    received_message: SessionMessage | Exception, reqeust_id: str | int, session_id: str, json: bool = False
 ) -> dict | str:
     if isinstance(received_message, Exception):
-        log.error(f"Session {session_id} returned exception: {str(received_message)}")
+        log.error(f"Session {session_id} returned exception: {received_message!s}")
         jsonrpc_message = JSONRPCError(
-            jsonrpc="2.0",
-            id=reqeust_id,
-            error=ErrorData(code=CONNECTION_CLOSED, message=str(received_message)),
+            jsonrpc="2.0", id=reqeust_id, error=ErrorData(code=CONNECTION_CLOSED, message=str(received_message))
         )
     else:
         jsonrpc_message = received_message.message
@@ -514,9 +499,7 @@ def parse_session_message(
         return jsonrpc_message.model_dump(exclude_none=True)
 
 
-def _validate_session(
-    session: ManagedMCPSession | None, session_id: str | None, name: str
-) -> JsonResponse | None:
+def _validate_session(session: ManagedMCPSession | None, session_id: str | None, name: str) -> JsonResponse | None:
     if not session:
         log.warning(f"Session {session_id} not found for MCP server '{name}'")
         return error_response("Session not found", status=404)
@@ -524,9 +507,7 @@ def _validate_session(
         log.warning(f"Session {session_id} is terminated for MCP server '{name}'")
         return error_response("Session terminated", status=410)
     if not session.is_ready():
-        log.warning(
-            f"Session {session_id} not ready for MCP server '{name}' (state: {session.state.value})"
-        )
+        log.warning(f"Session {session_id} not ready for MCP server '{name}' (state: {session.state.value})")
         return error_response(f"Session not ready (state: {session.state.value})", status=503)
 
     return None
@@ -538,7 +519,8 @@ async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenera
     session = await session_manager.get_session_with_retry(session_id)
     if not session or not session.is_ready():
         log.error(
-            f"SSE stream cannot start - session {session_id} not ready (state: {session.state.value if session else 'None'})"
+            f"SSE stream cannot start - session {session_id} not ready "
+            f"(state: {session.state.value if session else 'None'})"
         )
         error_msg = JSONRPCError(
             jsonrpc="2.0",
@@ -562,13 +544,13 @@ async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenera
             message_json = parse_session_message(message, request_id, session_id, json=True)
             yield f"data: {message_json}\n\n"
         except (ClosedResourceError, httpx.HTTPStatusError, MCPSessionError) as e:
-            log.info(f"SSE stream for session {session_id} ended: {str(e)}")
+            log.info(f"SSE stream for session {session_id} ended: {e!s}")
             # Send proper session end notification
             end_msg = parse_session_message(e, request_id, session_id, json=True)
             yield f"data: {end_msg}\n\n"
             break  # Session is gone, stop the stream
         except Exception as e:
-            log.error(f"SSE stream for session {session_id} unexpected error: {str(e)}")
+            log.error(f"SSE stream for session {session_id} unexpected error: {e!s}")
             error_msg = parse_session_message(e, request_id, session_id, json=True)
             yield f"data: {error_msg}\n\n"
             continue  # Keep streaming
@@ -587,9 +569,7 @@ async def _ensure_session_manager_started():
     await session_manager.start()
 
 
-async def handle_get_request(
-    name: str, request_id: str | int, session_id: str
-) -> JsonResponse | StreamingHttpResponse:
+async def handle_get_request(name: str, request_id: str | int, session_id: str) -> JsonResponse | StreamingHttpResponse:
     """Return SSE stream for an existing session.
 
     See: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#listening-for-messages-from-the-server
@@ -605,9 +585,7 @@ async def handle_get_request(
     log.info(f"MCP GET {name} - SSE stream for existing session {session_id}")
     headers = {"Cache-Control": "no-cache", "Connection": "keep-alive"}
     return StreamingHttpResponse(
-        streaming_content=_mcp_sse_stream(request_id, session_id),
-        content_type="text/event-stream",
-        headers=headers,
+        streaming_content=_mcp_sse_stream(request_id, session_id), content_type="text/event-stream", headers=headers
     )
 
 
@@ -640,8 +618,8 @@ async def handle_post_request(
             session_id = await session_manager.create_session(url)
             log.info(f"Session {session_id} initialized")
         except (KeyError, RuntimeError) as e:
-            log.error(f"MCP server '{name}' not found: {str(e)}")
-            return error_response(f"MCP server '{name}' not found: {str(e)}", status=404)
+            log.error(f"MCP server '{name}' not found: {e!s}")
+            return error_response(f"MCP server '{name}' not found: {e!s}", status=404)
 
     session = await session_manager.get_session_with_retry(session_id)
 
@@ -664,9 +642,7 @@ async def handle_post_request(
         # Per MCP spec: "The server MUST NOT send a response to notifications"
         if isinstance(json_rpc_message.root, JSONRPCRequest):
             received_message = await session_manager.receive_message(session_id)
-            response_data = parse_session_message(
-                received_message, request_id, session_id, json=False
-            )
+            response_data = parse_session_message(received_message, request_id, session_id, json=False)
             response = JsonResponse(response_data)
         else:
             # If the request was a notification, return 202
@@ -674,7 +650,7 @@ async def handle_post_request(
 
     except (ClosedResourceError, httpx.HTTPStatusError, MCPSessionError) as e:
         # Transport errors should be converted to JSON-RPC errors
-        log.error(f"Transport error for MCP server '{name}': {str(e)}")
+        log.error(f"Transport error for MCP server '{name}': {e!s}")
         session_error_response = parse_session_message(e, request_id, session_id, json=False)
         response = JsonResponse(session_error_response, status=200)  # 200 for JSON-RPC errors
     finally:

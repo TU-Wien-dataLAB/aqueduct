@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 from unittest.mock import AsyncMock, MagicMock
 
 from django.contrib.auth import get_user_model
@@ -10,20 +10,13 @@ from django.urls import reverse
 from litellm import Router
 from litellm.types.llms.openai import HttpxBinaryResponseContent
 from litellm.types.router import Deployment
-from litellm.types.utils import (
-    EmbeddingResponse,
-    ImageResponse,
-    ModelResponse,
-    TextCompletionResponse,
-)
+from litellm.types.utils import EmbeddingResponse, ImageResponse, ModelResponse, TextCompletionResponse
 from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers
 from management.models import Org, Token, UserProfile
 
-INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
-    "INTEGRATION_TEST_BACKEND", "openai"
-)
+INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get("INTEGRATION_TEST_BACKEND", "openai")
 if INTEGRATION_TEST_BACKEND not in ["vllm", "openai"]:
     raise ValueError("Integration test backend must be one of 'vllm' or 'openai'.")
 
@@ -43,9 +36,7 @@ def get_mock_router(model: str = "test-model"):
     router.aembedding = AsyncMock(return_value=EmbeddingResponse())
     router.image_generation = MagicMock(return_value=ImageResponse())
     router.aspeech = AsyncMock(return_value=HttpxBinaryResponseContent(response=MagicMock()))
-    router.get_deployment = MagicMock(
-        return_value=Deployment("test-model", {"model": f"openai/{model}"})
-    )
+    router.get_deployment = MagicMock(return_value=Deployment("test-model", {"model": f"openai/{model}"}))
     return router
 
 
@@ -66,7 +57,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
     # Preview: k-...3abc
     AQUEDUCT_ACCESS_TOKEN = "sk-123abc"
 
-    fixtures = ["gateway_data.json"]
+    fixtures: ClassVar[list] = ["gateway_data.json"]
 
     @classmethod
     def _write_router_config(cls):
@@ -80,9 +71,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
         super().setUpClass()
         if INTEGRATION_TEST_BACKEND == "openai":
             if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError(
-                    "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
-                )
+                raise RuntimeError("OPENAI_API_KEY environment variable has to be set for OpenAI integration.")
         cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
 
     @staticmethod
@@ -110,7 +99,7 @@ class GatewayIntegrationTestCase(TransactionTestCase):
 )
 class GatewayFilesTestCase(GatewayIntegrationTestCase):
     # Load default fixture (includes test Token) and set test access token
-    fixtures = ["gateway_data.json"]
+    fixtures: ClassVar[list] = ["gateway_data.json"]
 
     @classmethod
     def setUpClass(cls):
@@ -159,7 +148,7 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
 )
 class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
-    fixtures = ["gateway_data.json"]
+    fixtures: ClassVar[list] = ["gateway_data.json"]
     tts_model = "gpt-4o-mini-tts"
     stt_model = "whisper-1"
 
@@ -184,7 +173,7 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
 )
 class TOSGatewayTestCase(GatewayIntegrationTestCase):
-    fixtures = ["gateway_data.json"]
+    fixtures: ClassVar[list] = ["gateway_data.json"]
 
     def accept_tos(self, user_id: int = 1):
         # Create an active Terms of Service

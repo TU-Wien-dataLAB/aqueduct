@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import ClassVar
 from urllib.parse import urlparse
 
 import httpx
@@ -259,7 +260,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             # Verify structure of progress updates
             for update in progress_updates:
                 self.assertEqual(len(update), 3)
-                progress_token, progress, total = update
+                _progress_token, progress, _total = update
                 self.assertIsInstance(progress, (int, float))
 
         await self.assertRequestLogged()
@@ -271,9 +272,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
         async with self.client_session() as session:
             await session.initialize()
             tool_name = "echo"
-            result = await session.call_tool(
-                tool_name, {"message": "test"}, read_timeout_seconds=timedelta(seconds=10)
-            )
+            result = await session.call_tool(tool_name, {"message": "test"}, read_timeout_seconds=timedelta(seconds=10))
 
             self.assertIsNotNone(result)
             self.assertIsInstance(result.content, list)
@@ -350,20 +349,12 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
     @skip_on_cancel_scope_error
     async def test_session_creation(self):
         """Test that sessions have unique IDs."""
-        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
-            r,
-            w,
-            get_session_id,
-        ):
+        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (r, w, get_session_id):
             async with ClientSession(r, w) as session:
                 await session.initialize()
                 s1 = get_session_id()
 
-        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
-            r,
-            w,
-            get_session_id,
-        ):
+        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (r, w, get_session_id):
             async with ClientSession(r, w) as session:
                 await session.initialize()
                 s2 = get_session_id()
@@ -375,7 +366,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 class MCPTransportSecurityTest(MCPLiveServerTestCase):
     """Test MCP transport security (DNS rebinding protection)."""
 
-    custom_validation_init_payload = {
+    custom_validation_init_payload: ClassVar[dict] = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "initialize",
@@ -405,10 +396,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
         # We need to test with a host that's valid for Django's ALLOWED_HOSTS
         # but invalid for our MCP security settings.
         # Since the test server runs on a random port, we use a different port on localhost
-        headers = {
-            "Authorization": self.headers["Authorization"],
-            "Content-Type": "application/json",
-        }
+        headers = {"Authorization": self.headers["Authorization"], "Content-Type": "application/json"}
 
         # Create a custom request with a host not in our allowed list
         # Use a specific port that's not in localhost:* pattern would be caught,
@@ -446,9 +434,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
         }
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.mcp_url, json=self.custom_validation_init_payload, headers=headers
-            )
+            response = await client.post(self.mcp_url, json=self.custom_validation_init_payload, headers=headers)
 
             # Should return 403 for invalid Origin header
             self.assertEqual(response.status_code, 403)
@@ -465,16 +451,10 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
         parsed_url = urlparse(self.live_server_url)
         valid_host = parsed_url.netloc
 
-        headers = {
-            "Authorization": self.headers["Authorization"],
-            "Content-Type": "text/plain",
-            "Host": valid_host,
-        }
+        headers = {"Authorization": self.headers["Authorization"], "Content-Type": "text/plain", "Host": valid_host}
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.mcp_url, json=self.custom_validation_init_payload, headers=headers
-            )
+            response = await client.post(self.mcp_url, json=self.custom_validation_init_payload, headers=headers)
 
             self.assertEqual(response.status_code, 415)
             self.assertIn("error", response.json())
@@ -509,9 +489,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
         }
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.mcp_url, json=self.custom_validation_init_payload, headers=headers
-            )
+            response = await client.post(self.mcp_url, json=self.custom_validation_init_payload, headers=headers)
 
             # Should succeed because localhost:* is in allowed hosts
             self.assertEqual(response.status_code, 200)
@@ -546,9 +524,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         # Try to access the MCP server - should get 404
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                self.mcp_url,
-                json=MCPTransportSecurityTest.custom_validation_init_payload,
-                headers=self.headers,
+                self.mcp_url, json=MCPTransportSecurityTest.custom_validation_init_payload, headers=self.headers
             )
             self.assertEqual(response.status_code, 404)
 
@@ -566,9 +542,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         await sync_to_async(team.add_excluded_mcp_server)("test-server")
 
         # Create a service account for the team
-        service_account = await sync_to_async(ServiceAccount.objects.create)(
-            team=team, name="Test Service Account"
-        )
+        service_account = await sync_to_async(ServiceAccount.objects.create)(team=team, name="Test Service Account")
 
         # Create a token for the service account
         from gateway.tests.utils.base import GatewayIntegrationTestCase
@@ -581,9 +555,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                self.mcp_url,
-                json=MCPTransportSecurityTest.custom_validation_init_payload,
-                headers=self.headers,
+                self.mcp_url, json=MCPTransportSecurityTest.custom_validation_init_payload, headers=self.headers
             )
             self.assertEqual(response.status_code, 404)
 
@@ -610,9 +582,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         # Try to access the MCP server - should get 404
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                self.mcp_url,
-                json=MCPTransportSecurityTest.custom_validation_init_payload,
-                headers=self.headers,
+                self.mcp_url, json=MCPTransportSecurityTest.custom_validation_init_payload, headers=self.headers
             )
             self.assertEqual(response.status_code, 404)
 
@@ -678,9 +648,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                nonexistent_url,
-                json=MCPTransportSecurityTest.custom_validation_init_payload,
-                headers=self.headers,
+                nonexistent_url, json=MCPTransportSecurityTest.custom_validation_init_payload, headers=self.headers
             )
             self.assertEqual(response.status_code, 404)
 

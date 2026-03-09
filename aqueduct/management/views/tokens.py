@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from django.conf import settings
 from django.contrib import messages
 from django.db import transaction
@@ -25,8 +27,6 @@ class UserTokensView(BaseAqueductView, TemplateView):
         tokens = Token.objects.filter(user=user, service_account__isnull=True)
         teams = profile.teams.all()
         service_accounts = ServiceAccount.objects.filter(team__in=teams)
-
-        from django.conf import settings
 
         max_tokens = getattr(settings, "MAX_USER_TOKENS", 3)
         can_add_token = tokens.count() < max_tokens
@@ -141,7 +141,7 @@ class TokenRegenerateView(BaseAqueductView, View):
     Permissions are checked based on token type.
     """
 
-    http_method_names = ["post"]
+    http_method_names: ClassVar[list] = ["post"]
 
     def post(self, request, *args, **kwargs):
         token_id = kwargs.get("id")
@@ -149,9 +149,7 @@ class TokenRegenerateView(BaseAqueductView, View):
         user = request.user
 
         try:
-            token = get_object_or_404(
-                Token.objects.select_related("service_account__team", "user"), pk=token_id
-            )
+            token = get_object_or_404(Token.objects.select_related("service_account__team", "user"), pk=token_id)
             token_name = token.name
             is_service_account_token = token.service_account is not None
 
@@ -200,9 +198,7 @@ class TokenRegenerateView(BaseAqueductView, View):
             redirect_url = reverse_lazy("tokens")
         except Exception as e:
             # logger.error(f"Error regenerating token {token_id}: {e}", exc_info=True)
-            messages.error(
-                request, f"An unexpected error occurred while regenerating the token: {e}"
-            )
+            messages.error(request, f"An unexpected error occurred while regenerating the token: {e}")
             # Try to determine redirect URL based on what we know, default if necessary
             try:
                 # Attempt to get redirect URL again if token was fetched

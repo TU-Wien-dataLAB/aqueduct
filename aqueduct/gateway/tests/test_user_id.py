@@ -73,9 +73,7 @@ class TestUserId(MCPLiveServerTestCase):
             "user_id": user_id,
         }
 
-        resp = self.client.post(
-            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
-        )
+        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.last()
@@ -107,12 +105,7 @@ class TestUserId(MCPLiveServerTestCase):
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Write me a short poem!"},
         ]
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_completion_tokens": 2,
-            "user_id": user_id,
-        }
+        payload = {"model": self.model, "messages": messages, "max_completion_tokens": 2, "user_id": user_id}
 
         with patch("gateway.views.chat_completions.get_router", return_value=get_mock_router()):
             resp = self.client.post(
@@ -129,11 +122,7 @@ class TestUserId(MCPLiveServerTestCase):
 
         url = reverse("gateway:embeddings")
         user_id = "testuser"
-        payload = {
-            "model": self.model,
-            "input": ["The quick brown fox jumps over the lazy dog."],
-            "user_id": user_id,
-        }
+        payload = {"model": self.model, "input": ["The quick brown fox jumps over the lazy dog."], "user_id": user_id}
 
         with patch("gateway.views.embeddings.get_router", return_value=get_mock_router()):
             resp = self.client.post(
@@ -159,9 +148,7 @@ class TestUserId(MCPLiveServerTestCase):
 
         url = reverse("gateway:files")
         user_id = "testuser"
-        file = SimpleUploadedFile(
-            "test.jsonl", b'{"custom_id": "bar"}\n', content_type="application/jsonl"
-        )
+        file = SimpleUploadedFile("test.jsonl", b'{"custom_id": "bar"}\n', content_type="application/jsonl")
         payload = {"file": file, "purpose": "batch", "user_id": user_id}
         resp = self.client.post(url, data=payload, headers=self.multipart_headers)
 
@@ -259,15 +246,11 @@ class TestUserId(MCPLiveServerTestCase):
 
         with patch("gateway.views.utils.get_openai_client") as mock_client:
             mock_openai_client = AsyncMock()
-            mock_openai_client.audio.transcriptions.create.return_value = Transcription(
-                text="How much is the fish?"
-            )
+            mock_openai_client.audio.transcriptions.create.return_value = Transcription(text="How much is the fish?")
             mock_client.return_value = mock_openai_client
 
             resp = self.client.post(
-                url,
-                {"file": file, "model": "whisper-1", "user_id": user_id},
-                headers=self.multipart_headers,
+                url, {"file": file, "model": "whisper-1", "user_id": user_id}, headers=self.multipart_headers
             )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
@@ -290,9 +273,7 @@ class TestUserId(MCPLiveServerTestCase):
             with self.subTest(user_id=user_id, i=i):
                 data = json.dumps({"model": self.model, "prompt": "Hello", "user_id": user_id})
                 with patch("gateway.views.completions.get_router", return_value=get_mock_router()):
-                    resp = self.client.post(
-                        url, data=data, headers=self.headers, content_type="application/json"
-                    )
+                    resp = self.client.post(url, data=data, headers=self.headers, content_type="application/json")
 
                 self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
                 self.assertIsNotNone(Request.objects.filter(user_id=user_id))

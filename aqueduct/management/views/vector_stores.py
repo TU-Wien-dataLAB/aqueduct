@@ -31,9 +31,7 @@ class UserVectorStoresView(BaseAqueductView, TemplateView):
             vs.created_dt = datetime.fromtimestamp(vs.created_at)
             vs.files_count = vs.files.count()
             vs.batches_count = vs.file_batches.count()
-            vs.size_bytes = sum(
-                vf.file_obj.bytes for vf in vs.files.select_related("file_obj").all() if vf.file_obj
-            )
+            vs.size_bytes = sum(vf.file_obj.bytes for vf in vs.files.select_related("file_obj").all() if vf.file_obj)
             result.append(vs)
         return result
 
@@ -88,11 +86,8 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
 
         # Get vector store accessible by user
         try:
-            vector_store = VectorStore.objects.prefetch_related(
-                "files__file_obj", "file_batches"
-            ).get(
-                Q(id=vector_store_id)
-                & (Q(token__user=user) | Q(token__service_account__team__in=teams))
+            vector_store = VectorStore.objects.prefetch_related("files__file_obj", "file_batches").get(
+                Q(id=vector_store_id) & (Q(token__user=user) | Q(token__service_account__team__in=teams))
             )
         except VectorStore.DoesNotExist:
             vector_store = None
@@ -173,8 +168,7 @@ class VectorStoreCardRefreshView(BaseAqueductView, View):
 
         try:
             vs = VectorStore.objects.get(
-                Q(id=vector_store_id)
-                & (Q(token__user=user) | Q(token__service_account__team__in=teams))
+                Q(id=vector_store_id) & (Q(token__user=user) | Q(token__service_account__team__in=teams))
             )
         except VectorStore.DoesNotExist:
             messages.error(request, "Vector store not found or you do not have access.")
@@ -201,8 +195,7 @@ class VectorStoreDetailRefreshView(BaseAqueductView):
 
         try:
             vs = VectorStore.objects.get(
-                Q(id=vector_store_id)
-                & (Q(token__user=user) | Q(token__service_account__team__in=teams))
+                Q(id=vector_store_id) & (Q(token__user=user) | Q(token__service_account__team__in=teams))
             )
         except VectorStore.DoesNotExist:
             messages.error(request, "Vector store not found or you do not have access.")

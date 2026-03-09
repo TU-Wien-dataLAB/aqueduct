@@ -72,18 +72,13 @@ class ServiceAccountCreateView(BaseTeamView, TeamAdminRequiredMixin, CreateView)
             # Save the token (hash and preview are now set)
             new_token.save()
 
-            messages.success(
-                self.request,
-                f"Service Account '{self.object.name}' created for team '{self.team.name}'.",
-            )
+            messages.success(self.request, f"Service Account '{self.object.name}' created for team '{self.team.name}'.")
             # Display the original secret key
             messages.info(self.request, f"{secret_key}", extra_tags="token-regenerated-key")
 
         except Exception as e:
             # Log error e
-            messages.error(
-                self.request, f"Service Account saved, but failed to create associated token: {e}"
-            )
+            messages.error(self.request, f"Service Account saved, but failed to create associated token: {e}")
             # Consider if the SA should be rolled back if token creation fails
             # Since it's atomic, the SA save won't commit if token creation fails here.
 
@@ -136,8 +131,7 @@ class ServiceAccountDeleteView(BaseServiceAccountView, DeleteView):
         response = super().delete(request, *args, **kwargs)  # Let DeleteView handle deletion
 
         messages.success(
-            self.request,
-            f"Service Account '{object_name}' (from team '{team_name}') and its token deleted.",
+            self.request, f"Service Account '{object_name}' (from team '{team_name}') and its token deleted."
         )
         return response
 
@@ -191,9 +185,7 @@ class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
             token.save(update_fields=["expires_at"])
         except Token.DoesNotExist:
             pass  # Optionally handle this case
-        messages.success(
-            self.request, f"Service Account '{self.object.name}' updated successfully."
-        )
+        messages.success(self.request, f"Service Account '{self.object.name}' updated successfully.")
         return response
 
     def get_success_url(self):
@@ -248,15 +240,11 @@ class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
             current_owner = current_token.user
             context["current_owner_email"] = current_owner.email if current_owner else None
             # Eligible users are members of the team, excluding the current token owner
-            eligible_profiles = team.member_profiles.exclude(user=current_owner).select_related(
-                "user"
-            )
+            eligible_profiles = team.member_profiles.exclude(user=current_owner).select_related("user")
         except Token.DoesNotExist:
             # This case should ideally not happen if SA exists, but handle gracefully
             context["current_owner_email"] = None
-            eligible_profiles = team.member_profiles.all().select_related(
-                "user"
-            )  # Show all members if no owner known
+            eligible_profiles = team.member_profiles.all().select_related("user")  # Show all members if no owner known
             messages.warning(self.request, f"Could not find the current token owner for {sa.name}.")
         except Exception:
             # Log error e
@@ -305,8 +293,7 @@ class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
             # Ensure the target profile is actually a member of the team
             if not team.member_profiles.filter(id=target_profile.id).exists():
                 messages.error(
-                    request,
-                    f"Selected user {target_profile.user.email} is not a member of team {team.name}.",
+                    request, f"Selected user {target_profile.user.email} is not a member of team {team.name}."
                 )
                 return redirect(request.path)  # Redirect back to the form
 
@@ -316,9 +303,7 @@ class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
 
             if token.user == target_profile.user:
                 messages.info(
-                    request,
-                    f"{target_profile.user.email} already owns the token for Service Account "
-                    f"'{sa.name}'.",
+                    request, f"{target_profile.user.email} already owns the token for Service Account '{sa.name}'."
                 )
             else:
                 token.user = target_profile.user  # Assign the target user
@@ -330,18 +315,16 @@ class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
                 )
 
         except UserProfile.DoesNotExist:
-            messages.error(
-                request,
-                "Selected target user profile not found or not in this team's organization.",
-            )
+            messages.error(request, "Selected target user profile not found or not in this team's organization.")
             return redirect(request.path)  # Redirect back to the form
         except Token.DoesNotExist:
-            messages.error(
-                request, f"No token found for Service Account '{sa.name}'. Cannot transfer."
-            )
+            messages.error(request, f"No token found for Service Account '{sa.name}'. Cannot transfer.")
         except Exception as e:
             # Log error e
-            # logger.error(f"Error transferring token for SA {sa.id} to profile {target_profile_id}: {e}", exc_info=True)
+            # logger.error(
+            #     f"Error transferring token for SA {sa.id} to profile {target_profile_id}: {e}",
+            #     exc_info=True,
+            # )
             messages.error(request, f"An unexpected error occurred during token transfer: {e}")
             # Consider redirecting back to form or team page depending on error
             return redirect(request.path)  # Redirect back to form on generic error

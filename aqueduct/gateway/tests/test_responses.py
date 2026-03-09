@@ -31,17 +31,10 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         }
 
         response = await self.async_client.post(
-            "/v1/responses",
-            data=json.dumps(payload),
-            headers=headers,
-            content_type="application/json",
+            "/v1/responses", data=json.dumps(payload), headers=headers, content_type="application/json"
         )
 
-        self.assertEqual(
-            response.status_code,
-            200,
-            f"Expected 200 OK, got {response.status_code}: {response.content}",
-        )
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         response_json = response.json()
         self.assertIn("id", response_json)
@@ -51,9 +44,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsInstance(response_json["output"], list)
 
         requests = await sync_to_async(list)(Request.objects.all())
-        self.assertEqual(
-            len(requests), 1, "There should be exactly one request after response creation."
-        )
+        self.assertEqual(len(requests), 1, "There should be exactly one request after response creation.")
         req = requests[0]
         self.assertIn("responses", req.path, "Request endpoint should be for responses.")
 
@@ -69,14 +60,8 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         # Check cache for response registration
         cache_key = f"response:{response_id}"
         cached_data = caches["default"].get(cache_key)
-        self.assertEqual(
-            cached_data.get("model"), self.model, "Cached model name should match request model"
-        )
-        self.assertEqual(
-            cached_data.get("email"),
-            "me@example.com",
-            "Cached user email should match current user",
-        )
+        self.assertEqual(cached_data.get("model"), self.model, "Cached model name should match request model")
+        self.assertEqual(cached_data.get("email"), "me@example.com", "Cached user email should match current user")
 
         # Test GET response endpoint
         get_response = await self.async_client.get(f"/v1/responses/{response_id}", headers=headers)
@@ -91,13 +76,12 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(get_data["object"], "response")
 
         # Test GET response input_items endpoint
-        input_items_response = await self.async_client.get(
-            f"/v1/responses/{response_id}/input_items", headers=headers
-        )
+        input_items_response = await self.async_client.get(f"/v1/responses/{response_id}/input_items", headers=headers)
         self.assertEqual(
             input_items_response.status_code,
             200,
-            f"GET input_items should return 200, got {input_items_response.status_code}: {input_items_response.content}",
+            f"GET input_items should return 200, got {input_items_response.status_code}: "
+            f"{input_items_response.content}",
         )
         input_items_data = input_items_response.json()
         self.assertIsInstance(input_items_data, dict)
@@ -105,9 +89,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsInstance(input_items_data["data"], list)
 
         # Test DELETE response endpoint
-        delete_response = await self.async_client.delete(
-            f"/v1/responses/{response_id}", headers=headers
-        )
+        delete_response = await self.async_client.delete(f"/v1/responses/{response_id}", headers=headers)
         self.assertEqual(
             delete_response.status_code,
             200,
@@ -115,9 +97,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         )
 
         # Verify response is deleted - GET should now return 404
-        verify_get_response = await self.async_client.get(
-            f"/v1/responses/{response_id}", headers=headers
-        )
+        verify_get_response = await self.async_client.get(f"/v1/responses/{response_id}", headers=headers)
         self.assertEqual(
             verify_get_response.status_code,
             404,
@@ -133,9 +113,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
 
         # Authenticate async client
         await sync_to_async(
-            lambda: self.async_client.force_login(
-                User.objects.get_or_create(username="Me", email="me@example.com")[0]
-            )
+            lambda: self.async_client.force_login(User.objects.get_or_create(username="Me", email="me@example.com")[0])
         )()
 
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
@@ -149,19 +127,14 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         }
 
         response = await self.async_client.post(
-            "/v1/responses",
-            data=json.dumps(payload),
-            headers=headers,
-            content_type="application/json",
+            "/v1/responses", data=json.dumps(payload), headers=headers, content_type="application/json"
         )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
 
         # Collect all streamed lines
         streamed_lines = await _read_streaming_response_lines(response)
-        self.assertGreater(
-            len(streamed_lines), 0, "Should receive at least one streamed data chunk."
-        )
+        self.assertGreater(len(streamed_lines), 0, "Should receive at least one streamed data chunk.")
 
         # Extract text and response ID from responses API streaming format
         # The responses API uses a different format than chat completions
@@ -186,15 +159,9 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that the database contains one request and endpoint matches
         requests = await sync_to_async(lambda: list(Request.objects.all()))()
-        self.assertEqual(
-            len(requests),
-            1,
-            "There should be exactly one request after streaming response creation.",
-        )
+        self.assertEqual(len(requests), 1, "There should be exactly one request after streaming response creation.")
         req = requests[0]
-        self.assertIn(
-            "responses", req.path, "Request endpoint should be for responses (streaming)."
-        )
+        self.assertIn("responses", req.path, "Request endpoint should be for responses (streaming).")
 
         self.assertIsNotNone(req.input_tokens)
         self.assertGreater(req.input_tokens, 0)
@@ -202,21 +169,13 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertGreater(req.output_tokens, 0)
 
         # Verify response was registered in cache (for streaming)
-        self.assertIsNotNone(
-            response_id, "Response ID should be captured from streaming response.created event"
-        )
+        self.assertIsNotNone(response_id, "Response ID should be captured from streaming response.created event")
 
         cache_key = f"response:{response_id}"
         cached_data = await sync_to_async(caches["default"].get)(cache_key)
         if cached_data is not None:
-            self.assertEqual(
-                cached_data.get("model"), self.model, "Cached model name should match request model"
-            )
-            self.assertEqual(
-                cached_data.get("email"),
-                "me@example.com",
-                "Cached user email should match current user",
-            )
+            self.assertEqual(cached_data.get("model"), self.model, "Cached model name should match request model")
+            self.assertEqual(cached_data.get("email"), "me@example.com", "Cached user email should match current user")
         else:
             self.fail(f"Response {response_id} should be registered in cache with key {cache_key}")
 
@@ -233,13 +192,12 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(get_data["object"], "response")
 
         # Test GET response input_items endpoint for streaming response
-        input_items_response = await self.async_client.get(
-            f"/v1/responses/{response_id}/input_items", headers=headers
-        )
+        input_items_response = await self.async_client.get(f"/v1/responses/{response_id}/input_items", headers=headers)
         self.assertEqual(
             input_items_response.status_code,
             200,
-            f"GET input_items should return 200, got {input_items_response.status_code}: {input_items_response.content}",
+            f"GET input_items should return 200, got {input_items_response.status_code}: "
+            f"{input_items_response.content}",
         )
         input_items_data = input_items_response.json()
         self.assertIsInstance(input_items_data, dict)
@@ -247,9 +205,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsInstance(input_items_data["data"], list)
 
         # Test DELETE response endpoint for streaming response
-        delete_response = await self.async_client.delete(
-            f"/v1/responses/{response_id}", headers=headers
-        )
+        delete_response = await self.async_client.delete(f"/v1/responses/{response_id}", headers=headers)
         self.assertEqual(
             delete_response.status_code,
             200,
@@ -257,9 +213,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         )
 
         # Verify streaming response is deleted - GET should now return 404
-        verify_get_response = await self.async_client.get(
-            f"/v1/responses/{response_id}", headers=headers
-        )
+        verify_get_response = await self.async_client.get(f"/v1/responses/{response_id}", headers=headers)
         self.assertEqual(
             verify_get_response.status_code,
             404,
@@ -269,23 +223,17 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
     def test_get_response_invalid_id(self):
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         response = self.client.get("/v1/responses/invalid-id", headers=headers)
-        self.assertEqual(
-            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}")
 
     def test_delete_response_invalid_id(self):
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         response = self.client.delete("/v1/responses/invalid-id", headers=headers)
-        self.assertEqual(
-            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}")
 
     def test_input_items_response_invalid_id(self):
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         response = self.client.get("/v1/responses/invalid-id/input_items", headers=headers)
-        self.assertEqual(
-            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
-        )
+        self.assertEqual(response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}")
 
     def test_user_response_isolation_via_id(self):
         """
@@ -302,10 +250,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
 
             # Mock response for retrieve/delete/input_items
             mock_retrieve_response = MagicMock()
-            mock_retrieve_response.model_dump.return_value = {
-                "id": "resp_test123",
-                "status": "completed",
-            }
+            mock_retrieve_response.model_dump.return_value = {"id": "resp_test123", "status": "completed"}
             mock_openai_client.responses.retrieve.return_value = mock_retrieve_response
             mock_openai_client.responses.delete.return_value = mock_retrieve_response
             mock_openai_client.responses.input_items.list.return_value = mock_retrieve_response
@@ -333,44 +278,35 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
             headers_someone = _build_chat_headers(token_someone_key)
 
             # Test GET endpoint isolation
-            get_response_someone = self.client.get(
-                f"/v1/responses/{response_id}", headers=headers_someone
-            )
+            get_response_someone = self.client.get(f"/v1/responses/{response_id}", headers=headers_someone)
             self.assertEqual(
                 get_response_someone.status_code,
                 404,
-                f"User someone@example.com should not access me@example.com's response, got {get_response_someone.status_code}",
+                f"User someone@example.com should not access me@example.com's response, "
+                f"got {get_response_someone.status_code}",
             )
 
             # Test DELETE endpoint isolation
-            delete_response_someone = self.client.delete(
-                f"/v1/responses/{response_id}", headers=headers_someone
-            )
+            delete_response_someone = self.client.delete(f"/v1/responses/{response_id}", headers=headers_someone)
             self.assertEqual(
                 delete_response_someone.status_code,
                 404,
-                f"User someone@example.com should not delete me@example.com's response, got {delete_response_someone.status_code}",
+                f"User someone@example.com should not delete me@example.com's response, "
+                f"got {delete_response_someone.status_code}",
             )
 
             # Test input_items endpoint isolation
-            input_items_response = self.client.get(
-                f"/v1/responses/{response_id}/input_items", headers=headers_someone
-            )
+            input_items_response = self.client.get(f"/v1/responses/{response_id}/input_items", headers=headers_someone)
             self.assertEqual(
                 input_items_response.status_code,
                 404,
-                f"User someone@example.com should not access me@example.com's input_items, got {input_items_response.status_code}",
+                f"User someone@example.com should not access me@example.com's input_items, "
+                f"got {input_items_response.status_code}",
             )
 
             # Clean up - User1 should be able to delete their own response
-            delete_response_me = self.client.delete(
-                f"/v1/responses/{response_id}", headers=headers_me
-            )
-            self.assertEqual(
-                delete_response_me.status_code,
-                200,
-                "User1 should be able to delete their own response",
-            )
+            delete_response_me = self.client.delete(f"/v1/responses/{response_id}", headers=headers_me)
+            self.assertEqual(delete_response_me.status_code, 200, "User1 should be able to delete their own response")
 
 
 class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
@@ -651,9 +587,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         self.assertEqual(sorted(call_kwargs["id__in"]), ["vs_remote_abc", "vs_remote_def"])
 
     @patch("gateway.views.decorators.VectorStore")
-    async def test_check_tool_availability_file_search_service_account(
-        self, mock_vector_store_class
-    ):
+    async def test_check_tool_availability_file_search_service_account(self, mock_vector_store_class):
         """
         Test check_tool_availability decorator with file_search tool for service account.
         Should resolve vector store IDs to remote IDs using team filter.

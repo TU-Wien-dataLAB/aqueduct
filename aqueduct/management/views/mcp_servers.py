@@ -16,7 +16,7 @@ class MCPServersView(LoginRequiredMixin, TemplateView):
         try:
             mcp_config = get_mcp_config()
             # Add default icon_url fallback for servers that don't have it
-            for server_name, server_config in mcp_config.items():
+            for _server_name, server_config in mcp_config.items():
                 if "icon_url" not in server_config:
                     server_config["icon_url"] = "/static/icons/mcp.svg"
             context["mcp_servers"] = mcp_config

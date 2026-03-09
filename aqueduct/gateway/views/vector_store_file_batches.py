@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -29,9 +28,7 @@ async def mark_orphaned_files(batch_obj, status: str, error_msg: str):
         status: The new status to set on orphaned files (typically "failed").
         error_msg: The error message to set on orphaned files.
     """
-    orphaned_files = await sync_to_async(list)(
-        VectorStoreFile.objects.filter(batch=batch_obj, status="in_progress")
-    )
+    orphaned_files = await sync_to_async(list)(VectorStoreFile.objects.filter(batch=batch_obj, status="in_progress"))
     if orphaned_files:
 
         @sync_to_async
@@ -51,12 +48,7 @@ async def mark_orphaned_files(batch_obj, status: str, error_msg: str):
 @parse_body(model=TypeAdapter(FileBatchCreateParams))
 @log_request
 async def vector_store_file_batches(
-    request: ASGIRequest,
-    token: Token,
-    vector_store_id: str,
-    pydantic_model: Optional[dict] = None,
-    *args,
-    **kwargs,
+    request: ASGIRequest, token: Token, vector_store_id: str, pydantic_model: dict | None = None, *args, **kwargs
 ):
     """
     POST /v1/vector_stores/{vector_store_id}/file_batches - Create file batch
@@ -82,9 +74,7 @@ async def vector_store_file_batches(
     files = params.get("files", [])
 
     if not file_ids and not files:
-        return error_response(
-            "Missing required parameter: file_ids or files", param="file_ids", status=400
-        )
+        return error_response("Missing required parameter: file_ids or files", param="file_ids", status=400)
 
     # Handle both file_ids and files formats
     # Extract file_ids for lookup; pass full files dicts to upstream to preserve attributes and chunking_strategy
@@ -119,11 +109,7 @@ async def vector_store_file_batches(
             create_kwargs["attributes"] = params["attributes"]
         remote_batch = await client.vector_stores.file_batches.create(**create_kwargs)
     except Exception as e:
-        return error_response(
-            f"Failed to create file batch on upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+        return error_response(f"Failed to create file batch on upstream: {e!s}", error_type="server_error", status=502)
 
     # Create local batch record with upstream ID
     now = timezone.now()
@@ -133,13 +119,7 @@ async def vector_store_file_batches(
         status=remote_batch.status or "in_progress",
         file_counts=remote_batch.file_counts.model_dump(mode="json")
         if hasattr(remote_batch, "file_counts") and remote_batch.file_counts
-        else {
-            "total": len(file_ids),
-            "completed": 0,
-            "failed": 0,
-            "in_progress": len(file_ids),
-            "cancelled": 0,
-        },
+        else {"total": len(file_ids), "completed": 0, "failed": 0, "in_progress": len(file_ids), "cancelled": 0},
         created_at=int(now.timestamp()),
     )
     await sync_to_async(batch_obj.save)()
@@ -217,17 +197,13 @@ async def vector_store_file_batch(
         remote_batch = await batch_obj.areload_from_upstream(client)
     except Exception as e:
         return error_response(
-            f"Failed to retrieve file batch from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
+            f"Failed to retrieve file batch from upstream: {e!s}", error_type="server_error", status=502
         )
 
     # Handle orphaned VectorStoreFile records when batch fails or is cancelled
     if batch_obj.status in ("failed", "cancelled"):
         await mark_orphaned_files(
-            batch_obj,
-            status="failed",
-            error_msg=f"Batch {batch_obj.status}: files were not processed",
+            batch_obj, status="failed", error_msg=f"Batch {batch_obj.status}: files were not processed"
         )
 
     # Return upstream response directly (IDs already match)
@@ -273,15 +249,9 @@ async def vector_store_file_batch_cancel(
 
     # Cancel on upstream
     try:
-        remote_batch = await client.vector_stores.file_batches.cancel(
-            vector_store_id=vs_obj.id, batch_id=batch_obj.id
-        )
+        remote_batch = await client.vector_stores.file_batches.cancel(vector_store_id=vs_obj.id, batch_id=batch_obj.id)
     except Exception as e:
-        return error_response(
-            f"Failed to cancel file batch on upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+        return error_response(f"Failed to cancel file batch on upstream: {e!s}", error_type="server_error", status=502)
 
     # Update local record
     batch_obj.status = remote_batch.status or "cancelled"
@@ -290,9 +260,7 @@ async def vector_store_file_batch_cancel(
     await sync_to_async(batch_obj.save)()
 
     # Handle orphaned VectorStoreFile records when batch is cancelled
-    await mark_orphaned_files(
-        batch_obj, status="failed", error_msg="Batch cancelled: files were not processed"
-    )
+    await mark_orphaned_files(batch_obj, status="failed", error_msg="Batch cancelled: files were not processed")
 
     # Return upstream response directly (IDs already match)
     response_data = remote_batch.model_dump(mode="json")
@@ -342,9 +310,7 @@ async def vector_store_file_batch_files(
         )
     except Exception as e:
         return error_response(
-            f"Failed to retrieve file batch files from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
+            f"Failed to retrieve file batch files from upstream: {e!s}", error_type="server_error", status=502
         )
 
     # Return upstream response directly (IDs already match)

@@ -22,12 +22,7 @@ class AqueductManagementConfig(AppConfig):
             tos_app = apps.get_app_config("tos")
             TermsOfService = tos_app.get_model("TermsOfService")
 
-            @receiver(
-                post_save,
-                sender=get_user_model(),
-                dispatch_uid="set_staff_in_cache_for_tos",
-                weak=False,
-            )
+            @receiver(post_save, sender=get_user_model(), dispatch_uid="set_staff_in_cache_for_tos", weak=False)
             def set_staff_in_cache_for_tos(instance, **kwargs):
                 """Skips TOS check for admin users. Is called after login (because of user.save())
                 so that cache is updated at each login."""
@@ -44,25 +39,14 @@ class AqueductManagementConfig(AppConfig):
                     return
 
                 if group == "admin":
-                    cache.set(
-                        "django:tos:skip_tos_check:{}".format(instance.id),
-                        True,
-                        version=key_version,
-                    )
+                    cache.set(f"django:tos:skip_tos_check:{instance.id}", True, version=key_version)
                     log.info(f"Added admin user '{instance.email}' to TOS cache")
 
                 # But if they aren't make sure we invalidate them from the cache
-                elif cache.get("django:tos:skip_tos_check:{}".format(instance.id), False):
-                    cache.delete(
-                        "django:tos:skip_tos_check:{}".format(instance.id), version=key_version
-                    )
+                elif cache.get(f"django:tos:skip_tos_check:{instance.id}", False):
+                    cache.delete(f"django:tos:skip_tos_check:{instance.id}", version=key_version)
 
-            @receiver(
-                post_save,
-                sender=TermsOfService,
-                dispatch_uid="add_staff_users_to_tos_cache",
-                weak=False,
-            )
+            @receiver(post_save, sender=TermsOfService, dispatch_uid="add_staff_users_to_tos_cache", weak=False)
             def add_staff_users_to_tos_cache(*args, **kwargs):
                 if kwargs.get("raw", False):
                     return
@@ -74,7 +58,7 @@ class AqueductManagementConfig(AppConfig):
                 # agreement check
                 cache.set_many(
                     {
-                        "django:tos:skip_tos_check:{}".format(user.id): True
+                        f"django:tos:skip_tos_check:{user.id}": True
                         for user in get_user_model().objects.filter(groups__name="admin")
                     },
                     version=key_version,

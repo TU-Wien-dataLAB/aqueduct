@@ -1,5 +1,3 @@
-from typing import Optional
-
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
@@ -18,13 +16,7 @@ from pydantic import TypeAdapter
 from gateway.config import get_files_api_client
 from management.models import Token, VectorStore
 
-from .decorators import (
-    log_request,
-    parse_body,
-    require_files_api_client,
-    token_authenticated,
-    tos_accepted,
-)
+from .decorators import log_request, parse_body, require_files_api_client, token_authenticated, tos_accepted
 from .errors import error_response
 
 
@@ -34,9 +26,7 @@ from .errors import error_response
 @tos_accepted
 @parse_body(model=TypeAdapter(VectorStoreCreateParams))
 @log_request
-async def vector_stores(
-    request: ASGIRequest, token: Token, pydantic_model: Optional[dict] = None, *args, **kwargs
-):
+async def vector_stores(request: ASGIRequest, token: Token, pydantic_model: dict | None = None, *args, **kwargs):
     """
     GET /v1/vector_stores - List vector stores
     POST /v1/vector_stores - Create vector store
@@ -49,9 +39,7 @@ async def vector_stores(
     if request.method == "GET":
         # List user's vector stores from local DB
         if token.service_account:
-            vector_stores_qs = VectorStore.objects.filter(
-                token__service_account__team=token.service_account.team
-            )
+            vector_stores_qs = VectorStore.objects.filter(token__service_account__team=token.service_account.team)
         else:
             vector_stores_qs = VectorStore.objects.filter(token__user=token.user)
 
@@ -107,15 +95,11 @@ async def vector_stores(
     if token.service_account:
         limit = settings.MAX_TEAM_VECTOR_STORES
         active_count = await sync_to_async(
-            VectorStore.objects.filter(
-                token__service_account__team=token.service_account.team
-            ).count
+            VectorStore.objects.filter(token__service_account__team=token.service_account.team).count
         )()
     else:
         limit = settings.MAX_USER_VECTOR_STORES
-        active_count = await sync_to_async(
-            VectorStore.objects.filter(token__user=token.user).count
-        )()
+        active_count = await sync_to_async(VectorStore.objects.filter(token__user=token.user).count)()
 
     if active_count >= limit:
         return error_response(f"Vector store limit reached ({limit})", status=403)
@@ -133,9 +117,7 @@ async def vector_stores(
         remote_vs = await client.vector_stores.create(**create_kwargs)
     except Exception as e:
         return error_response(
-            f"Failed to create vector store on upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
+            f"Failed to create vector store on upstream: {e!s}", error_type="server_error", status=502
         )
 
     # Create local record with upstream ID
@@ -171,8 +153,8 @@ async def vector_store(
     request: ASGIRequest,
     token: Token,
     vector_store_id: str,
-    pydantic_model: Optional[dict] = None,
-    client: Optional[AsyncOpenAI] = None,
+    pydantic_model: dict | None = None,
+    client: AsyncOpenAI | None = None,
     *args,
     **kwargs,
 ):
@@ -198,9 +180,7 @@ async def vector_store(
             remote_vs = await vs_obj.areload_from_upstream(client)
         except Exception as e:
             return error_response(
-                f"Failed to retrieve vector store from upstream: {str(e)}",
-                error_type="server_error",
-                status=502,
+                f"Failed to retrieve vector store from upstream: {e!s}", error_type="server_error", status=502
             )
 
         # Return upstream response directly (ID already matches)
@@ -220,9 +200,7 @@ async def vector_store(
                 remote_vs = await client.vector_stores.update(vs_obj.id, **modify_kwargs)
             except Exception as e:
                 return error_response(
-                    f"Failed to update vector store on upstream: {str(e)}",
-                    error_type="server_error",
-                    status=502,
+                    f"Failed to update vector store on upstream: {e!s}", error_type="server_error", status=502
                 )
 
             # Update local record
@@ -244,9 +222,7 @@ async def vector_store(
             return JsonResponse(response_data, status=200)
         except Exception as e:
             return error_response(
-                f"Failed to retrieve vector store from upstream: {str(e)}",
-                error_type="server_error",
-                status=502,
+                f"Failed to retrieve vector store from upstream: {e!s}", error_type="server_error", status=502
             )
 
     # DELETE /v1/vector_stores/{vector_store_id}
@@ -254,9 +230,7 @@ async def vector_store(
         await vs_obj.adelete_upstream(client)
     except Exception as e:
         return error_response(
-            f"Failed to delete vector store from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
+            f"Failed to delete vector store from upstream: {e!s}", error_type="server_error", status=502
         )
 
     # Capture ID before delete (Django sets pk to None after delete)
@@ -266,9 +240,7 @@ async def vector_store(
     await sync_to_async(vs_obj.delete)()
 
     # Return with upstream ID
-    return JsonResponse(
-        {"id": deleted_id, "object": "vector_store.deleted", "deleted": True}, status=200
-    )
+    return JsonResponse({"id": deleted_id, "object": "vector_store.deleted", "deleted": True}, status=200)
 
 
 @csrf_exempt
@@ -276,9 +248,7 @@ async def vector_store(
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
-async def vector_store_search(
-    request: ASGIRequest, token: Token, vector_store_id: str, *args, **kwargs
-):
+async def vector_store_search(request: ASGIRequest, token: Token, vector_store_id: str, *args, **kwargs):
     """
     POST /v1/vector_stores/{vector_store_id}/search - Search vector store
     """
@@ -327,9 +297,7 @@ async def vector_store_search(
         search_results = await client.vector_stores.search(**search_kwargs)
     except Exception as e:
         return error_response(
-            f"Failed to search vector store on upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
+            f"Failed to search vector store on upstream: {e!s}", error_type="server_error", status=502
         )
 
     # Return upstream response directly (IDs already match)

@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from typing import ClassVar
 
 from django import forms
 from django.contrib import admin, messages
@@ -187,17 +188,10 @@ def reload_from_upstream(modeladmin, request, queryset):
 
 # Define a new User admin
 class UserAdmin(BaseUserAdmin):
-    inlines = (ProfileInline,)
-    list_display = (
-        "email",
-        "is_staff",
-        "get_groups",
-        "request_limit",
-        "input_limit",
-        "output_limit",
-    )
-    list_select_related = ["profile"]
-    actions = [make_admin, make_org_admin, make_user, delete_tos_cache]
+    inlines: ClassVar[tuple] = (ProfileInline,)
+    list_display: ClassVar[tuple] = ("email", "is_staff", "get_groups", "request_limit", "input_limit", "output_limit")
+    list_select_related: ClassVar[list] = ["profile"]
+    actions: ClassVar[list] = [make_admin, make_org_admin, make_user, delete_tos_cache]
 
     def get_groups(self, obj):
         return ", ".join([g.name for g in obj.groups.all()])
@@ -246,17 +240,17 @@ class TeamAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
 # Customize Team Admin
 @admin.register(Team)
 class TeamAdmin(admin.ModelAdmin):
-    list_display = (
+    list_display: ClassVar[tuple] = (
         "name",
         "org_link",
         "requests_per_minute",
         "input_tokens_per_minute",
         "output_tokens_per_minute",
     )
-    list_select_related = ["org"]
-    search_fields = ("name",)
-    inlines = [TeamMembershipInline]  # Add the inline here
-    list_filter = ["org__name"]
+    list_select_related: ClassVar[list] = ["org"]
+    search_fields: ClassVar[tuple] = ("name",)
+    inlines: ClassVar[list] = [TeamMembershipInline]
+    list_filter: ClassVar[list] = ["org__name"]
     form = TeamAdminForm
 
     def org_link(self, obj):
@@ -277,19 +271,14 @@ class OrgAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
 
 @admin.register(Org)
 class OrgAdmin(admin.ModelAdmin):
-    list_display = (
-        "name",
-        "requests_per_minute",
-        "input_tokens_per_minute",
-        "output_tokens_per_minute",
-    )
+    list_display = ("name", "requests_per_minute", "input_tokens_per_minute", "output_tokens_per_minute")
     form = OrgAdminForm
 
 
 @admin.register(Request)
 class RequestAdmin(admin.ModelAdmin):
-    list_select_related = ["token"]
-    list_display = (
+    list_select_related: ClassVar[list] = ["token"]
+    list_display: ClassVar[tuple] = (
         "id",
         "input_tokens",
         "output_tokens",
@@ -299,14 +288,14 @@ class RequestAdmin(admin.ModelAdmin):
         "token__name",
         "user_id",
     )
-    list_filter = ["status_code", "model", "token"]
+    list_filter: ClassVar[list] = ["status_code", "model", "token"]
 
 
 @admin.register(ServiceAccount)
 class ServiceAccountAdmin(admin.ModelAdmin):
-    list_display = ("name", "description", "team_link")
-    list_select_related = ["team"]
-    list_filter = ["team__name"]
+    list_display: ClassVar[tuple] = ("name", "description", "team_link")
+    list_select_related: ClassVar[list] = ["team"]
+    list_filter: ClassVar[list] = ["team__name"]
 
     def team_link(self, obj):
         link = reverse("admin:management_team_change", args=[obj.team.id])
@@ -317,19 +306,15 @@ class ServiceAccountAdmin(admin.ModelAdmin):
 
 @admin.register(Token)
 class TokenAdmin(admin.ModelAdmin):
-    list_display = ("name", "expires_at", "user_link", "sa_link")
-    list_select_related = ["user", "service_account", "service_account__team"]
-    list_filter = ["service_account__team__name"]
+    list_display: ClassVar[tuple] = ("name", "expires_at", "user_link", "sa_link")
+    list_select_related: ClassVar[list] = ["user", "service_account", "service_account__team"]
+    list_filter: ClassVar[list] = ["service_account__team__name"]
 
     def sa_link(self, obj):
         if obj.service_account is None:
             return "-"
         link = reverse("admin:management_serviceaccount_change", args=[obj.service_account.id])
-        return format_html(
-            '<a href="{}">{}</a>',
-            link,
-            f"{obj.service_account.name} ({obj.service_account.team.name})",
-        )
+        return format_html('<a href="{}">{}</a>', link, f"{obj.service_account.name} ({obj.service_account.team.name})")
 
     sa_link.short_description = "Service Account"
 
@@ -344,7 +329,7 @@ class TokenAdmin(admin.ModelAdmin):
 class FileObjectAdmin(admin.ModelAdmin):
     """Admin panel registration for FileObject model."""
 
-    list_display = (
+    list_display: ClassVar[tuple] = (
         "id",
         "filename",
         "purpose",
@@ -352,9 +337,9 @@ class FileObjectAdmin(admin.ModelAdmin):
         "created_at_formatted",
         "expires_at_formatted",
     )
-    list_filter = ("purpose", "token__user__email")
-    search_fields = ("id", "filename")
-    actions = [reload_from_upstream]
+    list_filter: ClassVar[tuple] = ("purpose", "token__user__email")
+    search_fields: ClassVar[tuple] = ("id", "filename")
+    actions: ClassVar[list] = [reload_from_upstream]
 
     def bytes_formatted(self, obj):
         from django.template.defaultfilters import filesizeformat
@@ -381,7 +366,7 @@ class FileObjectAdmin(admin.ModelAdmin):
 class BatchAdmin(admin.ModelAdmin):
     """Admin panel registration for Batch model."""
 
-    list_display = (
+    list_display: ClassVar[tuple] = (
         "id",
         "status",
         "created_at_formatted",
@@ -389,9 +374,9 @@ class BatchAdmin(admin.ModelAdmin):
         "endpoint",
         "input_file",
     )
-    list_filter = ("status", "token__user__email")
-    search_fields = ("id",)
-    actions = [reload_from_upstream]
+    list_filter: ClassVar[tuple] = ("status", "token__user__email")
+    search_fields: ClassVar[tuple] = ("id",)
+    actions: ClassVar[list] = [reload_from_upstream]
 
     def created_at_formatted(self, obj):
         return format_unix_timestamp(obj.created_at)
@@ -404,7 +389,7 @@ class BatchAdmin(admin.ModelAdmin):
 class VectorStoreAdmin(admin.ModelAdmin):
     """Admin panel registration for VectorStore model."""
 
-    list_display = (
+    list_display: ClassVar[tuple] = (
         "id",
         "name",
         "status",
@@ -413,11 +398,11 @@ class VectorStoreAdmin(admin.ModelAdmin):
         "token_link",
         "created_at_formatted",
     )
-    list_filter = ("status", "token__user__email")
-    search_fields = ("id", "name", "remote_id")
-    list_select_related = ["token", "token__user"]
-    readonly_fields = ("id", "created_at_formatted")
-    actions = [reload_from_upstream]
+    list_filter: ClassVar[tuple] = ("status", "token__user__email")
+    search_fields: ClassVar[tuple] = ("id", "name", "remote_id")
+    list_select_related: ClassVar[list] = ["token", "token__user"]
+    readonly_fields: ClassVar[tuple] = ("id", "created_at_formatted")
+    actions: ClassVar[list] = [reload_from_upstream]
 
     def get_queryset(self, request):
         from django.db.models import Count
@@ -447,9 +432,7 @@ class VectorStoreAdmin(admin.ModelAdmin):
     def token_link(self, obj):
         link = reverse("admin:management_token_change", args=[obj.token.id])
         if obj.token.service_account:
-            return format_html(
-                '<a href="{}">{} ({})</a>', link, obj.token.name, obj.token.service_account.name
-            )
+            return format_html('<a href="{}">{} ({})</a>', link, obj.token.name, obj.token.service_account.name)
         return format_html('<a href="{}">{}</a>', link, obj.token.name)
 
     token_link.short_description = "Token"
@@ -516,11 +499,11 @@ class VectorStoreFileAdmin(admin.ModelAdmin):
         "usage_bytes_formatted",
         "created_at_formatted",
     )
-    list_filter = ("status", "vector_store__name")
-    search_fields = ("id", "remote_id")
-    list_select_related = ["vector_store", "file_obj"]
-    readonly_fields = ("id", "created_at_formatted")
-    actions = [reload_from_upstream]
+    list_filter: ClassVar[tuple] = ("status", "vector_store__name")
+    search_fields: ClassVar[tuple] = ("id", "remote_id")
+    list_select_related: ClassVar[list] = ["vector_store", "file_obj"]
+    readonly_fields: ClassVar[tuple] = ("id", "created_at_formatted")
+    actions: ClassVar[list] = [reload_from_upstream]
 
     def usage_bytes_formatted(self, obj):
         from django.template.defaultfilters import filesizeformat
@@ -581,18 +564,18 @@ class VectorStoreFileAdmin(admin.ModelAdmin):
 class VectorStoreFileBatchAdmin(admin.ModelAdmin):
     """Admin panel registration for VectorStoreFileBatch model."""
 
-    list_display = (
+    list_display: ClassVar[tuple] = (
         "id",
         "vector_store_link",
         "status",
         "file_counts_formatted",
         "created_at_formatted",
     )
-    list_filter = ("status", "vector_store__name")
-    search_fields = ("id", "remote_id")
-    list_select_related = ["vector_store"]
-    readonly_fields = ("id", "created_at_formatted")
-    actions = [reload_from_upstream]
+    list_filter: ClassVar[tuple] = ("status", "vector_store__name")
+    search_fields: ClassVar[tuple] = ("id", "remote_id")
+    list_select_related: ClassVar[list] = ["vector_store"]
+    readonly_fields: ClassVar[tuple] = ("id", "created_at_formatted")
+    actions: ClassVar[list] = [reload_from_upstream]
 
     def file_counts_formatted(self, obj):
         counts = obj.file_counts or {}

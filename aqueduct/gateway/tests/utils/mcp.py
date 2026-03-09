@@ -6,6 +6,7 @@ import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import wraps
+from typing import ClassVar
 from unittest.mock import patch
 
 from asgiref.sync import sync_to_async
@@ -16,9 +17,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_client
 
 MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
-MCP_TEST_CONFIG = {
-    "mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}
-}
+MCP_TEST_CONFIG = {"mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}}
 
 
 # patch: https://github.com/modelcontextprotocol/python-sdk/pull/1670
@@ -94,11 +93,7 @@ class MCPDaphneProcess(DaphneProcess):
         # Configure MCP security settings for testing
         settings.MCP_ENABLE_DNS_REBINDING_PROTECTION = True
         settings.MCP_ALLOWED_HOSTS = ["localhost:8000", "localhost:*", "127.0.0.1:*"]
-        settings.MCP_ALLOWED_ORIGINS = [
-            "http://localhost:3000",
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-        ]
+        settings.MCP_ALLOWED_ORIGINS = ["http://localhost:3000", "http://localhost:*", "http://127.0.0.1:*"]
 
         # Allow test hosts in Django's ALLOWED_HOSTS so requests reach our security decorator
         # Add common test hosts that we'll use to test the security decorator
@@ -115,9 +110,7 @@ class MCPDaphneProcess(DaphneProcess):
         super().run()
 
 
-@override_settings(
-    OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/", API_MAX_RETRIES=5
-)
+@override_settings(OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/", API_MAX_RETRIES=5)
 class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     """
     Live server test case for MCP endpoints using Django's LiveServerTestCase.
@@ -127,7 +120,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     serve_static = False
     ProtocolServerProcess = MCPDaphneProcess
 
-    fixtures = ["gateway_data.json"]
+    fixtures: ClassVar[list] = ["gateway_data.json"]
     mcp_server_process = None
 
     @property
@@ -142,11 +135,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     @asynccontextmanager
     async def client_session(self):
-        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
-            read_stream,
-            write_stream,
-            _,
-        ):
+        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (read_stream, write_stream, _):
             async with ClientSession(read_stream, write_stream) as session:
                 yield session
 
@@ -190,12 +179,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             env = os.environ.copy()
             env["PORT"] = str(port)
             cls.mcp_server_process = subprocess.Popen(
-                [
-                    "npx",
-                    "-y",
-                    "@modelcontextprotocol/server-everything@2025.11.25",
-                    "streamableHttp",
-                ],
+                ["npx", "-y", "@modelcontextprotocol/server-everything@2025.11.25", "streamableHttp"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -203,9 +187,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 cwd=os.path.dirname(MCP_CONFIG_PATH),
             )
         except FileNotFoundError:
-            raise RuntimeError(
-                "npx command not found. Please ensure Node.js and npm are installed."
-            )
+            raise RuntimeError("npx command not found. Please ensure Node.js and npm are installed.") from None
 
         # Wait for server to be ready by checking if it accepts connections
         print(f"Waiting for MCP server to accept connections on port {port}...")
@@ -226,14 +208,12 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                     sock.connect(("localhost", port))
                     print(f"✓ MCP everything server started successfully on port {port}")
                     return
-            except (socket.error, ConnectionRefusedError, OSError) as e:
+            except (ConnectionRefusedError, OSError) as e:
                 last_error = e
                 time.sleep(0.5)
 
         # If we get here, timeout occurred
-        raise RuntimeError(
-            f"MCP server did not accept connections within {timeout} seconds. Last error: {last_error}"
-        )
+        raise RuntimeError(f"MCP server did not accept connections within {timeout} seconds. Last error: {last_error}")
 
     @classmethod
     def _stop_mcp_server(cls):

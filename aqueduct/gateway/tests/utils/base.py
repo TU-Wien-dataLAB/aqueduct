@@ -172,7 +172,7 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
         wrapped = {"custom_id": "1", "method": "POST", "url": self.url_chat, "body": payload}
         return json.dumps(wrapped).encode() + b"\n"
 
-    def _create_jsonl_file(self, name: str | None = "testfile", headers: dict | None = None) -> int:
+    def _create_jsonl_file(self, name: str | None = "testfile", headers: dict | None = None) -> str:
         """Prepare a simple JSONL file in batch API format.
 
         `name` is the name of the SimpleUploadedFile (without the file extension).
@@ -185,7 +185,7 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
         content = self._make_jsonl_content()
         f = SimpleUploadedFile(f"{name}.jsonl", content, content_type="application/jsonl")
         resp = self.client.post("/files", {"file": f, "purpose": "batch"}, headers=headers)
-        return int(resp.json()["id"])
+        return resp.json()["id"]
 
 
 class GatewayTTSSTTestCase(GatewayIntegrationTestCase):

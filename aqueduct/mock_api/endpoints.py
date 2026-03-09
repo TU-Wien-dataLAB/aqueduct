@@ -112,9 +112,14 @@ async def mock_endpoint(path: str, request: Request):
             # Note: streaming responses can only be returned for POST requests.
             config = default_post_stream_configs[path]
         elif request.method == "POST":
-            config = default_post_configs[path]
+            if re.match("^batches/.+/cancel$", path):
+                config = default_post_configs["batches/id/cancel"]
+            else:
+                config = default_post_configs[path]
         elif request.method == "GET":
-            if re.match("^responses/.+/input_items$", path):
+            if re.match("^batches/.+$", path):
+                config = default_get_configs["batches/id"]
+            elif re.match("^responses/.+/input_items$", path):
                 config = default_get_configs["responses/id/input_items"]
             elif re.match("responses/.+$", path):
                 config = default_get_configs["responses/id"]

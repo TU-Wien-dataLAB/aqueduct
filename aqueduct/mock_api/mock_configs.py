@@ -1,8 +1,9 @@
 import json
+from datetime import datetime
 from typing import Any
 
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse, Usage
-from openai.types import Batch, Embedding, Image, ImagesResponse
+from openai.types import Batch, Embedding, FileObject, Image, ImagesResponse
 from openai.types.audio import Transcription
 from openai.types.audio.transcription import UsageDuration
 from openai.types.images_response import Usage as ImageUsage
@@ -71,7 +72,6 @@ default_post_configs = {
             text="This is a mock transcription", usage=UsageDuration(type="duration", seconds=60)
         ).model_dump()
     ),
-    # Batches are already mocked with a mock_router; TODO: check the response data
     "batches": MockConfig(
         response_data=Batch(
             cancelled_at=None,
@@ -82,7 +82,7 @@ default_post_configs = {
             endpoint="/v1/chat/completions",
             error_file_id=None,
             errors=None,
-            expires_at=1694354590,
+            expires_at=1773058900,
             failed_at=None,
             finalizing_at=None,
             id="batch_123456789",
@@ -93,7 +93,26 @@ default_post_configs = {
             status="validating",
         ).model_dump()
     ),
-    # TODO: check this!
+    "batches/id/cancel": MockConfig(
+        response_data=Batch(
+            cancelled_at=1773058900,
+            cancelling_at=1773058900,
+            completed_at=None,
+            completion_window="24h",
+            created_at=1694268190,
+            endpoint="/v1/chat/completions",
+            error_file_id=None,
+            errors=None,
+            failed_at=None,
+            finalizing_at=None,
+            id="batch_123456789",
+            in_progress_at=None,
+            input_file_id="file-123456789",
+            metadata={"custom_id": "my-batch"},
+            object="batch",
+            status="cancelled",
+        ).model_dump()
+    ),
     "completions": MockConfig(
         response_data=TextCompletionResponse(
             id="cmpl-123456789",
@@ -149,6 +168,19 @@ default_post_configs = {
             ],
             model="text-embedding-ada-002",
             usage=Usage(prompt_tokens=8, total_tokens=8),
+        ).model_dump()
+    ),
+    "files": MockConfig(
+        response_data=FileObject(
+            id="file-mock-123",
+            filename="test.jsonl",
+            bytes=100,
+            purpose="batch",
+            created_at=int(datetime.now().timestamp()),
+            expires_at=None,
+            status="processed",
+            status_details=None,
+            object="file",
         ).model_dump()
     ),
     "images/generations": MockConfig(
@@ -390,6 +422,27 @@ default_post_stream_configs = {
 }
 
 default_get_configs = {
+    "batches/id": MockConfig(
+        response_data=Batch(
+            cancelled_at=None,
+            cancelling_at=None,
+            completed_at=None,
+            completion_window="24h",
+            created_at=1694268190,
+            endpoint="/v1/chat/completions",
+            error_file_id=None,
+            errors=None,
+            expires_at=1773058900,
+            failed_at=None,
+            finalizing_at=None,
+            id="batch_123456789",
+            in_progress_at=None,
+            input_file_id="file-123456789",
+            metadata={"custom_id": "my-batch"},
+            object="batch",
+            status="validating",
+        ).model_dump()
+    ),
     "responses/id": MockConfig(
         response_data=Response(
             **_response_basic_data,

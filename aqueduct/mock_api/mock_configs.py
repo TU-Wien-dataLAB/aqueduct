@@ -3,7 +3,15 @@ from datetime import datetime
 from typing import Any
 
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse, Usage
-from openai.types import Batch, BatchRequestCounts, Embedding, FileObject, Image, ImagesResponse
+from openai.types import (
+    Batch,
+    BatchRequestCounts,
+    Embedding,
+    FileObject,
+    Image,
+    ImagesResponse,
+    VectorStore,
+)
 from openai.types.audio import Transcription
 from openai.types.audio.transcription import UsageDuration
 from openai.types.images_response import Usage as ImageUsage
@@ -27,6 +35,8 @@ from openai.types.responses import (
     ResponseUsage,
 )
 from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
+from openai.types.vector_store import FileCounts
+from openai.types.vector_stores import VectorStoreFile
 from pydantic import BaseModel
 
 
@@ -229,6 +239,46 @@ default_post_configs = {
                 output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
                 total_tokens=30,
             ),
+        ).model_dump()
+    ),
+    "vector_stores": MockConfig(
+        response_data=VectorStore(
+            id="vs-mock-123",
+            name="Test Store",
+            status="completed",
+            usage_bytes=0,
+            created_at=1741476542,
+            expires_after=None,
+            metadata=None,
+            object="vector_store",
+            file_counts=FileCounts(total=0, completed=0, failed=0, in_progress=0, cancelled=0),
+            last_active_at=None,
+            expires_at=None,
+        ).model_dump()
+    ),
+    "vector_stores/id": MockConfig(
+        response_data=VectorStore(
+            id="vs-mock-123",
+            name="Updated Name",
+            status="completed",
+            usage_bytes=0,
+            created_at=1741476542,
+            expires_after=None,
+            metadata=None,
+            object="vector_store",
+            file_counts=FileCounts(total=0, completed=0, failed=0, in_progress=0, cancelled=0),
+            last_active_at=None,
+            expires_at=None,
+        ).model_dump()
+    ),
+    "vector_stores/id/files": MockConfig(
+        response_data=VectorStoreFile(
+            id="vsf-mock-123",
+            status="completed",
+            usage_bytes=0,
+            created_at=1741476542,
+            object="vector_store.file",
+            vector_store_id="vs-mock-123",
         ).model_dump()
     ),
 }
@@ -491,8 +541,63 @@ default_get_configs = {
             object="list",
         ).model_dump()
     ),
+    "vector_stores/id": MockConfig(
+        response_data=VectorStore(
+            id="vs-mock-123",
+            name="Test Store",
+            status="completed",
+            usage_bytes=0,
+            created_at=1741476542,
+            expires_after=None,
+            metadata=None,
+            object="vector_store",
+            file_counts=FileCounts(total=0, completed=0, failed=0, in_progress=0, cancelled=0),
+            last_active_at=None,
+            expires_at=None,
+        ).model_dump()
+    ),
+    "vector_stores/id/files": MockConfig(
+        response_data={
+            "data": [
+                VectorStoreFile(
+                    id="vsf-mock-123",
+                    status="completed",
+                    usage_bytes=100,
+                    created_at=1741476542,
+                    last_error=None,
+                    object="vector_store.file",
+                    vector_store_id="vs-mock-123",
+                ).model_dump()
+                # VectorStoreFile(
+                #     id="file-mock-2",
+                #     status="completed",
+                #     usage_bytes=200,
+                #     created_at=1741476542,
+                #     last_error=None,
+                #     object="vector_store.file",
+                #     vector_store_id="vs-mock-123",
+                # ).model_dump(),
+            ],
+            "has_more": False,
+        }
+    ),
+    "vector_stores/id/files/id": MockConfig(
+        response_data=VectorStoreFile(
+            id="vsf-mock-123",
+            status="completed",
+            usage_bytes=0,
+            created_at=1741476542,
+            object="vector_store.file",
+            vector_store_id="vs-mock-123",
+        ).model_dump()
+    ),
 }
 
-default_delete_configs = {"responses/id": MockConfig(response_data=None)}
+default_delete_configs = {
+    "responses/id": MockConfig(response_data=None),
+    "vector_stores/id": MockConfig(
+        response_data={"id": "vs-mock-123", "object": "vector_store.deleted", "deleted": True}
+    ),
+}
 
 special_configs: dict[str, MockConfig] = {}

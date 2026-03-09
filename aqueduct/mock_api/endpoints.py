@@ -87,9 +87,6 @@ async def reset_endpoint(path: str):
     return {"message": f"Reset the special mock response for {path}"}
 
 
-# TODO: Do we need to mock any other GET/DELETE endpoints? Refactor the response
-#   matching to get rid of those if..elifs. Maybe create separate endpoints for
-#   GET and DELETE?
 @app.delete("/{path:path}")
 @app.get("/{path:path}")
 @app.post("/{path:path}")

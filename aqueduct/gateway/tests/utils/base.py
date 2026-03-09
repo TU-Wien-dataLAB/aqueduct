@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 from typing import Literal
@@ -6,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from litellm import Router
@@ -19,7 +21,7 @@ from litellm.types.utils import (
 )
 from tos.models import TermsOfService, UserAgreement
 
-from gateway.tests.utils import _build_chat_headers
+from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.test_runner import get_shared_mock_server
 from management.models import Org, Token, UserProfile
 from mock_api.mock_server import MockAPIServer
@@ -158,6 +160,32 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.headers.pop("Content-Type", None)
+        cls.url_files = reverse("gateway:files")
+        cls.url_chat = reverse("gateway:v1_chat_completions")
+
+    def _make_jsonl_content(self) -> bytes:
+        """Create valid JSONL content for batch upload."""
+        payload = _build_chat_payload(
+            self.model,
+            messages=[{"role": "system", "content": "Hi"}, {"role": "user", "content": "Test"}],
+        )
+        wrapped = {"custom_id": "1", "method": "POST", "url": self.url_chat, "body": payload}
+        return json.dumps(wrapped).encode() + b"\n"
+
+    def _create_jsonl_file(self, name: str | None = "testfile", headers: dict | None = None) -> int:
+        """Prepare a simple JSONL file in batch API format.
+
+        `name` is the name of the SimpleUploadedFile (without the file extension).
+        `headers` contain the secret of the token under which the file should be created.
+        If not provided, the headers with the default token's secret will be used.
+        """
+        if not headers:
+            headers = self.headers
+
+        content = self._make_jsonl_content()
+        f = SimpleUploadedFile(f"{name}.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post("/files", {"file": f, "purpose": "batch"}, headers=headers)
+        return int(resp.json()["id"])
 
 
 class GatewayTTSSTTestCase(GatewayIntegrationTestCase):

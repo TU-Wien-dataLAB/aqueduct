@@ -9,7 +9,12 @@ from openai.pagination import AsyncCursorPage, AsyncPage
 from openai.types import VectorStore
 from openai.types.vector_store import FileCounts as VectorStoreFileCounts
 from openai.types.vector_store_search_response import Content, VectorStoreSearchResponse
-from openai.types.vector_stores import VectorStoreFile, VectorStoreFileBatch, VectorStoreFileDeleted
+from openai.types.vector_stores import (
+    FileContentResponse,
+    VectorStoreFile,
+    VectorStoreFileBatch,
+    VectorStoreFileDeleted,
+)
 from openai.types.vector_stores.vector_store_file_batch import FileCounts
 
 from gateway.tests.utils.base import GatewayFilesTestCase
@@ -200,9 +205,9 @@ def create_mock_vector_store_client():
 
     mock_client.vector_stores.files.update = AsyncMock(side_effect=mock_vs_file_update)
 
-    # Mock file content - returns bytes
+    # Mock file content - returns FileContentResponse (primary case)
     async def mock_vs_file_content(*args, **kwargs):
-        return b"Test file content"
+        return FileContentResponse(text="Test file content", type="text")
 
     mock_client.vector_stores.files.content = AsyncMock(side_effect=mock_vs_file_content)
 
@@ -1008,9 +1013,10 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
     @patch("gateway.views.vector_stores.get_files_api_client")
     @patch("gateway.views.vector_store_files.get_files_api_client")
     def test_vector_store_file_content(self, mock_vs_files_client, mock_vs_client):
-        """Test getting file content."""
-        mock_vs_client.return_value = create_mock_vector_store_client()
-        mock_vs_files_client.return_value = create_mock_vector_store_client()
+        """Test getting file content with both FileContentResponse and AsyncPage types."""
+        mock_client = create_mock_vector_store_client()
+        mock_vs_client.return_value = mock_client
+        mock_vs_files_client.return_value = mock_client
 
         # Create vector store
         vs_id = self._create_vector_store(mock_vs_client)
@@ -1029,14 +1035,39 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(resp.status_code, 200)
         vsf_id = resp.json()["id"]
 
-        # Get file content
         content_url = reverse(
             "gateway:vector_store_file_content",
             kwargs={"vector_store_id": vs_id, "file_id": vsf_id},
         )
+
+        # Test primary case: FileContentResponse
         resp = self.client.get(content_url, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.content, b"Test file content")
+        json_resp = resp.json()
+        self.assertIn("text", json_resp)
+        self.assertIn("type", json_resp)
+        self.assertEqual(json_resp["text"], "Test file content")
+        self.assertEqual(json_resp["type"], "text")
+
+        # Test secondary case: AsyncPage[FileContentResponse]
+        async def mock_content_async_page(*args, **kwargs):
+            return AsyncPage[FileContentResponse](
+                data=[FileContentResponse(text="Page content 1", type="text")], object="list"
+            )
+
+        mock_client2 = create_mock_vector_store_client()
+        mock_client2.vector_stores.files.content = AsyncMock(side_effect=mock_content_async_page)
+        mock_vs_files_client.return_value = mock_client2
+
+        resp = self.client.get(content_url, headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        json_resp = resp.json()
+        self.assertIn("data", json_resp)
+        self.assertIn("object", json_resp)
+        self.assertEqual(json_resp["object"], "list")
+        self.assertEqual(len(json_resp["data"]), 1)
+        self.assertEqual(json_resp["data"][0]["text"], "Page content 1")
+        self.assertEqual(json_resp["data"][0]["type"], "text")
 
     @patch("gateway.views.vector_stores.get_files_api_client")
     @patch("gateway.views.vector_store_file_batches.get_files_api_client")

@@ -22,9 +22,9 @@ async def _read_streaming_response_lines(response) -> list[str]:
     streamed_lines = []
     async for chunk in response.streaming_content:
         if isinstance(chunk, bytes):
-            chunk = chunk.decode("utf-8")
+            chunk = chunk.decode("utf-8")  # noqa: PLW2901
         for line in chunk.splitlines():
-            line = line.strip()
+            line = line.strip()  # noqa: PLW2901
             if line.startswith("data: "):
                 data = line[len("data: ") :]
                 if data == "[DONE]":

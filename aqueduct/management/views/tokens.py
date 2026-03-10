@@ -167,13 +167,12 @@ class TokenRegenerateView(BaseAqueductView, View):
                         f"You do not have permission to regenerate the token for service account "
                         f"'{token.service_account.name}'.",
                     )
+            # Check if user owns the token
+            elif token.user == user:
+                can_regenerate = True
             else:
-                # Check if user owns the token
-                if token.user == user:
-                    can_regenerate = True
-                else:
-                    # This case shouldn't happen with correct view/URL setup, but good to have
-                    messages.error(request, "You do not have permission to regenerate this token.")
+                # This case shouldn't happen with correct view/URL setup, but good to have
+                messages.error(request, "You do not have permission to regenerate this token.")
 
             # --- Regeneration --- #
             if can_regenerate:

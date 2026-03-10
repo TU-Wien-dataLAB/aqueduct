@@ -19,7 +19,7 @@ from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 
-import management.views as views
+from management import views
 
 urlpatterns = [
     # SSO view from management app

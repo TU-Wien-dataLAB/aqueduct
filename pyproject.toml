@@ -66,8 +66,12 @@ select = [
     "EM",     # flake8-errmsg
     "DTZ",    # flake8-datetimez
     "ERA",    # flake8-eraduate commented-out code
+    "PLR0402", # Use `from` instead of `import ... as ...`
+    "PLR1714", # Repeated equality comparisons -> use `in`
+    "PLR5501", # Use `elif` instead of `else` then `if`
+    "PLW2901", # Redefined loop variables
 ]
-ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX"]
+ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX", "PLC0415"]
 
 [tool.ruff.format]
 docstring-code-format = true

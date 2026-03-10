@@ -58,23 +58,22 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         # standard users see only their own tokens or service accounts of teams they belong to
         if selected_org is None:
             reqs = Request.objects.all()
+        # Org-level access: full org view for org admins
+        elif profile.is_org_admin(selected_org):
+            reqs = Request.objects.filter(
+                Q(token__user__profile__org=selected_org) | Q(token__service_account__team__org=selected_org)
+            )
         else:
-            # Org-level access: full org view for org admins
-            if profile.is_org_admin(selected_org):
-                reqs = Request.objects.filter(
-                    Q(token__user__profile__org=selected_org) | Q(token__service_account__team__org=selected_org)
-                )
-            else:
-                # Standard user: restrict to own tokens or service accounts' token in their teams;
-                # also include requests whose `user_id` value matches the user's email, even if
-                # the token does not belong to the user, but to another one from the same org.
-                user = profile.user
-                teams = self.get_teams_for_user()
-                reqs = Request.objects.filter(
-                    Q(token__user=user)
-                    | Q(token__service_account__team__in=teams)
-                    | (Q(user_id=user.email) & Q(token__user__profile__org=profile.org))
-                )
+            # Standard user: restrict to own tokens or service accounts' token in their teams;
+            # also include requests whose `user_id` value matches the user's email, even if
+            # the token does not belong to the user, but to another one from the same org.
+            user = profile.user
+            teams = self.get_teams_for_user()
+            reqs = Request.objects.filter(
+                Q(token__user=user)
+                | Q(token__service_account__team__in=teams)
+                | (Q(user_id=user.email) & Q(token__user__profile__org=profile.org))
+            )
 
         # Only include requests for models configured in the router
         allowed_models = [m["model_name"] for m in get_router_config().get("model_list", [])]
@@ -173,7 +172,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 if selected_org is not None:
                     tok_org_id = tok.user.profile.org_id if tok.user else None
                     sa_org_id = tok.service_account.team.org_id if tok.service_account else None
-                    if tok_org_id != selected_org.id and sa_org_id != selected_org.id:
+                    if selected_org.id not in (tok_org_id, sa_org_id):
                         raise Token.DoesNotExist
                 selected_token = tok
             except Token.DoesNotExist:

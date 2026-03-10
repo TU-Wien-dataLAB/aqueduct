@@ -132,6 +132,8 @@ async def mock_endpoint(path: str, request: Request):
                 config = default_get_configs["responses/id/input_items"]
             elif re.match("responses/.+$", path):
                 config = default_get_configs["responses/id"]
+            elif re.match("^vector_stores/.+/file_batches/.+/files$", path):
+                config = default_get_configs["vector_stores/id/file_batches/id/files"]
             elif re.match("^vector_stores/.+/file_batches/.+$", path):
                 config = default_get_configs["vector_stores/id/file_batches/id"]
             elif re.match("^vector_stores/.+/files/.+/content$", path):

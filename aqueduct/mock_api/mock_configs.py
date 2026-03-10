@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any
 
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse, Usage
+from openai.pagination import AsyncCursorPage
 from openai.types import (
     Batch,
     BatchRequestCounts,
@@ -614,9 +615,34 @@ default_get_configs = {
             vector_store_id="vs-mock-123",
         ).model_dump()
     ),
+    "vector_stores/id/file_batches/id/files": MockConfig(
+        response_data=AsyncCursorPage[VectorStoreFile](
+            data=[
+                VectorStoreFile(
+                    id="file-mock-1",
+                    status="completed",
+                    usage_bytes=100,
+                    created_at=1741476542,
+                    last_error=None,
+                    object="vector_store.file",
+                    vector_store_id="vs-remote-123",
+                ).model_dump(),
+                VectorStoreFile(
+                    id="file-mock-2",
+                    status="completed",
+                    usage_bytes=200,
+                    created_at=1741476542,
+                    last_error=None,
+                    object="vector_store.file",
+                    vector_store_id="vs-remote-123",
+                ).model_dump(),
+            ],
+            has_more=False,
+        ).model_dump()
+    ),
     "vector_stores/id/files": MockConfig(
-        response_data={
-            "data": [
+        response_data=AsyncCursorPage[VectorStoreFile](
+            data=[
                 VectorStoreFile(
                     id="vsf-mock-123",
                     status="completed",
@@ -627,8 +653,8 @@ default_get_configs = {
                     vector_store_id="vs-mock-123",
                 ).model_dump()
             ],
-            "has_more": False,
-        }
+            has_more=False,
+        ).model_dump()
     ),
     "vector_stores/id/files/id": MockConfig(
         response_data=VectorStoreFile(
@@ -641,14 +667,13 @@ default_get_configs = {
         ).model_dump()
     ),
     "vector_stores/id/files/id/content": MockConfig(  # TODO!
+        # response_data=FileContentResponse(text="Test file content").model_dump()
         response_data={
             "data": [
                 FileContentResponse(text="Test ").model_dump(),
                 FileContentResponse(text="file ").model_dump(),
                 FileContentResponse(text="content").model_dump(),
-            ],
-            "has_more": False,
-            "object": "vector_store.file_content.page",
+            ]
         }
     ),
 }

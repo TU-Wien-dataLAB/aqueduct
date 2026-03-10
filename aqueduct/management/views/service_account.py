@@ -3,6 +3,7 @@
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -37,13 +38,13 @@ class ServiceAccountCreateView(BaseTeamView, TeamAdminRequiredMixin, CreateView)
     # TeamAdminRequiredMixin handles permission checks in dispatch, calling get_team_object from BaseTeamView.
     # get_team_object from BaseTeamView fetches the team based on pk_url_kwarg ('id').
 
-    def get_form_kwargs(self):
+    def get_form_kwargs(self) -> dict:
         kwargs = super().get_form_kwargs()
         # self.team is now provided by BaseTeamView
         kwargs["team"] = self.team
         return kwargs
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         # self.team available from BaseTeamView
         context["team"] = self.team
@@ -52,7 +53,7 @@ class ServiceAccountCreateView(BaseTeamView, TeamAdminRequiredMixin, CreateView)
         return context
 
     @transaction.atomic
-    def form_valid(self, form):
+    def form_valid(self, form) -> HttpResponse:
         # self.team is available from BaseTeamView
         form.instance.team = self.team
         self.object = form.save()  # self.object is the new ServiceAccount
@@ -84,7 +85,7 @@ class ServiceAccountCreateView(BaseTeamView, TeamAdminRequiredMixin, CreateView)
 
         return redirect(self.get_success_url())
 
-    def get_success_url(self):
+    def get_success_url(self) -> str:
         # self.team is guaranteed to exist if we reach here
         return reverse("team", kwargs={"id": self.team.id})
 
@@ -104,12 +105,12 @@ class ServiceAccountDeleteView(BaseServiceAccountView, DeleteView):
     # get_object is inherited from BaseServiceAccountView, which returns the fetched SA
     # get_team_object is inherited from BaseServiceAccountView for the mixin
 
-    def get_success_url(self):
+    def get_success_url(self) -> str:
         """Redirect back to the team detail page after deletion."""
         # self.team_object is set by the mixin via BaseServiceAccountView's get_team_object
         return reverse("team", kwargs={"id": self.team_object.id})
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         """Provide context for the confirmation template."""
         context = super().get_context_data(**kwargs)
         # self.object is set by DeleteView using BaseServiceAccountView's get_object
@@ -118,7 +119,7 @@ class ServiceAccountDeleteView(BaseServiceAccountView, DeleteView):
         context["cancel_url"] = self.get_success_url()
         return context
 
-    def delete(self, request, *args, **kwargs):
+    def delete(self, request, *args, **kwargs) -> HttpResponse:
         """Handles the actual deletion on POST and adds a success message."""
         # self.object is populated by DeleteView calling get_object
         object_to_delete = self.get_object()
@@ -147,7 +148,7 @@ class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
     pk_url_kwarg = "service_account_id"  # Tell base view how to find the SA ID
     context_object_name = "service_account"  # Match template usage
 
-    def get_initial(self):
+    def get_initial(self) -> dict:
         initial = super().get_initial()
         try:
             token = Token.objects.get(service_account=self.get_object())
@@ -160,14 +161,14 @@ class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
 
     # Permission checking is handled by TeamAdminRequiredMixin (via BaseServiceAccountView)
 
-    def get_form_kwargs(self):
+    def get_form_kwargs(self) -> dict:
         """Pass the team instance to the form for validation (e.g., SA count limit)."""
         kwargs = super().get_form_kwargs()
         # self.team_object is guaranteed by the BaseServiceAccountView mixin
         kwargs["team"] = self.team_object
         return kwargs
 
-    def form_valid(self, form):
+    def form_valid(self, form) -> HttpResponse:
         """Adds a success message upon successful update."""
         response = super().form_valid(form)
         # Update the token's expiration date if provided
@@ -184,12 +185,12 @@ class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
         messages.success(self.request, f"Service Account '{self.object.name}' updated successfully.")
         return response
 
-    def get_success_url(self):
+    def get_success_url(self) -> str:
         """Redirect back to the team detail page after successful edit."""
         # self.team_object is set by the mixin via BaseServiceAccountView's get_team_object
         return reverse("team", kwargs={"id": self.team_object.id})
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["view_title"] = f"Edit Service Account: {self.object.name}"
         context["cancel_url"] = self.get_success_url()  # Add cancel URL
@@ -218,7 +219,7 @@ class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
         # self.team_object is set by the mixin via BaseServiceAccountView's get_team_object
         return reverse("team", kwargs={"id": self.team_object.id})
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         """Prepare context for the GET request (displaying the form)."""
         context = {}
         # self.service_account_object is set by BaseServiceAccountView's dispatch->get_object
@@ -250,7 +251,7 @@ class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
         context["eligible_users"] = eligible_profiles
         return context
 
-    def get(self, request, *args, **kwargs):
+    def get(self, request, *args, **kwargs) -> HttpResponse:
         """Handles GET requests: displays the transfer form."""
         # Fetch SA and Team objects using base view methods (called by dispatch)
         self.object = self.get_object()  # Fetches SA via pk_url_kwarg
@@ -260,7 +261,7 @@ class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
         return self.render_to_response(context)
 
     @method_decorator(transaction.atomic)
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs) -> HttpResponse:
         """Handles POST requests: processes the token transfer."""
         # Fetch SA and Team objects using base view methods (called by dispatch)
         sa = self.get_object()
@@ -323,7 +324,7 @@ class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
         return redirect(redirect_url)  # Redirect to team page on success
 
     # --- Helper for GET request ---
-    def render_to_response(self, context):
+    def render_to_response(self, context) -> HttpResponse:
         # A helper method like Django's TemplateResponseMixin would provide
         from django.template.response import TemplateResponse
 

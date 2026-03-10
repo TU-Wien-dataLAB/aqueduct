@@ -45,7 +45,7 @@ from .utils import (
 @catch_router_exceptions
 async def create_response(
     request: ASGIRequest, pydantic_model: dict, request_log: Request, token: Token, *args, **kwargs
-):
+) -> JsonResponse | StreamingHttpResponse:
     """Handler for POST /v1/responses - Creates a new response via OpenAI's responses API
 
     This endpoint forwards requests to the OpenAI responses API, handling both streaming
@@ -81,7 +81,7 @@ async def create_response(
 @log_request
 @validate_response_id
 @catch_router_exceptions
-async def response(request: ASGIRequest, response_id: str, token: Token, *args, **kwargs):
+async def response(request: ASGIRequest, response_id: str, token: Token, *args, **kwargs) -> JsonResponse | None:
     """Combined handler for GET and DELETE /v1/responses/{response_id}"""
     response = get_response_from_cache(response_id)
     model = response["model"]
@@ -109,7 +109,9 @@ async def response(request: ASGIRequest, response_id: str, token: Token, *args, 
 @log_request
 @validate_response_id
 @catch_router_exceptions
-async def get_response_input_items(request: ASGIRequest, response_id: str, token: Token, *args, **kwargs):
+async def get_response_input_items(
+    request: ASGIRequest, response_id: str, token: Token, *args, **kwargs
+) -> JsonResponse:
     """Handler for GET /v1/responses/{response_id}/input_items"""
     response = get_response_from_cache(response_id)
     model = response["model"]

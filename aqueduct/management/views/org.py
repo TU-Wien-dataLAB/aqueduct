@@ -1,6 +1,7 @@
 # management/views/org.py
 
 from django.contrib import messages
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views.generic import TemplateView, View
@@ -14,7 +15,7 @@ class OrgView(BaseAqueductView, TemplateView):
 
     template_name = "management/org.html"  # Adjust path if needed
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         # Pass org admin status and list of teams to the template
         context["is_org_admin"] = self.is_org_admin()
@@ -31,7 +32,7 @@ class OrgSwitchView(BaseAqueductView, View):
     Allows admin users to switch their current organization.
     """
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs) -> HttpResponse:
         # Only allow if user is a global admin
         if self.profile.group != "admin":
             messages.error(request, "Only admin users can switch organizations.")

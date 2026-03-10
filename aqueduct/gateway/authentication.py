@@ -38,7 +38,7 @@ class TokenAuthenticationBackend(BaseBackend):
     using the aqueduct.management.models.Token model.
     """
 
-    def authenticate(self, request, **kwargs):
+    def authenticate(self, request, **kwargs) -> User | None:
         """
         Authenticates the request based on the 'Authorization: Bearer <token>' header.
 
@@ -89,7 +89,7 @@ class TokenAuthenticationBackend(BaseBackend):
         # E.g. in middleware: request.auth_token = token_instance
         return token_instance.user
 
-    def get_user(self, user_id):
+    def get_user(self, user_id) -> User | None:
         """
         Retrieves a user instance given the user_id (primary key).
         Required by Django's authentication framework.

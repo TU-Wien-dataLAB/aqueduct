@@ -37,7 +37,7 @@ from .utils import _get_token_usage, _openai_stream
 @catch_router_exceptions
 async def completions(
     request: ASGIRequest, pydantic_model: openai.types.CompletionCreateParams, request_log: Request, *args, **kwargs
-):
+) -> JsonResponse | StreamingHttpResponse:
     router = get_router()
     completion: TextCompletionResponse | TextCompletionStreamWrapper = await router.atext_completion(**pydantic_model)
     if isinstance(completion, TextCompletionStreamWrapper):

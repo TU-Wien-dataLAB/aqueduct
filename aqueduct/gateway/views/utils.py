@@ -148,10 +148,10 @@ class ResponseRegistrationWrapper:
         self.user_email = email
         self._registered = False
 
-    def __aiter__(self):
+    def __aiter__(self) -> "ResponseRegistrationWrapper":
         return self
 
-    async def __anext__(self):
+    async def __anext__(self) -> str:
         try:
             # Iterate through the streaming content
             if hasattr(self.streaming_content, "__anext__"):

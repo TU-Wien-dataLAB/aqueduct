@@ -1,7 +1,7 @@
 # management/views/team.py
 from django.contrib import messages
 from django.db import transaction
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
@@ -27,14 +27,14 @@ class TeamCreateView(OrgAdminRequiredMixin, BaseAqueductView, CreateView):
 
     # Permission checking is handled by OrgAdminRequiredMixin in dispatch.
 
-    def get_form_kwargs(self):
+    def get_form_kwargs(self) -> dict:
         """Pass the user's organization to the form."""
         kwargs = super().get_form_kwargs()
         # self.org is guaranteed by BaseAqueductView for authenticated users.
         kwargs["org"] = self.org
         return kwargs
 
-    def form_valid(self, form):
+    def form_valid(self, form) -> HttpResponse:
         """Assign the organization to the team instance before saving."""
         # self.org is guaranteed by BaseAqueductView.
         form.instance.org = self.org
@@ -42,7 +42,7 @@ class TeamCreateView(OrgAdminRequiredMixin, BaseAqueductView, CreateView):
         messages.success(self.request, f"Team '{form.instance.name}' created successfully.")
         return response
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["view_title"] = "Create New Team"
         return context
@@ -61,7 +61,7 @@ class TeamUpdateView(BaseTeamView, UpdateView):
     pk_url_kwarg = "id"
     context_object_name = "team"  # Match DetailView/template usage
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs) -> HttpResponse:
         # Fetch team first using BaseTeamView's mechanism
         # self.team will be set if successful, or Http404 raised
         try:
@@ -77,25 +77,25 @@ class TeamUpdateView(BaseTeamView, UpdateView):
 
         return super().dispatch(request, *args, **kwargs)
 
-    def get_form_kwargs(self):
+    def get_form_kwargs(self) -> dict:
         """Pass the team's organization to the form for validation."""
         kwargs = super().get_form_kwargs()
         # self.team is guaranteed by dispatch
         kwargs["org"] = self.team.org
         return kwargs
 
-    def form_valid(self, form):
+    def form_valid(self, form) -> HttpResponse:
         """Adds a success message upon successful update."""
         response = super().form_valid(form)
         messages.success(self.request, f"Team '{self.object.name}' updated successfully.")
         return response
 
-    def get_success_url(self):
+    def get_success_url(self) -> str:
         """Redirect back to the team detail page after successful edit."""
         # self.object is the updated team instance
         return reverse("team", kwargs={"id": self.object.id})
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["view_title"] = f"Edit Team: {self.object.name}"
         context["cancel_url"] = self.get_success_url()  # Add cancel URL
@@ -119,14 +119,14 @@ class TeamDeleteView(OrgAdminRequiredMixin, BaseTeamView, DeleteView):
     # No need for get_queryset to filter by org, as OrgAdminRequiredMixin ensures user is admin of their own org.
     # get_object() inherited from BaseTeamView returns self.team
 
-    def form_valid(self, form):
+    def form_valid(self, form) -> HttpResponse:
         """Adds a success message upon successful deletion."""
         team_name = self.team.name  # Use self.team from BaseTeamView
         response = super().form_valid(form)
         messages.success(self.request, f"Team '{team_name}' deleted successfully.")
         return response
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         """Provide context for the confirmation template."""
         context = super().get_context_data(**kwargs)
         context["object_type_name"] = self.model._meta.verbose_name
@@ -144,7 +144,7 @@ class TeamAdminManagementView(OrgAdminRequiredMixin, BaseTeamView, View):
 
     pk_url_kwarg = "id"  # Tell BaseTeamView how to find the team
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs) -> HttpResponse:
         # self.team is fetched by BaseTeamView
         team = self.team
         # self.profile and self.org (user's org) are available from BaseAqueductView/OrgAdminRequiredMixin
@@ -200,7 +200,7 @@ class TeamDetailView(BaseTeamView, DetailView):
     context_object_name = "team"
     pk_url_kwarg = "id"
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs) -> HttpResponse:
         # Fetch team first using BaseTeamView's mechanism
         # self.team will be set if successful, or Http404 raised
         try:
@@ -218,7 +218,7 @@ class TeamDetailView(BaseTeamView, DetailView):
 
         return super().dispatch(request, *args, **kwargs)
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         # self.team and self.team_org are available from BaseTeamView
         # self.profile is available from BaseAqueductView
@@ -256,7 +256,7 @@ class TeamDetailView(BaseTeamView, DetailView):
         return context
 
     @transaction.atomic  # Ensure membership changes are atomic.
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs) -> HttpResponse:
         """Handles adding/removing team members. Requires Team Admin privileges."""
         # self.team is fetched by BaseTeamView and verified in dispatch
         # self.profile is guaranteed by BaseAqueductView.

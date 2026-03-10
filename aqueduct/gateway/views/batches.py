@@ -22,7 +22,9 @@ from .files import sync_batch_file_if_needed
 @tos_accepted
 @parse_body(TypeAdapter(BatchCreateParams))
 @log_request
-async def batches(request: ASGIRequest, token: Token, pydantic_model: BatchCreateParams | None = None, *args, **kwargs):
+async def batches(
+    request: ASGIRequest, token: Token, pydantic_model: BatchCreateParams | None = None, *args, **kwargs
+) -> JsonResponse:
     """
     GET /batches - list user's batches from local DB
     POST /batches - create a new batch on upstream
@@ -117,7 +119,7 @@ async def batches(request: ASGIRequest, token: Token, pydantic_model: BatchCreat
 @require_http_methods(["GET"])
 @token_authenticated(token_auth_only=True)
 @log_request
-async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs):
+async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs) -> JsonResponse:
     """
     GET /batches/{batch_id} - retrieve a batch from upstream
 
@@ -167,7 +169,7 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
 @require_POST
 @token_authenticated(token_auth_only=True)
 @log_request
-async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs):
+async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs) -> JsonResponse:
     """
     POST /batches/{batch_id}/cancel - cancel a batch on upstream
 

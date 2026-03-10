@@ -70,6 +70,11 @@ select = [
     "PLR1714", # Repeated equality comparisons -> use `in`
     "PLR5501", # Use `elif` instead of `else` then `if`
     "PLW2901", # Redefined loop variables
+    "ANN201", # Missing return type annotation for public function
+    "ANN202", # Missing return type annotation for private function
+    "ANN204", # Missing return type annotation for special method
+    "ANN205", # Missing return type annotation for staticmethod
+    "ANN206", # Missing return type annotation for classmethod
 ]
 ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX", "PLC0415"]
 
@@ -80,9 +85,14 @@ skip-magic-trailing-comma = true
 [tool.ruff.lint.isort]
 known-first-party = ["aqueduct", "gateway", "management"]
 
+[tool.ruff.lint.flake8-annotations]
+mypy-init-return = true
+suppress-none-returning = true
+
 [tool.ruff.lint.per-file-ignores]
 # Ignore `F401` (imported but unused) in all `__init__.py` files
 "__init__.py" = ["F401"]
+# Ignore ANN return type rules in test files
 # DJ007: ModelForm using fields = "__all__" is acceptable for this use case
 # BLE001 in admin actions is intentional for error handling
 "**/admin.py" = ["DJ007", "BLE001"]
@@ -94,8 +104,9 @@ known-first-party = ["aqueduct", "gateway", "management"]
 # SIM117: Nested async with statements in tests - this pattern is correct and readable
 # PT: Using unittest-style assertions (self.assertEqual) in unittest test classes
 # FIX: TODO/FIXME comments are useful for tracking work
-"**/tests/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "PT", "FIX"]
-"**/tests/**/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "S607", "PT", "FIX"]
+# ANN: Return type annotations not enforced in tests
+"**/tests/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "PT", "FIX", "ANN201", "ANN202", "ANN204", "ANN205", "ANN206"]
+"**/tests/**/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "S607", "PT", "FIX", "ANN201", "ANN202", "ANN204", "ANN205", "ANN206"]
 # SIM105: suppress(Exception) may mask too much, prefer explicit error handling
 "**/management/*.py" = ["SIM105"]
 # SIM108: Ternary operator may reduce clarity for boolean logic with hasattr

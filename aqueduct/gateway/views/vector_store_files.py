@@ -33,7 +33,7 @@ class FileUpdateBody(TypedDict, total=False):
 @log_request
 async def vector_store_files(
     request: ASGIRequest, token: Token, vector_store_id: str, pydantic_model: dict | None = None, *args, **kwargs
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files - List files in vector store
     POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
@@ -107,7 +107,7 @@ async def vector_store_files(
     # If a concurrent request filled the last slot while the upstream call was in flight,
     # we reject and clean up the upstream file below.
     @sync_to_async
-    def create_local_file_with_recheck():
+    def create_local_file_with_recheck() -> tuple[VectorStoreFile | None, str]:
         with transaction.atomic():
             # Re-acquire lock and re-check limit
             try:
@@ -168,7 +168,7 @@ async def vector_store_file(
     pydantic_model: dict | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id} - Retrieve file
     POST /v1/vector_stores/{vector_store_id}/files/{file_id} - Update file attributes
@@ -259,7 +259,7 @@ async def vector_store_file(
 @log_request
 async def vector_store_file_content(
     request: ASGIRequest, token: Token, vector_store_id: str, file_id: str, *args, **kwargs
-):
+) -> HttpResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id}/content - Get file content
     """

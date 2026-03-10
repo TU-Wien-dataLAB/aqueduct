@@ -7,6 +7,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
+from django.db.models import QuerySet
 from django.urls import reverse
 from django.utils.html import format_html
 
@@ -76,7 +77,7 @@ class ExcludedModelsAdminForm(forms.ModelForm):
         if self.instance and getattr(self.instance, "excluded_models", None):
             self.initial["excluded_models"] = self.instance.excluded_models
 
-    def clean_excluded_models(self):
+    def clean_excluded_models(self) -> list[str]:
         # Store as list/JSON, not string
         return self.cleaned_data["excluded_models"]
 
@@ -100,7 +101,7 @@ class ExcludedMCPServersAdminForm(forms.ModelForm):
         if self.instance and getattr(self.instance, "excluded_mcp_servers", None):
             self.initial["excluded_mcp_servers"] = self.instance.excluded_mcp_servers
 
-    def clean_excluded_mcp_servers(self):
+    def clean_excluded_mcp_servers(self) -> list[str]:
         # Store as list/JSON, not string
         return self.cleaned_data["excluded_mcp_servers"]
 
@@ -168,7 +169,7 @@ def reload_from_upstream(modeladmin, request, queryset):
     errors = []
 
     async def reload_all():
-        async def reload_obj(obj):
+        async def reload_obj(obj) -> None:
             try:
                 await obj.areload_from_upstream(raise_on_error=True)
             except Exception as e:
@@ -195,7 +196,7 @@ class UserAdmin(BaseUserAdmin):
     list_select_related: ClassVar[list] = ["profile"]
     actions: ClassVar[list] = [make_admin, make_org_admin, make_user, delete_tos_cache]
 
-    def get_groups(self, obj):
+    def get_groups(self, obj) -> str:
         return ", ".join([g.name for g in obj.groups.all()])
 
     get_groups.short_description = "Groups"
@@ -254,7 +255,7 @@ class TeamAdmin(admin.ModelAdmin):
     list_filter: ClassVar[list] = ["org__name"]
     form = TeamAdminForm
 
-    def org_link(self, obj):
+    def org_link(self, obj) -> str:
         link = reverse("admin:management_org_change", args=[obj.org.id])
         return format_html('<a href="{}">{}</a>', link, obj.org.name)
 
@@ -298,7 +299,7 @@ class ServiceAccountAdmin(admin.ModelAdmin):
     list_select_related: ClassVar[list] = ["team"]
     list_filter: ClassVar[list] = ["team__name"]
 
-    def team_link(self, obj):
+    def team_link(self, obj) -> str:
         link = reverse("admin:management_team_change", args=[obj.team.id])
         return format_html('<a href="{}">{}</a>', link, obj.team.name)
 
@@ -311,7 +312,7 @@ class TokenAdmin(admin.ModelAdmin):
     list_select_related: ClassVar[list] = ["user", "service_account", "service_account__team"]
     list_filter: ClassVar[list] = ["service_account__team__name"]
 
-    def sa_link(self, obj):
+    def sa_link(self, obj) -> str:
         if obj.service_account is None:
             return "-"
         link = reverse("admin:management_serviceaccount_change", args=[obj.service_account.id])
@@ -319,7 +320,7 @@ class TokenAdmin(admin.ModelAdmin):
 
     sa_link.short_description = "Service Account"
 
-    def user_link(self, obj):
+    def user_link(self, obj) -> str:
         link = reverse("admin:auth_user_change", args=[obj.user.id])
         return format_html('<a href="{}">{}</a>', link, obj.user.email)
 
@@ -342,7 +343,7 @@ class FileObjectAdmin(admin.ModelAdmin):
     search_fields: ClassVar[tuple] = ("id", "filename")
     actions: ClassVar[list] = [reload_from_upstream]
 
-    def bytes_formatted(self, obj):
+    def bytes_formatted(self, obj) -> str:
         from django.template.defaultfilters import filesizeformat
 
         return filesizeformat(obj.bytes)
@@ -350,13 +351,13 @@ class FileObjectAdmin(admin.ModelAdmin):
     bytes_formatted.short_description = "Size"
     bytes_formatted.admin_order_field = "bytes"
 
-    def created_at_formatted(self, obj):
+    def created_at_formatted(self, obj) -> str:
         return format_unix_timestamp(obj.created_at)
 
     created_at_formatted.short_description = "Created At"
     created_at_formatted.admin_order_field = "created_at"
 
-    def expires_at_formatted(self, obj):
+    def expires_at_formatted(self, obj) -> str:
         return format_unix_timestamp(obj.expires_at)
 
     expires_at_formatted.short_description = "Expires At"
@@ -379,7 +380,7 @@ class BatchAdmin(admin.ModelAdmin):
     search_fields: ClassVar[tuple] = ("id",)
     actions: ClassVar[list] = [reload_from_upstream]
 
-    def created_at_formatted(self, obj):
+    def created_at_formatted(self, obj) -> str:
         return format_unix_timestamp(obj.created_at)
 
     created_at_formatted.short_description = "Created At"
@@ -405,18 +406,18 @@ class VectorStoreAdmin(admin.ModelAdmin):
     readonly_fields: ClassVar[tuple] = ("id", "created_at_formatted")
     actions: ClassVar[list] = [reload_from_upstream]
 
-    def get_queryset(self, request):
+    def get_queryset(self, request) -> QuerySet:
         from django.db.models import Count
 
         return super().get_queryset(request).annotate(file_count=Count("files"))
 
-    def file_count(self, obj):
+    def file_count(self, obj) -> int:
         return obj.file_count
 
     file_count.short_description = "Files"
     file_count.admin_order_field = "file_count"
 
-    def usage_bytes_formatted(self, obj):
+    def usage_bytes_formatted(self, obj) -> str:
         from django.template.defaultfilters import filesizeformat
 
         return filesizeformat(obj.usage_bytes)
@@ -424,13 +425,13 @@ class VectorStoreAdmin(admin.ModelAdmin):
     usage_bytes_formatted.short_description = "Usage"
     usage_bytes_formatted.admin_order_field = "usage_bytes"
 
-    def created_at_formatted(self, obj):
+    def created_at_formatted(self, obj) -> str:
         return format_unix_timestamp(obj.created_at)
 
     created_at_formatted.short_description = "Created At"
     created_at_formatted.admin_order_field = "created_at"
 
-    def token_link(self, obj):
+    def token_link(self, obj) -> str:
         link = reverse("admin:management_token_change", args=[obj.token.id])
         if obj.token.service_account:
             return format_html('<a href="{}">{} ({})</a>', link, obj.token.name, obj.token.service_account.name)
@@ -498,7 +499,7 @@ class VectorStoreFileAdmin(admin.ModelAdmin):
     readonly_fields: ClassVar[tuple] = ("id", "created_at_formatted")
     actions: ClassVar[list] = [reload_from_upstream]
 
-    def usage_bytes_formatted(self, obj):
+    def usage_bytes_formatted(self, obj) -> str:
         from django.template.defaultfilters import filesizeformat
 
         return filesizeformat(obj.usage_bytes)
@@ -506,19 +507,19 @@ class VectorStoreFileAdmin(admin.ModelAdmin):
     usage_bytes_formatted.short_description = "Size"
     usage_bytes_formatted.admin_order_field = "usage_bytes"
 
-    def created_at_formatted(self, obj):
+    def created_at_formatted(self, obj) -> str:
         return format_unix_timestamp(obj.created_at)
 
     created_at_formatted.short_description = "Created At"
     created_at_formatted.admin_order_field = "created_at"
 
-    def vector_store_link(self, obj):
+    def vector_store_link(self, obj) -> str:
         link = reverse("admin:management_vectorstore_change", args=[obj.vector_store.id])
         return format_html('<a href="{}">{}</a>', link, obj.vector_store.name)
 
     vector_store_link.short_description = "Vector Store"
 
-    def file_obj_link(self, obj):
+    def file_obj_link(self, obj) -> str:
         link = reverse("admin:management_fileobject_change", args=[obj.file_obj.id])
         return format_html('<a href="{}">{}</a>', link, obj.file_obj.filename)
 
@@ -565,7 +566,7 @@ class VectorStoreFileBatchAdmin(admin.ModelAdmin):
     readonly_fields: ClassVar[tuple] = ("id", "created_at_formatted")
     actions: ClassVar[list] = [reload_from_upstream]
 
-    def file_counts_formatted(self, obj):
+    def file_counts_formatted(self, obj) -> str:
         counts = obj.file_counts or {}
         total = counts.get("total", 0)
         completed = counts.get("completed", 0)
@@ -574,13 +575,13 @@ class VectorStoreFileBatchAdmin(admin.ModelAdmin):
 
     file_counts_formatted.short_description = "Progress"
 
-    def created_at_formatted(self, obj):
+    def created_at_formatted(self, obj) -> str:
         return format_unix_timestamp(obj.created_at)
 
     created_at_formatted.short_description = "Created At"
     created_at_formatted.admin_order_field = "created_at"
 
-    def vector_store_link(self, obj):
+    def vector_store_link(self, obj) -> str:
         link = reverse("admin:management_vectorstore_change", args=[obj.vector_store.id])
         return format_html('<a href="{}">{}</a>', link, obj.vector_store.name)
 

@@ -1,8 +1,11 @@
 from typing import ClassVar
 
+from django import forms
 from django.conf import settings
 from django.contrib import messages
 from django.db import transaction
+from django.db.models import QuerySet
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -19,7 +22,7 @@ from .base import BaseAqueductView
 class UserTokensView(BaseAqueductView, TemplateView):
     template_name = "management/tokens.html"
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         profile = self.profile  # Provided by BaseAqueductView
         user = profile.user
@@ -48,17 +51,17 @@ class TokenCreateView(BaseAqueductView, CreateView):
     template_name = "management/create/token.html"
     success_url = reverse_lazy("tokens")  # Redirect to tokens list
 
-    def get_form_kwargs(self):
+    def get_form_kwargs(self) -> dict:
         kwargs = super().get_form_kwargs()
         kwargs["user"] = self.request.user
         return kwargs
 
-    def get_form(self, form_class=None):
+    def get_form(self, form_class=None) -> forms.BaseForm:
         form = super().get_form(form_class)
         return form
 
     @transaction.atomic
-    def form_valid(self, form):
+    def form_valid(self, form) -> HttpResponse:
         # Get the instance without saving to DB yet
         self.object = form.save(commit=False)
 
@@ -78,7 +81,7 @@ class TokenCreateView(BaseAqueductView, CreateView):
 
         return redirect(self.get_success_url())
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["view_title"] = "Create New Token"
 
@@ -95,12 +98,12 @@ class TokenEditView(BaseAqueductView, UpdateView):
     pk_url_kwarg = "id"
     success_url = reverse_lazy("tokens")
 
-    def get_form_kwargs(self):
+    def get_form_kwargs(self) -> dict:
         kwargs = super().get_form_kwargs()
         kwargs["user"] = self.request.user
         return kwargs
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["view_title"] = "Edit Token"
         context["cancel_url"] = self.get_success_url()
@@ -113,17 +116,17 @@ class TokenDeleteView(BaseAqueductView, DeleteView):
     template_name = "management/common/confirm_delete.html"
     success_url = reverse_lazy("tokens")
 
-    def get_queryset(self):
+    def get_queryset(self) -> QuerySet:
         # Only allow deleting tokens owned by the user and not associated with a service account
         return Token.objects.filter(user=self.request.user, service_account__isnull=True)
 
-    def form_valid(self, form):
+    def form_valid(self, form) -> HttpResponse:
         token_name = self.object.name
         response = super().form_valid(form)
         messages.success(self.request, f"Token '{token_name}' deleted successfully.")
         return response
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["object_type_name"] = "Token"
         context["object_name"] = str(self.object)
@@ -141,7 +144,7 @@ class TokenRegenerateView(BaseAqueductView, View):
 
     http_method_names: ClassVar[list] = ["post"]
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs) -> HttpResponse:
         token_id = kwargs.get("id")
         profile = self.profile
         user = request.user

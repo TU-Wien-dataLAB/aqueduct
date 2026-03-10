@@ -36,7 +36,9 @@ class TranscriptionCreateParams(RootModel):
 @log_request
 @check_model_availability
 @catch_router_exceptions
-async def transcriptions(request: ASGIRequest, pydantic_model: dict, request_log: Request, *args, **kwargs):
+async def transcriptions(
+    request: ASGIRequest, pydantic_model: dict, request_log: Request, *args, **kwargs
+) -> JsonResponse | HttpResponse | StreamingHttpResponse:
     client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay
 

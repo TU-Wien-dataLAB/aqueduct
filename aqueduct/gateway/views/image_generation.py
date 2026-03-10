@@ -35,7 +35,7 @@ log = logging.getLogger("aqueduct")
 @catch_router_exceptions
 async def image_generation(
     request: ASGIRequest, pydantic_model: ImageGenerateParams, request_log: Request, *args, **kwargs
-):
+) -> JsonResponse:
     if pydantic_model.get("stream"):
         # LiteLLM cannot parse a Stream response, so we don't support streaming for now
         raise BadRequestError(

@@ -1,9 +1,12 @@
 import logging
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 from .models import Org, UserProfile
+
+User = get_user_model()
 
 log = logging.getLogger("aqueduct")
 
@@ -18,7 +21,7 @@ def default_org_name_from_groups(groups: list[str]) -> str | None:
     return groups[0]
 
 
-def get_org_name_from_groups(groups):
+def get_org_name_from_groups(groups) -> str | None:
     """
     Extracts the organization name from the user's groups.
     """
@@ -38,7 +41,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         org, _created = Org.objects.get_or_create(name=org_name)
         return org
 
-    def create_user(self, claims):
+    def create_user(self, claims) -> User | None:
         groups = self._groups(claims)
         org = self._org(groups)
         if not org:
@@ -65,7 +68,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         log.info(f"Created user '{user.email}' ({profile.group})")
         return user
 
-    def update_user(self, user, claims):
+    def update_user(self, user, claims) -> User:
         """Update existing user with new claims, if necessary save, and return user"""
         groups = self._groups(claims)
         org = self._org(groups)

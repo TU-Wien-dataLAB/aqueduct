@@ -5,7 +5,7 @@ import logging
 import re
 import sys
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
@@ -38,10 +38,10 @@ from management.models import FileObject, Request, Token, VectorStore
 log = logging.getLogger("aqueduct")
 
 
-def token_authenticated(token_auth_only: bool):
-    def decorator(view_func):
+def token_authenticated(token_auth_only: bool) -> Callable:
+    def decorator(view_func) -> Callable:
         @wraps(view_func)
-        async def wrapper(request: ASGIRequest, *args, **kwargs):
+        async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
             unauthorized_response = error_response("Authentication Required", status=401)
             # Authentication Check
             if not (await request.auser()).is_authenticated:
@@ -128,7 +128,7 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
     return data
 
 
-def parse_body(model: TypeAdapter):
+def parse_body(model: TypeAdapter) -> Callable:
     """
     Decorator that parses and validates HTTP request bodies for async view functions.
 
@@ -146,9 +146,9 @@ def parse_body(model: TypeAdapter):
         Decorator function that wraps async view functions.
     """
 
-    def decorator(view_func):
+    def decorator(view_func) -> Callable:
         @wraps(view_func)
-        async def wrapper(request: ASGIRequest, *args, **kwargs):
+        async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
             if request.method != "POST":
                 return await view_func(request, *args, **kwargs)
 
@@ -212,9 +212,9 @@ def parse_body(model: TypeAdapter):
     return decorator
 
 
-def ensure_usage(view_func):
+def ensure_usage(view_func) -> Callable:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         model: dict | None = kwargs.get("pydantic_model")
         if not model:
             return await view_func(request, *args, **kwargs)
@@ -230,9 +230,9 @@ def ensure_usage(view_func):
     return wrapper
 
 
-def check_limits(view_func):
+def check_limits(view_func) -> Callable:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_limits decorator used without @token_authenticated decorator")
@@ -300,9 +300,9 @@ def check_limits(view_func):
     return wrapper
 
 
-def log_request(view_func):
+def log_request(view_func) -> Callable:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         is_initialize = kwargs.get("is_initialize", False)
 
         if request.path.startswith("/mcp-servers/") and not is_initialize:
@@ -341,11 +341,11 @@ def log_request(view_func):
     return wrapper
 
 
-def resolve_alias(view_func):
+def resolve_alias(view_func) -> Callable:
     """Resolve model aliases to actual model names before processing."""
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         pydantic_model: dict | None = kwargs.get("pydantic_model")
         if not pydantic_model:
             return await view_func(request, *args, **kwargs)
@@ -361,9 +361,9 @@ def resolve_alias(view_func):
     return wrapper
 
 
-def check_model_availability(view_func):
+def check_model_availability(view_func) -> Callable:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_model_availability decorator used without @token_authenticated decorator")
@@ -382,9 +382,9 @@ def check_model_availability(view_func):
     return wrapper
 
 
-def check_mcp_server_availability(view_func):
+def check_mcp_server_availability(view_func) -> Callable:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_mcp_server_availability decorator used without @token_authenticated decorator")
@@ -455,11 +455,11 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
         raise RuntimeError("Neither 'file_data' nor 'file_id' are given.")
 
 
-def process_file_content(view_func):
+def process_file_content(view_func) -> Callable:
     """Decorator to process file content in chat completions using Tika."""
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         token: Token | None = kwargs.get("token")
         pydantic_model: dict | None = kwargs.get("pydantic_model")
         if not pydantic_model:
@@ -538,7 +538,7 @@ def process_file_content(view_func):
     return wrapper
 
 
-def catch_router_exceptions(view_func):
+def catch_router_exceptions(view_func) -> Callable:
     def _r(e: Exception) -> str:
         s = str(e)
         s = re.sub(r"Lite-?[lL][lL][mM]", "Aqueduct", s)  # uppercase
@@ -563,7 +563,7 @@ def catch_router_exceptions(view_func):
         )
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         # https://docs.litellm.ai/docs/exception_mapping#litellm-exceptions
         # also except equivalent openai exceptions
         try:
@@ -607,9 +607,9 @@ def catch_router_exceptions(view_func):
     return wrapper
 
 
-def tos_accepted(view_func):
+def tos_accepted(view_func) -> Callable:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         if settings.TOS_ENABLED and settings.TOS_GATEWAY_VALIDATION:
             token: Token = kwargs.get("token")
             key_version = cache.get("django:tos:key_version")
@@ -633,7 +633,7 @@ def tos_accepted(view_func):
     return wrapper
 
 
-def mcp_transport_security(view_func):
+def mcp_transport_security(view_func) -> Callable:
     """Validate MCP transport security (DNS rebinding protection).
 
     Validates:
@@ -648,7 +648,7 @@ def mcp_transport_security(view_func):
     """
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         from django.conf import settings
 
         # Skip validation if DNS rebinding protection is disabled
@@ -693,9 +693,9 @@ def mcp_transport_security(view_func):
     return wrapper
 
 
-def parse_jsonrpc_message(view_func):
+def parse_jsonrpc_message(view_func) -> Callable:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         session_id = request.headers.get("Mcp-Session-Id")
         kwargs["session_id"] = session_id
 
@@ -724,9 +724,9 @@ def parse_jsonrpc_message(view_func):
     return wrapper
 
 
-def validate_response_id(view_func):
+def validate_response_id(view_func) -> Callable:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         token = kwargs.get("token")
         if not token:
             log.error("validate_response_id decorator used without @token_authenticated decorator")
@@ -744,7 +744,7 @@ def validate_response_id(view_func):
     return wrapper
 
 
-def check_tool_availability(view_func):
+def check_tool_availability(view_func) -> Callable:
     """
     Validate tool availability and configuration for Responses API requests.
 
@@ -758,7 +758,7 @@ def check_tool_availability(view_func):
     """
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         token: Token | None = kwargs.get("token")
         pydantic_model: ResponseCreateParams | None = kwargs.get("pydantic_model")
         if not token or not pydantic_model:
@@ -822,7 +822,7 @@ def check_tool_availability(view_func):
     return wrapper
 
 
-def require_files_api_client(view_func):
+def require_files_api_client(view_func) -> Callable:
     """Decorator that injects a files API client into the view kwargs, or returns 503.
 
     Uses late-bound import of get_files_api_client so that tests can
@@ -830,7 +830,7 @@ def require_files_api_client(view_func):
     """
 
     @wraps(view_func)
-    async def wrapper(request, *args, **kwargs):
+    async def wrapper(request, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         # Look up get_files_api_client from the module where view_func is defined,
         # so tests patching that module's reference will be respected.
         view_module = sys.modules.get(view_func.__module__)
@@ -907,7 +907,7 @@ def extract_preview(content: bytes, num_lines: int = 10) -> str:
         return "[Binary content - no preview available]"
 
 
-def process_batch_file(view_func):
+def process_batch_file(view_func) -> Callable:
     """
     Decorator for batch file upload that processes file content before proxying.
 
@@ -924,7 +924,7 @@ def process_batch_file(view_func):
     """
 
     @wraps(view_func)
-    async def wrapper(request, *args, **kwargs):
+    async def wrapper(request, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
         if request.method != "POST":
             return await view_func(request, *args, **kwargs)
 

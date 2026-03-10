@@ -2,7 +2,10 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import QuerySet
-from django.http import Http404  # Removed HttpResponseForbidden as redirect is used
+from django.http import (
+    Http404,  # Removed HttpResponseForbidden as redirect is used
+    HttpResponse,
+)
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
@@ -79,7 +82,7 @@ class OrgAdminRequiredMixin:
     or a view providing an `is_org_admin` method.
     """
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs) -> HttpResponse:
         # We rely on the inheriting view (like BaseAqueductView) providing is_org_admin.
         # This check ensures the method exists before calling it, making the mixin
         # slightly more robust if used outside the intended pattern, although
@@ -115,7 +118,7 @@ class TeamAdminRequiredMixin:
         """
         raise NotImplementedError(f"{self.__class__.__name__} must implement get_team_object()")
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs) -> HttpResponse:
         # Assumes LoginRequiredMixin ran first, so request.user is authenticated.
         # Assumes BaseAqueductView context provides self.profile.
 
@@ -205,7 +208,7 @@ class BaseTeamView(BaseAqueductView):
     # --- Convenience for Generic Views ---
     # Override get_object common in DetailView/UpdateView/DeleteView
     # to return the team object by default if not overridden.
-    def get_object(self, queryset=None):
+    def get_object(self, queryset=None) -> Team | ServiceAccount:
         """
         Default implementation for generic views to return the fetched Team object.
         """
@@ -262,7 +265,7 @@ class BaseServiceAccountView(TeamAdminRequiredMixin, BaseAqueductView):
         return sa.team
 
     # --- Convenience for inheriting views ---
-    def get_object(self, queryset=None):
+    def get_object(self, queryset=None) -> ServiceAccount:
         """
         Default implementation for generic views (like DetailView, DeleteView)
         to return the fetched Service Account object after permissions are checked.

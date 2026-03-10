@@ -84,7 +84,7 @@ class SimpleTaskGroup:
         self._loop = loop
         self._tasks = []
 
-    def start_soon(self, coro_func, *args):
+    def start_soon(self, coro_func, *args) -> asyncio.Task:
         """Start a coroutine as a task."""
         task = self._loop.create_task(coro_func(*args))
         self._tasks.append(task)
@@ -97,7 +97,7 @@ class SimpleTaskGroup:
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
     @property
-    def cancel_scope(self):
+    def cancel_scope(self) -> "MockCancelScope":
         """Mock cancel scope for compatibility."""
         return MockCancelScope()
 
@@ -442,7 +442,7 @@ class MCPSessionManager:
             raise SessionNotFoundError(f"Session {session_id} not found")
         await session.send_message(message)
 
-    async def receive_message(self, session_id: str | None):
+    async def receive_message(self, session_id: str | None) -> SessionMessage | None:
         """Receive message from session."""
         if not session_id:
             raise ValueError("Session ID required")
@@ -677,7 +677,7 @@ async def mcp_server(
     is_initialize: bool = False,
     *args,
     **kwargs,
-):
+) -> JsonResponse | StreamingHttpResponse:
     """
     Handles GET, POST and DELETE requests for /mcp-servers/{name}/mcp path.
     """

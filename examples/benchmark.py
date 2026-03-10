@@ -41,7 +41,7 @@ async def fetch(client: httpx.AsyncClient, i: int) -> float | None:
     return duration
 
 
-async def run_sequential():
+async def run_sequential() -> list[float]:
     async with httpx.AsyncClient() as client:
         times = []
         for i in range(NUM_RUNS):
@@ -51,7 +51,7 @@ async def run_sequential():
         return times
 
 
-async def run_parallel():
+async def run_parallel() -> list[float]:
     async with httpx.AsyncClient() as client:
         tasks = [fetch(client, i) for i in range(NUM_RUNS)]
         results = await asyncio.gather(*tasks)

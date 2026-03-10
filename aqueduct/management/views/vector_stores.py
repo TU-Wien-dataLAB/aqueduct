@@ -5,6 +5,7 @@ from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.contrib import messages
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.views import View
@@ -24,7 +25,7 @@ class UserVectorStoresView(BaseAqueductView, TemplateView):
 
     template_name = "management/vector_stores.html"
 
-    def _annotate_vector_stores(self, vector_stores):
+    def _annotate_vector_stores(self, vector_stores) -> list:
         """Add computed fields to vector store instances for template rendering."""
         result = []
         for vs in vector_stores:
@@ -35,7 +36,7 @@ class UserVectorStoresView(BaseAqueductView, TemplateView):
             result.append(vs)
         return result
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         profile = self.profile
         user = profile.user
@@ -77,7 +78,7 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
 
     template_name = "management/vector_store_detail.html"
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         profile = self.profile
         user = profile.user
@@ -141,7 +142,7 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
         return context
 
 
-def _refresh_vector_store(vs):
+def _refresh_vector_store(vs) -> bool:
     """
     Refresh a single VectorStore from upstream.
     Calls areload_from_upstream() with raise_on_error=False.
@@ -162,7 +163,7 @@ class VectorStoreCardRefreshView(BaseAqueductView, View):
     then redirects back to the vector stores list page.
     """
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs) -> HttpResponse:
         user = self.profile.user
         teams = self.get_teams_for_user()
         vector_store_id = self.kwargs.get("id")
@@ -189,7 +190,7 @@ class VectorStoreDetailRefreshView(BaseAqueductView):
     from the upstream API, then redirects back to the detail page.
     """
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs) -> HttpResponse:
         user = self.profile.user
         teams = self.get_teams_for_user()
         vector_store_id = self.kwargs.get("id")

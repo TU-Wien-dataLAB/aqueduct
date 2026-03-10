@@ -160,7 +160,7 @@ class Org(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Model
 
     name = models.CharField(verbose_name="Org name", max_length=255, unique=True)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -175,7 +175,7 @@ class Team(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Mode
     class Meta:
         unique_together = ("name", "org")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} ({self.org.name})"
 
 
@@ -294,7 +294,7 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
         # Removed overly defensive AttributeError check. If 'teammembership_set' is missing,
         # it indicates a fundamental model setup error that should not be caught here.
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.user.email} (Profile - {self.org.name})"
 
 
@@ -310,7 +310,7 @@ class TeamMembership(models.Model):
         # Ensure a user can only be in a team once
         unique_together = ("user_profile", "team")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.user_profile} in {self.team}{' (Admin)' if self.is_admin else ''}"
 
 
@@ -324,7 +324,7 @@ class ServiceAccount(models.Model):
     class Meta:
         unique_together = ("name", "team")
 
-    def __str__(self):
+    def __str__(self) -> str:
         # Handle case where team might not be set yet
         return f"{self.name} (Team: {self.team.name if self.team_id else 'N/A'})"
 
@@ -415,13 +415,13 @@ class Token(models.Model):
     expires_at = models.DateTimeField(null=True, blank=True)  # Optional expiry
 
     @property
-    def is_expired(self):
+    def is_expired(self) -> bool:
         return self.expires_at is not None and self.expires_at <= timezone.now()
 
     # The clean method checking for self.user is implicitly handled by the ForeignKey
     # unless null=True is added to the user field, which doesn't seem intended here.
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.service_account:
             return f"'{self.name}' ({self.service_account.name})"
         return f"'{self.name}'"
@@ -486,7 +486,7 @@ class Token(models.Model):
         # (Handled by save() method)
         super().clean()
 
-    def _get_from_hierarchy(self, retrieval_function: Callable):
+    def _get_from_hierarchy(self, retrieval_function: Callable) -> list[str]:
         token_instance = Token.objects.select_related(
             "user__profile__org",  # Needed for User Tokens
             "service_account__team__org",  # Needed for Service Account Tokens
@@ -569,7 +569,7 @@ class Token(models.Model):
         """
         return self._get_from_hierarchy(Token._mcp_server_exclusion_list_from_objects)
 
-    def mcp_server_excluded(self, server_name: str):
+    def mcp_server_excluded(self, server_name: str) -> bool:
         return server_name in self.mcp_server_exclusion_list()
 
     @classmethod
@@ -599,14 +599,14 @@ class Usage:
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
 
-    def __add__(self, other):
+    def __add__(self, other) -> "Usage | NotImplemented":
         if not isinstance(other, Usage):
             return NotImplemented
         return Usage(
             input_tokens=self.input_tokens + other.input_tokens, output_tokens=self.output_tokens + other.output_tokens
         )
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> "Usage | NotImplemented":
         if not isinstance(other, Usage):
             return NotImplemented
         return Usage(
@@ -678,7 +678,7 @@ class Request(models.Model):
         ]
         ordering: ClassVar[list] = ["-timestamp"]  # Optional: default ordering
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.id}"
 
 
@@ -809,7 +809,7 @@ class FileObject(models.Model):
             asyncio.run(self.adelete_upstream())
         super().delete(using=using, keep_parents=keep_parents)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.id
 
 

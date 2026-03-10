@@ -43,7 +43,7 @@ async def chat_completions(
     request_log: Request,
     *args,
     **kwargs,
-):
+) -> JsonResponse | StreamingHttpResponse:
     router = get_router()
     chat_completion: CustomStreamWrapper | ModelResponse = await router.acompletion(**pydantic_model)
     if isinstance(chat_completion, CustomStreamWrapper):

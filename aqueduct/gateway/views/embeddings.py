@@ -36,7 +36,7 @@ from .utils import _get_token_usage
 @catch_router_exceptions
 async def embeddings(
     request: ASGIRequest, pydantic_model: openai.types.EmbeddingCreateParams, request_log: Request, *args, **kwargs
-):
+) -> JsonResponse:
     router = get_router()
     embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
     data = embedding.model_dump(exclude_none=True, exclude_unset=True)

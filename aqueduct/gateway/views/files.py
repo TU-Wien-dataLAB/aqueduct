@@ -132,7 +132,7 @@ async def files(
     file_preview: str | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     try:
         client = get_files_api_client()
     except ValueError:
@@ -225,7 +225,7 @@ async def files(
 @require_http_methods(["GET", "DELETE"])
 @token_authenticated(token_auth_only=True)
 @log_request
-async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
+async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs) -> JsonResponse:
     """
     Retrieve or delete a specific file.
 
@@ -278,7 +278,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
 @require_GET
 @token_authenticated(token_auth_only=True)
 @log_request
-async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
+async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs) -> HttpResponse:
     """
     Retrieve the content of a specific file.
 

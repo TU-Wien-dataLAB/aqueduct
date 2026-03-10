@@ -43,7 +43,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
 
     template_name = "management/usage.html"
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         profile = self.profile
         is_global_admin = profile.is_admin() if profile else False

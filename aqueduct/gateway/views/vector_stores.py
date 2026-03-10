@@ -26,7 +26,9 @@ from .errors import error_response
 @tos_accepted
 @parse_body(model=TypeAdapter(VectorStoreCreateParams))
 @log_request
-async def vector_stores(request: ASGIRequest, token: Token, pydantic_model: dict | None = None, *args, **kwargs):
+async def vector_stores(
+    request: ASGIRequest, token: Token, pydantic_model: dict | None = None, *args, **kwargs
+) -> JsonResponse:
     """
     GET /v1/vector_stores - List vector stores
     POST /v1/vector_stores - Create vector store
@@ -157,7 +159,7 @@ async def vector_store(
     client: AsyncOpenAI | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id} - Retrieve vector store
     POST /v1/vector_stores/{vector_store_id} - Modify vector store
@@ -248,7 +250,9 @@ async def vector_store(
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
-async def vector_store_search(request: ASGIRequest, token: Token, vector_store_id: str, *args, **kwargs):
+async def vector_store_search(
+    request: ASGIRequest, token: Token, vector_store_id: str, *args, **kwargs
+) -> JsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/search - Search vector store
     """

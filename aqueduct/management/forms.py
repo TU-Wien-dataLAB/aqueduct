@@ -34,7 +34,7 @@ class ServiceAccountForm(forms.ModelForm):
             # This indicates a programming error in the view setup
             raise ValueError("Team instance must be provided to the ServiceAccountForm.")
 
-    def clean(self):
+    def clean(self) -> dict:
         cleaned_data = super().clean()
         name = cleaned_data.get("name")
 
@@ -93,7 +93,7 @@ class TeamCreateForm(forms.ModelForm):
         self.org = kwargs.pop("org", None)
         super().__init__(*args, **kwargs)
 
-    def clean(self):
+    def clean(self) -> dict:
         """
         Perform validation checks that depend on multiple fields or
         require access to data outside the form fields (like organization).
@@ -138,7 +138,7 @@ class TokenCreateForm(forms.ModelForm):
             raise ValueError("User must be provided to TokenCreateForm.")
         self.fields["expires_at"].input_formats = ["%Y-%m-%dT%H:%M"]
 
-    def clean(self):
+    def clean(self) -> dict:
         cleaned_data = super().clean()
         from django.conf import settings
 

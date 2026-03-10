@@ -14,7 +14,7 @@ class UserFilesView(BaseAqueductView, TemplateView):
 
     template_name = "management/files.html"
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         profile = self.profile
         user = profile.user

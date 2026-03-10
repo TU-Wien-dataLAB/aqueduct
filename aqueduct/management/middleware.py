@@ -15,13 +15,13 @@ class UserAgreementMiddleware(TOSUserAgreementMiddleware):
     sync_capable = True
     async_capable = False
 
-    def __call__(self, request):
+    def __call__(self, request) -> HttpResponse | None:
         response = self.process_request(request)
         if response is None:
             return self.get_response(request)
         return response
 
-    def should_fast_skip(self, request: ASGIRequest):
+    def should_fast_skip(self, request: ASGIRequest) -> bool:
         if request.path_info.rstrip("/") == "/oidc/callback":
             return True
 
@@ -38,7 +38,7 @@ class HealthCheckMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
-    def __call__(self, request: ASGIRequest):
+    def __call__(self, request: ASGIRequest) -> HttpResponse:
         if request.path_info.rstrip("/") == "/health":
             return HttpResponse("ok", content_type="text/plain")
 

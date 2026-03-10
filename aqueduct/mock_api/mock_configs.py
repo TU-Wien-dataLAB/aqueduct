@@ -11,6 +11,7 @@ from openai.types import (
     Image,
     ImagesResponse,
     VectorStore,
+    VectorStoreSearchResponse,
 )
 from openai.types.audio import Transcription
 from openai.types.audio.transcription import UsageDuration
@@ -36,7 +37,9 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
 from openai.types.vector_store import FileCounts
-from openai.types.vector_stores import VectorStoreFile
+from openai.types.vector_store_search_response import Content
+from openai.types.vector_stores import FileContentResponse, VectorStoreFile, VectorStoreFileBatch
+from openai.types.vector_stores.vector_store_file_batch import FileCounts as FileCountsBatch
 from pydantic import BaseModel
 
 
@@ -271,6 +274,26 @@ default_post_configs = {
             expires_at=None,
         ).model_dump()
     ),
+    "vector_stores/id/file_batches": MockConfig(
+        response_data=VectorStoreFileBatch(
+            id="vsb-mock-1",
+            status="in_progress",
+            created_at=1741476542,
+            file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=2, cancelled=0),
+            object="vector_store.files_batch",
+            vector_store_id="vs-mock-123",
+        ).model_dump()
+    ),
+    "vector_stores/id/file_batches/id/cancel": MockConfig(
+        response_data=VectorStoreFileBatch(
+            id="vsb-mock-1",
+            status="cancelled",
+            created_at=1741476542,
+            file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=0, cancelled=2),
+            object="vector_store.files_batch",
+            vector_store_id="vs-mock-123",
+        ).model_dump()
+    ),
     "vector_stores/id/files": MockConfig(
         response_data=VectorStoreFile(
             id="vsf-mock-123",
@@ -280,6 +303,31 @@ default_post_configs = {
             object="vector_store.file",
             vector_store_id="vs-mock-123",
         ).model_dump()
+    ),
+    "vector_stores/id/files/id": MockConfig(
+        response_data=VectorStoreFile(
+            id="vsf-mock-123",
+            status="completed",
+            usage_bytes=0,
+            created_at=1741476542,
+            object="vector_store.file",
+            vector_store_id="vs-mock-123",
+            attributes={"key": "value"},
+        ).model_dump()
+    ),
+    "vector_stores/id/search": MockConfig(
+        response_data={
+            "object": "vector_store.search_results.page",
+            "data": [
+                VectorStoreSearchResponse(
+                    file_id="file-mock-123",
+                    filename="test.txt",
+                    score=0.95,
+                    attributes={},
+                    content=[Content(text="Test content", type="text")],
+                ).model_dump()
+            ],
+        }
     ),
 }
 
@@ -556,6 +604,16 @@ default_get_configs = {
             expires_at=None,
         ).model_dump()
     ),
+    "vector_stores/id/file_batches/id": MockConfig(
+        response_data=VectorStoreFileBatch(
+            id="vsb-mock-1",
+            status="in_progress",
+            created_at=1741476542,
+            file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=2, cancelled=0),
+            object="vector_store.files_batch",
+            vector_store_id="vs-mock-123",
+        ).model_dump()
+    ),
     "vector_stores/id/files": MockConfig(
         response_data={
             "data": [
@@ -568,15 +626,6 @@ default_get_configs = {
                     object="vector_store.file",
                     vector_store_id="vs-mock-123",
                 ).model_dump()
-                # VectorStoreFile(
-                #     id="file-mock-2",
-                #     status="completed",
-                #     usage_bytes=200,
-                #     created_at=1741476542,
-                #     last_error=None,
-                #     object="vector_store.file",
-                #     vector_store_id="vs-mock-123",
-                # ).model_dump(),
             ],
             "has_more": False,
         }
@@ -590,6 +639,17 @@ default_get_configs = {
             object="vector_store.file",
             vector_store_id="vs-mock-123",
         ).model_dump()
+    ),
+    "vector_stores/id/files/id/content": MockConfig(  # TODO!
+        response_data={
+            "data": [
+                FileContentResponse(text="Test ").model_dump(),
+                FileContentResponse(text="file ").model_dump(),
+                FileContentResponse(text="content").model_dump(),
+            ],
+            "has_more": False,
+            "object": "vector_store.file_content.page",
+        }
     ),
 }
 

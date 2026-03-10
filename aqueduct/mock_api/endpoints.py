@@ -111,8 +111,16 @@ async def mock_endpoint(path: str, request: Request):
         elif request.method == "POST":
             if re.match("^batches/.+/cancel$", path):
                 config = default_post_configs["batches/id/cancel"]
+            elif re.match("^vector_stores/.+/file_batches/.+/cancel$", path):
+                config = default_post_configs["vector_stores/id/file_batches/id/cancel"]
+            elif re.match("^vector_stores/.+/file_batches$", path):
+                config = default_post_configs["vector_stores/id/file_batches"]
+            elif re.match("^vector_stores/.+/files/.+$", path):
+                config = default_post_configs["vector_stores/id/files/id"]
             elif re.match("^vector_stores/.+/files$", path):
                 config = default_post_configs["vector_stores/id/files"]
+            elif re.match("^vector_stores/.+/search$", path):
+                config = default_post_configs["vector_stores/id/search"]
             elif re.match("^vector_stores/.+$", path):
                 config = default_post_configs["vector_stores/id"]
             else:
@@ -124,6 +132,10 @@ async def mock_endpoint(path: str, request: Request):
                 config = default_get_configs["responses/id/input_items"]
             elif re.match("responses/.+$", path):
                 config = default_get_configs["responses/id"]
+            elif re.match("^vector_stores/.+/file_batches/.+$", path):
+                config = default_get_configs["vector_stores/id/file_batches/id"]
+            elif re.match("^vector_stores/.+/files/.+/content$", path):
+                config = default_get_configs["vector_stores/id/files/id/content"]
             elif re.match("^vector_stores/.+/files/.+$", path):
                 config = default_get_configs["vector_stores/id/files/id"]
             elif re.match("^vector_stores/.+/files$", path):

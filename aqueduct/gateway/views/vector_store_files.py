@@ -4,7 +4,7 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.db import transaction
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -325,32 +325,7 @@ async def vector_store_file_content(
             status=502,
         )
 
-    # Return content directly as binary response
-    # Handle different response types from OpenAI client
-    if hasattr(content_response, "content"):
-        # It's a response object with content attribute
-        content = content_response.content
-        content_type = getattr(content_response, "content_type", "application/octet-stream")
-    elif hasattr(content_response, "read"):
-        # It's a file-like object
-        content = await content_response.read()
-        content_type = "application/octet-stream"
-    elif hasattr(content_response, "__iter__") and not isinstance(content_response, (str, bytes)):
-        # It's an async iterator (like AsyncPage), convert to bytes
-        chunks = []
-        async for chunk in content_response:
-            if isinstance(chunk, bytes):
-                chunks.append(chunk)
-            else:
-                chunks.append(chunk.encode("utf-8"))
-        content = b"".join(chunks)
-        content_type = "application/octet-stream"
-    else:
-        # Assume it's already bytes or string
-        if isinstance(content_response, str):
-            content = content_response.encode("utf-8")
-        else:
-            content = content_response
-        content_type = "application/octet-stream"
+    # FileContentResponse and AsyncPage[FileContentResponse] are both Pydantic models
+    response_data = content_response.model_dump()
 
-    return HttpResponse(content, content_type=content_type)
+    return JsonResponse(response_data)

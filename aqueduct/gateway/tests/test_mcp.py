@@ -5,7 +5,7 @@ import httpx
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
 from mcp import ClientSession, McpError
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 from mcp.types import PromptReference, ResourceTemplateReference
 from pydantic.networks import AnyUrl
 
@@ -56,7 +56,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
         async with self.client_session() as session:
             await session.initialize()
             tool_name = "longRunningOperation"
-            result = await session.call_tool(tool_name, {"duration": 3, "steps": 5})
+            result = await session.call_tool(tool_name, {"duration": 0.1, "steps": 5})
 
             self.assertIsNotNone(result)
             self.assertIsInstance(result.content, list)
@@ -248,7 +248,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             await session.initialize()
             tool_name = "longRunningOperation"
             result = await session.call_tool(
-                tool_name, {"duration": 2, "steps": 3}, progress_callback=progress_callback
+                tool_name, {"duration": 0.5, "steps": 3}, progress_callback=progress_callback
             )
 
             self.assertIsNotNone(result)
@@ -350,23 +350,24 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
     @skip_on_cancel_scope_error
     async def test_session_creation(self):
         """Test that sessions have unique IDs."""
-        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
-            r,
-            w,
-            get_session_id,
-        ):
-            async with ClientSession(r, w) as session:
-                await session.initialize()
-                s1 = get_session_id()
+        async with httpx.AsyncClient(headers=self.headers) as client:
+            async with streamable_http_client(self.mcp_url, http_client=client) as (
+                r,
+                w,
+                get_session_id,
+            ):
+                async with ClientSession(r, w) as session:
+                    await session.initialize()
+                    s1 = get_session_id()
 
-        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (
-            r,
-            w,
-            get_session_id,
-        ):
-            async with ClientSession(r, w) as session:
-                await session.initialize()
-                s2 = get_session_id()
+            async with streamable_http_client(self.mcp_url, http_client=client) as (
+                r,
+                w,
+                get_session_id,
+            ):
+                async with ClientSession(r, w) as session:
+                    await session.initialize()
+                    s2 = get_session_id()
 
         self.assertNotEqual(s1, s2)
         await self.assertRequestLogged(n=2)

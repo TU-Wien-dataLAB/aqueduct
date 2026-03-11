@@ -194,7 +194,7 @@ class ManagedMCPSession:
         """Start the session by setting up streams and tasks."""
         log.info(f"Starting MCP session {self.session_id} for {self.url}")
 
-        # Create memory streams (exactly like streamablehttp_client does)
+        # Create memory streams (exactly like streamable_http_client does)
         log.debug(f"{self.session_id}: Creating memory streams")
         self._read_stream_writer, self.read_stream = anyio.create_memory_object_stream[
             SessionMessage | Exception

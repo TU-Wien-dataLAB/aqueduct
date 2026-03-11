@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 from asgiref.sync import sync_to_async
@@ -299,8 +300,6 @@ async def vector_store_search(
 
     # Get search parameters from request body
     try:
-        import json
-
         body = json.loads(request.body) if request.body else {}
     except json.JSONDecodeError:
         return error_response("Invalid JSON in request body", param="body", status=400)

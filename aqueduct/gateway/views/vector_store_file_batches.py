@@ -106,17 +106,17 @@ async def vector_store_file_batches(
         file_objs.append(file_obj)
 
     # Create batch on upstream
+    create_kwargs = {"vector_store_id": vs_obj.id}
+    if files:
+        # Pass full files dicts with attributes and chunking_strategy
+        create_kwargs["files"] = files
+    else:
+        create_kwargs["file_ids"] = file_ids
+    if params.get("chunking_strategy"):
+        create_kwargs["chunking_strategy"] = params["chunking_strategy"]
+    if params.get("attributes"):
+        create_kwargs["attributes"] = params["attributes"]
     try:
-        create_kwargs = {"vector_store_id": vs_obj.id}
-        if files:
-            # Pass full files dicts with attributes and chunking_strategy
-            create_kwargs["files"] = files
-        else:
-            create_kwargs["file_ids"] = file_ids
-        if params.get("chunking_strategy"):
-            create_kwargs["chunking_strategy"] = params["chunking_strategy"]
-        if params.get("attributes"):
-            create_kwargs["attributes"] = params["attributes"]
         remote_batch = await client.vector_stores.file_batches.create(**create_kwargs)
     except Exception as e:
         return error_response(

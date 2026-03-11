@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
@@ -22,7 +23,8 @@ ROOT_DIR = Path(__file__).parent.parent.parent.parent
 @override_settings(
     OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/",
     LITELLM_ROUTER_CONFIG_FILE_PATH=Path(ROOT_DIR / "example_router_config.yaml"),
-    AQUEDUCT_FILES_API_URL="https://api.openai.com",
+    AQUEDUCT_FILES_API_URL="https://files-api.example.com",
+    AQUEDUCT_FILES_API_KEY="test_key",
 )
 class TestUserId(MCPLiveServerTestCase):
     @classmethod
@@ -64,7 +66,7 @@ class TestUserId(MCPLiveServerTestCase):
             created_at=42,
             token=token,
             purpose="batch",
-            upstream_url="https://api.openai.com/v1",
+            upstream_url=settings.AQUEDUCT_FILES_API_URL,
         )
 
         url = reverse("gateway:batches")

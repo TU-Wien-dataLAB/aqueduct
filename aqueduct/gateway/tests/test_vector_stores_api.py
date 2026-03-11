@@ -26,6 +26,7 @@ from management.models import (
     Team,
     Token,
     VectorStoreFileBatchStatus,
+    VectorStoreFileStatus,
     VectorStoreStatus,
 )
 from management.models import VectorStore as VectorStoreModel
@@ -536,6 +537,8 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         batch_id = data["id"]
         batch = VectorStoreFileBatchModel.objects.get(id=batch_id)
         self.assertEqual(batch.status, VectorStoreFileBatchStatus.IN_PROGRESS)
+        self.assertEqual(batch.file_counts["total"], 2)
+        self.assertEqual(batch.file_counts["in_progress"], 2)
 
         # Get batch
         batch_url = reverse(
@@ -547,7 +550,6 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         data = resp.json()
         self.assertEqual(data["id"], batch_id)
         self.assertEqual(data["file_counts"]["total"], 2)
-        # TODO: more assertions about the objects in the db
 
         # Cancel batch
         cancel_url = reverse(
@@ -560,6 +562,21 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(data["status"], "cancelled")
         batch = VectorStoreFileBatchModel.objects.get(id=batch_id)
         self.assertEqual(batch.status, VectorStoreFileBatchStatus.CANCELLED)
+        self.assertEqual(batch.file_counts["cancelled"], 2)
+
+        vs_files = VectorStoreFileModel.objects.filter(batch_id=batch_id)
+        self.assertEqual(vs_files.count(), 2)
+        for vsf in vs_files:
+            self.assertEqual(
+                vsf.status,
+                VectorStoreFileStatus.CANCELLED,
+                f"Wrong status for VS file {vsf.id}: {vsf.status}",
+            )
+            self.assertEqual(
+                vsf.last_error,
+                f"Batch {batch.status}: files were not processed",
+                f"Wrong last_error for VS file {vsf.id}: {vsf.last_error}",
+            )
 
     def test_validation_errors(self):
         """Missing required fields return 400."""
@@ -673,37 +690,48 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
 
     def test_batch_file_counts(self):
         """Batch correctly tracks completed/failed files."""
-        # TODO: Where do we track completed/failed files there?
-        # Create file objects
-        file_obj1 = self._create_file_object("file-mock-1")
-        file_obj2 = self._create_file_object("file-mock-2")
+        # Create a batch with two files
+        batch_id = self._create_batch()
+        batch = VectorStoreFileBatchModel.objects.get(id=batch_id)
+        self.assertEqual(batch.status, VectorStoreFileBatchStatus.IN_PROGRESS)
+        self.assertEqual(batch.file_counts["total"], 2)
+        self.assertEqual(batch.file_counts["completed"], 0)
 
-        # Create batch
-        batches_url = reverse(
-            "gateway:vector_store_file_batches", kwargs={"vector_store_id": self.vs_id}
+        # Now assume the batch failed upstream; get it and verify file status is updated
+        failed_resp = MockConfig(
+            response_data=VectorStoreFileBatch(
+                id="vsb-mock-1",
+                status="failed",
+                created_at=1741476542,
+                file_counts=FileCounts(total=2, completed=0, failed=2, in_progress=0, cancelled=0),
+                object="vector_store.files_batch",
+                vector_store_id="vs-mock-123",
+            ).model_dump()
         )
-        resp = self.client.post(
-            batches_url,
-            data=json.dumps({"file_ids": [file_obj1.id, file_obj2.id]}),
-            headers=self.headers,
-            content_type="application/json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data["file_counts"]["total"], 2)
-        self.assertEqual(data["file_counts"]["completed"], 0)
-        batch_id = data["id"]
-
-        # Get batch and verify file counts are returned
         batch_url = reverse(
             "gateway:vector_store_file_batch",
             kwargs={"vector_store_id": self.vs_id, "batch_id": batch_id},
         )
-        resp = self.client.get(batch_url, headers=self.headers)
+        with self.mock_server.patch_external_api(batch_url, failed_resp):
+            resp = self.client.get(batch_url, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertIn("file_counts", data)
-        self.assertEqual(data["file_counts"]["total"], 2)
+        batch.refresh_from_db()
+        file_counts = resp.json()["file_counts"]
+        self.assertEqual(batch.file_counts["total"], file_counts["total"])
+        self.assertEqual(batch.file_counts["failed"], file_counts["failed"])
+        vs_files = VectorStoreFileModel.objects.filter(batch_id=batch_id)
+        self.assertEqual(vs_files.count(), 2)
+        for vsf in vs_files:
+            self.assertEqual(
+                vsf.status,
+                VectorStoreFileStatus.FAILED,
+                f"Wrong status for VS file {vsf.id}: {vsf.status}",
+            )
+            self.assertEqual(
+                vsf.last_error,
+                f"Batch {batch.status}: files were not processed",
+                f"Wrong last_error for VS file {vsf.id}: {vsf.last_error}",
+            )
 
     @override_settings(MAX_VECTOR_STORE_FILES=3)
     def test_max_vector_store_files_limit(self):
@@ -933,7 +961,6 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Missing required parameter: attributes", resp.json()["error"]["message"])
 
-    # TODO: fails
     def test_vector_store_file_content(self):
         """Test getting file content with both FileContentResponse and AsyncPage types."""
         # Create file object
@@ -1006,7 +1033,6 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             self.assertEqual(item["status"], "completed")
             self.assertEqual(item["object"], "vector_store.file")
 
-    # TODO: failed once for whatever reason
     def test_batch_created_files_tracked_locally(self):
         """Test that batch-created VectorStoreFile records are created locally
         with proper upstream IDs, and listing returns upstream data directly."""
@@ -1041,25 +1067,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
     def test_list_vector_store_files_response_structure(self):
         """Test that list vector store files endpoint returns complete, correctly-mapped response items."""
 
-        file_obj1 = self._create_file_object("file-remote-1")
-        file_obj2 = self._create_file_object("file-remote-2")
-
         files_url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": self.vs_id})
-        resp = self.client.post(
-            files_url,
-            data=json.dumps({"file_id": file_obj1.id}),
-            headers=self.headers,
-            content_type="application/json",
-        )
-        self.assertEqual(resp.status_code, 200)
-
-        resp = self.client.post(
-            files_url,
-            data=json.dumps({"file_id": file_obj2.id}),
-            headers=self.headers,
-            content_type="application/json",
-        )
-        self.assertEqual(resp.status_code, 200)
 
         with self.mock_server.patch_external_api(files_url, self._mock_files_list):
             resp = self.client.get(files_url, headers=self.headers)

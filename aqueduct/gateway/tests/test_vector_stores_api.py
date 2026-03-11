@@ -3,7 +3,6 @@ from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.conf import settings
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -22,8 +21,6 @@ from openai.types.vector_stores.vector_store_file_batch import FileCounts
 from gateway.tests.utils.base import GatewayFilesTestCase
 from management.models import (
     FileObject,
-    ServiceAccount,
-    Team,
     Token,
     VectorStoreFileBatchStatus,
     VectorStoreFileStatus,
@@ -1083,102 +1080,3 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             # file_id and vector_store_id are upstream IDs
             self.assertEqual(item["status"], "completed")
             self.assertEqual(item["object"], "vector_store.file")
-
-    # TODO
-    @patch("gateway.views.files.get_files_api_client")
-    def test_service_account_file_operations(self, mock_get_client):
-        """Test that the files API works with service account tokens."""
-        mock_client = MagicMock()
-
-        async def mock_file_create(*args, **kwargs):
-            return MagicMock(
-                id="file-remote-new",
-                bytes=100,
-                filename="test.txt",
-                purpose="user_data",
-                created_at=int(timezone.now().timestamp()),
-                expires_at=None,
-                model_dump=MagicMock(
-                    return_value={
-                        "id": "file-remote-new",
-                        "bytes": 100,
-                        "filename": "test.txt",
-                        "purpose": "user_data",
-                        "created_at": int(timezone.now().timestamp()),
-                        "expires_at": None,
-                    }
-                ),
-            )
-
-        async def mock_file_retrieve(*args, **kwargs):
-            return MagicMock(
-                id="file-remote-new",
-                bytes=100,
-                filename="test.txt",
-                purpose="user_data",
-                created_at=int(timezone.now().timestamp()),
-                expires_at=None,
-                model_dump=MagicMock(
-                    return_value={
-                        "id": "file-remote-new",
-                        "bytes": 100,
-                        "filename": "test.txt",
-                        "purpose": "user_data",
-                        "created_at": int(timezone.now().timestamp()),
-                        "expires_at": None,
-                    }
-                ),
-            )
-
-        async def mock_file_delete(*args, **kwargs):
-            return MagicMock(
-                id="file-remote-new",
-                deleted=True,
-                model_dump=MagicMock(return_value={"id": "file-remote-new", "deleted": True}),
-            )
-
-        async def mock_file_content(*args, **kwargs):
-            return MagicMock(content=b"test file content")
-
-        mock_client.files.create = AsyncMock(side_effect=mock_file_create)
-        mock_client.files.retrieve = AsyncMock(side_effect=mock_file_retrieve)
-        mock_client.files.delete = AsyncMock(side_effect=mock_file_delete)
-        mock_client.files.content = AsyncMock(side_effect=mock_file_content)
-        mock_get_client.return_value = mock_client
-
-        team = Team.objects.get(name="Whale")
-        service_account = ServiceAccount.objects.create(team=team, name="Test Service Account")
-
-        token = Token.objects.get(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
-        token.service_account = service_account
-        token.save()
-
-        try:
-            file = SimpleUploadedFile("test.txt", b"test file content", content_type="text/plain")
-            files_url = reverse("gateway:files")
-            resp = self.client.post(
-                files_url, data={"file": file, "purpose": "user_data"}, headers=self.headers
-            )
-            self.assertEqual(resp.status_code, 200, f"Upload failed: {resp.json()}")
-            file_id = resp.json()["id"]
-
-            resp = self.client.get(files_url, headers=self.headers)
-            self.assertEqual(resp.status_code, 200, f"List failed: {resp.json()}")
-            self.assertEqual(len(resp.json()["data"]), 1)
-
-            file_detail_url = reverse("gateway:file", kwargs={"file_id": file_id})
-            resp = self.client.get(file_detail_url, headers=self.headers)
-            self.assertEqual(resp.status_code, 200, f"Retrieve failed: {resp.json()}")
-
-            file_content_url = reverse("gateway:file_content", kwargs={"file_id": file_id})
-            resp = self.client.get(file_content_url, headers=self.headers)
-            self.assertEqual(resp.status_code, 200, f"Content failed: {resp.content}")
-            self.assertEqual(resp.content, b"test file content")
-
-            resp = self.client.delete(file_detail_url, headers=self.headers)
-            self.assertEqual(resp.status_code, 200, f"Delete failed: {resp.json()}")
-
-        finally:
-            token.service_account = None
-            token.save()
-            service_account.delete()

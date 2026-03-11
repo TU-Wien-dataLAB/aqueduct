@@ -3,7 +3,6 @@ import logging
 import logging.config
 import os
 import random
-import re
 from json import JSONDecodeError
 
 from fastapi import FastAPI, HTTPException
@@ -108,51 +107,16 @@ async def mock_endpoint(path: str, request: Request):
             # endpoints can return both a streaming or a JSON response.
             # Note: streaming responses can only be returned for POST requests.
             config = default_post_stream_configs[path]
-        elif request.method == "POST":
-            if re.match("^batches/.+/cancel$", path):
-                config = default_post_configs["batches/id/cancel"]
-            elif re.match("^vector_stores/.+/file_batches/.+/cancel$", path):
-                config = default_post_configs["vector_stores/id/file_batches/id/cancel"]
-            elif re.match("^vector_stores/.+/file_batches$", path):
-                config = default_post_configs["vector_stores/id/file_batches"]
-            elif re.match("^vector_stores/.+/files/.+$", path):
-                config = default_post_configs["vector_stores/id/files/id"]
-            elif re.match("^vector_stores/.+/files$", path):
-                config = default_post_configs["vector_stores/id/files"]
-            elif re.match("^vector_stores/.+/search$", path):
-                config = default_post_configs["vector_stores/id/search"]
-            elif re.match("^vector_stores/.+$", path):
-                config = default_post_configs["vector_stores/id"]
+        else:
+            if request.method == "POST":
+                config_dict = default_post_configs
+            elif request.method == "GET":
+                config_dict = default_get_configs
+            elif request.method == "DELETE":
+                config_dict = default_delete_configs
             else:
-                config = default_post_configs[path]
-        elif request.method == "GET":
-            if re.match("^batches/.+$", path):
-                config = default_get_configs["batches/id"]
-            elif re.match("^responses/.+/input_items$", path):
-                config = default_get_configs["responses/id/input_items"]
-            elif re.match("responses/.+$", path):
-                config = default_get_configs["responses/id"]
-            elif re.match("^vector_stores/.+/file_batches/.+/files$", path):
-                config = default_get_configs["vector_stores/id/file_batches/id/files"]
-            elif re.match("^vector_stores/.+/file_batches/.+$", path):
-                config = default_get_configs["vector_stores/id/file_batches/id"]
-            elif re.match("^vector_stores/.+/files/.+/content$", path):
-                config = default_get_configs["vector_stores/id/files/id/content"]
-            elif re.match("^vector_stores/.+/files/.+$", path):
-                config = default_get_configs["vector_stores/id/files/id"]
-            elif re.match("^vector_stores/.+/files$", path):
-                config = default_get_configs["vector_stores/id/files"]
-            elif re.match("^vector_stores/.+$", path):
-                config = default_get_configs["vector_stores/id"]
-            else:
-                config = default_get_configs[path]
-        elif request.method == "DELETE":
-            if re.match("^responses/.+$", path):
-                config = default_delete_configs["responses/id"]
-            elif re.match("^vector_stores/.+$", path):
-                config = default_delete_configs["vector_stores/id"]
-            else:
-                config = default_delete_configs[path]
+                raise ValueError(f"No mocks configured for request method {request.method}")
+            config = _find_config_for_path(path, config_dict)
     except KeyError:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND, detail=f"No mock configured for this endpoint: {path}"
@@ -185,3 +149,40 @@ async def _should_stream(request: Request) -> bool:
     except (AttributeError, JSONDecodeError, UnicodeDecodeError):
         should_stream = False
     return should_stream
+
+
+def _find_config_for_path(path: str, config_dict: dict[str, MockConfig]) -> MockConfig:
+    """Find the matching config template and its value for a given path."""
+    # Try exact match first (for paths without IDs)
+    if path in config_dict:
+        return config_dict[path]
+
+    # Try template matching
+    for template, config in config_dict.items():
+        if _path_matches_template(path, template):
+            return config
+
+    raise KeyError(f"No config found for path: {path}")
+
+
+def _path_matches_template(path: str, template: str) -> bool:
+    """
+    Check if a path matches a template where the string "id" is a wildcard.
+
+    Examples:
+        "batches/batch-abc123/cancel" matches "batches/id/cancel"
+        "vector_stores/vs-mock-123/files" matches "vector_stores/id/files"
+    """
+    path_segments = path.split("/")
+    template_segments = template.split("/")
+
+    if len(path_segments) != len(template_segments):
+        return False
+
+    for path_seg, template_seg in zip(path_segments, template_segments):
+        if template_seg == "id":
+            continue  # 'id' matches anything
+        if path_seg != template_seg:
+            return False
+
+    return True

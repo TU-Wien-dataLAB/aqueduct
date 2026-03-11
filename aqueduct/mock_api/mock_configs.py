@@ -667,14 +667,7 @@ default_get_configs = {
         ).model_dump()
     ),
     "vector_stores/id/files/id/content": MockConfig(  # TODO!
-        # response_data=FileContentResponse(text="Test file content").model_dump()
-        response_data={
-            "data": [
-                FileContentResponse(text="Test ").model_dump(),
-                FileContentResponse(text="file ").model_dump(),
-                FileContentResponse(text="content").model_dump(),
-            ]
-        }
+        response_data=FileContentResponse(text="Test file content", type="text").model_dump()
     ),
 }
 
@@ -682,6 +675,9 @@ default_delete_configs = {
     "responses/id": MockConfig(response_data=None),
     "vector_stores/id": MockConfig(
         response_data={"id": "vs-mock-123", "object": "vector_store.deleted", "deleted": True}
+    ),
+    "vector_stores/id/files/id": MockConfig(
+        response_data={"id": "vsf-mock-123", "object": "vector_store.deleted", "deleted": True}
     ),
 }
 

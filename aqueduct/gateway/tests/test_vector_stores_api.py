@@ -936,13 +936,6 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
     # TODO: fails
     def test_vector_store_file_content(self):
         """Test getting file content with both FileContentResponse and AsyncPage types."""
-        # mock_client = create_mock_vector_store_client()
-        # mock_vs_client.return_value = mock_client
-        # mock_vs_files_client.return_value = mock_client
-        #
-        # # Create vector store
-        # vs_id = self._create_vector_store(mock_vs_client)
-
         # Create file object
         file_obj = self._create_file_object()
 
@@ -954,8 +947,9 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             headers=self.headers,
             content_type="application/json",
         )
-        self.assertEqual(resp.status_code, 200)
-        vsf_id = resp.json()["id"]
+        vsf_obj = VectorStoreFileModel.objects.get()
+        vsf_id = vsf_obj.id
+        self.assertEqual(resp.json()["id"], vsf_id)
 
         content_url = reverse(
             "gateway:vector_store_file_content",
@@ -972,21 +966,20 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(json_resp["type"], "text")
 
         # Test secondary case: AsyncPage[FileContentResponse]
-        async def mock_content_async_page(*args, **kwargs):
-            return AsyncPage[FileContentResponse](
-                data=[FileContentResponse(text="Page content 1", type="text")], object="list"
-            )
+        mock_resp = MockConfig(
+            response_data=AsyncPage[FileContentResponse](
+                data=[FileContentResponse(text="Page content 1", type="text")],
+                object="vector_store.file_content.page",
+            ).model_dump()
+        )
+        with self.mock_server.patch_external_api(content_url, mock_resp):
+            resp = self.client.get(content_url, headers=self.headers)
 
-        # mock_client2 = create_mock_vector_store_client()
-        # mock_client2.vector_stores.files.content = AsyncMock(side_effect=mock_content_async_page)
-        # mock_vs_files_client.return_value = mock_client2
-
-        resp = self.client.get(content_url, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         json_resp = resp.json()
         self.assertIn("data", json_resp)
         self.assertIn("object", json_resp)
-        self.assertEqual(json_resp["object"], "list")
+        self.assertEqual(json_resp["object"], "vector_store.file_content.page")
         self.assertEqual(len(json_resp["data"]), 1)
         self.assertEqual(json_resp["data"][0]["text"], "Page content 1")
         self.assertEqual(json_resp["data"][0]["type"], "text")
@@ -1013,7 +1006,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             self.assertEqual(item["status"], "completed")
             self.assertEqual(item["object"], "vector_store.file")
 
-    # TODO: fails
+    # TODO: failed once for whatever reason
     def test_batch_created_files_tracked_locally(self):
         """Test that batch-created VectorStoreFile records are created locally
         with proper upstream IDs, and listing returns upstream data directly."""

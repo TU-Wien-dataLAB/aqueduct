@@ -1,9 +1,9 @@
 ---
-title: Getting Started
-nav_order: 2
+title: Developer Setup
+nav_order: 5
 ---
 
-# Getting Started
+# Developer Setup
 {: .no_toc }
 
 ## Table of contents

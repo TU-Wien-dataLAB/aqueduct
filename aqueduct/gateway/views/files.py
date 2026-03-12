@@ -290,7 +290,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     await sync_to_async(file_obj.delete)()
 
     # Return response with upstream ID
-    response_data = {"id": file_obj.id, "object": "file", "deleted": True}
+    response_data = {"id": file_id, "object": "file", "deleted": True}
     return JsonResponse(response_data, status=200)
 
 

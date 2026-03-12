@@ -63,6 +63,11 @@ class MockPlainTextConfig(MockConfig):
     headers: dict[str, str] = {"Content-Type": "text/plain; charset=utf-8"}
 
 
+class MockExceptionConfig(MockConfig):
+    status_code: int = 500
+    response_data: str = "Mock error response from upstream"
+
+
 def convert_to_stream_data(data: list[BaseModel]) -> list[bytes]:
     return [b"data: " + json.dumps(item).encode() + b"\n\n" for item in data]
 
@@ -694,7 +699,7 @@ default_get_configs = {
             vector_store_id="vs-mock-123",
         ).model_dump()
     ),
-    "vector_stores/id/files/id/content": MockConfig(  # TODO!
+    "vector_stores/id/files/id/content": MockConfig(
         response_data=FileContentResponse(text="Test file content", type="text").model_dump()
     ),
 }

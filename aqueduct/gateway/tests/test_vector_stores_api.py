@@ -313,6 +313,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         data = resp.json()
         self.assertEqual(data["id"], batch_id)
         self.assertEqual(data["file_counts"]["total"], 2)
+        # TODO: more assertions about the objects in the db
 
         # Cancel batch
         cancel_url = reverse(

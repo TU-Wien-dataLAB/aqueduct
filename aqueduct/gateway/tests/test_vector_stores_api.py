@@ -818,7 +818,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         search_url = reverse("gateway:vector_store_search", kwargs={"vector_store_id": self.vs_id})
         resp = self.client.post(
             search_url,
-            data=json.dumps({"query": "test query"}),
+            data=json.dumps({"query": "test query", "max_num_results": 10}),
             headers=self.headers,
             content_type="application/json",
         )
@@ -836,7 +836,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             search_url, data=json.dumps({}), headers=self.headers, content_type="application/json"
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("Missing required parameter: query", resp.json()["error"]["message"])
+        self.assertIn("query: Field required", resp.json()["error"]["message"])
 
     def test_vector_store_file_update_attributes(self):
         """Test updating file attributes."""

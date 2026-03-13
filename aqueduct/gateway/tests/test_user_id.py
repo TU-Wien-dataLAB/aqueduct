@@ -12,7 +12,7 @@ from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage
 
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from management.models import FileObject, Request, Token
+from management.models import FileObject, Request, Token, VectorStore, VectorStoreStatus
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
@@ -28,14 +28,24 @@ class TestUserId(GatewayIntegrationTestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.multipart_headers = {"Authorization": f"Bearer {cls.AQUEDUCT_ACCESS_TOKEN}"}
+        cls.token = Token.objects.first()
+        cls.vs_obj = VectorStore.objects.create(
+            id="vs-mock-123",
+            token=cls.token,
+            name="Test Store",
+            status=VectorStoreStatus.COMPLETED,
+            usage_bytes=0,
+            created_at=42,
+            upstream_url=settings.AQUEDUCT_FILES_API_URL,
+        )
+        cls.vs_id = cls.vs_obj.id
 
     def test_batches_with_user_id(self):
-        token = Token.objects.first()
         file_obj = FileObject.objects.create(
             id="file-remote-123",
             bytes=1,
             created_at=42,
-            token=token,
+            token=self.token,
             purpose="batch",
             upstream_url=settings.AQUEDUCT_FILES_API_URL,
         )
@@ -175,6 +185,24 @@ class TestUserId(GatewayIntegrationTestCase):
         req = Request.objects.get()
         self.assertEqual(req.user_id, user_id)
 
+    def test_responses_with_user_id_in_body(self):
+        url = reverse("gateway:responses")
+        user_id = "testuser"
+        payload = {
+            "model": self.model,
+            "input": [{"role": "user", "content": "Hello, how are you?"}],
+            "max_output_tokens": 50,
+            "user_id": user_id,
+        }
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.get()
+        self.assertEqual(req.user_id, user_id)
+
     def test_speech_with_user_id_in_body(self):
         url = reverse("gateway:speech")
         user_id = "testuser"
@@ -207,6 +235,76 @@ class TestUserId(GatewayIntegrationTestCase):
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
+        self.assertEqual(req.user_id, user_id)
+
+    def test_vector_stores_with_user_id_in_body(self):
+        url = reverse("gateway:vector_stores")
+        user_id = "testuser"
+        payload = {"name": "Test Store", "user_id": user_id}
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.get()
+        self.assertEqual(req.user_id, user_id)
+
+    def test_vector_store_search_with_user_id_in_body(self):
+        url = reverse("gateway:vector_store_search", kwargs={"vector_store_id": self.vs_id})
+        user_id = "testuser"
+        payload = {"query": "test query", "user_id": user_id}
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.filter(path__contains="search").last()
+        self.assertEqual(req.user_id, user_id)
+
+    def test_vector_store_files_with_user_id_in_body(self):
+        file_obj = FileObject.objects.create(
+            id="file-remote-123",
+            bytes=1,
+            created_at=42,
+            token=self.token,
+            purpose="user_data",
+            upstream_url="https://files-api.example.com",
+        )
+
+        url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": self.vs_id})
+        user_id = "testuser"
+        payload = {"file_id": file_obj.id, "user_id": user_id}
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.filter(path__contains="vector_stores").last()
+        self.assertEqual(req.user_id, user_id)
+
+    def test_vector_store_file_batches_with_user_id_in_body(self):
+        file_obj = FileObject.objects.create(
+            id="file-remote-123",
+            bytes=1,
+            created_at=42,
+            token=self.token,
+            purpose="user_data",
+            upstream_url="https://files-api.example.com",
+        )
+
+        url = reverse("gateway:vector_store_file_batches", kwargs={"vector_store_id": self.vs_id})
+        user_id = "testuser"
+        payload = {"file_ids": [file_obj.id], "user_id": user_id}
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.filter(path__contains="vector_stores").last()
         self.assertEqual(req.user_id, user_id)
 
     def test_valid_user_id_values(self):

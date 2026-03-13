@@ -19,7 +19,11 @@ from .errors import error_response
 
 
 class FileUpdateBody(TypedDict, total=False):
-    """Request body for updating a vector store file."""
+    """Request body for updating a vector store file.
+
+    This is a variant of `FileUpdateParams` but without `vector_store_id`,
+    which we add in the view.
+    """
 
     attributes: dict
 
@@ -34,7 +38,7 @@ async def vector_store_files(
     request: ASGIRequest,
     token: Token,
     vector_store_id: str,
-    pydantic_model: Optional[dict] = None,
+    pydantic_model: Optional[FileCreateParams] = None,
     *args,
     **kwargs,
 ):
@@ -183,7 +187,7 @@ async def vector_store_file(
     token: Token,
     vector_store_id: str,
     file_id: str,
-    pydantic_model: Optional[dict] = None,
+    pydantic_model: Optional[FileUpdateBody] = None,
     *args,
     **kwargs,
 ):

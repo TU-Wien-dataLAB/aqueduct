@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -64,7 +63,7 @@ async def vector_store_file_batches(
     request: ASGIRequest,
     token: Token,
     vector_store_id: str,
-    pydantic_model: Optional[dict] = None,
+    pydantic_model: FileBatchCreateParams,
     *args,
     **kwargs,
 ):

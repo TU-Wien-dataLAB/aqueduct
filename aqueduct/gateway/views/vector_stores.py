@@ -20,6 +20,7 @@ from gateway.config import get_files_api_client
 from management.models import Token, VectorStore
 
 from .decorators import (
+    catch_router_exceptions,
     log_request,
     parse_body,
     require_files_api_client,
@@ -35,6 +36,7 @@ from .errors import error_response
 @tos_accepted
 @parse_body(model=TypeAdapter(VectorStoreCreateParams))
 @log_request
+@catch_router_exceptions
 async def vector_stores(
     request: ASGIRequest, token: Token, pydantic_model: Optional[dict] = None, *args, **kwargs
 ):
@@ -122,22 +124,15 @@ async def vector_stores(
         return error_response(f"Vector store limit reached ({limit})", status=403)
 
     # Create on upstream
-    try:
-        create_kwargs = {"name": name}
-        if params.get("expires_after"):
-            create_kwargs["expires_after"] = params["expires_after"]
-        if params.get("chunking_strategy"):
-            create_kwargs["chunking_strategy"] = params["chunking_strategy"]
-        if params.get("metadata"):
-            create_kwargs["metadata"] = params["metadata"]
+    create_kwargs = {"name": name}
+    if params.get("expires_after"):
+        create_kwargs["expires_after"] = params["expires_after"]
+    if params.get("chunking_strategy"):
+        create_kwargs["chunking_strategy"] = params["chunking_strategy"]
+    if params.get("metadata"):
+        create_kwargs["metadata"] = params["metadata"]
 
-        remote_vs = await client.vector_stores.create(**create_kwargs)
-    except Exception as e:
-        return error_response(
-            f"Failed to create vector store on upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    remote_vs = await client.vector_stores.create(**create_kwargs)
 
     # Create local record with upstream ID
     now = timezone.now()
@@ -168,6 +163,7 @@ async def vector_stores(
 @parse_body(model=TypeAdapter(VectorStoreUpdateParams))
 @log_request
 @require_files_api_client
+@catch_router_exceptions
 async def vector_store(
     request: ASGIRequest,
     token: Token,
@@ -195,14 +191,7 @@ async def vector_store(
 
     if request.method == "GET":
         # Retrieve from upstream and sync status
-        try:
-            remote_vs = await vs_obj.areload_from_upstream(client)
-        except Exception as e:
-            return error_response(
-                f"Failed to retrieve vector store from upstream: {str(e)}",
-                error_type="server_error",
-                status=502,
-            )
+        remote_vs = await vs_obj.areload_from_upstream(client)
 
         # Return upstream response directly (ID already matches)
         response_data = remote_vs.model_dump(mode="json")
@@ -217,14 +206,7 @@ async def vector_store(
         modify_kwargs = {k: params[k] for k in updatable_fields if params.get(k)}
 
         if modify_kwargs:
-            try:
-                remote_vs = await client.vector_stores.update(vs_obj.id, **modify_kwargs)
-            except Exception as e:
-                return error_response(
-                    f"Failed to update vector store on upstream: {str(e)}",
-                    error_type="server_error",
-                    status=502,
-                )
+            remote_vs = await client.vector_stores.update(vs_obj.id, **modify_kwargs)
 
             # Update local record
             for field, value in modify_kwargs.items():
@@ -239,26 +221,12 @@ async def vector_store(
             return JsonResponse(response_data, status=200)
 
         # No changes requested, return current state
-        try:
-            remote_vs = await vs_obj.areload_from_upstream(client)
-            response_data = remote_vs.model_dump(mode="json")
-            return JsonResponse(response_data, status=200)
-        except Exception as e:
-            return error_response(
-                f"Failed to retrieve vector store from upstream: {str(e)}",
-                error_type="server_error",
-                status=502,
-            )
+        remote_vs = await vs_obj.areload_from_upstream(client)
+        response_data = remote_vs.model_dump(mode="json")
+        return JsonResponse(response_data, status=200)
 
     # DELETE /v1/vector_stores/{vector_store_id}
-    try:
-        await vs_obj.adelete_upstream(client)
-    except Exception as e:
-        return error_response(
-            f"Failed to delete vector store from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    await vs_obj.adelete_upstream(client)
 
     # Capture ID before delete (Django sets pk to None after delete)
     deleted_id = vs_obj.id
@@ -277,6 +245,7 @@ async def vector_store(
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
+@catch_router_exceptions
 async def vector_store_search(
     request: ASGIRequest, token: Token, vector_store_id: str, *args, **kwargs
 ):
@@ -322,14 +291,7 @@ async def vector_store_search(
         search_kwargs["rewrite_query"] = body["rewrite_query"]
 
     # Search on upstream
-    try:
-        search_results = await client.vector_stores.search(**search_kwargs)
-    except Exception as e:
-        return error_response(
-            f"Failed to search vector store on upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    search_results = await client.vector_stores.search(**search_kwargs)
 
     # Return upstream response directly (IDs already match)
     results_data = search_results.model_dump(mode="json")

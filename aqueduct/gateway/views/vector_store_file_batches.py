@@ -15,7 +15,13 @@ from pydantic import TypeAdapter
 from gateway.config import get_files_api_client
 from management.models import FileObject, Token, VectorStore, VectorStoreFile, VectorStoreFileBatch
 
-from .decorators import log_request, parse_body, token_authenticated, tos_accepted
+from .decorators import (
+    catch_router_exceptions,
+    log_request,
+    parse_body,
+    token_authenticated,
+    tos_accepted,
+)
 from .errors import error_response
 
 logger = logging.getLogger(__name__)
@@ -50,6 +56,7 @@ async def mark_orphaned_files(batch_obj, status: str, error_msg: str):
 @tos_accepted
 @parse_body(model=TypeAdapter(FileBatchCreateParams))
 @log_request
+@catch_router_exceptions
 async def vector_store_file_batches(
     request: ASGIRequest,
     token: Token,
@@ -116,14 +123,7 @@ async def vector_store_file_batches(
         create_kwargs["chunking_strategy"] = params["chunking_strategy"]
     if params.get("attributes"):
         create_kwargs["attributes"] = params["attributes"]
-    try:
-        remote_batch = await client.vector_stores.file_batches.create(**create_kwargs)
-    except Exception as e:
-        return error_response(
-            f"Failed to create file batch on upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    remote_batch = await client.vector_stores.file_batches.create(**create_kwargs)
 
     # Create local batch record with upstream ID
     now = timezone.now()
@@ -182,6 +182,7 @@ async def vector_store_file_batches(
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
+@catch_router_exceptions
 async def vector_store_file_batch(
     request: ASGIRequest, token: Token, vector_store_id: str, batch_id: str, *args, **kwargs
 ):
@@ -213,14 +214,7 @@ async def vector_store_file_batch(
         return error_response("File batch not found.", param="batch_id", status=404)
 
     # Retrieve from upstream and sync status
-    try:
-        remote_batch = await batch_obj.areload_from_upstream(client)
-    except Exception as e:
-        return error_response(
-            f"Failed to retrieve file batch from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    remote_batch = await batch_obj.areload_from_upstream(client)
 
     # Handle orphaned VectorStoreFile records when batch fails or is cancelled
     if batch_obj.status in ("failed", "cancelled"):
@@ -241,6 +235,7 @@ async def vector_store_file_batch(
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
+@catch_router_exceptions
 async def vector_store_file_batch_cancel(
     request: ASGIRequest, token: Token, vector_store_id: str, batch_id: str, *args, **kwargs
 ):
@@ -272,16 +267,9 @@ async def vector_store_file_batch_cancel(
         return error_response("File batch not found.", param="batch_id", status=404)
 
     # Cancel on upstream
-    try:
-        remote_batch = await client.vector_stores.file_batches.cancel(
-            vector_store_id=vs_obj.id, batch_id=batch_obj.id
-        )
-    except Exception as e:
-        return error_response(
-            f"Failed to cancel file batch on upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    remote_batch = await client.vector_stores.file_batches.cancel(
+        vector_store_id=vs_obj.id, batch_id=batch_obj.id
+    )
 
     # Update local record
     batch_obj.status = remote_batch.status or "cancelled"
@@ -305,6 +293,7 @@ async def vector_store_file_batch_cancel(
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
+@catch_router_exceptions
 async def vector_store_file_batch_files(
     request: ASGIRequest, token: Token, vector_store_id: str, batch_id: str, *args, **kwargs
 ):
@@ -336,16 +325,9 @@ async def vector_store_file_batch_files(
         return error_response("File batch not found.", param="batch_id", status=404)
 
     # Get files in batch from upstream
-    try:
-        remote_files_response = await client.vector_stores.file_batches.list_files(
-            vector_store_id=vs_obj.id, batch_id=batch_obj.id
-        )
-    except Exception as e:
-        return error_response(
-            f"Failed to retrieve file batch files from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    remote_files_response = await client.vector_stores.file_batches.list_files(
+        vector_store_id=vs_obj.id, batch_id=batch_obj.id
+    )
 
     # Return upstream response directly (IDs already match)
     remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []

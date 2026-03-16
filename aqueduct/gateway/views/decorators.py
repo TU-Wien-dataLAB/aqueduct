@@ -68,7 +68,13 @@ def token_authenticated(token_auth_only: bool):
                 token = await sync_to_async(Token.find_by_key)(token_key)
             else:
                 # user is authenticated but not via token -> take first token via Token.objects to use async ORM
-                token = await Token.objects.filter(user=request.user).afirst()
+                token = (
+                    await Token.objects.select_related(
+                        "user__profile__org", "service_account__team__org"
+                    )
+                    .filter(user=request.user)
+                    .afirst()
+                )
 
             if not token:
                 log.error("Token not found during authentication")

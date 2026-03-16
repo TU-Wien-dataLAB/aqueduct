@@ -894,19 +894,35 @@ def require_files_api_client(view_func):
     return wrapper
 
 
+def _lookup_relay_model_name(requested_model: str) -> str | None:
+    """Return upstream relay model for a configured deployment, else None."""
+    router = get_router()
+    if not router:
+        return requested_model
+
+    requested_model = resolve_model_alias(requested_model)
+    deployment: litellm.Deployment | None = router.get_deployment(model_id=requested_model)
+    if not deployment:
+        return None
+
+    litellm_params = getattr(deployment, "litellm_params", None)
+    deployment_model = getattr(litellm_params, "model", None)
+    if not deployment_model:
+        return None
+
+    relay_model, _, _, _ = litellm.get_llm_provider(deployment_model)
+    return relay_model
+
+
 def get_relay_model_name(requested_model: str) -> str:
     """
     Map a requested model name to the actual upstream model name.
 
     Uses the LiteLLM router configuration to find the deployment.
     """
-    router = get_router()
-    if not router:
+    relay_model = _lookup_relay_model_name(requested_model)
+    if relay_model is None:
         return requested_model
-
-    requested_model = resolve_model_alias(requested_model)
-    deployment: litellm.Deployment = router.get_deployment(model_id=requested_model)
-    relay_model, _, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
     return relay_model
 
 
@@ -921,6 +937,7 @@ def rewrite_batch_file_models(content: bytes) -> bytes:
     This function:
     1. Ensures custom_id is a string type (required by OpenAI Batch API)
     2. Replaces the model name in each request body with the actual upstream model name from the router configuration
+    3. Rejects unknown models with a ValueError that includes custom_id
     """
     lines = content.decode("utf-8").splitlines()
     rewritten_lines = []
@@ -933,7 +950,12 @@ def rewrite_batch_file_models(content: bytes) -> bytes:
             body = request.get("body", {})
             if "model" in body:
                 original_model = body["model"]
-                relay_model = get_relay_model_name(original_model)
+                relay_model = _lookup_relay_model_name(original_model)
+                if relay_model is None:
+                    custom_id = request.get("custom_id", "<missing custom_id>")
+                    raise ValueError(
+                        f"Unknown model '{original_model}' for custom_id '{custom_id}'"
+                    )
                 body["model"] = relay_model
                 request["body"] = body
             if "custom_id" in request:
@@ -991,7 +1013,10 @@ def process_batch_file(view_func):
 
         if purpose == "batch":
             kwargs["file_preview"] = extract_preview(content)
-            kwargs["file_content"] = rewrite_batch_file_models(content)
+            try:
+                kwargs["file_content"] = rewrite_batch_file_models(content)
+            except ValueError as e:
+                return error_response(f"Batch file validation failed: {str(e)}", status=400)
         else:
             kwargs["file_content"] = content
             kwargs["file_preview"] = ""

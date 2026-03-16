@@ -201,7 +201,7 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
 
 @csrf_exempt
 @require_POST
-@token_authenticated(token_auth_only=True)
+@token_authenticated(token_auth_only=False)
 @log_request
 async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs):
     """

@@ -17,6 +17,7 @@ from gateway.config import get_files_api_client
 from management.models import Batch, FileObject, Token
 
 from .decorators import (
+    catch_router_exceptions,
     log_request,
     parse_body,
     process_batch_file,
@@ -131,6 +132,7 @@ async def sync_batch_file_if_needed(
 @parse_body(model=TypeAdapter(FilesCreateParams))
 @process_batch_file
 @log_request
+@catch_router_exceptions
 async def files(
     request: ASGIRequest,
     token: Token,
@@ -241,6 +243,7 @@ async def files(
 @require_http_methods(["GET", "DELETE"])
 @token_authenticated(token_auth_only=True)
 @log_request
+@catch_router_exceptions
 async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
     """
     Retrieve or delete a specific file.
@@ -265,26 +268,14 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
 
     if request.method == "GET":
         # Fetch current status from upstream
-        try:
-            remote_file = await file_obj.areload_from_upstream(client)
-        except Exception as e:
-            return error_response(
-                f"Failed to retrieve file from upstream: {str(e)}",
-                error_type="server_error",
-                status=502,
-            )
+        remote_file = await file_obj.areload_from_upstream(client)
 
         # Return response with upstream ID (same as file_obj.id)
         response_data = remote_file.model_dump()
         return JsonResponse(response_data, status=200)
 
     # DELETE /files/{file_id}
-    try:
-        await file_obj.adelete_upstream(client)
-    except Exception as e:
-        return error_response(
-            f"Failed to delete file from upstream: {str(e)}", error_type="server_error", status=502
-        )
+    await file_obj.adelete_upstream(client)
 
     # Delete local record
     await sync_to_async(file_obj.delete)()
@@ -298,6 +289,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
 @require_GET
 @token_authenticated(token_auth_only=True)
 @log_request
+@catch_router_exceptions
 async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
     """
     Retrieve the content of a specific file.
@@ -320,14 +312,7 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
     except ValueError:
         return error_response("Files API not configured", status=503)
 
-    try:
-        # Returns HttpxBinaryResponseContent, use .content to get bytes
-        response = await client.files.content(file_obj.id)
-    except Exception as e:
-        return error_response(
-            f"Failed to retrieve file content from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    # Returns HttpxBinaryResponseContent, use .content to get bytes
+    response = await client.files.content(file_obj.id)
 
     return HttpResponse(response.content, content_type="application/octet-stream", status=200)

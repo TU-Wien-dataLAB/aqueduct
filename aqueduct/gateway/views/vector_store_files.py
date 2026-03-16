@@ -14,7 +14,13 @@ from pydantic import TypeAdapter
 from gateway.config import get_files_api_client
 from management.models import FileObject, Token, VectorStore, VectorStoreFile
 
-from .decorators import log_request, parse_body, token_authenticated, tos_accepted
+from .decorators import (
+    catch_router_exceptions,
+    log_request,
+    parse_body,
+    token_authenticated,
+    tos_accepted,
+)
 from .errors import error_response
 
 
@@ -30,6 +36,7 @@ class FileUpdateBody(TypedDict, total=False):
 @tos_accepted
 @parse_body(model=TypeAdapter(FileCreateParams))
 @log_request
+@catch_router_exceptions
 async def vector_store_files(
     request: ASGIRequest,
     token: Token,
@@ -60,15 +67,8 @@ async def vector_store_files(
 
     if request.method == "GET":
         # List files in vector store - return upstream data directly
-        try:
-            remote_files_response = await client.vector_stores.files.list(vector_store_id=vs_obj.id)
-            remote_files = (
-                remote_files_response.data if hasattr(remote_files_response, "data") else []
-            )
-        except Exception:
-            return error_response(
-                "Failed to retrieve files from upstream.", error_type="server_error", status=502
-            )
+        remote_files_response = await client.vector_stores.files.list(vector_store_id=vs_obj.id)
+        remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
 
         # Return upstream data directly (IDs already match)
         response_files = []
@@ -101,19 +101,12 @@ async def vector_store_files(
 
     # Create upstream file first, then atomically check the limit and insert locally.
     # If a concurrent request filled the last slot, we clean up the upstream file.
-    try:
-        create_kwargs = {"vector_store_id": vs_obj.id, "file_id": file_obj.id}
-        if params.get("chunking_strategy"):
-            create_kwargs["chunking_strategy"] = params["chunking_strategy"]
-        if params.get("attributes"):
-            create_kwargs["attributes"] = params["attributes"]
-        remote_vs_file = await client.vector_stores.files.create(**create_kwargs)
-    except Exception as e:
-        return error_response(
-            f"Failed to add file to vector store on upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    create_kwargs = {"vector_store_id": vs_obj.id, "file_id": file_obj.id}
+    if params.get("chunking_strategy"):
+        create_kwargs["chunking_strategy"] = params["chunking_strategy"]
+    if params.get("attributes"):
+        create_kwargs["attributes"] = params["attributes"]
+    remote_vs_file = await client.vector_stores.files.create(**create_kwargs)
 
     # Atomically check the file limit and create the local record.
     # If a concurrent request filled the last slot while the upstream call was in flight,
@@ -178,6 +171,7 @@ async def vector_store_files(
 @tos_accepted
 @parse_body(model=TypeAdapter(FileUpdateBody))
 @log_request
+@catch_router_exceptions
 async def vector_store_file(
     request: ASGIRequest,
     token: Token,
@@ -218,14 +212,7 @@ async def vector_store_file(
 
     if request.method == "GET":
         # Retrieve from upstream and sync status
-        try:
-            remote_vs_file = await vs_file_obj.areload_from_upstream(client)
-        except Exception as e:
-            return error_response(
-                f"Failed to retrieve vector store file from upstream: {str(e)}",
-                error_type="server_error",
-                status=502,
-            )
+        remote_vs_file = await vs_file_obj.areload_from_upstream(client)
 
         # Return upstream response directly (IDs already match)
         response_data = remote_vs_file.model_dump(mode="json")
@@ -245,14 +232,7 @@ async def vector_store_file(
                 "Missing required parameter: attributes", param="attributes", status=400
             )
 
-        try:
-            remote_vs_file = await client.vector_stores.files.update(**update_kwargs)
-        except Exception as e:
-            return error_response(
-                f"Failed to update file attributes on upstream: {str(e)}",
-                error_type="server_error",
-                status=502,
-            )
+        remote_vs_file = await client.vector_stores.files.update(**update_kwargs)
 
         # Return upstream response directly (IDs already match)
         response_data = remote_vs_file.model_dump(mode="json")
@@ -260,14 +240,7 @@ async def vector_store_file(
         return JsonResponse(response_data, status=200)
 
     # DELETE /v1/vector_stores/{vector_store_id}/files/{file_id}
-    try:
-        await vs_file_obj.adelete_upstream(client)
-    except Exception as e:
-        return error_response(
-            f"Failed to delete vector store file from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    await vs_file_obj.adelete_upstream(client)
 
     # Delete local record
     await sync_to_async(vs_file_obj.delete)()
@@ -283,6 +256,7 @@ async def vector_store_file(
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
+@catch_router_exceptions
 async def vector_store_file_content(
     request: ASGIRequest, token: Token, vector_store_id: str, file_id: str, *args, **kwargs
 ):
@@ -314,16 +288,9 @@ async def vector_store_file_content(
         return error_response("Vector store file not found.", param="file_id", status=404)
 
     # Get content from upstream
-    try:
-        content_response = await client.vector_stores.files.content(
-            vector_store_id=vs_obj.id, file_id=vs_file_obj.id
-        )
-    except Exception as e:
-        return error_response(
-            f"Failed to retrieve file content from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    content_response = await client.vector_stores.files.content(
+        vector_store_id=vs_obj.id, file_id=vs_file_obj.id
+    )
 
     # FileContentResponse and AsyncPage[FileContentResponse] are both Pydantic models
     response_data = content_response.model_dump()

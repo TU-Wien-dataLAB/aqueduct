@@ -636,7 +636,7 @@ def catch_router_exceptions(view_func):
             return _exception_response(e, status=400)
         except Exception as e:
             log.error(f"Unexpected error - {_r(e)}")
-            return error_response(_r(e), status=500)
+            return error_response(_r(e), error_type="server_error", status=502)
 
     return wrapper
 

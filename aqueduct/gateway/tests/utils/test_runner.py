@@ -62,7 +62,7 @@ class MockServerTestRunner(DiscoverRunner):
             _shared_mock_server = MockAPIServer(host="localhost", delays=False)
             try:
                 _shared_mock_server.start()
-                logger.info(f"✓ Mock server started on {_shared_mock_server.base_url}.")
+                print(f"✓ Mock server started on {_shared_mock_server.base_url}.")
             except RuntimeError as err:
                 logger.error(f"✗ Failed to start mock server: {err}")
                 raise

@@ -1,4 +1,3 @@
-import json
 from typing import Optional
 
 from asgiref.sync import sync_to_async
@@ -11,6 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from openai import AsyncOpenAI
 from openai.types import VectorStore as OpenAIVectorStore
+from openai.types import VectorStoreSearchParams
 from openai.types.vector_store import FileCounts as VectorStoreFileCounts
 from openai.types.vector_store_create_params import VectorStoreCreateParams
 from openai.types.vector_store_update_params import VectorStoreUpdateParams
@@ -38,7 +38,11 @@ from .errors import error_response
 @log_request
 @catch_router_exceptions
 async def vector_stores(
-    request: ASGIRequest, token: Token, pydantic_model: Optional[dict] = None, *args, **kwargs
+    request: ASGIRequest,
+    token: Token,
+    pydantic_model: Optional[VectorStoreCreateParams] = None,
+    *args,
+    **kwargs,
 ):
     """
     GET /v1/vector_stores - List vector stores
@@ -168,7 +172,7 @@ async def vector_store(
     request: ASGIRequest,
     token: Token,
     vector_store_id: str,
-    pydantic_model: Optional[dict] = None,
+    pydantic_model: Optional[VectorStoreUpdateParams] = None,
     client: Optional[AsyncOpenAI] = None,
     *args,
     **kwargs,
@@ -244,10 +248,17 @@ async def vector_store(
 @require_POST
 @token_authenticated(token_auth_only=True)
 @tos_accepted
+@parse_body(model=TypeAdapter(VectorStoreSearchParams))
 @log_request
+@require_files_api_client
 @catch_router_exceptions
 async def vector_store_search(
-    request: ASGIRequest, token: Token, vector_store_id: str, *args, **kwargs
+    request: ASGIRequest,
+    token: Token,
+    vector_store_id: str,
+    pydantic_model: VectorStoreSearchParams,
+    *args,
+    **kwargs,
 ):
     """
     POST /v1/vector_stores/{vector_store_id}/search - Search vector store
@@ -267,31 +278,8 @@ async def vector_store_search(
     except VectorStore.DoesNotExist:
         return error_response("Vector store not found.", param="vector_store_id", status=404)
 
-    # Get search parameters from request body
-    try:
-        body = json.loads(request.body) if request.body else {}
-    except json.JSONDecodeError:
-        return error_response("Invalid JSON in request body", param="body", status=400)
-
-    query = body.get("query")
-    if not query:
-        return error_response("Missing required parameter: query", param="query", status=400)
-
-    # Prepare search kwargs
-    search_kwargs = {"vector_store_id": vs_obj.id, "query": query}
-
-    # Add optional parameters
-    if body.get("filters"):
-        search_kwargs["filters"] = body["filters"]
-    if body.get("max_num_results"):
-        search_kwargs["max_num_results"] = body["max_num_results"]
-    if body.get("min_score"):
-        search_kwargs["min_score"] = body["min_score"]
-    if body.get("rewrite_query"):
-        search_kwargs["rewrite_query"] = body["rewrite_query"]
-
     # Search on upstream
-    search_results = await client.vector_stores.search(**search_kwargs)
+    search_results = await client.vector_stores.search(vector_store_id=vs_obj.id, **pydantic_model)
 
     # Return upstream response directly (IDs already match)
     results_data = search_results.model_dump(mode="json")

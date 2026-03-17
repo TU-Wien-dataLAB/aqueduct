@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import logging.config
 import os
 import random
@@ -47,6 +46,11 @@ logger = logging.getLogger("fastapi")
 
 
 delays_enabled = os.getenv("MOCK_API_DELAYS", "false").lower() == "true"
+
+
+class MockException(HTTPException):
+    """Raised to simulate an exception while calling the external API."""
+
 
 app = FastAPI(debug=True)
 
@@ -118,6 +122,7 @@ async def mock_endpoint(path: str, request: Request):
                 raise ValueError(f"No mocks configured for request method {request.method}")
             config = _find_config_for_path(path, config_dict)
     except KeyError:
+        # print(f"\n\nNo mock configured for this endpoint: {path}", request.method, "\n")
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND, detail=f"No mock configured for this endpoint: {path}"
         )

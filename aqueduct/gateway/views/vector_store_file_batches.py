@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -13,7 +12,15 @@ from openai.types.vector_stores.file_batch_create_params import FileBatchCreateP
 from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
-from management.models import FileObject, Token, VectorStore, VectorStoreFile, VectorStoreFileBatch
+from management.models import (
+    FileObject,
+    Token,
+    VectorStore,
+    VectorStoreFile,
+    VectorStoreFileBatch,
+    VectorStoreFileBatchStatus,
+    VectorStoreFileStatus,
+)
 
 from .decorators import (
     catch_router_exceptions,
@@ -27,7 +34,9 @@ from .errors import error_response
 logger = logging.getLogger(__name__)
 
 
-async def mark_orphaned_files(batch_obj, status: str, error_msg: str):
+async def mark_orphaned_files(
+    batch_obj: VectorStoreFileBatch, status: VectorStoreFileStatus, error_msg: str
+):
     """Mark in-progress files in a batch as failed when the batch fails or is cancelled.
 
     Args:
@@ -36,7 +45,7 @@ async def mark_orphaned_files(batch_obj, status: str, error_msg: str):
         error_msg: The error message to set on orphaned files.
     """
     orphaned_files = await sync_to_async(list)(
-        VectorStoreFile.objects.filter(batch=batch_obj, status="in_progress")
+        VectorStoreFile.objects.filter(batch=batch_obj, status=VectorStoreFileStatus.IN_PROGRESS)
     )
     if orphaned_files:
 
@@ -61,7 +70,7 @@ async def vector_store_file_batches(
     request: ASGIRequest,
     token: Token,
     vector_store_id: str,
-    pydantic_model: Optional[dict] = None,
+    pydantic_model: FileBatchCreateParams,
     *args,
     **kwargs,
 ):
@@ -130,16 +139,18 @@ async def vector_store_file_batches(
     batch_obj = VectorStoreFileBatch(
         id=remote_batch.id,
         vector_store=vs_obj,
-        status=remote_batch.status or "in_progress",
-        file_counts=remote_batch.file_counts.model_dump(mode="json")
-        if hasattr(remote_batch, "file_counts") and remote_batch.file_counts
-        else {
-            "total": len(file_ids),
-            "completed": 0,
-            "failed": 0,
-            "in_progress": len(file_ids),
-            "cancelled": 0,
-        },
+        status=remote_batch.status or VectorStoreFileBatchStatus.IN_PROGRESS,
+        file_counts=(
+            remote_batch.file_counts.model_dump(mode="json")
+            if hasattr(remote_batch, "file_counts") and remote_batch.file_counts
+            else {
+                "total": len(file_ids),
+                "completed": 0,
+                "failed": 0,
+                "in_progress": len(file_ids),
+                "cancelled": 0,
+            }
+        ),
         created_at=int(now.timestamp()),
     )
     await sync_to_async(batch_obj.save)()
@@ -159,7 +170,7 @@ async def vector_store_file_batches(
                     vector_store=vs_obj,
                     file_obj=file_obj,
                     batch=batch_obj,
-                    status="in_progress",
+                    status=VectorStoreFileStatus.IN_PROGRESS,
                     usage_bytes=0,
                     created_at=int(now.timestamp()),
                 )
@@ -217,10 +228,13 @@ async def vector_store_file_batch(
     remote_batch = await batch_obj.areload_from_upstream(client)
 
     # Handle orphaned VectorStoreFile records when batch fails or is cancelled
-    if batch_obj.status in ("failed", "cancelled"):
+    if batch_obj.status in (
+        VectorStoreFileBatchStatus.FAILED,
+        VectorStoreFileBatchStatus.CANCELLED,
+    ):
         await mark_orphaned_files(
             batch_obj,
-            status="failed",
+            status=VectorStoreFileStatus.FAILED,
             error_msg=f"Batch {batch_obj.status}: files were not processed",
         )
 
@@ -272,14 +286,16 @@ async def vector_store_file_batch_cancel(
     )
 
     # Update local record
-    batch_obj.status = remote_batch.status or "cancelled"
+    batch_obj.status = remote_batch.status or VectorStoreFileBatchStatus.CANCELLED
     if hasattr(remote_batch, "file_counts") and remote_batch.file_counts:
         batch_obj.file_counts = remote_batch.file_counts.model_dump(mode="json")
     await sync_to_async(batch_obj.save)()
 
     # Handle orphaned VectorStoreFile records when batch is cancelled
     await mark_orphaned_files(
-        batch_obj, status="failed", error_msg="Batch cancelled: files were not processed"
+        batch_obj,
+        status=VectorStoreFileStatus.CANCELLED,
+        error_msg="Batch cancelled: files were not processed",
     )
 
     # Return upstream response directly (IDs already match)

@@ -1,21 +1,18 @@
 import json
 from http import HTTPStatus
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
-from urllib.parse import urlparse
+from unittest.mock import patch
 
-import httpx
-from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
-from openai.types import ImagesResponse
-from openai.types.audio import Transcription
+from mcp import JSONRPCResponse
+from mcp.shared.message import SessionMessage
+from mcp.types import JSONRPCMessage
 
-from gateway.tests.utils.base import get_mock_router
-from gateway.tests.utils.mcp import MCPLiveServerTestCase
-from management.models import Request
+from gateway.tests.utils.base import GatewayIntegrationTestCase
+from management.models import FileObject, Request, Token, VectorStore, VectorStoreStatus
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
@@ -26,45 +23,29 @@ ROOT_DIR = Path(__file__).parent.parent.parent.parent
     AQUEDUCT_FILES_API_URL="https://files-api.example.com",
     AQUEDUCT_FILES_API_KEY="test_key",
 )
-class TestUserId(MCPLiveServerTestCase):
+class TestUserId(GatewayIntegrationTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.AQUEDUCT_ACCESS_TOKEN = "sk-123abc"
-        cls.model = "test-model"
         cls.multipart_headers = {"Authorization": f"Bearer {cls.AQUEDUCT_ACCESS_TOKEN}"}
-
-    @patch("gateway.views.batches.get_files_api_client")
-    def test_batches_with_user_id(self, mock_get_files_client):
-        from management.models import FileObject, Request, Token
-
-        # Create mock batch response
-        mock_batch = MagicMock()
-        mock_batch.id = "batch-mock-123"
-        mock_batch.status = "in_progress"
-        mock_batch.input_file_id = "file-remote-123"
-        mock_batch.request_counts = MagicMock()
-        mock_batch.request_counts.model_dump = MagicMock(return_value={})
-        mock_batch.expires_at = None
-        mock_batch.model_dump = MagicMock(
-            return_value={
-                "id": mock_batch.id,
-                "status": mock_batch.status,
-                "input_file_id": mock_batch.input_file_id,
-                "request_counts": {},
-            }
+        cls.token = Token.objects.first()
+        cls.vs_obj = VectorStore.objects.create(
+            id="vs-mock-123",
+            token=cls.token,
+            name="Test Store",
+            status=VectorStoreStatus.COMPLETED,
+            usage_bytes=0,
+            created_at=42,
+            upstream_url=settings.AQUEDUCT_FILES_API_URL,
         )
+        cls.vs_id = cls.vs_obj.id
 
-        mock_client = MagicMock()
-        mock_client.batches.create = AsyncMock(return_value=mock_batch)
-        mock_get_files_client.return_value = mock_client
-
-        token = Token.objects.first()
+    def test_batches_with_user_id(self):
         file_obj = FileObject.objects.create(
             id="file-remote-123",
             bytes=1,
             created_at=42,
-            token=token,
+            token=self.token,
             purpose="batch",
             upstream_url=settings.AQUEDUCT_FILES_API_URL,
         )
@@ -90,10 +71,9 @@ class TestUserId(MCPLiveServerTestCase):
         url = reverse("gateway:completions")
         user_id = "testuser"
         payload = {"model": self.model, "prompt": "Hello", "user_id": user_id}
-        with patch("gateway.views.completions.get_router", return_value=get_mock_router()):
-            resp = self.client.post(
-                url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
-            )
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.last()
@@ -113,10 +93,9 @@ class TestUserId(MCPLiveServerTestCase):
             "user_id": user_id,
         }
 
-        with patch("gateway.views.chat_completions.get_router", return_value=get_mock_router()):
-            resp = self.client.post(
-                url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
-            )
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
@@ -131,26 +110,15 @@ class TestUserId(MCPLiveServerTestCase):
             "user_id": user_id,
         }
 
-        with patch("gateway.views.embeddings.get_router", return_value=get_mock_router()):
-            resp = self.client.post(
-                url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
-            )
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
         self.assertEqual(req.user_id, user_id)
 
-    @patch("gateway.views.files.get_files_api_client")
-    def test_file_upload_with_user_id(self, mock_get_files_client):
-        # Setup mock for file upload
-        mock_remote_file = MagicMock()
-        mock_remote_file.id = "file-mock-remote-123"
-        mock_remote_file.expires_at = None
-
-        mock_client = MagicMock()
-        mock_client.files.create = AsyncMock(return_value=mock_remote_file)
-        mock_get_files_client.return_value = mock_client
-
+    def test_file_upload_with_user_id(self):
         url = reverse("gateway:files")
         user_id = "testuser"
         file = SimpleUploadedFile(
@@ -175,23 +143,23 @@ class TestUserId(MCPLiveServerTestCase):
             "user_id": user_id,
         }
 
-        mock_client = AsyncMock()
-        mock_client.images.generate.return_value = ImagesResponse(created=12345)
-
-        with patch("gateway.views.utils.get_openai_client", return_value=mock_client):
-            resp = self.client.post(
-                url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
-            )
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
         self.assertEqual(req.user_id, user_id)
 
-    async def test_mcp_with_user_id_in_body(self):
+    @override_settings(MCP_ENABLE_DNS_REBINDING_PROTECTION=False)
+    @patch("gateway.views.mcp.get_mcp_config")
+    def test_mcp_with_user_id_in_body(self, mock_get_mcp_config):
+        mock_get_mcp_config.return_value = {"test_mcp_server": {"url": self.mock_server.base_url}}
+
         user_id = "testuser"
         payload = {
             "jsonrpc": "2.0",
-            "id": 1,
+            "id": 0,
             "method": "initialize",
             "params": {
                 "protocolVersion": "2025-06-18",
@@ -200,21 +168,44 @@ class TestUserId(MCPLiveServerTestCase):
             },
             "user_id": user_id,
         }
-        parsed_url = urlparse(self.live_server_url)
-        valid_host = parsed_url.netloc
-        headers = {"Host": valid_host, **self.headers}
+        mcp_url = reverse("gateway:mcp_server", kwargs={"name": "test_mcp_server"})
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(self.mcp_url, json=payload, headers=headers)
+        mock_msg = SessionMessage(
+            message=JSONRPCMessage(JSONRPCResponse(jsonrpc="2.0", id=0, result={"test": "yes"}))
+        )
+        with patch("gateway.views.mcp.ManagedMCPSession.receive_message", return_value=mock_msg):
+            resp = self.client.post(
+                mcp_url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
+            )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        req = Request.objects.get()
+        self.assertEqual(req.user_id, user_id)
+
+    def test_responses_with_user_id_in_body(self):
+        url = reverse("gateway:responses")
+        user_id = "testuser"
+        payload = {
+            "model": self.model,
+            "input": [{"role": "user", "content": "Hello, how are you?"}],
+            "max_output_tokens": 50,
+            "user_id": user_id,
+        }
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
-        req = await sync_to_async(Request.objects.get)()
+        req = Request.objects.get()
         self.assertEqual(req.user_id, user_id)
 
     def test_speech_with_user_id_in_body(self):
         url = reverse("gateway:speech")
         user_id = "testuser"
-
         payload = {
             "model": self.model,
             "input": "Hello, this is a test of the text-to-speech system.",
@@ -223,10 +214,9 @@ class TestUserId(MCPLiveServerTestCase):
             "user_id": user_id,
         }
 
-        with patch("gateway.views.speech.get_router", return_value=get_mock_router()):
-            resp = self.client.post(
-                url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
-            )
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK)
         req = Request.objects.get()
@@ -237,20 +227,84 @@ class TestUserId(MCPLiveServerTestCase):
         user_id = "testuser"
         file = SimpleUploadedFile("test.oga", b"", content_type="audio/ogg")
 
-        mock_client = AsyncMock()
-        mock_client.audio.transcriptions.create.return_value = Transcription(
-            text="How much is the fish?"
+        resp = self.client.post(
+            url,
+            {"file": file, "model": "whisper-1", "user_id": user_id},
+            headers=self.multipart_headers,
         )
-
-        with patch("gateway.views.utils.get_openai_client", return_value=mock_client):
-            resp = self.client.post(
-                url,
-                {"file": file, "model": "whisper-1", "user_id": user_id},
-                headers=self.multipart_headers,
-            )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
+        self.assertEqual(req.user_id, user_id)
+
+    def test_vector_stores_with_user_id_in_body(self):
+        url = reverse("gateway:vector_stores")
+        user_id = "testuser"
+        payload = {"name": "Test Store", "user_id": user_id}
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.get()
+        self.assertEqual(req.user_id, user_id)
+
+    def test_vector_store_search_with_user_id_in_body(self):
+        url = reverse("gateway:vector_store_search", kwargs={"vector_store_id": self.vs_id})
+        user_id = "testuser"
+        payload = {"query": "test query", "user_id": user_id}
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.filter(path__contains="search").last()
+        self.assertEqual(req.user_id, user_id)
+
+    def test_vector_store_files_with_user_id_in_body(self):
+        file_obj = FileObject.objects.create(
+            id="file-remote-123",
+            bytes=1,
+            created_at=42,
+            token=self.token,
+            purpose="user_data",
+            upstream_url="https://files-api.example.com",
+        )
+
+        url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": self.vs_id})
+        user_id = "testuser"
+        payload = {"file_id": file_obj.id, "user_id": user_id}
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.filter(path__contains="vector_stores").last()
+        self.assertEqual(req.user_id, user_id)
+
+    def test_vector_store_file_batches_with_user_id_in_body(self):
+        file_obj = FileObject.objects.create(
+            id="file-remote-123",
+            bytes=1,
+            created_at=42,
+            token=self.token,
+            purpose="user_data",
+            upstream_url="https://files-api.example.com",
+        )
+
+        url = reverse("gateway:vector_store_file_batches", kwargs={"vector_store_id": self.vs_id})
+        user_id = "testuser"
+        payload = {"file_ids": [file_obj.id], "user_id": user_id}
+
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
+        req = Request.objects.filter(path__contains="vector_stores").last()
         self.assertEqual(req.user_id, user_id)
 
     def test_valid_user_id_values(self):
@@ -265,10 +319,9 @@ class TestUserId(MCPLiveServerTestCase):
         for i, user_id in enumerate(user_ids):
             with self.subTest(user_id=user_id, i=i):
                 data = json.dumps({"model": self.model, "prompt": "Hello", "user_id": user_id})
-                with patch("gateway.views.completions.get_router", return_value=get_mock_router()):
-                    resp = self.client.post(
-                        url, data=data, headers=self.headers, content_type="application/json"
-                    )
+                resp = self.client.post(
+                    url, data=data, headers=self.headers, content_type="application/json"
+                )
 
                 self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
                 self.assertIsNotNone(Request.objects.filter(user_id=user_id))

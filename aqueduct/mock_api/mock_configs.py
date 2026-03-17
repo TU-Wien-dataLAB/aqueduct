@@ -1,13 +1,16 @@
 import json
-from datetime import datetime
+from datetime import timedelta
 from typing import Any
 
+from django.conf import settings
+from django.utils import timezone
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse, Usage
 from openai.pagination import AsyncCursorPage
 from openai.types import (
     Batch,
     BatchRequestCounts,
     Embedding,
+    FileDeleted,
     FileObject,
     Image,
     ImagesResponse,
@@ -192,8 +195,12 @@ default_post_configs = {
             filename="test.jsonl",
             bytes=100,
             purpose="batch",
-            created_at=int(datetime.now().timestamp()),
-            expires_at=None,
+            created_at=int(timezone.now().timestamp()),
+            expires_at=int(
+                (
+                    timezone.now() + timedelta(days=settings.AQUEDUCT_FILES_API_EXPIRY_DAYS)
+                ).timestamp()
+            ),
             status="processed",
             status_details=None,
             object="file",
@@ -545,6 +552,27 @@ default_get_configs = {
             status="validating",
         ).model_dump()
     ),
+    "files/id": MockConfig(
+        response_data=FileObject(
+            id="file-mock-123",
+            filename="test.jsonl",
+            bytes=100,
+            purpose="batch",
+            created_at=1741476542,
+            expires_at=None,
+            status="processed",
+            status_details=None,
+            object="file",
+        ).model_dump()
+    ),
+    "files/id/content": MockStreamingConfig(
+        response_data=[
+            b'{"custom_id": "bar"}\n',
+            b'{"custom_id": "123"}\n',
+            b'{"custom_id": "baz"}\n',
+            b'{"custom_id": "1234"}\n',
+        ]
+    ),
     "responses/id": MockConfig(
         response_data=Response(
             **_response_basic_data,
@@ -666,12 +694,15 @@ default_get_configs = {
             vector_store_id="vs-mock-123",
         ).model_dump()
     ),
-    "vector_stores/id/files/id/content": MockConfig(  # TODO!
+    "vector_stores/id/files/id/content": MockConfig(
         response_data=FileContentResponse(text="Test file content", type="text").model_dump()
     ),
 }
 
 default_delete_configs = {
+    "files/id": MockConfig(
+        response_data=FileDeleted(id="file-mock-123", deleted=True, object="file").model_dump()
+    ),
     "responses/id": MockConfig(response_data=None),
     "vector_stores/id": MockConfig(
         response_data={"id": "vs-mock-123", "object": "vector_store.deleted", "deleted": True}

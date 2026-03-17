@@ -5,6 +5,7 @@ from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.cache import caches
 from django.http import JsonResponse
+from django.test import override_settings
 from django.urls import reverse
 
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
@@ -136,16 +137,6 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         Verifies that the endpoint returns a streaming response with proper format
         and logs the request to the database.
         """
-
-        # Authenticate async client
-        await sync_to_async(
-            lambda: self.async_client.force_login(
-                User.objects.get_or_create(username="Me", email="me@example.com")[0]
-            )
-        )()
-
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-
         # Streaming request payload
         payload = {
             "model": self.model,
@@ -155,7 +146,10 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         }
 
         response = await self.async_client.post(
-            self.url, data=json.dumps(payload), headers=headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
@@ -226,7 +220,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         # Test GET response endpoint for streaming response
         response_url = reverse("gateway:v1_response", kwargs={"response_id": response_id})
 
-        get_response = await self.async_client.get(response_url, headers=headers)
+        get_response = await self.async_client.get(response_url, headers=self.headers)
 
         self.assertEqual(
             get_response.status_code,
@@ -241,7 +235,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         # Test GET response input_items endpoint for streaming response
         input_items_response = await self.async_client.get(
             reverse("gateway:v1_response_input_items", kwargs={"response_id": response_id}),
-            headers=headers,
+            headers=self.headers,
         )
         self.assertEqual(
             input_items_response.status_code,
@@ -255,7 +249,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertIsInstance(input_items_data["data"], list)
 
         # Test DELETE response endpoint for streaming response
-        delete_response = await self.async_client.delete(response_url, headers=headers)
+        delete_response = await self.async_client.delete(response_url, headers=self.headers)
         self.assertEqual(
             delete_response.status_code,
             200,
@@ -264,7 +258,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         )
 
         # Verify streaming response is deleted - GET should now return 404
-        verify_get_response = await self.async_client.get(response_url, headers=headers)
+        verify_get_response = await self.async_client.get(response_url, headers=self.headers)
         self.assertEqual(
             verify_get_response.status_code,
             404,
@@ -273,24 +267,21 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         )
 
     def test_get_response_invalid_id(self):
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        response = self.client.get("/v1/responses/invalid-id", headers=headers)
+        response = self.client.get("/v1/responses/invalid-id", headers=self.headers)
         self.assertEqual(
             response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
         )
 
     def test_delete_response_invalid_id(self):
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        response = self.client.delete("/v1/responses/invalid-id", headers=headers)
+        response = self.client.delete("/v1/responses/invalid-id", headers=self.headers)
         self.assertEqual(
             response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
         )
 
     def test_input_items_response_invalid_id(self):
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         response = self.client.get(
             reverse("gateway:v1_response_input_items", kwargs={"response_id": "invalid-id"}),
-            headers=headers,
+            headers=self.headers,
         )
         self.assertEqual(
             response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}"
@@ -302,84 +293,66 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         Tests both GET, DELETE and input_items endpoints.
         Follows the flow: user1 creates response -> user1 accesses -> user2 tries and fails
         """
-        # Mock OpenAI client for response creation
-        with patch("gateway.views.utils.get_openai_client") as mock_client:
-            mock_openai_client = AsyncMock()
+        response_id = "resp_test123"
+        register_response_in_cache(response_id, model=self.model, email="me@example.com")
 
-            response_id = "resp_test123"
-            register_response_in_cache(response_id, model=self.model, email="me@example.com")
+        # Step 1: User1 (me@example.com) can access their own response
+        headers_me = self.headers
 
-            # Mock response for retrieve/delete/input_items
-            mock_retrieve_response = MagicMock()
-            mock_retrieve_response.model_dump.return_value = {
-                "id": "resp_test123",
-                "status": "completed",
-            }
-            mock_openai_client.responses.retrieve.return_value = mock_retrieve_response
-            mock_openai_client.responses.delete.return_value = mock_retrieve_response
-            mock_openai_client.responses.input_items.list.return_value = mock_retrieve_response
+        # Step 2: User1 can access their own response
+        response_url = reverse("gateway:v1_response", kwargs={"response_id": response_id})
+        get_response_me = self.client.get(response_url, headers=headers_me)
+        self.assertEqual(
+            get_response_me.status_code,
+            200,
+            f"User me@example.com should access their own response, got "
+            f"{get_response_me.status_code}",
+        )
 
-            mock_client.return_value = mock_openai_client
+        # Step 3: User2 (someone@example.com) cannot access User1's response
+        # Create a token for someone@example.com
+        user_someone = User.objects.get(email="someone@example.com")
+        token_someone = Token(name="TestToken", user=user_someone)
+        token_someone_key = token_someone._set_new_key()
+        token_someone.save()
 
-            # Step 1: User1 (me@example.com) can access their own response
-            headers_me = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        headers_someone = _build_chat_headers(token_someone_key)
 
-            # Step 2: User1 can access their own response
-            response_url = reverse("gateway:v1_response", kwargs={"response_id": response_id})
-            get_response_me = self.client.get(response_url, headers=headers_me)
-            self.assertEqual(
-                get_response_me.status_code,
-                200,
-                f"User me@example.com should access their own response, got "
-                f"{get_response_me.status_code}",
-            )
+        # Test GET endpoint isolation
+        get_response_someone = self.client.get(response_url, headers=headers_someone)
+        self.assertEqual(
+            get_response_someone.status_code,
+            404,
+            f"User someone@example.com should not access me@example.com's response, "
+            f"got {get_response_someone.status_code}",
+        )
 
-            # Step 3: User2 (someone@example.com) cannot access User1's response
-            # Create a token for someone@example.com
-            user_someone = User.objects.get(email="someone@example.com")
-            token_someone = Token(name="TestToken", user=user_someone)
-            token_someone_key = token_someone._set_new_key()
-            token_someone.save()
+        # Test DELETE endpoint isolation
+        delete_response_someone = self.client.delete(response_url, headers=headers_someone)
+        self.assertEqual(
+            delete_response_someone.status_code,
+            404,
+            f"User someone@example.com should not delete me@example.com's response, "
+            f"got {delete_response_someone.status_code}",
+        )
 
-            headers_someone = _build_chat_headers(token_someone_key)
+        # Test input_items endpoint isolation
+        input_items_response = self.client.get(
+            reverse("gateway:v1_response_input_items", kwargs={"response_id": response_id}),
+            headers=headers_someone,
+        )
+        self.assertEqual(
+            input_items_response.status_code,
+            404,
+            f"User someone@example.com should not access me@example.com's input_items, "
+            f"got {input_items_response.status_code}",
+        )
 
-            # Test GET endpoint isolation
-            get_response_someone = self.client.get(response_url, headers=headers_someone)
-            self.assertEqual(
-                get_response_someone.status_code,
-                404,
-                f"User someone@example.com should not access me@example.com's response, "
-                f"got {get_response_someone.status_code}",
-            )
-
-            # Test DELETE endpoint isolation
-            delete_response_someone = self.client.delete(response_url, headers=headers_someone)
-            self.assertEqual(
-                delete_response_someone.status_code,
-                404,
-                f"User someone@example.com should not delete me@example.com's response, "
-                f"got {delete_response_someone.status_code}",
-            )
-
-            # Test input_items endpoint isolation
-            input_items_response = self.client.get(
-                reverse("gateway:v1_response_input_items", kwargs={"response_id": response_id}),
-                headers=headers_someone,
-            )
-            self.assertEqual(
-                input_items_response.status_code,
-                404,
-                f"User someone@example.com should not access me@example.com's input_items, "
-                f"got {input_items_response.status_code}",
-            )
-
-            # Clean up - User1 should be able to delete their own response
-            delete_response_me = self.client.delete(response_url, headers=headers_me)
-            self.assertEqual(
-                delete_response_me.status_code,
-                200,
-                "User1 should be able to delete their own response",
-            )
+        # Clean up - User1 should be able to delete their own response
+        delete_response_me = self.client.delete(response_url, headers=headers_me)
+        self.assertEqual(
+            delete_response_me.status_code, 200, "User1 should be able to delete their own response"
+        )
 
 
 class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
@@ -562,14 +535,13 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         data = json.loads(result.content)
         self.assertIn("MCP server not found", data["error"]["message"])
 
-    @patch("gateway.views.decorators.settings")
-    async def test_check_tool_availability_invalid_tool_type(self, mock_settings):
+    @override_settings(RESPONSES_API_ALLOWED_NATIVE_TOOLS=["allowed_tool"])
+    async def test_check_tool_availability_invalid_tool_type(self):
         """
         Test check_tool_availability decorator with invalid tool type.
         Should return 400 error.
         """
         mock_view_func = AsyncMock()
-        mock_settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS = ["allowed_tool"]
 
         request = AsyncMock()
         response_id = "test_response_id"
@@ -591,15 +563,14 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         data = json.loads(result.content)
         self.assertEqual(data["error"]["message"], "Invalid tool type: invalid_tool_type")
 
-    @patch("gateway.views.decorators.settings")
-    async def test_check_tool_availability_allowed_native_tool(self, mock_settings):
+    @override_settings(RESPONSES_API_ALLOWED_NATIVE_TOOLS=["allowed_native_tool"])
+    async def test_check_tool_availability_allowed_native_tool(self):
         """
         Test check_tool_availability decorator with allowed native tool type.
         Should successfully call the decorated function.
         """
         mock_view_func = AsyncMock()
         mock_view_func.return_value = JsonResponse({"result": "success"})
-        mock_settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS = ["allowed_native_tool"]
 
         request = AsyncMock()
         response_id = "test_response_id"

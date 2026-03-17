@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from openai import AsyncOpenAI
+from openai.types.file_create_params import FileCreateParams as OpenAIFileCreateParams
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from gateway.config import get_files_api_client
@@ -30,6 +31,7 @@ from .errors import error_response
 class FilesCreateParams(BaseModel):
     file: bytes
     purpose: Literal["assistants", "batch", "user_data"]
+    # IO[bytes] requires arbitrary_types_allowed for model settings
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -136,7 +138,7 @@ async def sync_batch_file_if_needed(
 async def files(
     request: ASGIRequest,
     token: Token,
-    pydantic_model: Optional[dict] = None,
+    pydantic_model: Optional[OpenAIFileCreateParams] = None,
     file_content: Optional[bytes] = None,
     file_preview: Optional[str] = None,
     *args,
@@ -281,7 +283,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
     await sync_to_async(file_obj.delete)()
 
     # Return response with upstream ID
-    response_data = {"id": file_obj.id, "object": "file", "deleted": True}
+    response_data = {"id": file_id, "object": "file", "deleted": True}
     return JsonResponse(response_data, status=200)
 
 

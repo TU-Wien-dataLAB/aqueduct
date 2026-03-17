@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import logging.config
 import os
 import random
@@ -12,7 +11,6 @@ from starlette.status import HTTP_404_NOT_FOUND
 
 from mock_api.mock_configs import (
     MockConfig,
-    MockExceptionConfig,
     MockPlainTextConfig,
     MockStreamingConfig,
     default_delete_configs,
@@ -136,9 +134,7 @@ async def mock_endpoint(path: str, request: Request):
         logger.debug("Adding %.2fs delay to request", delay)
         await asyncio.sleep(delay)
 
-    if isinstance(config, MockExceptionConfig):
-        raise MockException(status_code=config.status_code, detail=config.response_data)
-    elif isinstance(config, MockStreamingConfig):
+    if isinstance(config, MockStreamingConfig):
         return StreamingResponse(
             content=config.response_data, status_code=config.status_code, headers=config.headers
         )

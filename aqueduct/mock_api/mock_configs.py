@@ -63,11 +63,6 @@ class MockPlainTextConfig(MockConfig):
     headers: dict[str, str] = {"Content-Type": "text/plain; charset=utf-8"}
 
 
-class MockExceptionConfig(MockConfig):
-    status_code: int = 500
-    response_data: str = "Mock error response from upstream"
-
-
 def convert_to_stream_data(data: list[BaseModel]) -> list[bytes]:
     return [b"data: " + json.dumps(item).encode() + b"\n\n" for item in data]
 

@@ -402,3 +402,92 @@ class TestFilesAPI(GatewayFilesTestCase):
         error_message = resp.json()["error"]["message"]
         self.assertIn("bad-2", error_message)
         self.assertIn("not-configured-model", error_message)
+
+
+class TestCatchRouterExceptionsFiles(GatewayFilesTestCase):
+    def test_file_post_bad_request_error(self):
+        """Test files POST view catches Bad Request (400) from upstream."""
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid file purpose",
+                    "type": "invalid_request_error",
+                    "param": "purpose",
+                    "code": "invalid_value",
+                }
+            },
+        )
+
+        # Patch upstream files endpoint to return 400
+        content = b"test content"
+        f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
+        with self.mock_server.patch_external_api(self.url_files, bad_request):
+            resp = self.client.post(
+                self.url_files, {"file": f, "purpose": "assistants"}, headers=self.headers
+            )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Invalid file purpose", resp.json()["error"]["message"])
+
+    def test_file_get_bad_request_error(self):
+        """Test file GET view catches Bad Request (400) from upstream."""
+        # Create a file successfully first
+        content = b"test content"
+        f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
+        resp = self.client.post(
+            self.url_files, {"file": f, "purpose": "assistants"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+
+        # Patch upstream file retrieval to return 400
+        file_url = reverse("gateway:file", args=[file_id])
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid file ID",
+                    "type": "invalid_request_error",
+                    "param": "file_id",
+                    "code": "invalid_value",
+                }
+            },
+        )
+
+        with self.mock_server.patch_external_api(file_url, bad_request):
+            resp = self.client.get(file_url, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Invalid file ID", resp.json()["error"]["message"])
+
+    def test_file_content_get_bad_request_error(self):
+        """Test file.content GET view catches Bad Request (400) from upstream."""
+        # Create a file successfully first
+        content = b"test content"
+        f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
+        resp = self.client.post(
+            self.url_files, {"file": f, "purpose": "assistants"}, headers=self.headers
+        )
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+
+        # Patch upstream file content retrieval to return 400
+        content_url = reverse("gateway:file", args=[file_id])
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Cannot retrieve file content",
+                    "type": "invalid_request_error",
+                    "param": "file_id",
+                    "code": "invalid_value",
+                }
+            },
+        )
+
+        with self.mock_server.patch_external_api(content_url, bad_request):
+            resp = self.client.get(content_url, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Cannot retrieve file content", resp.json()["error"]["message"])

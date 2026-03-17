@@ -16,7 +16,14 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter
 from gateway.config import get_files_api_client
 from management.models import Batch, FileObject, Token
 
-from .decorators import log_request, parse_body, process_batch_file, token_authenticated, tos_accepted
+from .decorators import (
+    catch_router_exceptions,
+    log_request,
+    parse_body,
+    process_batch_file,
+    token_authenticated,
+    tos_accepted,
+)
 from .errors import error_response
 
 
@@ -47,7 +54,7 @@ def validate_batch_file(data: bytes):
         try:
             d = json.loads(line)
         except json.decoder.JSONDecodeError:
-            raise ValueError(f"Invalid JSON at line {i + 1}") from None
+            raise ValueError(f"Invalid JSON at line {i + 1}")
         custom_id = d.get("custom_id")
         if not custom_id:
             raise ValueError(f"No custom_id found at line {i + 1}")
@@ -124,6 +131,7 @@ async def sync_batch_file_if_needed(
 @parse_body(model=TypeAdapter(FilesCreateParams))
 @process_batch_file
 @log_request
+@catch_router_exceptions
 async def files(
     request: ASGIRequest,
     token: Token,
@@ -132,7 +140,7 @@ async def files(
     file_preview: str | None = None,
     *args,
     **kwargs,
-) -> JsonResponse:
+):
     try:
         client = get_files_api_client()
     except ValueError:
@@ -225,7 +233,8 @@ async def files(
 @require_http_methods(["GET", "DELETE"])
 @token_authenticated(token_auth_only=True)
 @log_request
-async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs) -> JsonResponse:
+@catch_router_exceptions
+async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
     """
     Retrieve or delete a specific file.
 
@@ -249,22 +258,14 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
 
     if request.method == "GET":
         # Fetch current status from upstream
-        try:
-            remote_file = await file_obj.areload_from_upstream(client)
-        except Exception as e:
-            return error_response(
-                f"Failed to retrieve file from upstream: {e!s}", error_type="server_error", status=502
-            )
+        remote_file = await file_obj.areload_from_upstream(client)
 
         # Return response with upstream ID (same as file_obj.id)
         response_data = remote_file.model_dump()
         return JsonResponse(response_data, status=200)
 
-    # DELETE /files/{file_id}  # noqa: ERA001
-    try:
-        await file_obj.adelete_upstream(client)
-    except Exception as e:
-        return error_response(f"Failed to delete file from upstream: {e!s}", error_type="server_error", status=502)
+    # DELETE /files/{file_id}
+    await file_obj.adelete_upstream(client)
 
     # Delete local record
     await sync_to_async(file_obj.delete)()
@@ -278,7 +279,8 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
 @require_GET
 @token_authenticated(token_auth_only=True)
 @log_request
-async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs) -> HttpResponse:
+@catch_router_exceptions
+async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
     """
     Retrieve the content of a specific file.
 
@@ -300,12 +302,7 @@ async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, 
     except ValueError:
         return error_response("Files API not configured", status=503)
 
-    try:
-        # Returns HttpxBinaryResponseContent, use .content to get bytes
-        response = await client.files.content(file_obj.id)
-    except Exception as e:
-        return error_response(
-            f"Failed to retrieve file content from upstream: {e!s}", error_type="server_error", status=502
-        )
+    # Returns HttpxBinaryResponseContent, use .content to get bytes
+    response = await client.files.content(file_obj.id)
 
     return HttpResponse(response.content, content_type="application/octet-stream", status=200)

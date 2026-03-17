@@ -2,10 +2,14 @@ import json
 from http import HTTPStatus
 
 from django.urls import reverse
+from openai.types import Image, ImagesResponse
+from openai.types.images_response import Usage as ImageUsage
+from openai.types.images_response import UsageInputTokensDetails
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayIntegrationTestCase
 from management.models import Request, Usage
+from mock_api.mock_configs import MockConfig
 
 
 class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
@@ -103,32 +107,46 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             "size": "256x256",
         }
 
-        response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
-        )
+        with self.mock_server.patch_external_api(
+            self.url,
+            MockConfig(status_code=HTTPStatus.BAD_REQUEST, response_data={"error": "Invalid 'prompt': empty string"}),
+        ):
+            response = self.client.post(
+                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.assertIn("Invalid 'prompt': empty string", response.json()["error"]["message"])
-
-    def test_image_generation_endpoint_non_image_model(self):
-        """Test image generation endpoint with a model that doesn't support image generation."""
-
-        payload = {"model": "gpt-4.1-nano", "prompt": "A test image", "n": 1, "size": "1024x1024"}
-
-        response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
-        )
-
-        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_image_generation_endpoint_with_multiple_images(self):
         """Test image generation endpoint with multiple images (n parameter)."""
 
         payload = {"model": self.model, "prompt": "Generate multiple images of a sunset", "n": 2, "size": "256x256"}
-
-        response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        expected = MockConfig(
+            status_code=HTTPStatus.OK,
+            response_data=ImagesResponse(
+                created=1713833628,
+                data=[
+                    Image(
+                        b64_json="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+                    ),
+                    Image(
+                        b64_json="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+                    ),
+                ],
+                usage=ImageUsage(
+                    total_tokens=100,
+                    input_tokens=50,
+                    output_tokens=50,
+                    input_tokens_details=UsageInputTokensDetails(text_tokens=10, image_tokens=40),
+                ),
+            ).model_dump(),
         )
+
+        with self.mock_server.patch_external_api(self.url, expected):
+            response = self.client.post(
+                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
 

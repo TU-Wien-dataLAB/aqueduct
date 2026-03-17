@@ -1,6 +1,6 @@
 [project]
 name = "aqueduct"
-version = "0.1.13"
+version = "0.1.14"
 description = "A simple yet fully-featured AI gateway built on top of the LiteLLM Router SDK with MCP server support."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,6 +31,7 @@ vllm = [
 [dependency-groups]
 dev = [
     "channels[daphne]>=4.3.1",
+    "fastapi>=0.115.12",
     "pre-commit>=4.2.0",
     "ruff>=0.15.5",
     "tbump>=6.11.0",
@@ -83,7 +84,7 @@ docstring-code-format = true
 skip-magic-trailing-comma = true
 
 [tool.ruff.lint.isort]
-known-first-party = ["aqueduct", "gateway", "management"]
+known-first-party = ["aqueduct", "gateway", "management", "mock_api"]
 
 [tool.ruff.lint.flake8-annotations]
 mypy-init-return = true

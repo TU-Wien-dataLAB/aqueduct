@@ -171,6 +171,7 @@ vllm = [
 [package.dev-dependencies]
 dev = [
     { name = "channels", extra = ["daphne"] },
+    { name = "fastapi" },
     { name = "pre-commit" },
     { name = "ruff" },
     { name = "tbump" },
@@ -199,6 +200,7 @@ provides-extras = ["postgresql", "vllm"]
 [package.metadata.requires-dev]
 dev = [
     { name = "channels", extras = ["daphne"], specifier = ">=4.3.1" },
+    { name = "fastapi", specifier = ">=0.115.12" },
     { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "ruff", specifier = ">=0.15.5" },
     { name = "tbump", specifier = ">=6.11.0" },

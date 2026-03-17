@@ -1,7 +1,7 @@
 import base64
 import json
+from http import HTTPStatus
 from pathlib import Path
-from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from asgiref.sync import async_to_sync, sync_to_async
@@ -12,7 +12,7 @@ from django.urls import reverse
 from django.utils import timezone
 from httpx import Request as HttpxRequest
 from httpx import Response
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import ModelResponse, Usage
 from openai.types.audio import Transcription
 from openai.types.chat import ChatCompletion
 from openai.types.image import Image
@@ -27,6 +27,7 @@ from gateway.tests.utils import (
 )
 from gateway.tests.utils.base import INTEGRATION_TEST_BACKEND, ROUTER_CONFIG, GatewayIntegrationTestCase
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
+from mock_api.mock_configs import MockConfig, MockStreamingConfig, convert_to_stream_data
 
 User = get_user_model()
 
@@ -84,10 +85,9 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         super().setUpClass()
         cls.url = reverse("gateway:embeddings")
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_embeddings(self):
         """
-        Sends a simple embeddings request to the vLLM server using the Django test client.
+        Sends a simple embeddings request to the mock server using the Django test client.
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
@@ -98,6 +98,7 @@ class EmbeddingTest(GatewayIntegrationTestCase):
 
         assert self.model in ROUTER_CONFIG
         payload = {"model": self.model, "input": ["The quick brown fox jumps over the lazy dog."]}
+
         response = self.client.post(
             self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
@@ -105,6 +106,7 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         response_json = response.json()
+        # print(f"\nEmbeddings response: {response_json}")
 
         # OpenAI-style embeddings response should have 'data' and 'embedding' fields
         self.assertIn("data", response_json)
@@ -128,7 +130,7 @@ class EmbeddingTest(GatewayIntegrationTestCase):
 
 
 class ChatCompletionsBase(GatewayIntegrationTestCase):
-    MESSAGES: ClassVar[list] = [
+    MESSAGES = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Write me a short poem!"},
     ]
@@ -143,18 +145,20 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
         Helper to build headers, payload, and endpoint for chat completion requests.
         """
         payload = _build_chat_payload(self.model, messages, stream=stream, **payload_kwargs)
-        return {"path": self.url, "data": json.dumps(payload), "headers": self.headers}
+        return dict(path=self.url, data=json.dumps(payload), headers=self.headers)
 
     def _send_chat_completion(self, messages, **payload_kwargs):
         """
-        Helper to send a chat completion request (non-streaming) using Django test client.
+        Helper to send a chat completion request (non-streaming) to the mock server,
+        using Django test client.
         """
         request = self._build_chat_completion_request(messages, stream=False, **payload_kwargs)
         return self.client.post(**request, content_type="application/json")
 
     async def _send_chat_completion_streaming(self, messages, **payload_kwargs):
         """
-        Helper to send a streaming chat completion request using Django async test client.
+        Helper to send a streaming chat completion request to the mock server,
+        using Django async test client.
         """
         request = self._build_chat_completion_request(messages, stream=True, **payload_kwargs)
         return await self.async_client.post(**request, content_type="application/json")
@@ -175,6 +179,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
 
+        # print(f"\nChat completion response: {chat_completion}")
+
         self.assertIsNotNone(chat_completion)
         self.assertTrue(chat_completion.choices)
         self.assertIsInstance(chat_completion.choices, list)
@@ -185,6 +191,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsNotNone(first_choice.message)
         self.assertTrue(hasattr(first_choice.message, "content"))
         self.assertIsNotNone(first_choice.message.content)
+
+        # response_text = first_choice.message.content.strip()
+        # print(response_text)
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
@@ -526,7 +535,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         tika_response_mock = Response(
             request=HttpxRequest(method="PUT", url="http://example.com/tika"),
             json={"error": "Mocked Tika server error"},
-            status_code=500,
+            status_code=HTTPStatus.IM_A_TEAPOT,
         )
 
         with patch("gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock):
@@ -537,7 +546,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertEqual(response.status_code, 400, f"Expected 400, got {response.status_code}: {response.content}")
         self.assertIn("Tika error extracting text from file", response.json()["error"]["message"])
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     def test_chat_completion_timeout(self):
         """
         Sends a simple chat completion request to the vLLM server using the Django test client.
@@ -550,7 +559,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}"
         )
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.1)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     def test_chat_completion_timeout_is_logged(self):
         """
         Test that timeout requests ARE logged to the database.
@@ -622,6 +631,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         # Parse each chunk as JSON and collect content pieces
         content_pieces = _parse_streamed_content_pieces(streamed_lines)
         full_content = "".join(content_pieces).strip()
+        # print(f"Full streamed content: {full_content}")
         self.assertTrue(full_content, "Streamed content should not be empty.")
 
         # Check that the database contains one request and endpoint matches
@@ -634,7 +644,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming)")
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     @async_to_sync
     async def test_chat_completion_streaming_relay_request_timeout(self):
         """
@@ -651,7 +661,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
 
         self.assertEqual(response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}")
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.001)
+    @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     @async_to_sync
     async def test_chat_completion_streaming_timeout_is_logged(self):
         """
@@ -717,14 +727,15 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
 
     def test_chat_completion_unknown_model(self):
         payload = {"model": "unknown-model", "messages": self.MESSAGES}
+
         response = self.client.post(
             self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
         self.assertEqual(
             response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}: {response.content}"
         )
+        self.assertIn("There is no 'model_name' with this string", response.json()["error"]["message"])
 
-    @override_settings(RELAY_REQUEST_TIMEOUT=5)
     def test_chat_completion_schema_generation(self):
         """
         Sends a chat completion request with a JSON schema, non-streaming.
@@ -741,12 +752,42 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 {"role": "system", "content": "You produce JSON output based on a schema."},
                 {"role": "user", "content": "Generate JSON matching the provided schema."},
             ],
+            # { "type": "json_schema", "json_schema": {...} }
             "response_format": {"type": "json_schema", "json_schema": {"name": "schema", "schema": json_schema}},
             "max_completion_tokens": 50,
         }
-        response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+
+        mock_resp = MockConfig(
+            response_data=ModelResponse(
+                id="chatcmpl-123456789",
+                created=1768397207,
+                model="gpt-4.1-nano-2025-04-14",
+                object="chat.completion",
+                choices=[
+                    {
+                        "finish_reason": "stop",
+                        "index": 0,
+                        "message": {"content": '{"greeting":"Hello, world!","count":1}', "role": "assistant"},
+                    }
+                ],
+                usage=Usage(
+                    completion_tokens=13,
+                    prompt_tokens=59,
+                    total_tokens=72,
+                    completion_tokens_details={
+                        "accepted_prediction_tokens": 0,
+                        "audio_tokens": 0,
+                        "reasoning_tokens": 0,
+                        "rejected_prediction_tokens": 0,
+                    },
+                    prompt_tokens_details={"audio_tokens": 0, "cached_tokens": 0},
+                ),
+            ).model_dump()
         )
+        with self.mock_server.patch_external_api("chat/completions", mock_resp):
+            response = self.client.post(
+                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
         response_json = response.json()
@@ -773,7 +814,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase to manage multiple servers!"
             )
 
-        with (Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg").open("rb") as image_file:
+        with open(Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg", "rb") as image_file:
             img_b64 = base64.b64encode(image_file.read()).decode("utf-8")
 
         payload = {
@@ -782,13 +823,14 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "What is in this image?"},
+                        {"type": "text", "text": "What’s in this image?"},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
                     ],
                 }
             ],
             "max_completion_tokens": 50,
         }
+
         response = self.client.post(
             self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
@@ -834,9 +876,33 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             "max_completion_tokens": 50,
             "stream": True,
         }
-        response = await self.async_client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
-        )
+
+        _common_stream_chunk_data = {
+            "id": "chatcmpl-12345",
+            "created": 1768398242,
+            "model": "gpt-4.1-nano",
+            "object": "chat.completion.chunk",
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        _chat_completion_stream_data = [
+            ModelResponse(
+                **_common_stream_chunk_data,
+                choices=[{"index": 0, "delta": {"content": '{"greeting":', "role": "assistant"}}],
+            ).model_dump(),
+            ModelResponse(
+                **_common_stream_chunk_data, choices=[{"index": 0, "delta": {"content": '"Hello, world!",'}}]
+            ).model_dump(),
+            ModelResponse(
+                **_common_stream_chunk_data, choices=[{"index": 0, "delta": {"content": '"count":1}'}}]
+            ).model_dump(),
+        ]
+        mock_resp = MockStreamingConfig(response_data=convert_to_stream_data(_chat_completion_stream_data))
+
+        with self.mock_server.patch_external_api("chat/completions", mock_resp):
+            response = await self.async_client.post(
+                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
         streamed_lines = await _read_streaming_response_lines(response)
@@ -876,6 +942,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         response_json = response.json()
+        # print(f"\nList models response: {response_json}")
 
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
@@ -884,6 +951,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]
+        # print(f"Available model IDs: {model_ids}")
         self.assertIn(self.model, model_ids)
 
         # Check that the database contains one request and endpoint matches
@@ -928,6 +996,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         response_json = response.json()
+        # print(f"\nList models response: {response_json}")
 
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
@@ -935,6 +1004,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]
+        # print(f"Available model IDs: {model_ids}")
         self.assertEqual(len(model_ids), len(model_list) - 1)
         self.assertNotIn(self.model, model_ids)
 
@@ -1197,26 +1267,22 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with (
-            patch("gateway.config.Path") as mock_path_class,
-            patch("yaml.safe_load", return_value=mock_config) as mock_load,
-        ):
-            mock_path_class.return_value.open.return_value.__enter__ = lambda self: self
-            mock_path_class.return_value.open.return_value.__exit__ = lambda self, *args: None
-            get_router_config.cache_clear()
+        with patch("builtins.open"):
+            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
+                get_router_config.cache_clear()
 
-            loaded_config = get_router_config()
+                loaded_config = get_router_config()
 
-            # Config should load without errors
-            self.assertIsInstance(loaded_config, dict)
-            self.assertIn("model_list", loaded_config)
+                # Config should load without errors
+                self.assertIsInstance(loaded_config, dict)
+                self.assertIn("model_list", loaded_config)
 
-            # Verify aliases are in the config
-            first_model = loaded_config["model_list"][0]
-            self.assertIn("model_info", first_model)
-            self.assertIn("aliases", first_model["model_info"])
-            self.assertEqual(first_model["model_info"]["aliases"], ["main", "coding"])
-            mock_load.assert_called_once()
+                # Verify aliases are in the config
+                first_model = loaded_config["model_list"][0]
+                self.assertIn("model_info", first_model)
+                self.assertIn("aliases", first_model["model_info"])
+                self.assertEqual(first_model["model_info"]["aliases"], ["main", "coding"])
+                mock_load.assert_called_once()
 
     def test_config_load_with_duplicate_aliases_raises_error(self):
         """
@@ -1236,29 +1302,23 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
                         "model": "openai/text-embedding-ada-002",
                         "api_key": "os.environ/OPENAI_API_KEY",
                     },
-                    "model_info": {
-                        "aliases": ["main"]  # Duplicate!
-                    },
+                    "model_info": {"aliases": ["main"]},  # Duplicate!
                 },
             ]
         }
 
-        with (
-            patch("gateway.config.Path") as mock_path_class,
-            patch("yaml.safe_load", return_value=mock_config) as mock_load,
-        ):
-            mock_path_class.return_value.open.return_value.__enter__ = lambda self: self
-            mock_path_class.return_value.open.return_value.__exit__ = lambda self, *args: None
-            get_router_config.cache_clear()
+        with patch("builtins.open"):
+            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
+                get_router_config.cache_clear()
 
-            # Should raise RuntimeError due to duplicate aliases
-            with self.assertRaises(RuntimeError) as context:
-                get_router_config()
+                # Should raise RuntimeError due to duplicate aliases
+                with self.assertRaises(RuntimeError) as context:
+                    get_router_config()
 
-            # Verify the error message mentions the duplicate alias
-            self.assertIn("Duplicate alias", str(context.exception))
-            self.assertIn("main", str(context.exception))
-            mock_load.assert_called_once()
+                # Verify the error message mentions the duplicate alias
+                self.assertIn("Duplicate alias", str(context.exception))
+                self.assertIn("main", str(context.exception))
+                mock_load.assert_called_once()
 
     def test_config_load_with_multiple_aliases_per_model(self):
         """
@@ -1274,23 +1334,19 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with (
-            patch("gateway.config.Path") as mock_path_class,
-            patch("yaml.safe_load", return_value=mock_config) as mock_load,
-        ):
-            mock_path_class.return_value.open.return_value.__enter__ = lambda self: self
-            mock_path_class.return_value.open.return_value.__exit__ = lambda self, *args: None
-            get_router_config.cache_clear()
+        with patch("builtins.open"):
+            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
+                get_router_config.cache_clear()
 
-            loaded_config = get_router_config()
+                loaded_config = get_router_config()
 
-            # Config should load without errors
-            self.assertIsInstance(loaded_config, dict)
-            model = loaded_config["model_list"][0]
-            self.assertEqual(len(model["model_info"]["aliases"]), 4)
-            self.assertIn("main", model["model_info"]["aliases"])
-            self.assertIn("primary", model["model_info"]["aliases"])
-            mock_load.assert_called_once()
+                # Config should load without errors
+                self.assertIsInstance(loaded_config, dict)
+                model = loaded_config["model_list"][0]
+                self.assertEqual(len(model["model_info"]["aliases"]), 4)
+                self.assertIn("main", model["model_info"]["aliases"])
+                self.assertIn("primary", model["model_info"]["aliases"])
+                mock_load.assert_called_once()
 
     def test_alias_case_sensitivity(self):
         """
@@ -1302,9 +1358,7 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
                 {
                     "model_name": "gpt-4.1-nano",
                     "litellm_params": {"model": "openai/gpt-4.1-nano", "api_key": "os.environ/OPENAI_API_KEY"},
-                    "model_info": {
-                        "aliases": ["Main"]  # Capital M
-                    },
+                    "model_info": {"aliases": ["Main"]},  # Capital M
                 },
                 {
                     "model_name": "text-embedding-ada-002",
@@ -1312,37 +1366,31 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
                         "model": "openai/text-embedding-ada-002",
                         "api_key": "os.environ/OPENAI_API_KEY",
                     },
-                    "model_info": {
-                        "aliases": ["main"]  # Lowercase m
-                    },
+                    "model_info": {"aliases": ["main"]},  # Lowercase m
                 },
             ]
         }
 
-        with (
-            patch("gateway.config.Path") as mock_path_class,
-            patch("yaml.safe_load", return_value=mock_config) as mock_load,
-        ):
-            mock_path_class.return_value.open.return_value.__enter__ = lambda self: self
-            mock_path_class.return_value.open.return_value.__exit__ = lambda self, *args: None
-            get_router_config.cache_clear()
+        with patch("builtins.open"):
+            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
+                get_router_config.cache_clear()
 
-            loaded_config = get_router_config()
+                loaded_config = get_router_config()
 
-            # Should load successfully since "Main" and "main" are different
-            self.assertIsInstance(loaded_config, dict)
+                # Should load successfully since "Main" and "main" are different
+                self.assertIsInstance(loaded_config, dict)
 
-            # Collect all aliases
-            all_aliases = []
-            for model in loaded_config["model_list"]:
-                if "model_info" in model and "aliases" in model["model_info"]:
-                    all_aliases.extend(model["model_info"]["aliases"])
+                # Collect all aliases
+                all_aliases = []
+                for model in loaded_config["model_list"]:
+                    if "model_info" in model and "aliases" in model["model_info"]:
+                        all_aliases.extend(model["model_info"]["aliases"])
 
-            # Both should be present and distinct
-            self.assertIn("Main", all_aliases)
-            self.assertIn("main", all_aliases)
-            self.assertEqual(len([a for a in all_aliases if a.lower() == "main"]), 2)
-            mock_load.assert_called_once()
+                # Both should be present and distinct
+                self.assertIn("Main", all_aliases)
+                self.assertIn("main", all_aliases)
+                self.assertEqual(len([a for a in all_aliases if a.lower() == "main"]), 2)
+                mock_load.assert_called_once()
 
 
 class ModelAliasRoutingTest(GatewayIntegrationTestCase):
@@ -1561,12 +1609,14 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
 
         # Test with actual model name
         payload = {"model": self.model, "messages": messages, "max_tokens": 5}
+
         response_actual = self.client.post(
             "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
 
         # Test with alias
         payload = {"model": "main", "messages": messages, "max_tokens": 5}
+
         response_alias = self.client.post(
             "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
@@ -1591,6 +1641,7 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
 
         # Test with correct case
         payload = {"model": "main", "messages": messages, "max_tokens": 5}
+
         response_lowercase = self.client.post(
             "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )

@@ -5,7 +5,7 @@ import logging
 import re
 import sys
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
@@ -38,10 +38,10 @@ from management.models import FileObject, Request, Token, VectorStore
 log = logging.getLogger("aqueduct")
 
 
-def token_authenticated(token_auth_only: bool) -> Callable:
-    def decorator(view_func) -> Callable:
+def token_authenticated(token_auth_only: bool):
+    def decorator(view_func):
         @wraps(view_func)
-        async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+        async def wrapper(request: ASGIRequest, *args, **kwargs):
             unauthorized_response = error_response("Authentication Required", status=401)
             # Authentication Check
             if not (await request.auser()).is_authenticated:
@@ -65,7 +65,11 @@ def token_authenticated(token_auth_only: bool) -> Callable:
                 token = await sync_to_async(Token.find_by_key)(token_key)
             else:
                 # user is authenticated but not via token -> take first token via Token.objects to use async ORM
-                token = await Token.objects.filter(user=request.user).afirst()
+                token = (
+                    await Token.objects.select_related("user__profile__org", "service_account__team__org")
+                    .filter(user=request.user)
+                    .afirst()
+                )
 
             if not token:
                 log.error("Token not found during authentication")
@@ -128,7 +132,7 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
     return data
 
 
-def parse_body(model: TypeAdapter) -> Callable:
+def parse_body(model: TypeAdapter):
     """
     Decorator that parses and validates HTTP request bodies for async view functions.
 
@@ -146,9 +150,9 @@ def parse_body(model: TypeAdapter) -> Callable:
         Decorator function that wraps async view functions.
     """
 
-    def decorator(view_func) -> Callable:
+    def decorator(view_func):
         @wraps(view_func)
-        async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+        async def wrapper(request: ASGIRequest, *args, **kwargs):
             if request.method != "POST":
                 return await view_func(request, *args, **kwargs)
 
@@ -163,7 +167,7 @@ def parse_body(model: TypeAdapter) -> Callable:
                 try:
                     data = json.loads(body)
                 except json.JSONDecodeError as e:
-                    log.exception(f"JSON decode error: {e!s}, body was: {request.body!r}")
+                    log.error(f"JSON decode error: {e!s}, body was: {request.body!r}")
                     return error_response(f"Invalid JSON: {e!s}", status=400)
             elif content_type.startswith("multipart/form-data"):
                 try:
@@ -183,13 +187,13 @@ def parse_body(model: TypeAdapter) -> Callable:
             try:
                 model.validate_python(data)
             except ValidationError as e:
-                log.exception(f"Validation error: {e}")
+                log.error(f"Validation error: {e}")
                 error_messages = ", ".join(
                     f"{err['loc'][0] if err['loc'] else 'field'}: {err['msg']}" for err in e.errors()
                 )
                 return error_response(error_messages, status=HTTPStatus.BAD_REQUEST)
             except Exception as e:
-                log.exception(f"Request body parse error: {e!s}, data was: {data!r}")
+                log.error(f"Request body parse error: {e!s}, data was: {data!r}")
                 return error_response(f"Failed to parse the request body: {e!s}", status=400)
 
             # If there are files sent with the request (i.e. content type is "multipart/form-data"),
@@ -212,9 +216,9 @@ def parse_body(model: TypeAdapter) -> Callable:
     return decorator
 
 
-def ensure_usage(view_func) -> Callable:
+def ensure_usage(view_func):
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         model: dict | None = kwargs.get("pydantic_model")
         if not model:
             return await view_func(request, *args, **kwargs)
@@ -230,9 +234,9 @@ def ensure_usage(view_func) -> Callable:
     return wrapper
 
 
-def check_limits(view_func) -> Callable:
+def check_limits(view_func):
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_limits decorator used without @token_authenticated decorator")
@@ -292,7 +296,7 @@ def check_limits(view_func) -> Callable:
 
         except Exception as e:
             log.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
-            log.exception("Internal gateway error checking rate limits")
+            log.error("Internal gateway error checking rate limits")
             return error_response("Internal gateway error checking rate limits", status=500)
 
         return await view_func(request, *args, **kwargs)
@@ -300,9 +304,9 @@ def check_limits(view_func) -> Callable:
     return wrapper
 
 
-def log_request(view_func) -> Callable:
+def log_request(view_func):
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         is_initialize = kwargs.get("is_initialize", False)
 
         if request.path.startswith("/mcp-servers/") and not is_initialize:
@@ -341,11 +345,11 @@ def log_request(view_func) -> Callable:
     return wrapper
 
 
-def resolve_alias(view_func) -> Callable:
+def resolve_alias(view_func):
     """Resolve model aliases to actual model names before processing."""
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         pydantic_model: dict | None = kwargs.get("pydantic_model")
         if not pydantic_model:
             return await view_func(request, *args, **kwargs)
@@ -361,9 +365,9 @@ def resolve_alias(view_func) -> Callable:
     return wrapper
 
 
-def check_model_availability(view_func) -> Callable:
+def check_model_availability(view_func):
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_model_availability decorator used without @token_authenticated decorator")
@@ -382,9 +386,9 @@ def check_model_availability(view_func) -> Callable:
     return wrapper
 
 
-def check_mcp_server_availability(view_func) -> Callable:
+def check_mcp_server_availability(view_func):
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_mcp_server_availability decorator used without @token_authenticated decorator")
@@ -421,9 +425,10 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
             header, file_b64 = file_data.split(",", maxsplit=1)  # removes data uri (data:application/pdf;base64,<b64>)
             if not header.startswith("data:"):
                 raise ValueError("Incorrect data URI for base64 encoded file.")
-            return base64.b64decode(file_b64)
+            file_bytes = base64.b64decode(file_b64)
+            return file_bytes
         except Exception as e:
-            raise ValueError(f"Failed to decode base64 file data: {e}") from e
+            raise ValueError(f"Failed to decode base64 file data: {e}")
 
     elif file_id:
         # file is given as an id of a file object
@@ -443,23 +448,22 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
             try:
                 client = get_files_api_client()
                 response = await client.files.content(file_obj.id)
-            except ValueError as e:
-                raise ValueError(f"Files API not configured: {e}") from e
-            else:
                 return response.content
-        except FileObject.DoesNotExist:
-            raise
+            except ValueError as e:
+                raise ValueError(f"Files API not configured: {e}")
+        except FileObject.DoesNotExist as e:
+            raise e
         except Exception as e:
-            raise ValueError(f"Failed to read file with id {file_id}: {e}") from e
+            raise ValueError(f"Failed to read file with id {file_id}: {e}")
     else:
         raise RuntimeError("Neither 'file_data' nor 'file_id' are given.")
 
 
-def process_file_content(view_func) -> Callable:
+def process_file_content(view_func):
     """Decorator to process file content in chat completions using Tika."""
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token")
         pydantic_model: dict | None = kwargs.get("pydantic_model")
         if not pydantic_model:
@@ -487,11 +491,11 @@ def process_file_content(view_func) -> Callable:
                     try:
                         file_bytes = await file_to_bytes(token, file)
                     except FileObject.DoesNotExist:
-                        log.exception("File not found")
+                        log.error("File not found")
                         return error_response("File not found", status=404)
                     except Exception as e:
                         # return json response here if there was an error
-                        log.exception(f"Error processing file - {e!s}")
+                        log.error(f"Error processing file - {e!s}")
                         return error_response(f"Error processing file: {e!s}", status=400)
 
                     if len(file_bytes) > max_file_bytes:
@@ -520,7 +524,7 @@ def process_file_content(view_func) -> Callable:
                         extracted_text = await extract_text_with_tika(file_bytes)
                     except httpx.HTTPStatusError as e:
                         # return json response here if there was a tika request error
-                        log.exception(f"Tika error extracting text from file - {e!s}")
+                        log.error(f"Tika error extracting text from file - {e!s}")
                         return error_response(f"Tika error extracting text from file: {e!s}", status=400)
 
                     extracted_text = (
@@ -538,7 +542,7 @@ def process_file_content(view_func) -> Callable:
     return wrapper
 
 
-def catch_router_exceptions(view_func) -> Callable:
+def catch_router_exceptions(view_func):
     def _r(e: Exception) -> str:
         s = str(e)
         s = re.sub(r"Lite-?[lL][lL][mM]", "Aqueduct", s)  # uppercase
@@ -563,53 +567,53 @@ def catch_router_exceptions(view_func) -> Callable:
         )
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         # https://docs.litellm.ai/docs/exception_mapping#litellm-exceptions
         # also except equivalent openai exceptions
         try:
             return await view_func(request, *args, **kwargs)
         except (litellm.BadRequestError, openai.BadRequestError) as e:
-            log.exception(f"Bad request - {_r(e)}")
+            log.error(f"Bad request - {_r(e)}")
             return _exception_response(e, status=400)
         except (litellm.AuthenticationError, openai.AuthenticationError) as e:
-            log.exception(f"Authentication error - {_r(e)}")
+            log.error(f"Authentication error - {_r(e)}")
             return _exception_response(e, status=401)
         except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
-            log.exception(f"Permission denied - {_r(e)}")
+            log.error(f"Permission denied - {_r(e)}")
             return _exception_response(e, status=403)
         except (litellm.NotFoundError, openai.NotFoundError) as e:
-            log.exception(f"Not found - {_r(e)}")
+            log.error(f"Not found - {_r(e)}")
             return _exception_response(e, status=404)
         except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
-            log.exception(f"Unprocessable entity - {_r(e)}")
+            log.error(f"Unprocessable entity - {_r(e)}")
             return _exception_response(e, status=422)
         except (litellm.RateLimitError, openai.RateLimitError) as e:
-            log.exception(f"Rate limit exceeded - {_r(e)}")
+            log.error(f"Rate limit exceeded - {_r(e)}")
             return _exception_response(e, status=429)
         except (litellm.Timeout, openai.APITimeoutError) as e:
-            log.exception(f"Timeout - {_r(e)}")
+            log.error(f"Timeout - {_r(e)}")
             return _exception_response(e, status=504)
         except (litellm.ServiceUnavailableError, litellm.APIConnectionError, openai.APIConnectionError) as e:
-            log.exception(f"Service unavailable - {_r(e)}")
+            log.error(f"Service unavailable - {_r(e)}")
             return _exception_response(e, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
-            log.exception(f"Internal server error - {_r(e)}")
+            log.error(f"Internal server error - {_r(e)}")
             return _exception_response(e, status=500)
         except (litellm.APIError, openai.APIError) as e:
             # APIError is raised e.g. when user sends extra kwargs in the request body,
             # so we return a 400 Bad request.
-            log.exception(f"API error - {_r(e)}")
+            log.error(f"API error - {_r(e)}")
             return _exception_response(e, status=400)
         except Exception as e:
-            log.exception(f"Unexpected error - {_r(e)}")
-            return error_response(_r(e), status=500)
+            log.error(f"Unexpected error - {_r(e)}")
+            return error_response(_r(e), error_type="server_error", status=502)
 
     return wrapper
 
 
-def tos_accepted(view_func) -> Callable:
+def tos_accepted(view_func):
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         if settings.TOS_ENABLED and settings.TOS_GATEWAY_VALIDATION:
             token: Token = kwargs.get("token")
             key_version = cache.get("django:tos:key_version")
@@ -633,7 +637,7 @@ def tos_accepted(view_func) -> Callable:
     return wrapper
 
 
-def mcp_transport_security(view_func) -> Callable:
+def mcp_transport_security(view_func):
     """Validate MCP transport security (DNS rebinding protection).
 
     Validates:
@@ -648,7 +652,7 @@ def mcp_transport_security(view_func) -> Callable:
     """
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         from django.conf import settings
 
         # Skip validation if DNS rebinding protection is disabled
@@ -693,9 +697,9 @@ def mcp_transport_security(view_func) -> Callable:
     return wrapper
 
 
-def parse_jsonrpc_message(view_func) -> Callable:
+def parse_jsonrpc_message(view_func):
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         session_id = request.headers.get("Mcp-Session-Id")
         kwargs["session_id"] = session_id
 
@@ -704,7 +708,7 @@ def parse_jsonrpc_message(view_func) -> Callable:
                 log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
                 return error_response("Mcp-Session-Id header required", status=400)
 
-            return await view_func(request, *args, request_log=None, **kwargs)
+            return await view_func(request, request_log=None, *args, **kwargs)
 
         data = kwargs["pydantic_model"]
         # For mcp requests, timeout should not be passed to the JSON RPC Message
@@ -724,9 +728,9 @@ def parse_jsonrpc_message(view_func) -> Callable:
     return wrapper
 
 
-def validate_response_id(view_func) -> Callable:
+def validate_response_id(view_func):
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs):
         token = kwargs.get("token")
         if not token:
             log.error("validate_response_id decorator used without @token_authenticated decorator")
@@ -744,7 +748,7 @@ def validate_response_id(view_func) -> Callable:
     return wrapper
 
 
-def check_tool_availability(view_func) -> Callable:
+def check_tool_availability(view_func):
     """
     Validate tool availability and configuration for Responses API requests.
 
@@ -758,7 +762,7 @@ def check_tool_availability(view_func) -> Callable:
     """
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request: ASGIRequest, *args, **kwargs):
         token: Token | None = kwargs.get("token")
         pydantic_model: ResponseCreateParams | None = kwargs.get("pydantic_model")
         if not token or not pydantic_model:
@@ -781,7 +785,7 @@ def check_tool_availability(view_func) -> Callable:
                     except KeyError:
                         # the user wants to access an externally managed MCP server
                         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-                            log.exception(f"MCP server not found - {server_name}")
+                            log.error(f"MCP server not found - {server_name}")
                             return error_response(f"MCP server not found - {server_name}", status=404)
                     else:
                         expected_url = request.build_absolute_uri(
@@ -822,7 +826,7 @@ def check_tool_availability(view_func) -> Callable:
     return wrapper
 
 
-def require_files_api_client(view_func) -> Callable:
+def require_files_api_client(view_func):
     """Decorator that injects a files API client into the view kwargs, or returns 503.
 
     Uses late-bound import of get_files_api_client so that tests can
@@ -830,7 +834,7 @@ def require_files_api_client(view_func) -> Callable:
     """
 
     @wraps(view_func)
-    async def wrapper(request, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request, *args, **kwargs):
         # Look up get_files_api_client from the module where view_func is defined,
         # so tests patching that module's reference will be respected.
         view_module = sys.modules.get(view_func.__module__)
@@ -846,19 +850,35 @@ def require_files_api_client(view_func) -> Callable:
     return wrapper
 
 
+def _lookup_relay_model_name(requested_model: str) -> str | None:
+    """Return upstream relay model for a configured deployment, else None."""
+    router = get_router()
+    if not router:
+        return requested_model
+
+    requested_model = resolve_model_alias(requested_model)
+    deployment: litellm.Deployment | None = router.get_deployment(model_id=requested_model)
+    if not deployment:
+        return None
+
+    litellm_params = getattr(deployment, "litellm_params", None)
+    deployment_model = getattr(litellm_params, "model", None)
+    if not deployment_model:
+        return None
+
+    relay_model, _, _, _ = litellm.get_llm_provider(deployment_model)
+    return relay_model
+
+
 def get_relay_model_name(requested_model: str) -> str:
     """
     Map a requested model name to the actual upstream model name.
 
     Uses the LiteLLM router configuration to find the deployment.
     """
-    router = get_router()
-    if not router:
+    relay_model = _lookup_relay_model_name(requested_model)
+    if relay_model is None:
         return requested_model
-
-    requested_model = resolve_model_alias(requested_model)
-    deployment: litellm.Deployment = router.get_deployment(model_id=requested_model)
-    relay_model, _, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
     return relay_model
 
 
@@ -873,6 +893,7 @@ def rewrite_batch_file_models(content: bytes) -> bytes:
     This function:
     1. Ensures custom_id is a string type (required by OpenAI Batch API)
     2. Replaces the model name in each request body with the actual upstream model name from the router configuration
+    3. Rejects unknown models with a ValueError that includes custom_id
     """
     lines = content.decode("utf-8").splitlines()
     rewritten_lines = []
@@ -885,7 +906,10 @@ def rewrite_batch_file_models(content: bytes) -> bytes:
             body = request.get("body", {})
             if "model" in body:
                 original_model = body["model"]
-                relay_model = get_relay_model_name(original_model)
+                relay_model = _lookup_relay_model_name(original_model)
+                if relay_model is None:
+                    custom_id = request.get("custom_id", "<missing custom_id>")
+                    raise ValueError(f"Unknown model '{original_model}' for custom_id '{custom_id}'")
                 body["model"] = relay_model
                 request["body"] = body
             if "custom_id" in request:
@@ -907,7 +931,7 @@ def extract_preview(content: bytes, num_lines: int = 10) -> str:
         return "[Binary content - no preview available]"
 
 
-def process_batch_file(view_func) -> Callable:
+def process_batch_file(view_func):
     """
     Decorator for batch file upload that processes file content before proxying.
 
@@ -924,7 +948,7 @@ def process_batch_file(view_func) -> Callable:
     """
 
     @wraps(view_func)
-    async def wrapper(request, *args, **kwargs) -> HttpResponse | StreamingHttpResponse:
+    async def wrapper(request, *args, **kwargs):
         if request.method != "POST":
             return await view_func(request, *args, **kwargs)
 
@@ -943,7 +967,10 @@ def process_batch_file(view_func) -> Callable:
 
         if purpose == "batch":
             kwargs["file_preview"] = extract_preview(content)
-            kwargs["file_content"] = rewrite_batch_file_models(content)
+            try:
+                kwargs["file_content"] = rewrite_batch_file_models(content)
+            except ValueError as e:
+                return error_response(f"Batch file validation failed: {e!s}", status=400)
         else:
             kwargs["file_content"] = content
             kwargs["file_preview"] = ""

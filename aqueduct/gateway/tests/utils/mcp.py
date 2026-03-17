@@ -6,31 +6,20 @@ import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import wraps
-from pathlib import Path
-from typing import ClassVar
-from unittest.mock import patch
 
+import httpx
 from asgiref.sync import sync_to_async
 from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
 from django.test import override_settings
 from mcp import ClientSession
-from mcp.client.streamable_http import StreamableHTTPTransport, streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
-MCP_CONFIG_PATH = Path("/tmp/aqueduct/test-mcp-config.json")
+from gateway.tests.utils.test_runner import get_mcp_server_port, get_shared_mcp_server_process, set_shared_mcp_server
+from mock_api.helpers import get_available_port
+
+MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
 MCP_TEST_CONFIG = {"mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}}
-
-
-# patch: https://github.com/modelcontextprotocol/python-sdk/pull/1670
-def patch_mcp_sse_issue(view_func):
-    @wraps(view_func)
-    async def wrapper(*args, **kwargs):
-        sse = args[1]
-        if not sse.data:
-            return False
-        return await view_func(*args, **kwargs)
-
-    return wrapper
 
 
 def _is_cancel_scope_error(exc):
@@ -80,10 +69,6 @@ def skip_on_cancel_scope_error(test_func):
 
 
 class MCPDaphneProcess(DaphneProcess):
-    @patch(
-        "mcp.client.streamable_http.StreamableHTTPTransport._handle_sse_event",
-        new=patch_mcp_sse_issue(StreamableHTTPTransport._handle_sse_event),
-    )
     def run(self):
         from django.conf import settings
 
@@ -110,7 +95,7 @@ class MCPDaphneProcess(DaphneProcess):
         super().run()
 
 
-@override_settings(OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/", API_MAX_RETRIES=5)
+@override_settings(OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/")
 class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     """
     Live server test case for MCP endpoints using Django's LiveServerTestCase.
@@ -120,14 +105,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     serve_static = False
     ProtocolServerProcess = MCPDaphneProcess
 
-    fixtures: ClassVar[list] = ["gateway_data.json"]
-    mcp_server_process = None
-
-    @property
-    def headers(self):
-        # ChannelsLiveServerTestCase raises AppRegistryNotReady if I try to access model classes (through import)
-        # -> so we hard-code the headers here again
-        return {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
+    fixtures = ["gateway_data.json"]
+    mcp_server_process: subprocess.Popen | None = None
 
     @property
     def mcp_url(self):
@@ -135,9 +114,12 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     @asynccontextmanager
     async def client_session(self):
-        async with streamablehttp_client(self.mcp_url, headers=self.headers) as (read_stream, write_stream, _):
-            async with ClientSession(read_stream, write_stream) as session:
-                yield session
+        async with (
+            httpx.AsyncClient(headers=self.headers) as client,
+            streamable_http_client(self.mcp_url, http_client=client) as (read_stream, write_stream, _),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            yield session
 
     async def assertRequestLogged(self, n: int = 1):
         from management.models import Request
@@ -149,26 +131,23 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     @classmethod
     def _write_mcp_config(cls):
-        MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with MCP_CONFIG_PATH.open("w") as f:
+        os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
+        with open(MCP_CONFIG_PATH, "w") as f:
             json.dump(MCP_TEST_CONFIG, f)
 
     @classmethod
     def _update_mcp_config_port(cls, port: int):
         config = deepcopy(MCP_TEST_CONFIG)
         config["mcpServers"]["test-server"]["url"] = f"http://localhost:{port}/mcp"
-        MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with MCP_CONFIG_PATH.open("w") as f:
+
+        os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
+        with open(MCP_CONFIG_PATH, "w") as f:
             json.dump(config, f)
 
     @classmethod
     def _start_mcp_server(cls):
         """Start the MCP everything server on a random available port."""
-        # Find a random available port
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", 0))
-            s.listen(1)
-            port = s.getsockname()[1]
+        port = get_available_port()
 
         cls.mcp_server_port = port
         cls._update_mcp_config_port(port)
@@ -183,10 +162,14 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 stderr=subprocess.STDOUT,
                 text=True,
                 env=env,
-                cwd=MCP_CONFIG_PATH.parent,
+                cwd=os.path.dirname(MCP_CONFIG_PATH),
+                preexec_fn=os.setsid,  # Create new process group for Unix
             )
         except FileNotFoundError:
-            raise RuntimeError("npx command not found. Please ensure Node.js and npm are installed.") from None
+            raise RuntimeError("npx command not found. Please ensure Node.js and npm are installed.")
+
+        # Set global variables enabling the tests to share the MCP server process
+        set_shared_mcp_server(cls.mcp_server_process, cls.mcp_server_port)
 
         # Wait for server to be ready by checking if it accepts connections
         print(f"Waiting for MCP server to accept connections on port {port}...")
@@ -215,38 +198,23 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         raise RuntimeError(f"MCP server did not accept connections within {timeout} seconds. Last error: {last_error}")
 
     @classmethod
-    def _stop_mcp_server(cls):
-        """Stop the MCP everything server."""
-        if cls.mcp_server_process and cls.mcp_server_process.poll() is None:
-            print("Stopping MCP everything server...")
-            cls.mcp_server_process.terminate()
-            try:
-                cls.mcp_server_process.wait(timeout=10)
-                print("MCP server stopped successfully")
-            except subprocess.TimeoutExpired:
-                print("MCP server did not stop gracefully, forcing kill")
-                cls.mcp_server_process.kill()
-                cls.mcp_server_process.wait()
-            cls.mcp_server_process = None
-
-    @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls._write_mcp_config()
-        try:
-            cls._start_mcp_server()
-        except RuntimeError as err:
-            print(err)
-            print(f"Failed to connect to the MCP server! Interrupting the {cls.__name__}")
-            # In case of any errors during setup, `tearDownClass` is not called, which means that
-            # the Daphne process (child process of the main test process) is *not* terminated and
-            # continues to run in the background even after the test process exists.
-            cls.tearDownClass()
-            raise
+        cls.headers = {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
 
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        cls._stop_mcp_server()
-        if MCP_CONFIG_PATH.exists():
-            MCP_CONFIG_PATH.unlink()
+        # If another test class has already created the MCP server, it will be reused.
+        # Otherwise, write MCP config, create the MCP server process, and set necessary
+        # global variables. Next tests to use the `MCPLiveServerTestCase` class as base
+        # class will reuse the same process.
+        # Note: Teardown is handled by the test runner, after all the tests finished running.
+        mcp_process = get_shared_mcp_server_process()
+        if mcp_process is None:
+            cls._write_mcp_config()
+            cls._start_mcp_server()
+        else:
+            assert (mcp_port := get_mcp_server_port()) is not None, (
+                "Global MCP test server port is not set, even though the server process "
+                "exists already. This should not happen!"
+            )
+            cls.mcp_server_process = mcp_process
+            cls.mcp_server_port = mcp_port

@@ -65,8 +65,9 @@ sequenceDiagram
 
 ```python
 import asyncio
+import httpx
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 
 async def main():
@@ -74,10 +75,13 @@ async def main():
     url = "https://your-aqueduct-domain.com/mcp-servers/my-cool-server/mcp"
     headers = {"Authorization": "Bearer YOUR_AQUEDUCT_TOKEN"}
 
-    async with streamablehttp_client(url, headers=headers) as (
+    async with (
+        httpx.AsyncClient(headers=headers) as client,
+        streamable_http_client(url, http_client=client) as (
             read_stream,
             write_stream,
             _,
+        ),
     ):
         # Create a session
         async with ClientSession(read_stream, write_stream) as session:
@@ -91,6 +95,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 ```
 
 For more information about the Model Context Protocol,

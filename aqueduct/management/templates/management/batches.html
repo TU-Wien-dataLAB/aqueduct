@@ -174,7 +174,8 @@
               location.reload();
             } else {
               response.json().then(data => {
-                alert(data.error || 'Failed to cancel batch.');
+                const message = data?.error?.message || data?.error || 'Failed to cancel batch.';
+                alert(message);
               }).catch(() => {
                 alert('Failed to cancel batch.');
               });

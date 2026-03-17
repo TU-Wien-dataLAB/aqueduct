@@ -211,6 +211,27 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         error = body.get("error", {})
         self.assertEqual(error.get("message"), "Batch not found.")
 
+    def test_cancel_batch_with_session_auth(self):
+        """POST /batches/{id}/cancel works for authenticated UI session without Bearer token."""
+        file_id = self._create_jsonl_file(name="session-auth")
+        token = Token.objects.get(pk=1)
+        batch = BatchModel.objects.create(
+            completion_window="24h",
+            created_at=1773058900,
+            endpoint=self.url_chat,
+            id="batch-session-auth",
+            input_file_id=file_id,
+            status=BatchStatus.IN_PROGRESS,
+            token=token,
+        )
+
+        self.client.force_login(User.objects.get(pk=1))
+        resp = self.client.post(f"/batches/{batch.id}/cancel")
+
+        self.assertEqual(resp.status_code, 200)
+        batch.refresh_from_db()
+        self.assertEqual(batch.status, BatchStatus.CANCELLED)
+
 
 class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     """Tests for service account team-scoped access control on the batches API."""

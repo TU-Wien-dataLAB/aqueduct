@@ -10,6 +10,7 @@ from django.utils import timezone
 from openai.types import FileObject
 
 from aqueduct.celery import delete_expired_files_and_batches
+from gateway.config import get_router_config
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayFilesTestCase
 from management.models import FileObject as FileObjectModel
@@ -369,3 +370,35 @@ class TestFilesAPI(GatewayFilesTestCase):
         self.assertEqual(resp.status_code, 200, f"Delete failed: {resp.json()}")
         self.assertEqual(resp.json()["id"], file_id)
         self.assertIsNone(FileObjectModel.objects.first())
+
+    def test_batch_file_with_unmapped_model_returns_400_with_custom_id(self):
+        model_list = get_router_config()["model_list"]
+        valid_model_alias = None
+        for model in model_list:
+            aliases = model.get("model_info", {}).get("aliases", [])
+            if aliases:
+                valid_model_alias = aliases[0]
+                break
+        self.assertIsNotNone(
+            valid_model_alias, "Router config must include at least one model alias"
+        )
+
+        batch_file = SimpleUploadedFile(
+            "batch.jsonl",
+            (
+                '{"custom_id":"good-1","method":"POST","url":"/v1/chat/completions",'
+                f'"body":{{"model":"{valid_model_alias}","messages":[{{"role":"user","content":"hi"}}]}}}}\n'
+                '{"custom_id":"bad-2","method":"POST","url":"/v1/chat/completions",'
+                '"body":{"model":"not-configured-model","messages":[{"role":"user","content":"hi"}]}}\n'
+            ).encode("utf-8"),
+            content_type="application/json",
+        )
+
+        resp = self.client.post(
+            self.url_files, {"file": batch_file, "purpose": "batch"}, headers=self.headers
+        )
+
+        self.assertEqual(resp.status_code, 400, resp.json())
+        error_message = resp.json()["error"]["message"]
+        self.assertIn("bad-2", error_message)
+        self.assertIn("not-configured-model", error_message)

@@ -11,7 +11,13 @@ from pydantic import TypeAdapter
 from gateway.config import get_files_api_client
 from management.models import Batch, BatchStatus, FileObject, Token
 
-from .decorators import log_request, parse_body, token_authenticated, tos_accepted
+from .decorators import (
+    catch_router_exceptions,
+    log_request,
+    parse_body,
+    token_authenticated,
+    tos_accepted,
+)
 from .errors import error_response
 from .files import sync_batch_file_if_needed
 
@@ -22,6 +28,7 @@ from .files import sync_batch_file_if_needed
 @tos_accepted
 @parse_body(TypeAdapter(BatchCreateParams))
 @log_request
+@catch_router_exceptions
 async def batches(
     request: ASGIRequest,
     token: Token,
@@ -104,17 +111,12 @@ async def batches(
         return error_response("Input file not found.", param="input_file_id", status=404)
 
     # Create batch on upstream using file ID
-    try:
-        remote_batch = await client.batches.create(
-            input_file_id=file_obj.id,
-            endpoint=pydantic_model["endpoint"],
-            completion_window=pydantic_model["completion_window"],
-            metadata=pydantic_model.get("metadata"),
-        )
-    except Exception as e:
-        return error_response(
-            f"Failed to create batch on upstream: {str(e)}", error_type="server_error", status=502
-        )
+    remote_batch = await client.batches.create(
+        input_file_id=file_obj.id,
+        endpoint=pydantic_model["endpoint"],
+        completion_window=pydantic_model["completion_window"],
+        metadata=pydantic_model.get("metadata"),
+    )
 
     # Create local tracking record with upstream ID
     now = timezone.now()
@@ -145,6 +147,7 @@ async def batches(
 @require_http_methods(["GET"])
 @token_authenticated(token_auth_only=True)
 @log_request
+@catch_router_exceptions
 async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs):
     """
     GET /batches/{batch_id} - retrieve a batch from upstream
@@ -171,14 +174,7 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
     except ValueError:
         return error_response("Files API not configured", status=503)
 
-    try:
-        remote_batch = await batch_obj.areload_from_upstream(client)
-    except Exception as e:
-        return error_response(
-            f"Failed to retrieve batch from upstream: {str(e)}",
-            error_type="server_error",
-            status=502,
-        )
+    remote_batch = await batch_obj.areload_from_upstream(client)
 
     # Create local FileObject records for output/error files if missing (inherit ownership from input_file token)
     output_file_obj = await sync_batch_file_if_needed(
@@ -201,8 +197,9 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
 
 @csrf_exempt
 @require_POST
-@token_authenticated(token_auth_only=True)
+@token_authenticated(token_auth_only=False)
 @log_request
+@catch_router_exceptions
 async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs):
     """
     POST /batches/{batch_id}/cancel - cancel a batch on upstream
@@ -227,12 +224,7 @@ async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args,
     except ValueError:
         return error_response("Files API not configured", status=503)
 
-    try:
-        remote_batch = await client.batches.cancel(batch_obj.id)
-    except Exception as e:
-        return error_response(
-            f"Failed to cancel batch on upstream: {str(e)}", error_type="server_error", status=502
-        )
+    remote_batch = await client.batches.cancel(batch_obj.id)
 
     # Update local record
     batch_obj.status = remote_batch.status

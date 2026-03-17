@@ -90,7 +90,8 @@
               location.reload();
             } else {
               response.json().then(data => {
-                alert(data.error || 'Failed to delete file.');
+                const message = data?.error?.message || data?.error || 'Failed to delete file.';
+                alert(message);
               }).catch(() => {
                 alert('Failed to delete file.');
               });

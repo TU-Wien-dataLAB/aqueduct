@@ -106,6 +106,15 @@ select = [
     "FURB177", # Use Path.cwd() instead of os.getcwd()
     "FURB181", # Use re.compile() for repeated patterns
     "RUF100",  # Unused noqa directive
+    "B904",    # raise-without-from-inside-except
+    "SIM101",  # Use isinstance() instead of type() ==
+    "SIM102",  # Nested if statements that could be combined
+    "SIM103",  # Return boolean directly
+    "SIM201",  # Use x != y instead of not x == y
+    "S110",    # try-except-pass detected
+    "S112",    # try-except-continue detected
+    "RUF013",  # Implicit Optional in type annotations
+    "ASYNC",   # flake8-async async/await best practices
 ]
 ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX", "PLC0415", "E731"]
 

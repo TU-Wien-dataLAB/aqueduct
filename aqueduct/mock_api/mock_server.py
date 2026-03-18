@@ -22,19 +22,19 @@ LOGGING_CONFIG = {
     "formatters": {
         "standard": {
             "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        }
+        },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler", "formatter": "standard",
-        }
+        },
     },
     "loggers": {
         "mock_server": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
-        }
+        },
     },
 }  # fmt: skip
 logging.config.dictConfig(LOGGING_CONFIG)

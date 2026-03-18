@@ -115,6 +115,13 @@ select = [
     "S112",    # try-except-continue detected
     "RUF013",  # Implicit Optional in type annotations
     "ASYNC",   # flake8-async async/await best practices
+    "LOG",     # flake8-logging - logging best practices
+    "SLOT",    # flake8-slots - __slots__ optimization
+    "FA",      # flake8-future-annotations - future annotations
+    "T10",     # flake8-debugger - debugger detection
+    "ICN",     # flake8-import-conventions - import conventions
+    "RSE",     # flake8-raise - raise statement improvements
+    "PLE",     # Pylint Error - error detection
 ]
 ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX", "PLC0415", "E731"]
 

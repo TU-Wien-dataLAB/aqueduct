@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import ClassVar
 from urllib.parse import urlparse
 
 import httpx
@@ -259,7 +260,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             # Verify structure of progress updates
             for update in progress_updates:
                 self.assertEqual(len(update), 3)
-                progress_token, progress, total = update
+                _progress_token, progress, _total = update
                 self.assertIsInstance(progress, (int, float))
 
         await self.assertRequestLogged()
@@ -366,7 +367,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 class MCPTransportSecurityTest(MCPLiveServerTestCase):
     """Test MCP transport security (DNS rebinding protection)."""
 
-    custom_validation_init_payload = {
+    custom_validation_init_payload: ClassVar[dict] = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "initialize",

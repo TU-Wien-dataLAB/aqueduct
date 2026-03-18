@@ -6,7 +6,6 @@ import subprocess
 import sys
 import time
 from contextlib import contextmanager
-from typing import Optional
 from unittest.mock import patch
 
 import requests
@@ -44,13 +43,13 @@ logger = logging.getLogger("mock_server")
 
 class MockAPIServer:
     def __init__(
-        self, host: str = "0.0.0.0", port: int = None, delays: bool = True, log_level: str = "error"
+        self, host: str = "localhost", port: int | None = None, delays: bool = True, log_level: str = "error"
     ) -> None:
         self.host: str = host
         self.port: int = port or get_available_port()
         self.base_url: str = f"http://{self.host}:{self.port}"
         self.delays: bool = delays
-        self.process: Optional[subprocess.Popen] = None
+        self.process: subprocess.Popen | None = None
         self.log_level: str = log_level
         self.logger = logging.getLogger("mock_server")
 
@@ -73,7 +72,7 @@ class MockAPIServer:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(sys.path)
         env["MOCK_API_DELAYS"] = "true" if self.delays else "false"
-        self.process = subprocess.Popen(cmd, text=True, env=env)
+        self.process = subprocess.Popen(cmd, text=True, env=env)  # noqa: S603
 
         self.logger.debug("Waiting for the mock server to accept connections on port %s", self.port)
         start_time = time.time()
@@ -88,12 +87,8 @@ class MockAPIServer:
                 if time.time() - start_time < timeout:
                     time.sleep(0.5)
                 else:
-                    self.logger.error(
-                        "Mock server failed to start within %s s. Last error: %s", timeout, err
-                    )
-                    raise RuntimeError(
-                        f"Mock server failed to start within {timeout} s. Last error: {err}"
-                    )
+                    self.logger.exception("Mock server failed to start within %s s. Last error: %s", timeout, err)
+                    raise RuntimeError(f"Mock server failed to start within {timeout} s. Last error: {err}") from err
 
     def stop(self):
         """Stop the mock server"""
@@ -139,9 +134,7 @@ class MockAPIServer:
         if config is not None:
             self.configure_endpoint(url, config)
 
-        with patch.dict(
-            "os.environ", {"OPENAI_BASE_URL": self.base_url, "OPENAI_API_KEY": "fake_openai_key"}
-        ):
+        with patch.dict("os.environ", {"OPENAI_BASE_URL": self.base_url, "OPENAI_API_KEY": "fake_openai_key"}):
             try:
                 yield
             finally:
@@ -158,7 +151,7 @@ def main():
     parser.add_argument(
         "--host",
         type=str,
-        default="0.0.0.0",
+        default="localhost",
         help="Host to bind the server to (use '0.0.0.0' for Docker, 'localhost' when running Django tests)",
     )
     parser.add_argument(
@@ -170,9 +163,7 @@ def main():
     parser.add_argument("--delays", action="store_true", help="Add delays to responses")
     parser.add_argument("--log-level", type=str, default="error", help="Log level for uvicorn")
     args = parser.parse_args()
-    mock_server = MockAPIServer(
-        host=args.host, port=args.port, delays=args.delays, log_level=args.log_level
-    )
+    mock_server = MockAPIServer(host=args.host, port=args.port, delays=args.delays, log_level=args.log_level)
     try:
         mock_server.start()
         logger.info("Mock server running on %s. Press Ctrl+C to stop.", mock_server.base_url)

@@ -6,6 +6,8 @@ import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import wraps
+from pathlib import Path
+from typing import ClassVar
 
 import httpx
 from asgiref.sync import sync_to_async
@@ -18,7 +20,7 @@ from mcp.client.streamable_http import streamable_http_client
 from gateway.tests.utils.test_runner import get_mcp_server_port, get_shared_mcp_server_process, set_shared_mcp_server
 from mock_api.helpers import get_available_port
 
-MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
+MCP_CONFIG_PATH = Path("/tmp/aqueduct/test-mcp-config.json")
 MCP_TEST_CONFIG = {"mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}}
 
 
@@ -72,7 +74,7 @@ class MCPDaphneProcess(DaphneProcess):
     def run(self):
         from django.conf import settings
 
-        settings.MCP_CONFIG_FILE_PATH = MCP_CONFIG_PATH
+        settings.MCP_CONFIG_FILE_PATH = str(MCP_CONFIG_PATH)
         print(f"Updating MCP_CONFIG_FILE_PATH: {settings.MCP_CONFIG_FILE_PATH}")
 
         # Configure MCP security settings for testing
@@ -105,7 +107,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     serve_static = False
     ProtocolServerProcess = MCPDaphneProcess
 
-    fixtures = ["gateway_data.json"]
+    fixtures: ClassVar[list[str]] = ["gateway_data.json"]
     mcp_server_process: subprocess.Popen | None = None
 
     @property
@@ -131,8 +133,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     @classmethod
     def _write_mcp_config(cls):
-        os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
-        with open(MCP_CONFIG_PATH, "w") as f:
+        MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with MCP_CONFIG_PATH.open("w") as f:
             json.dump(MCP_TEST_CONFIG, f)
 
     @classmethod
@@ -140,8 +142,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         config = deepcopy(MCP_TEST_CONFIG)
         config["mcpServers"]["test-server"]["url"] = f"http://localhost:{port}/mcp"
 
-        os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
-        with open(MCP_CONFIG_PATH, "w") as f:
+        MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with MCP_CONFIG_PATH.open("w") as f:
             json.dump(config, f)
 
     @classmethod
@@ -162,11 +164,11 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 stderr=subprocess.STDOUT,
                 text=True,
                 env=env,
-                cwd=os.path.dirname(MCP_CONFIG_PATH),
+                cwd=str(MCP_CONFIG_PATH.parent),
                 preexec_fn=os.setsid,  # Create new process group for Unix
             )
-        except FileNotFoundError:
-            raise RuntimeError("npx command not found. Please ensure Node.js and npm are installed.")
+        except FileNotFoundError as err:
+            raise RuntimeError("npx command not found. Please ensure Node.js and npm are installed.") from err
 
         # Set global variables enabling the tests to share the MCP server process
         set_shared_mcp_server(cls.mcp_server_process, cls.mcp_server_port)
@@ -212,7 +214,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             cls._write_mcp_config()
             cls._start_mcp_server()
         else:
-            assert (mcp_port := get_mcp_server_port()) is not None, (
+            mcp_port = get_mcp_server_port()
+            assert mcp_port is not None, (
                 "Global MCP test server port is not set, even though the server process "
                 "exists already. This should not happen!"
             )

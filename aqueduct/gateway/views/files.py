@@ -44,7 +44,7 @@ def calculate_expires_at(remote_expires_at: int | None) -> int:
     return local_expires_at
 
 
-def validate_batch_file(data: bytes):
+def validate_batch_file(data: bytes) -> None:
     """Validate batch file format: valid JSON lines with unique custom_ids."""
     lines = data.decode("utf-8").splitlines()
     custom_ids = set()
@@ -53,8 +53,8 @@ def validate_batch_file(data: bytes):
             continue
         try:
             d = json.loads(line)
-        except json.decoder.JSONDecodeError:
-            raise ValueError(f"Invalid JSON at line {i + 1}")
+        except json.decoder.JSONDecodeError as err:
+            raise ValueError(f"Invalid JSON at line {i + 1}") from err
         custom_id = d.get("custom_id")
         if not custom_id:
             raise ValueError(f"No custom_id found at line {i + 1}")
@@ -140,7 +140,7 @@ async def files(
     file_preview: str | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     try:
         client = get_files_api_client()
     except ValueError:
@@ -234,7 +234,7 @@ async def files(
 @token_authenticated(token_auth_only=True)
 @log_request
 @catch_router_exceptions
-async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
+async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs) -> JsonResponse:
     """
     Retrieve or delete a specific file.
 
@@ -264,7 +264,6 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
         response_data = remote_file.model_dump()
         return JsonResponse(response_data, status=200)
 
-    # DELETE /files/{file_id}
     await file_obj.adelete_upstream(client)
 
     # Delete local record
@@ -280,7 +279,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
 @token_authenticated(token_auth_only=True)
 @log_request
 @catch_router_exceptions
-async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
+async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs) -> HttpResponse:
     """
     Retrieve the content of a specific file.
 

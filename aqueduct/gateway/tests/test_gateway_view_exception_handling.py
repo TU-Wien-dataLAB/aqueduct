@@ -3,11 +3,7 @@ import json
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
-from gateway.tests.utils.base import (
-    GatewayBatchesTestCase,
-    GatewayFilesTestCase,
-    GatewayIntegrationTestCase,
-)
+from gateway.tests.utils.base import GatewayBatchesTestCase, GatewayFilesTestCase, GatewayIntegrationTestCase
 from mock_api.mock_configs import MockConfig
 
 
@@ -29,9 +25,7 @@ class TestCatchRouterExceptionsIntegration(GatewayBatchesTestCase):
         # Create and upload a test file
         content = b'{"custom_id": "test"}\n'
         f = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "batch"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
@@ -41,11 +35,7 @@ class TestCatchRouterExceptionsIntegration(GatewayBatchesTestCase):
             resp = self.client.post(
                 reverse("gateway:batches"),
                 data=json.dumps(
-                    {
-                        "input_file_id": file_id,
-                        "completion_window": "24h",
-                        "endpoint": "/v1/chat/completions",
-                    }
+                    {"input_file_id": file_id, "completion_window": "24h", "endpoint": "/v1/chat/completions"}
                 ),
                 content_type="application/json",
                 headers=self.headers,
@@ -71,22 +61,14 @@ class TestCatchRouterExceptionsIntegration(GatewayBatchesTestCase):
         # Create and upload a test file
         content = b'{"custom_id": "test"}\n'
         f = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "batch"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
         # Create a batch successfully first
         resp = self.client.post(
             reverse("gateway:batches"),
-            data=json.dumps(
-                {
-                    "input_file_id": file_id,
-                    "completion_window": "24h",
-                    "endpoint": "/v1/chat/completions",
-                }
-            ),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": "/v1/chat/completions"}),
             content_type="application/json",
             headers=self.headers,
         )
@@ -117,22 +99,14 @@ class TestCatchRouterExceptionsIntegration(GatewayBatchesTestCase):
         # Create and upload a test file
         content = b'{"custom_id": "test"}\n'
         f = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "batch"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
         # Create a batch successfully first
         resp = self.client.post(
             reverse("gateway:batches"),
-            data=json.dumps(
-                {
-                    "input_file_id": file_id,
-                    "completion_window": "24h",
-                    "endpoint": "/v1/chat/completions",
-                }
-            ),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": "/v1/chat/completions"}),
             content_type="application/json",
             headers=self.headers,
         )
@@ -141,9 +115,7 @@ class TestCatchRouterExceptionsIntegration(GatewayBatchesTestCase):
 
         # Patch upstream batch cancel to return 400
         with self.mock_server.patch_external_api(f"batches/{batch_id}/cancel", bad_request):
-            resp = self.client.post(
-                reverse("gateway:batch_cancel", args=[batch_id]), headers=self.headers
-            )
+            resp = self.client.post(reverse("gateway:batch_cancel", args=[batch_id]), headers=self.headers)
 
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Cannot cancel batch", resp.json()["error"]["message"])
@@ -192,9 +164,7 @@ class TestCatchRouterExceptionsFiles(GatewayFilesTestCase):
         # Create a file successfully first
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
@@ -222,17 +192,13 @@ class TestCatchRouterExceptionsFiles(GatewayFilesTestCase):
         # Create a file successfully first
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
         # Patch upstream file content retrieval to return 400
         with self.mock_server.patch_external_api(f"files/{file_id}/content", bad_request):
-            resp = self.client.get(
-                reverse("gateway:file_content", args=[file_id]), headers=self.headers
-            )
+            resp = self.client.get(reverse("gateway:file_content", args=[file_id]), headers=self.headers)
 
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Cannot retrieve file content", resp.json()["error"]["message"])
@@ -291,9 +257,7 @@ class TestCatchRouterExceptionsVectorStores(GatewayIntegrationTestCase):
 
         # Patch upstream vector store retrieval to return 400
         with self.mock_server.patch_external_api(f"vector_stores/{vs_id}", bad_request):
-            resp = self.client.get(
-                reverse("gateway:vector_store", args=[vs_id]), headers=self.headers
-            )
+            resp = self.client.get(reverse("gateway:vector_store", args=[vs_id]), headers=self.headers)
 
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Invalid vector store", resp.json()["error"]["message"])
@@ -362,9 +326,7 @@ class TestCatchRouterExceptionsVectorStoreFiles(GatewayFilesTestCase):
 
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
@@ -406,9 +368,7 @@ class TestCatchRouterExceptionsVectorStoreFiles(GatewayFilesTestCase):
 
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
@@ -422,12 +382,8 @@ class TestCatchRouterExceptionsVectorStoreFiles(GatewayFilesTestCase):
         vs_file_id = resp.json()["id"]
 
         # Patch upstream vector store file retrieval to return 400
-        with self.mock_server.patch_external_api(
-            f"vector_stores/{vs_id}/files/{vs_file_id}", bad_request
-        ):
-            resp = self.client.get(
-                reverse("gateway:vector_store_file", args=[vs_id, vs_file_id]), headers=self.headers
-            )
+        with self.mock_server.patch_external_api(f"vector_stores/{vs_id}/files/{vs_file_id}", bad_request):
+            resp = self.client.get(reverse("gateway:vector_store_file", args=[vs_id, vs_file_id]), headers=self.headers)
 
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Invalid vector store file", resp.json()["error"]["message"])
@@ -458,9 +414,7 @@ class TestCatchRouterExceptionsVectorStoreFiles(GatewayFilesTestCase):
 
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
@@ -474,12 +428,9 @@ class TestCatchRouterExceptionsVectorStoreFiles(GatewayFilesTestCase):
         vs_file_id = resp.json()["id"]
 
         # Patch upstream vector store file content retrieval to return 400
-        with self.mock_server.patch_external_api(
-            f"vector_stores/{vs_id}/files/{vs_file_id}/content", bad_request
-        ):
+        with self.mock_server.patch_external_api(f"vector_stores/{vs_id}/files/{vs_file_id}/content", bad_request):
             resp = self.client.get(
-                reverse("gateway:vector_store_file_content", args=[vs_id, vs_file_id]),
-                headers=self.headers,
+                reverse("gateway:vector_store_file_content", args=[vs_id, vs_file_id]), headers=self.headers
             )
 
         self.assertEqual(resp.status_code, 400)
@@ -513,16 +464,12 @@ class TestCatchRouterExceptionsVectorStoreFileBatches(GatewayFilesTestCase):
 
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
         # Patch upstream file_batches endpoint to return 400
-        with self.mock_server.patch_external_api(
-            f"vector_stores/{vs_id}/file_batches", bad_request
-        ):
+        with self.mock_server.patch_external_api(f"vector_stores/{vs_id}/file_batches", bad_request):
             resp = self.client.post(
                 reverse("gateway:vector_store_file_batches", args=[vs_id]),
                 data=json.dumps({"file_ids": [file_id]}),
@@ -559,9 +506,7 @@ class TestCatchRouterExceptionsVectorStoreFileBatches(GatewayFilesTestCase):
 
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
@@ -575,12 +520,9 @@ class TestCatchRouterExceptionsVectorStoreFileBatches(GatewayFilesTestCase):
         batch_id = resp.json()["id"]
 
         # Patch upstream file batch retrieval to return 400
-        with self.mock_server.patch_external_api(
-            f"vector_stores/{vs_id}/file_batches/{batch_id}", bad_request
-        ):
+        with self.mock_server.patch_external_api(f"vector_stores/{vs_id}/file_batches/{batch_id}", bad_request):
             resp = self.client.get(
-                reverse("gateway:vector_store_file_batch", args=[vs_id, batch_id]),
-                headers=self.headers,
+                reverse("gateway:vector_store_file_batch", args=[vs_id, batch_id]), headers=self.headers
             )
 
         self.assertEqual(resp.status_code, 400)
@@ -612,9 +554,7 @@ class TestCatchRouterExceptionsVectorStoreFileBatches(GatewayFilesTestCase):
 
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
@@ -628,12 +568,9 @@ class TestCatchRouterExceptionsVectorStoreFileBatches(GatewayFilesTestCase):
         batch_id = resp.json()["id"]
 
         # Patch upstream file batch cancel to return 400
-        with self.mock_server.patch_external_api(
-            f"vector_stores/{vs_id}/file_batches/{batch_id}/cancel", bad_request
-        ):
+        with self.mock_server.patch_external_api(f"vector_stores/{vs_id}/file_batches/{batch_id}/cancel", bad_request):
             resp = self.client.post(
-                reverse("gateway:vector_store_file_batch_cancel", args=[vs_id, batch_id]),
-                headers=self.headers,
+                reverse("gateway:vector_store_file_batch_cancel", args=[vs_id, batch_id]), headers=self.headers
             )
 
         self.assertEqual(resp.status_code, 400)
@@ -665,9 +602,7 @@ class TestCatchRouterExceptionsVectorStoreFileBatches(GatewayFilesTestCase):
 
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(
-            reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers
-        )
+        resp = self.client.post(reverse("gateway:files"), {"file": f, "purpose": "assistants"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
@@ -681,12 +616,9 @@ class TestCatchRouterExceptionsVectorStoreFileBatches(GatewayFilesTestCase):
         batch_id = resp.json()["id"]
 
         # Patch upstream file batch files listing to return 400
-        with self.mock_server.patch_external_api(
-            f"vector_stores/{vs_id}/file_batches/{batch_id}/files", bad_request
-        ):
+        with self.mock_server.patch_external_api(f"vector_stores/{vs_id}/file_batches/{batch_id}/files", bad_request):
             resp = self.client.get(
-                reverse("gateway:vector_store_file_batch_files", args=[vs_id, batch_id]),
-                headers=self.headers,
+                reverse("gateway:vector_store_file_batch_files", args=[vs_id, batch_id]), headers=self.headers
             )
 
         self.assertEqual(resp.status_code, 400)

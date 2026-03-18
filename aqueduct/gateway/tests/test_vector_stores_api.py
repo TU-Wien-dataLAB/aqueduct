@@ -328,8 +328,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
-        batch_id = resp.json()["id"]
-        return batch_id
+        return resp.json()["id"]
 
     def test_vector_store_lifecycle(self):
         """Test full lifecycle: create, list, get, modify, delete vector store."""
@@ -547,7 +546,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
     def test_isolation_between_tokens(self):
         """Users can't see each other's vector stores."""
         # Create new user and token
-        other_token_value, other_user_id = self.create_new_user()
+        other_token_value, _other_user_id = self.create_new_user()
         other_headers = {"Authorization": f"Bearer {other_token_value}"}
 
         # Try to access the vector store of one user with the different user's secret
@@ -936,7 +935,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         # Verify batch-created records exist locally with file IDs as their IDs
         batch_files = VectorStoreFileModel.objects.filter(vector_store=self.vs_obj)
         self.assertEqual(batch_files.count(), 2)
-        batch_file_ids = set(f.id for f in batch_files)
+        batch_file_ids = {f.id for f in batch_files}
         self.assertEqual(batch_file_ids, {"file-mock-1", "file-mock-2"})
 
         # List files - returns upstream data directly

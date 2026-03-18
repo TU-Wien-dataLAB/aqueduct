@@ -263,7 +263,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     def test_create_batch_sa_cross_token_file(self):
         """SA token can create a batch using a file uploaded by another SA token on the same team."""
 
-        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        headers1, headers2, _sa1, _sa2, _token1, token2 = self._setup_two_sa_tokens_same_team()
 
         # Upload file with SA token 1
         file_id = self._create_jsonl_file(name="sa1", headers=headers1)
@@ -284,8 +284,8 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     def test_create_batch_sa_cross_team_denied(self):
         """SA token cannot create a batch using a file from a different team."""
 
-        headers1, _, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
-        other_headers, other_sa, other_token = self._setup_cross_team_sa_token()
+        headers1, _, _sa1, _sa2, _token1, _token2 = self._setup_two_sa_tokens_same_team()
+        other_headers, _other_sa, _other_token = self._setup_cross_team_sa_token()
 
         # Upload file with SA token on team Whale
         file_id = self._create_jsonl_file(headers=headers1)
@@ -303,7 +303,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     def test_list_batches_sa_team_scope(self):
         """SA tokens on the same team can see each other's batches."""
 
-        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        headers1, headers2, _sa1, _sa2, token1, _token2 = self._setup_two_sa_tokens_same_team()
 
         # Upload file and create batch with SA token 1
         file_id1 = self._create_jsonl_file(name="sa1", headers=headers1)
@@ -346,7 +346,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     def test_retrieve_batch_sa_team_scope(self):
         """SA token can retrieve a batch created by another SA token on the same team."""
 
-        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        headers1, headers2, _sa1, _sa2, token1, _token2 = self._setup_two_sa_tokens_same_team()
 
         # Upload file and create batch with SA token 1
         file_id = self._create_jsonl_file(name="sa1", headers=headers1)
@@ -368,7 +368,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     def test_cancel_batch_sa_team_scope(self):
         """SA token can cancel a batch created by another SA token on the same team."""
 
-        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        headers1, headers2, _sa1, _sa2, _token1, _token2 = self._setup_two_sa_tokens_same_team()
 
         # Upload file and create batch with SA token 1
         file_id = self._create_jsonl_file(name="sa1", headers=headers1)

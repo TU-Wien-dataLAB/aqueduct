@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse, Usage
@@ -136,12 +136,7 @@ default_post_configs = {
             created=1694268190,
             model="text-davinci-003",
             choices=[
-                {
-                    "text": "This is a mock completion response.",
-                    "index": 0,
-                    "logprobs": None,
-                    "finish_reason": "stop",
-                }
+                {"text": "This is a mock completion response.", "index": 0, "logprobs": None, "finish_reason": "stop"}
             ],
             usage=Usage(prompt_tokens=10, completion_tokens=7, total_tokens=17),
         ).model_dump()
@@ -155,10 +150,7 @@ default_post_configs = {
             choices=[
                 {
                     "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": "This is a mock chat completion response.",
-                    },
+                    "message": {"role": "assistant", "content": "This is a mock chat completion response."},
                     "finish_reason": "stop",
                 }
             ],
@@ -179,9 +171,7 @@ default_post_configs = {
     "embeddings": MockConfig(
         response_data=EmbeddingResponse(
             object="list",
-            data=[
-                Embedding(object="embedding", embedding=[0.1234, -0.5678, 0.9012, -0.3456], index=0)
-            ],
+            data=[Embedding(object="embedding", embedding=[0.1234, -0.5678, 0.9012, -0.3456], index=0)],
             model="text-embedding-ada-002",
             usage=Usage(prompt_tokens=8, total_tokens=8),
         ).model_dump()
@@ -192,7 +182,7 @@ default_post_configs = {
             filename="test.jsonl",
             bytes=100,
             purpose="batch",
-            created_at=int(datetime.now().timestamp()),
+            created_at=int(datetime.now(tz=UTC).timestamp()),
             expires_at=None,
             status="processed",
             status_details=None,
@@ -338,12 +328,7 @@ _chat_completion_stream_data = [
         created=1768398242,
         model="gpt-4.1-nano",
         object="chat.completion.chunk",
-        choices=[
-            {
-                "index": 0,
-                "delta": {"content": "Beneath the sky so vast and blue,  \n", "role": "assistant"},
-            }
-        ],
+        choices=[{"index": 0, "delta": {"content": "Beneath the sky so vast and blue,  \n", "role": "assistant"}}],
         stream=True,
         stream_options={"include_usage": True},
     ).model_dump(),
@@ -352,9 +337,7 @@ _chat_completion_stream_data = [
         created=1768398242,
         model="gpt-4.1-nano",
         object="chat.completion.chunk",
-        choices=[
-            {"index": 0, "delta": {"content": "Whispers of dreams drift softly through,  \n"}}
-        ],
+        choices=[{"index": 0, "delta": {"content": "Whispers of dreams drift softly through,  \n"}}],
         stream=True,
         stream_options={"include_usage": True},
     ).model_dump(),
@@ -391,22 +374,14 @@ _chat_completion_stream_data = [
 _responses_stream_data: list[BaseModel] = [
     ResponseCreatedEvent(
         response=Response(
-            **_response_basic_data,
-            id="resp_12345abc",
-            created_at=1769184439.0,
-            output=[],
-            status="in_progress",
+            **_response_basic_data, id="resp_12345abc", created_at=1769184439.0, output=[], status="in_progress"
         ),
         sequence_number=0,
         type="response.created",
     ).model_dump(),
     ResponseInProgressEvent(
         response=Response(
-            **_response_basic_data,
-            id="resp_12345abc",
-            created_at=1769184439.0,
-            output=[],
-            status="in_progress",
+            **_response_basic_data, id="resp_12345abc", created_at=1769184439.0, output=[], status="in_progress"
         ),
         sequence_number=1,
         type="response.in_progress",
@@ -458,20 +433,14 @@ _responses_stream_data: list[BaseModel] = [
         content_index=0,
         item_id="msg_67890def",
         output_index=0,
-        part=ResponseOutputText(
-            annotations=[], text="Hello, how are you?", type="output_text", logprobs=[]
-        ),
+        part=ResponseOutputText(annotations=[], text="Hello, how are you?", type="output_text", logprobs=[]),
         sequence_number=7,
         type="response.content_part.done",
     ).model_dump(),
     ResponseOutputItemDoneEvent(
         item=ResponseOutputMessage(
             id="msg_67890def",
-            content=[
-                ResponseOutputText(
-                    annotations=[], text="Hello, how are you?", type="output_text", logprobs=[]
-                )
-            ],
+            content=[ResponseOutputText(annotations=[], text="Hello, how are you?", type="output_text", logprobs=[])],
             role="assistant",
             status="completed",
             type="message",
@@ -489,12 +458,7 @@ _responses_stream_data: list[BaseModel] = [
                 ResponseOutputMessage(
                     id="msg_67890def",
                     content=[
-                        ResponseOutputText(
-                            annotations=[],
-                            text="Hello, how are you?",
-                            type="output_text",
-                            logprobs=[],
-                        )
+                        ResponseOutputText(annotations=[], text="Hello, how are you?", type="output_text", logprobs=[])
                     ],
                     role="assistant",
                     status="completed",
@@ -516,9 +480,7 @@ _responses_stream_data: list[BaseModel] = [
 ]
 
 default_post_stream_configs = {
-    "chat/completions": MockStreamingConfig(
-        response_data=convert_to_stream_data(_chat_completion_stream_data)
-    ),
+    "chat/completions": MockStreamingConfig(response_data=convert_to_stream_data(_chat_completion_stream_data)),
     "responses": MockStreamingConfig(response_data=convert_to_stream_data(_responses_stream_data)),
 }
 
@@ -552,11 +514,7 @@ default_get_configs = {
             id="resp_12345abc",
             output=[
                 ResponseOutputMessage(
-                    content=[
-                        ResponseOutputText(
-                            annotations=[], text="Hello, how are you?", type="output_text"
-                        )
-                    ],
+                    content=[ResponseOutputText(annotations=[], text="Hello, how are you?", type="output_text")],
                     id="msg_12345abc",
                     role="assistant",
                     status="completed",

@@ -3,7 +3,6 @@ import logging
 import os
 import signal
 import subprocess
-from typing import Optional
 
 from django.conf import settings
 from django.test.runner import DiscoverRunner
@@ -14,25 +13,25 @@ logger = logging.getLogger("aqueduct")
 
 
 # Tests need access to the global mock server instance
-_shared_mock_server: Optional[MockAPIServer] = None
+_shared_mock_server: MockAPIServer | None = None
 # ...and some tests also need a running MCP server
-_shared_mcp_server_process: Optional[subprocess.Popen] = None
-_mcp_server_port: Optional[int] = None
+_shared_mcp_server_process: subprocess.Popen | None = None
+_mcp_server_port: int | None = None
 
 
-def get_shared_mock_server() -> Optional[MockAPIServer]:
+def get_shared_mock_server() -> MockAPIServer | None:
     """Get the mock server instance shared by all tests in the suite."""
     if _shared_mock_server is None:
         raise RuntimeError("Mock server not initialized. Use MockServerTestRunner.")
     return _shared_mock_server
 
 
-def get_shared_mcp_server_process() -> Optional[subprocess.Popen]:
+def get_shared_mcp_server_process() -> subprocess.Popen | None:
     """Get the global MCP server process shared by all MCP-related tests."""
     return _shared_mcp_server_process
 
 
-def get_mcp_server_port() -> Optional[int]:
+def get_mcp_server_port() -> int | None:
     """Get the port used by the global MCP server."""
     return _mcp_server_port
 
@@ -64,7 +63,7 @@ class MockServerTestRunner(DiscoverRunner):
                 _shared_mock_server.start()
                 logger.info(f"✓ Mock server started on {_shared_mock_server.base_url}.")
             except RuntimeError as err:
-                logger.error(f"✗ Failed to start mock server: {err}")
+                logger.exception(f"✗ Failed to start mock server: {err}")
                 raise
 
             # Ensure the mock server is stopped even if tests crash
@@ -117,5 +116,5 @@ class MockServerTestRunner(DiscoverRunner):
 
         from gateway.tests.utils.mcp import MCP_CONFIG_PATH
 
-        if os.path.exists(MCP_CONFIG_PATH):
-            os.remove(MCP_CONFIG_PATH)
+        if MCP_CONFIG_PATH.exists():
+            MCP_CONFIG_PATH.unlink()

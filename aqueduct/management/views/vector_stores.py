@@ -151,7 +151,7 @@ def _refresh_vector_store(vs) -> bool:
     try:
         result = async_to_sync(vs.areload_from_upstream)(raise_on_error=False)
     except Exception:
-        log.exception(f"Failed to refresh vector store {vs.id} from upstream")
+        log.exception("Failed to refresh vector store %s from upstream", vs.id)
         return False
     else:
         return result is not None

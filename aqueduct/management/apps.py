@@ -40,7 +40,7 @@ class AqueductManagementConfig(AppConfig):
 
                 if group == "admin":
                     cache.set(f"django:tos:skip_tos_check:{instance.id}", True, version=key_version)
-                    log.info(f"Added admin user '{instance.email}' to TOS cache")
+                    log.info("Added admin user '%s' to TOS cache", instance.email)
 
                 # But if they aren't make sure we invalidate them from the cache
                 elif cache.get(f"django:tos:skip_tos_check:{instance.id}", False):

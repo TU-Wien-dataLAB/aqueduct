@@ -51,6 +51,7 @@ select = [
     "A",      # flake8-builtins
     "C90",    # mccabe complexity
     "E",      # pycodestyle errors
+    "G", # flake8-logging-format
     "T20",    # flake8-print
     "TID",    # flake8-tidy-imports
     "W",      # pycodestyle warnings
@@ -85,7 +86,6 @@ select = [
     "ANN206", # Missing return type annotation for classmethod
     "PGH003", # Use specific rule codes when ignoring type issues
     "TC002",  # Move third-party imports into type-checking block
-    "G201",   # Logging .exception() should be used instead of .error(..., exc_info=True)
     "ANN401", # Dynamically typed expressions (Any) are disallowed
     "PERF101", # Do not cast an iterable to list before iterating over it
     "PERF102", # Incorrect dict iterator

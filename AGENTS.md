@@ -42,10 +42,5 @@
 - Do not silently change contracts (status codes, payload shape, defaults, limits, auth behavior) unless requested
 - If deviating from an established pattern, call it out explicitly in handoff
 
-## Code Style Guidelines
-- **Imports**: Use absolute imports, group standard library, third-party, then local
-- **Formatting**: Follow Django conventions, 4-space indentation, max 88 line length
-- **Types**: Use type hints consistently, especially for function signatures
-- **Naming**: snake_case for variables/functions, CamelCase for classes, UPPER_CASE for constants
-- **Error handling**: Use Django's exception handling patterns, log errors appropriately
-- **Django-specific**: Use Django's ORM, view decorators, and model patterns consistently
+## Notes
+- use the `todowrite` tool to plan your work

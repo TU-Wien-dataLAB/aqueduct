@@ -65,7 +65,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         user.save()
         profile.save()
 
-        log.info(f"Created user '{user.email}' ({profile.group})")
+        log.info("Created user '%s' (%s)", user.email, profile.group)
         return user
 
     def update_user(self, user, claims) -> User:
@@ -98,5 +98,5 @@ class OIDCBackend(OIDCAuthenticationBackend):
         user.save()
         profile.save()
 
-        log.info(f"Updated user '{user.email}' ({profile.group})")
+        log.info("Updated user '%s' (%s)", user.email, profile.group)
         return user

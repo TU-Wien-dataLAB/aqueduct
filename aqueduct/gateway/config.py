@@ -54,7 +54,7 @@ def _validate_router_config(config: dict):
 def get_router_config() -> dict:
     path = settings.LITELLM_ROUTER_CONFIG_FILE_PATH
     try:
-        log.info(f"Loading router config from {path}")
+        log.info("Loading router config from %s", path)
         with Path(path).open() as f:
             data = yaml.safe_load(f)
     except (FileNotFoundError, TypeError):

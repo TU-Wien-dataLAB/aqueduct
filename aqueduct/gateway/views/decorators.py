@@ -58,7 +58,7 @@ def token_authenticated(token_auth_only: bool) -> Decorator:
             if not getattr(request, "user", None) or not request.user.is_authenticated:
                 log.error("Authentication check failed in ai_gateway_view: request.user is not authenticated.")
                 return unauthorized_response
-            log.debug(f"User {request.user.email} authenticated.")
+            log.debug("User %s authenticated.", request.user.email)
 
             token_key = token_from_request(request)
             if token_auth_only and not token_key:
@@ -171,7 +171,7 @@ def parse_body(model: TypeAdapter) -> Decorator:
                 try:
                     data = json.loads(body)
                 except json.JSONDecodeError as e:
-                    log.exception(f"JSON decode error: {e!s}, body was: {request.body!r}")
+                    log.exception("JSON decode error: %s, body was: %r", e, request.body)
                     return error_response(f"Invalid JSON: {e!s}", status=400)
             elif content_type.startswith("multipart/form-data"):
                 try:
@@ -179,7 +179,7 @@ def parse_body(model: TypeAdapter) -> Decorator:
                 except FileSizeError as e:
                     return error_response(str(e), status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             else:
-                log.error(f"Unsupported Content-Type: {content_type}")
+                log.error("Unsupported Content-Type: %s", content_type)
                 return error_response(
                     f"Unsupported Content-Type: {content_type}", status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE
                 )
@@ -191,13 +191,13 @@ def parse_body(model: TypeAdapter) -> Decorator:
             try:
                 model.validate_python(data)
             except ValidationError as e:
-                log.exception(f"Validation error: {e}")
+                log.exception("Validation error: %s", e)
                 error_messages = ", ".join(
                     f"{err['loc'][0] if err['loc'] else 'field'}: {err['msg']}" for err in e.errors()
                 )
                 return error_response(error_messages, status=HTTPStatus.BAD_REQUEST)
             except Exception as e:
-                log.exception(f"Request body parse error: {e!s}, data was: {data!r}")
+                log.exception("Request body parse error: %s, data was: %r", e, data)
                 return error_response(f"Failed to parse the request body: {e!s}", status=400)
 
             # If there are files sent with the request (i.e. content type is "multipart/form-data"),
@@ -249,7 +249,7 @@ def check_limits(view_func: AsyncView) -> AsyncView:
         try:
             # Get limits asynchronously
             limits = await sync_to_async(token.get_limit)()
-            log.debug(f"Rate limits for Token '{token.name}' (ID: {token.id}): {limits}")
+            log.debug("Rate limits for Token %r (ID: %s): %s", token.name, token.id, limits)
 
             if (
                 limits.requests_per_minute is not None
@@ -273,8 +273,11 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 total_output = recent_requests_agg.get("total_output_tokens", 0) or 0
 
                 log.debug(
-                    f"Recent usage (last 60s) for Token '{token.name}': "
-                    f"Requests={request_count}, Input={total_input}, Output={total_output}"
+                    "Recent usage (last 60s) for Token %r: Requests=%s, Input=%s, Output=%s",
+                    token.name,
+                    request_count,
+                    total_input,
+                    total_output,
                 )
 
                 # --- Check Limits ---
@@ -292,14 +295,14 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 if len(exceeded) > 0:
                     error_message = "Rate limit exceeded. " + ", ".join(exceeded) + "."
                     log.warning(
-                        f"Rate limit exceeded for Token '{token.name}' (ID: {token.id}). Details: {error_message}"
+                        "Rate limit exceeded for Token %r (ID: %s). Details: %s", token.name, token.id, error_message
                     )
-                    log.error(f"Rate limit exceeded - {error_message}")
+                    log.error("Rate limit exceeded - %s", error_message)
                     # Return 429 Too Many Requests
                     return error_response(error_message, status=429)
 
         except Exception as e:
-            log.exception(f"Error checking rate limits for Token '{token.name}': {e}")
+            log.exception("Error checking rate limits for Token %r: %s", token.name, e)
             return error_response("Internal gateway error checking rate limits", status=500)
 
         return await view_func(request, *args, **kwargs)
@@ -361,7 +364,7 @@ def resolve_alias(view_func: AsyncView) -> AsyncView:
         if model_or_alias:
             resolved_model = resolve_model_alias(model_or_alias)
             pydantic_model["model"] = resolved_model
-            log.debug(f"Resolved model '{model_or_alias}' to '{resolved_model}'")
+            log.debug("Resolved model %r to %r", model_or_alias, resolved_model)
 
         return await view_func(request, *args, **kwargs)
 
@@ -382,7 +385,7 @@ def check_model_availability(view_func: AsyncView) -> AsyncView:
         if not model:
             return await view_func(request, *args, **kwargs)
         if await sync_to_async(token.model_excluded)(model):
-            log.error(f"Model not found - {model}")
+            log.error("Model not found - %s", model)
             return error_response("Model not found!", status=404)
         return await view_func(request, *args, **kwargs)
 
@@ -400,7 +403,7 @@ def check_mcp_server_availability(view_func: AsyncView) -> AsyncView:
         if not server_name:
             return await view_func(request, *args, **kwargs)
         if await sync_to_async(token.mcp_server_excluded)(server_name):
-            log.error(f"MCP server not found - {server_name}")
+            log.error("MCP server not found - %s", server_name)
             return error_response("MCP server not found!", status=404)
         return await view_func(request, *args, **kwargs)
 
@@ -498,12 +501,12 @@ def process_file_content(view_func: AsyncView) -> AsyncView:
                         return error_response("File not found", status=404)
                     except Exception as e:
                         # return json response here if there was an error
-                        log.exception(f"Error processing file - {e!s}")
+                        log.exception("Error processing file - %s", e)
                         return error_response(f"Error processing file: {e!s}", status=400)
 
                     if len(file_bytes) > max_file_bytes:
                         log.error(
-                            f"File processing error - File too large (individual file must be <= {max_file_mb}MB)"
+                            "File processing error - File too large (individual file must be <= %sMB)", max_file_mb
                         )
                         return error_response(
                             f"Error processing file content: File too large. "
@@ -513,8 +516,8 @@ def process_file_content(view_func: AsyncView) -> AsyncView:
                     total_file_size_bytes += len(file_bytes)
                     if total_file_size_bytes > max_total_size_bytes:
                         log.error(
-                            f"File processing error - Files too large in total "
-                            f"(all files must be <= {max_total_size_mb}MB)"
+                            "File processing error - Files too large in total (all files must be <= %sMB)",
+                            max_total_size_mb,
                         )
                         return error_response(
                             f"Error processing file content: Files too large in total. "
@@ -527,7 +530,7 @@ def process_file_content(view_func: AsyncView) -> AsyncView:
                         extracted_text = await extract_text_with_tika(file_bytes)
                     except httpx.HTTPStatusError as e:
                         # return json response here if there was a tika request error
-                        log.exception(f"Tika error extracting text from file - {e!s}")
+                        log.exception("Tika error extracting text from file - %s", e)
                         return error_response(f"Tika error extracting text from file: {e!s}", status=400)
 
                     extracted_text = (
@@ -576,39 +579,39 @@ def catch_router_exceptions(view_func: AsyncView) -> AsyncView:
         try:
             return await view_func(request, *args, **kwargs)
         except (litellm.BadRequestError, openai.BadRequestError) as e:
-            log.exception(f"Bad request - {_r(e)}")
+            log.exception("Bad request - %s", _r(e))
             return _exception_response(e, status=400)
         except (litellm.AuthenticationError, openai.AuthenticationError) as e:
-            log.exception(f"Authentication error - {_r(e)}")
+            log.exception("Authentication error - %s", _r(e))
             return _exception_response(e, status=401)
         except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
-            log.exception(f"Permission denied - {_r(e)}")
+            log.exception("Permission denied - %s", _r(e))
             return _exception_response(e, status=403)
         except (litellm.NotFoundError, openai.NotFoundError) as e:
-            log.exception(f"Not found - {_r(e)}")
+            log.exception("Not found - %s", _r(e))
             return _exception_response(e, status=404)
         except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
-            log.exception(f"Unprocessable entity - {_r(e)}")
+            log.exception("Unprocessable entity - %s", _r(e))
             return _exception_response(e, status=422)
         except (litellm.RateLimitError, openai.RateLimitError) as e:
-            log.exception(f"Rate limit exceeded - {_r(e)}")
+            log.exception("Rate limit exceeded - %s", _r(e))
             return _exception_response(e, status=429)
         except (litellm.Timeout, openai.APITimeoutError) as e:
-            log.exception(f"Timeout - {_r(e)}")
+            log.exception("Timeout - %s", _r(e))
             return _exception_response(e, status=504)
         except (litellm.ServiceUnavailableError, litellm.APIConnectionError, openai.APIConnectionError) as e:
-            log.exception(f"Service unavailable - {_r(e)}")
+            log.exception("Service unavailable - %s", _r(e))
             return _exception_response(e, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
-            log.exception(f"Internal server error - {_r(e)}")
+            log.exception("Internal server error - %s", _r(e))
             return _exception_response(e, status=500)
         except (litellm.APIError, openai.APIError) as e:
             # APIError is raised e.g. when user sends extra kwargs in the request body,
             # so we return a 400 Bad request.
-            log.exception(f"API error - {_r(e)}")
+            log.exception("API error - %s", _r(e))
             return _exception_response(e, status=400)
         except Exception as e:
-            log.exception(f"Unexpected error - {_r(e)}")
+            log.exception("Unexpected error - %s", _r(e))
             return error_response(_r(e), error_type="server_error", status=502)
 
     return wrapper
@@ -660,14 +663,14 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
         if not getattr(settings, "MCP_ENABLE_DNS_REBINDING_PROTECTION", True):
             return await view_func(request, *args, **kwargs)
 
-        log.debug(f"MCP request headers: {dict(request.headers)}")
+        log.debug("MCP request headers: %s", dict(request.headers))
 
         # Validate Content-Type for POST requests
         if request.method == "POST":
             content_type = request.headers.get("content-type", "")
-            log.debug(f"POST request Content-Type: '{content_type}'")
+            log.debug("POST request Content-Type: %r", content_type)
             if not content_type.lower().startswith("application/json"):
-                log.error(f"Invalid Content-Type header: {content_type}")
+                log.error("Invalid Content-Type header: %s", content_type)
                 return error_response("Invalid Content-Type header", status=400)
 
         # Validate Host header against allowed values
@@ -680,7 +683,7 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
 
         host_valid = in_wildcard(host, allowed_hosts)
         if not host_valid:
-            log.error(f"Invalid Host header: {host}")
+            log.error("Invalid Host header: %s", host)
             return error_response("Invalid Host header", status=421)
 
         # Validate Origin header against allowed values
@@ -690,7 +693,7 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
         if origin:
             origin_valid = in_wildcard(origin, allowed_origins)
             if not origin_valid:
-                log.error(f"Invalid Origin header: {origin}")
+                log.error("Invalid Origin header: %s", origin)
                 return error_response("Invalid Origin header", status=403)
 
         return await view_func(request, *args, **kwargs)
@@ -706,7 +709,7 @@ def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
 
         if request.method != "POST":
             if not session_id:
-                log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
+                log.error("Session ID required for MCP server %r", kwargs.get("name"))
                 return error_response("Mcp-Session-Id header required", status=400)
 
             return await view_func(request, *args, request_log=None, **kwargs)
@@ -718,7 +721,7 @@ def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
         is_initialize = hasattr(json_rpc_message.root, "method") and json_rpc_message.root.method == "initialize"
 
         if not is_initialize and not session_id:
-            log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
+            log.error("Session ID required for MCP server %r", kwargs.get("name"))
             return error_response("Mcp-Session-Id header required", status=400)
 
         kwargs["json_rpc_message"] = json_rpc_message
@@ -752,7 +755,7 @@ def validate_response_id(view_func: AsyncView) -> AsyncView:
 async def _validate_mcp_tool(request: ASGIRequest, token: Token, tool: ToolParam) -> ViewResult | None:
     server_name = tool.get("server_label")
     if await sync_to_async(token.mcp_server_excluded)(server_name):
-        log.error(f"MCP server not found - {server_name}")
+        log.error("MCP server not found - %s", server_name)
         return error_response(f"MCP server not found - {server_name}", status=404)
 
     try:
@@ -761,7 +764,7 @@ async def _validate_mcp_tool(request: ASGIRequest, token: Token, tool: ToolParam
     except KeyError:
         # the user wants to access an externally managed MCP server
         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-            log.exception(f"MCP server not found - {server_name}")
+            log.exception("MCP server not found - %s", server_name)
             return error_response(f"MCP server not found - {server_name}", status=404)
         return None
 

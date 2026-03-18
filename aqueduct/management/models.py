@@ -762,7 +762,7 @@ class FileObject(models.Model):
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to delete file {self.id} from upstream: {e}")
+            log.warning("Failed to delete file %s from upstream: %s", self.id, e)
             return False
         else:
             return True
@@ -788,7 +788,7 @@ class FileObject(models.Model):
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to reload file {self.id} from upstream: {e}")
+            log.warning("Failed to reload file %s from upstream: %s", self.id, e)
             return None
         else:
             self.purpose = remote.purpose
@@ -960,7 +960,7 @@ class Batch(models.Model):
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to reload batch {self.id} from upstream: {e}")
+            log.warning("Failed to reload batch %s from upstream: %s", self.id, e)
             return None
         else:
             self.status = remote.status
@@ -1048,7 +1048,7 @@ class VectorStore(models.Model):
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to delete vector store {self.id} from upstream: {e}")
+            log.warning("Failed to delete vector store %s from upstream: %s", self.id, e)
             return False
         else:
             return True
@@ -1074,7 +1074,7 @@ class VectorStore(models.Model):
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to reload vector store {self.id} from upstream: {e}")
+            log.warning("Failed to reload vector store %s from upstream: %s", self.id, e)
             return None
         else:
             self.status = remote.status or self.status
@@ -1097,7 +1097,7 @@ class VectorStore(models.Model):
             remote_files_response = await client.vector_stores.files.list(vector_store_id=self.id)
             remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
         except Exception as e:
-            log.warning(f"Failed to list files for vector store {self.id} from upstream: {e}")
+            log.warning("Failed to list files for vector store %s from upstream: %s", self.id, e)
             return 0, 0
 
         success = 0
@@ -1113,9 +1113,9 @@ class VectorStore(models.Model):
                 await local_file.asave()
                 success += 1
             except VectorStoreFile.DoesNotExist:
-                log.debug(f"VectorStoreFile {remote_file.id} not found locally, skipping sync")
+                log.debug("VectorStoreFile %s not found locally, skipping sync", remote_file.id)
             except Exception as e:
-                log.warning(f"Failed to sync VectorStoreFile {remote_file.id}: {e}")
+                log.warning("Failed to sync VectorStoreFile %s: %s", remote_file.id, e)
                 failed += 1
 
         return success, failed
@@ -1201,7 +1201,7 @@ class VectorStoreFile(models.Model):
             False on failure (only if raise_on_error=False).
         """
         if not self.vector_store_id:
-            log.warning(f"Cannot delete vector store file {self.id}: vector_store not set")
+            log.warning("Cannot delete vector store file %s: vector_store not set", self.id)
             if raise_on_error:
                 raise ValueError("Vector store not loaded")
             return False
@@ -1216,7 +1216,7 @@ class VectorStoreFile(models.Model):
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to delete vector store file {self.id} from upstream: {e}")
+            log.warning("Failed to delete vector store file %s from upstream: %s", self.id, e)
             return False
         else:
             return True
@@ -1240,7 +1240,7 @@ class VectorStoreFile(models.Model):
         if not self.vector_store_id:
             if raise_on_error:
                 raise ValueError("Vector store not set")
-            log.warning(f"Cannot reload vector store file {self.id}: vector_store not set")
+            log.warning("Cannot reload vector store file %s: vector_store not set", self.id)
             return None
 
         from gateway.config import get_files_api_client
@@ -1253,7 +1253,7 @@ class VectorStoreFile(models.Model):
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to reload vector store file {self.id} from upstream: {e}")
+            log.warning("Failed to reload vector store file %s from upstream: %s", self.id, e)
             return None
         else:
             self.status = remote.status or self.status
@@ -1332,7 +1332,7 @@ class VectorStoreFileBatch(models.Model):
         if not self.vector_store_id:
             if raise_on_error:
                 raise ValueError("Vector store not set")
-            log.warning(f"Cannot reload vector store file batch {self.id}: vector_store not set")
+            log.warning("Cannot reload vector store file batch %s: vector_store not set", self.id)
             return None
 
         from gateway.config import get_files_api_client
@@ -1347,7 +1347,7 @@ class VectorStoreFileBatch(models.Model):
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to reload vector store file batch {self.id} from upstream: {e}")
+            log.warning("Failed to reload vector store file batch %s from upstream: %s", self.id, e)
             return None
         else:
             self.status = remote.status or self.status

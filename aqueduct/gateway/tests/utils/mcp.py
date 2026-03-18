@@ -78,7 +78,7 @@ class MCPDaphneProcess(DaphneProcess):
         from django.conf import settings
 
         settings.MCP_CONFIG_FILE_PATH = str(MCP_CONFIG_PATH)
-        logger.info(f"Updating MCP_CONFIG_FILE_PATH: {settings.MCP_CONFIG_FILE_PATH}")
+        logger.info("Updating MCP_CONFIG_FILE_PATH: %s", settings.MCP_CONFIG_FILE_PATH)
 
         # Configure MCP security settings for testing
         settings.MCP_ENABLE_DNS_REBINDING_PROTECTION = True
@@ -93,8 +93,9 @@ class MCPDaphneProcess(DaphneProcess):
             settings.ALLOWED_HOSTS.append("malicious.com")
 
         logger.info(
-            f"MCP Security: Protection={settings.MCP_ENABLE_DNS_REBINDING_PROTECTION}, "
-            f"Hosts={settings.MCP_ALLOWED_HOSTS}"
+            "MCP Security: Protection=%s, Hosts=%s",
+            settings.MCP_ENABLE_DNS_REBINDING_PROTECTION,
+            settings.MCP_ALLOWED_HOSTS,
         )
 
         super().run()
@@ -157,7 +158,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         cls.mcp_server_port = port
         cls._update_mcp_config_port(port)
 
-        logger.info(f"Starting MCP everything server on port {port}...")
+        logger.info("Starting MCP everything server on port %s...", port)
         try:
             env = os.environ.copy()
             env["PORT"] = str(port)
@@ -177,7 +178,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         set_shared_mcp_server(cls.mcp_server_process, cls.mcp_server_port)
 
         # Wait for server to be ready by checking if it accepts connections
-        logger.info(f"Waiting for MCP server to accept connections on port {port}...")
+        logger.info("Waiting for MCP server to accept connections on port %s...", port)
         start_time = time.time()
         timeout = 30
         last_error = None
@@ -193,7 +194,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                     sock.settimeout(1.0)
                     sock.connect(("localhost", port))
-                    logger.info(f"✓ MCP everything server started successfully on port {port}")
+                    logger.info("✓ MCP everything server started successfully on port %s", port)
                     return
             except (ConnectionRefusedError, OSError) as e:
                 last_error = e

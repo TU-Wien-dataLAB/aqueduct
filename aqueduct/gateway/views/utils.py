@@ -123,7 +123,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
     try:
         client: openai.AsyncClient = get_openai_client(model)
     except ValueError:
-        log.exception(f"Incompatible model '{model}'! Is model id set in router config?")
+        log.exception("Incompatible model '%s'! Is model id set in router config?", model)
         raise openai.NotFoundError(
             message=f"Incompatible model '{model}'!",
             response=httpx.Response(
@@ -189,7 +189,7 @@ class ResponseRegistrationWrapper:
 def register_response_in_cache(response_id: str | None, model: str, email: str):
     """Registers a response in the cache for later retrieval."""
     if not response_id:
-        log.warning(f"Missing response data: id={response_id}, model={model}")
+        log.warning("Missing response data: id=%s, model=%s", response_id, model)
         raise ValueError("Missing response_id")
 
     cache_key = f"response:{response_id}"
@@ -197,7 +197,7 @@ def register_response_in_cache(response_id: str | None, model: str, email: str):
 
     response_cache = caches["default"]
     response_cache.set(cache_key, cache_value, timeout=settings.RESPONSES_API_TTL_SECONDS)
-    log.debug(f"Registered response {response_id} for user {email} with model {model}")
+    log.debug("Registered response %s for user %s with model %s", response_id, email, model)
 
 
 def get_response_from_cache(response_id: str) -> dict | None:

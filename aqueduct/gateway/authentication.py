@@ -68,19 +68,21 @@ class TokenAuthenticationBackend(BaseBackend):
         # Optional: Check for token expiry
         if token_instance.expires_at and token_instance.expires_at < timezone.now():
             logger.warning(
-                f"Authentication failed: Token {token_instance.name} ({token_instance.key_preview}) has expired."
+                "Authentication failed: Token %s (%s) has expired.", token_instance.name, token_instance.key_preview
             )
             return None
 
         # Token is valid, return the associated user
         # Ensure the related user exists (should always be true due to ForeignKey constraints)
         if not token_instance.user:
-            logger.error(f"Critical: Valid token {token_instance.id} found but has no associated user.")
+            logger.error("Critical: Valid token %s found but has no associated user.", token_instance.id)
             return None
 
         logger.info(
-            f"Authentication successful via token: {token_instance.name} "
-            f"({token_instance.key_preview}) for user {token_instance.user.email}"
+            "Authentication successful via token: %s (%s) for user %s",
+            token_instance.name,
+            token_instance.key_preview,
+            token_instance.user.email,
         )
         # Attach the token to the user object for potential use in views/middleware downstream
         # Note: Modifying request.user directly isn't standard, attaching to request is better if needed

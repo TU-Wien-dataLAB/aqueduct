@@ -37,7 +37,7 @@ from .errors import error_response
 @catch_router_exceptions
 async def vector_stores(
     request: ASGIRequest, token: Token, pydantic_model: VectorStoreCreateParams | None = None, *args, **kwargs
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores - List vector stores
     POST /v1/vector_stores - Create vector store
@@ -164,7 +164,7 @@ async def vector_store(
     client: AsyncOpenAI | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id} - Retrieve vector store
     POST /v1/vector_stores/{vector_store_id} - Modify vector store
@@ -217,7 +217,6 @@ async def vector_store(
         response_data = remote_vs.model_dump(mode="json")
         return JsonResponse(response_data, status=200)
 
-    # DELETE /v1/vector_stores/{vector_store_id}
     await vs_obj.adelete_upstream(client)
 
     # Capture ID before delete (Django sets pk to None after delete)
@@ -240,7 +239,7 @@ async def vector_store(
 @catch_router_exceptions
 async def vector_store_search(
     request: ASGIRequest, token: Token, vector_store_id: str, pydantic_model: VectorStoreSearchParams, *args, **kwargs
-):
+) -> JsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/search - Search vector store
     """

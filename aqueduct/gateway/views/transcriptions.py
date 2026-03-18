@@ -39,14 +39,15 @@ class TranscriptionCreateParams(RootModel):
 @catch_router_exceptions
 async def transcriptions(
     request: ASGIRequest, pydantic_model: OpenAITranscriptionCreateParams, request_log: Request, *args, **kwargs
-):
+) -> JsonResponse | HttpResponse | StreamingHttpResponse:
     client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay
 
     transcription = await client.audio.transcriptions.create(**pydantic_model)
 
-    if isinstance(transcription, openai.types.audio.transcription.Transcription) or isinstance(
-        transcription, openai.types.audio.transcription_verbose.TranscriptionVerbose
+    if isinstance(
+        transcription,
+        (openai.types.audio.transcription.Transcription, openai.types.audio.transcription_verbose.TranscriptionVerbose),
     ):
         data = transcription.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)

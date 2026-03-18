@@ -58,7 +58,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         response_lines = response.content.splitlines()
         original_lines = content.splitlines()
         self.assertEqual(len(response_lines), len(original_lines))
-        for resp_line, orig_line in zip(response_lines, original_lines):
+        for resp_line, orig_line in zip(response_lines, original_lines, strict=True):
             resp_data = json.loads(resp_line)
             orig_data = json.loads(orig_line)
             self.assertEqual(resp_data["custom_id"], orig_data["custom_id"])

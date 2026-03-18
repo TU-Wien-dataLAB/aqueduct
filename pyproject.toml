@@ -48,7 +48,9 @@ extend-exclude = [
 
 [tool.ruff.lint]
 select = [
+    "A",      # flake8-builtins
     "E",      # pycodestyle errors
+    "T20",    # flake8-print
     "W",      # pycodestyle warnings
     "F",      # Pyflakes
     "I",      # isort
@@ -120,8 +122,8 @@ suppress-none-returning = true
 # RET504: Explicit return of form in view pattern is intentional
 "**/management/views/tokens.py" = ["RET504"]
 # Examples directory and debug scripts: exceptions allowed for code clarity
-"examples/*.py" = ["PTH", "SIM", "SIM115", "BLE001", "ERA"]
-"file_id_debug.py" = ["PTH", "SIM", "SIM115", "ERA"]
+"examples/*.py" = ["PTH", "SIM", "SIM115", "BLE001", "ERA", "T20"]
+"file_id_debug.py" = ["PTH", "SIM", "SIM115", "ERA", "T20"]
 # BLE001: Blind except is intentional in views to return proper error responses
 "**/views/*.py" = ["BLE001"]
 # Phase 3: Additional BLE001 ignores

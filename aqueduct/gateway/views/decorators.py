@@ -299,8 +299,7 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                     return error_response(error_message, status=429)
 
         except Exception as e:
-            log.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
-            log.exception("Internal gateway error checking rate limits")
+            log.exception(f"Error checking rate limits for Token '{token.name}': {e}")
             return error_response("Internal gateway error checking rate limits", status=500)
 
         return await view_func(request, *args, **kwargs)

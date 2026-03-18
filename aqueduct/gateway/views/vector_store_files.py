@@ -1,5 +1,8 @@
 from contextlib import suppress
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    from openai.types.vector_stores.vector_store_file import VectorStoreFile
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -31,7 +34,7 @@ class FileUpdateBody(TypedDict, total=False):
 
 @sync_to_async
 def _create_local_file_with_recheck(
-    vs_obj: VectorStore, file_obj: FileObject, max_files: int, remote_vs_file: Any
+    vs_obj: VectorStore, file_obj: FileObject, max_files: int, remote_vs_file: "VectorStoreFile"
 ) -> tuple[VectorStoreFile | None, str]:
     with transaction.atomic():
         try:

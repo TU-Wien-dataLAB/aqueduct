@@ -4,11 +4,11 @@ import uuid
 from collections.abc import AsyncGenerator
 from contextlib import suppress
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import anyio
 import httpx
 from anyio import ClosedResourceError
-from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
@@ -18,6 +18,9 @@ from mcp.client.streamable_http import StreamableHTTPTransport
 from mcp.shared.message import SessionMessage
 from mcp.types import CONNECTION_CLOSED, ErrorData, JSONRPCError, JSONRPCMessage, JSONRPCRequest
 from pydantic import TypeAdapter
+
+if TYPE_CHECKING:
+    from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
 from gateway.config import get_mcp_config
 from gateway.views.decorators import (
@@ -202,17 +205,17 @@ class ManagedMCPSession:
             if self._httpx_client and self._read_stream_writer:
                 log.debug(f"Starting GET stream task for session {self.session_id}")
                 self._get_stream_task = asyncio.create_task(
-                    self.transport.handle_get_stream(self._httpx_client, self._read_stream_writer)  # type: ignore
+                    self.transport.handle_get_stream(self._httpx_client, self._read_stream_writer)  # type: ignore[arg-type]
                 )
 
         self._post_writer_task = asyncio.create_task(
             self.transport.post_writer(
-                self._httpx_client,  # type: ignore
-                self._write_stream_reader,  # type: ignore
-                self._read_stream_writer,  # type: ignore
+                self._httpx_client,  # type: ignore[arg-type]
+                self._write_stream_reader,  # type: ignore[arg-type]
+                self._read_stream_writer,  # type: ignore[arg-type]
                 self.write_stream,
                 start_get_stream_task,
-                self._task_group,  # type: ignore - Pass our simple task group
+                self._task_group,  # type: ignore[arg-type] - Pass our simple task group
             )
         )
 
@@ -266,7 +269,7 @@ class ManagedMCPSession:
             log.debug(f"Cancelling get_stream task for session {self.session_id}")
             self._get_stream_task.cancel()
             with suppress(asyncio.CancelledError):
-                await self._get_stream_task  # type: ignore
+                await self._get_stream_task  # type: ignore[misc]
 
         # Cancel any remaining tasks in task group
         if self._task_group:

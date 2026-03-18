@@ -136,20 +136,19 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         # Create MAX_USER_BATCHES batches in the database
         file_id = self._create_jsonl_file(name="limit")
-        existing_batches = []
         token = Token.objects.get(pk=1)
-        for i in range(settings.MAX_USER_BATCHES):
-            existing_batches.append(
-                BatchModel(
-                    completion_window="24h",
-                    created_at=1773058900,
-                    endpoint=self.url_chat,
-                    id=f"batch-mock-{i}",
-                    input_file_id=file_id,
-                    status=BatchStatus.IN_PROGRESS,
-                    token=token,
-                )
+        existing_batches = [
+            BatchModel(
+                completion_window="24h",
+                created_at=1773058900,
+                endpoint=self.url_chat,
+                id=f"batch-mock-{i}",
+                input_file_id=file_id,
+                status=BatchStatus.IN_PROGRESS,
+                token=token,
             )
+            for i in range(settings.MAX_USER_BATCHES)
+        ]
         BatchModel.objects.bulk_create(existing_batches)
 
         # Next batch should be blocked

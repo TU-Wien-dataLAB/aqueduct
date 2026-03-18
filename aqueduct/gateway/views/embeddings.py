@@ -1,9 +1,10 @@
+from typing import TYPE_CHECKING
+
 import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from litellm.types.utils import EmbeddingResponse
 from pydantic import TypeAdapter
 
 from gateway.config import get_router
@@ -21,6 +22,9 @@ from .decorators import (
     tos_accepted,
 )
 from .utils import _get_token_usage
+
+if TYPE_CHECKING:
+    from litellm.types.utils import EmbeddingResponse
 
 
 @csrf_exempt

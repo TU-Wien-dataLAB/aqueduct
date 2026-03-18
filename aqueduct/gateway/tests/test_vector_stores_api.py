@@ -159,9 +159,8 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
 
         # Create up to limit
         VectorStoreModel.objects.all().delete()
-        user_stores = []
         for i in range(settings.MAX_USER_VECTOR_STORES):
-            user_stores.append(self._create_vector_store(vs_id=f"vs-mock-{i}", name=f"Store nr {i}"))
+            self._create_vector_store(vs_id=f"vs-mock-{i}", name=f"Store nr {i}")
 
         # Try to exceed limit
         resp = self.client.post(

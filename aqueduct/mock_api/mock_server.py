@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from contextlib import contextmanager
+from http import HTTPStatus
 from unittest.mock import patch
 
 import requests
@@ -81,7 +82,7 @@ class MockAPIServer:
         while True:
             try:
                 response = requests.get(f"{self.base_url}/health", timeout=0.5)
-                if response.status_code == 200:
+                if response.status_code == HTTPStatus.OK:
                     break
             except requests.RequestException as err:
                 if time.time() - start_time < timeout:

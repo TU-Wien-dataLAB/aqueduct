@@ -6,6 +6,8 @@ from django.views.generic import TemplateView
 from ..models import Batch
 from .base import BaseAqueductView
 
+INPUT_FILE_ID_PREVIEW_THRESHOLD = 12
+
 
 class UserBatchesView(BaseAqueductView, TemplateView):
     """
@@ -31,7 +33,7 @@ class UserBatchesView(BaseAqueductView, TemplateView):
             b.input_file_preview = b.input_file.preview or ""
             # short preview of file id for display
             raw_id = b.input_file.id
-            if len(raw_id) > 12:
+            if len(raw_id) > INPUT_FILE_ID_PREVIEW_THRESHOLD:
                 b.input_file_id_preview = f"{raw_id[:7]}...{raw_id[-5:]}"
             else:
                 b.input_file_id_preview = raw_id

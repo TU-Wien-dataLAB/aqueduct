@@ -7,7 +7,7 @@ import httpx
 # Config from environment
 TOKEN = os.getenv("BENCH_TOKEN", "")
 BASE_URL = os.getenv("BENCH_URL", "http://localhost:8000")
-NUM_RUNS = int(os.getenv("BENCH_RUNS", 5))
+NUM_RUNS = int(os.getenv("BENCH_RUNS", "5"))
 MODE = os.getenv("BENCH_MODE", "sequential").lower()
 
 URL = f"{BASE_URL.rstrip('/')}/models"

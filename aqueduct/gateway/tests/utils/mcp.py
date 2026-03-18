@@ -165,7 +165,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 text=True,
                 env=env,
                 cwd=str(MCP_CONFIG_PATH.parent),
-                preexec_fn=os.setsid,  # Create new process group for Unix
+                start_new_session=True,
             )
         except FileNotFoundError as err:
             raise RuntimeError("npx command not found. Please ensure Node.js and npm are installed.") from err

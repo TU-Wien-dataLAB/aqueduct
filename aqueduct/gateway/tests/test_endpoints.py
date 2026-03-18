@@ -1134,6 +1134,7 @@ class TokenLimitTest(ChatCompletionsBase):
         )
 
 
+@override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH="router.yaml")
 class ModelAliasConfigValidationTest(TransactionTestCase):
     """
     Tests for model alias configuration validation.
@@ -1163,7 +1164,7 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()
@@ -1202,7 +1203,7 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
             get_router_config.cache_clear()
 
             # Should raise RuntimeError due to duplicate aliases
@@ -1228,7 +1229,7 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()
@@ -1264,7 +1265,7 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()

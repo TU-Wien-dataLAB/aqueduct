@@ -6,7 +6,7 @@ from json import JSONDecodeError
 
 from fastapi import FastAPI, HTTPException
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from starlette.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from starlette.status import HTTP_404_NOT_FOUND
 
 from mock_api.mock_configs import (
@@ -93,7 +93,7 @@ async def reset_endpoint(path: str) -> dict[str, str]:
 @app.delete("/{path:path}")
 @app.get("/{path:path}")
 @app.post("/{path:path}")
-async def mock_endpoint(path: str, request: Request) -> JSONResponse | PlainTextResponse | StreamingResponse:
+async def mock_endpoint(path: str, request: Request) -> Response:
     """
     The endpoint that mocks responses from the external OpenAI API.
 

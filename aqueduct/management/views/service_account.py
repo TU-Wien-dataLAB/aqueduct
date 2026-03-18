@@ -10,12 +10,12 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.generic import CreateView, DeleteView, UpdateView
 
-from ..forms import ServiceAccountForm
-from ..models import ServiceAccount, Token, UserProfile  # Added UserProfile
+from management.forms import ServiceAccountForm
+from management.models import ServiceAccount, Token, UserProfile  # Added UserProfile
 
 # Import base views/mixins and models/forms
 # Assuming base.py is in the same directory level
-from .base import BaseServiceAccountView, BaseTeamView, TeamAdminRequiredMixin
+from management.views.base import BaseServiceAccountView, BaseTeamView, TeamAdminRequiredMixin
 
 User = get_user_model()
 

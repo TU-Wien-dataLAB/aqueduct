@@ -3,8 +3,8 @@ from datetime import UTC
 from django.db.models import Q
 from django.views.generic import TemplateView
 
-from ..models import FileObject
-from .base import BaseAqueductView
+from management.models import FileObject
+from management.views.base import BaseAqueductView
 
 
 class UserFilesView(BaseAqueductView, TemplateView):

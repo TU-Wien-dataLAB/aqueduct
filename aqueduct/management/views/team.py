@@ -7,12 +7,12 @@ from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, UpdateView
 
-from ..forms import TeamCreateForm
-from ..models import ServiceAccount, Team, UserProfile
+from management.forms import TeamCreateForm
+from management.models import ServiceAccount, Team, UserProfile
 
 # Removed Http404 as it wasn't used directly
 # Import base views/mixins and models/forms
-from .base import BaseAqueductView, BaseTeamView, OrgAdminRequiredMixin
+from management.views.base import BaseAqueductView, BaseTeamView, OrgAdminRequiredMixin
 
 
 class TeamCreateView(OrgAdminRequiredMixin, BaseAqueductView, CreateView):

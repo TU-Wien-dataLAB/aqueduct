@@ -11,8 +11,8 @@ from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
-from ..models import VectorStore
-from .base import BaseAqueductView
+from management.models import VectorStore
+from management.views.base import BaseAqueductView
 
 log = logging.getLogger(__name__)
 

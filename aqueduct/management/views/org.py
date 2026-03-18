@@ -6,8 +6,8 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views.generic import TemplateView, View
 
-from ..models import Org
-from .base import BaseAqueductView
+from management.models import Org
+from management.views.base import BaseAqueductView
 
 
 class OrgView(BaseAqueductView, TemplateView):

@@ -3,8 +3,8 @@ from datetime import UTC, datetime
 from django.db.models import Q
 from django.views.generic import TemplateView
 
-from ..models import Batch
-from .base import BaseAqueductView
+from management.models import Batch
+from management.views.base import BaseAqueductView
 
 INPUT_FILE_ID_PREVIEW_THRESHOLD = 12
 

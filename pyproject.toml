@@ -51,6 +51,7 @@ select = [
     "A",      # flake8-builtins
     "E",      # pycodestyle errors
     "T20",    # flake8-print
+    "TID",    # flake8-tidy-imports
     "W",      # pycodestyle warnings
     "F",      # Pyflakes
     "I",      # isort

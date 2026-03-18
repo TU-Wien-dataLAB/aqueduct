@@ -14,9 +14,9 @@ from django.views import View
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, TemplateView, UpdateView
 
-from ..forms import TokenCreateForm
-from ..models import ServiceAccount, Token
-from .base import BaseAqueductView
+from management.forms import TokenCreateForm
+from management.models import ServiceAccount, Token
+from management.views.base import BaseAqueductView
 
 
 class UserTokensView(BaseAqueductView, TemplateView):

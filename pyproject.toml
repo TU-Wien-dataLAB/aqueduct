@@ -72,6 +72,7 @@ select = [
     "EM",     # flake8-errmsg
     "DTZ",    # flake8-datetimez
     "ERA",    # flake8-eraduate commented-out code
+    "TC",  # flake8-type-checking
     "PLR0402", # Use `from` instead of `import ... as ...`
     "PLR1714", # Repeated equality comparisons -> use `in`
     "PLR2004", # Avoid magic values in comparisons
@@ -85,7 +86,6 @@ select = [
     "ANN205", # Missing return type annotation for staticmethod
     "ANN206", # Missing return type annotation for classmethod
     "PGH003", # Use specific rule codes when ignoring type issues
-    "TC002",  # Move third-party imports into type-checking block
     "ANN401", # Dynamically typed expressions (Any) are disallowed
     "PERF101", # Do not cast an iterable to list before iterating over it
     "PERF102", # Incorrect dict iterator

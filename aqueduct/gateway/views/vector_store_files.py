@@ -1,4 +1,3 @@
-from contextlib import suppress
 from typing import TypedDict
 
 from asgiref.sync import sync_to_async
@@ -20,7 +19,11 @@ from .errors import error_response
 
 
 class FileUpdateBody(TypedDict, total=False):
-    """Request body for updating a vector store file."""
+    """Request body for updating a vector store file.
+
+    This is a variant of `FileUpdateParams` but without `vector_store_id`,
+    which we add in the view.
+    """
 
     attributes: dict
 
@@ -33,8 +36,13 @@ class FileUpdateBody(TypedDict, total=False):
 @log_request
 @catch_router_exceptions
 async def vector_store_files(
-    request: ASGIRequest, token: Token, vector_store_id: str, pydantic_model: dict | None = None, *args, **kwargs
-) -> JsonResponse:
+    request: ASGIRequest,
+    token: Token,
+    vector_store_id: str,
+    pydantic_model: FileCreateParams | None = None,
+    *args,
+    **kwargs,
+):
     """
     GET /v1/vector_stores/{vector_store_id}/files - List files in vector store
     POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
@@ -100,7 +108,7 @@ async def vector_store_files(
     # If a concurrent request filled the last slot while the upstream call was in flight,
     # we reject and clean up the upstream file below.
     @sync_to_async
-    def create_local_file_with_recheck() -> tuple[VectorStoreFile | None, str]:
+    def create_local_file_with_recheck():
         with transaction.atomic():
             # Re-acquire lock and re-check limit
             try:
@@ -129,7 +137,7 @@ async def vector_store_files(
             vs_file_obj.save()
             return vs_file_obj, "ok"
 
-    _result, recheck_status = await create_local_file_with_recheck()
+    result, recheck_status = await create_local_file_with_recheck()
 
     if recheck_status == "not_found":
         return error_response("Vector store not found.", param="vector_store_id", status=404)
@@ -137,8 +145,10 @@ async def vector_store_files(
     if recheck_status == "limit_reached":
         # Upstream file was already created but limit was exceeded by a concurrent request.
         # Clean up the upstream file.
-        with suppress(Exception):
+        try:
             await client.vector_stores.files.delete(vector_store_id=vs_obj.id, file_id=remote_vs_file.id)
+        except Exception:
+            pass  # Best-effort cleanup
         return error_response(f"Vector store file limit reached ({max_files})", status=403)
 
     # Return upstream response directly (IDs already match)
@@ -159,10 +169,10 @@ async def vector_store_file(
     token: Token,
     vector_store_id: str,
     file_id: str,
-    pydantic_model: dict | None = None,
+    pydantic_model: FileUpdateBody | None = None,
     *args,
     **kwargs,
-) -> JsonResponse:
+):
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id} - Retrieve file
     POST /v1/vector_stores/{vector_store_id}/files/{file_id} - Update file attributes
@@ -219,6 +229,7 @@ async def vector_store_file(
 
         return JsonResponse(response_data, status=200)
 
+    # DELETE /v1/vector_stores/{vector_store_id}/files/{file_id}
     await vs_file_obj.adelete_upstream(client)
 
     # Delete local record
@@ -238,7 +249,7 @@ async def vector_store_file(
 @catch_router_exceptions
 async def vector_store_file_content(
     request: ASGIRequest, token: Token, vector_store_id: str, file_id: str, *args, **kwargs
-) -> JsonResponse:
+):
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id}/content - Get file content
     """

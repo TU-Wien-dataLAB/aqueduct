@@ -657,8 +657,6 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
 
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
-        from django.conf import settings
-
         # Skip validation if DNS rebinding protection is disabled
         if not getattr(settings, "MCP_ENABLE_DNS_REBINDING_PROTECTION", True):
             return await view_func(request, *args, **kwargs)

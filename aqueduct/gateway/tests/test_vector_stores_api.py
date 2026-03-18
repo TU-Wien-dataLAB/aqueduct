@@ -1,249 +1,20 @@
 import json
-from typing import Literal
-from unittest.mock import AsyncMock, MagicMock, patch
+from http import HTTPStatus
 
 from django.conf import settings
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from openai.pagination import AsyncCursorPage, AsyncPage
-from openai.types import VectorStore
-from openai.types.vector_store import FileCounts as VectorStoreFileCounts
-from openai.types.vector_store_search_response import Content, VectorStoreSearchResponse
-from openai.types.vector_stores import (
-    FileContentResponse,
-    VectorStoreFile,
-    VectorStoreFileBatch,
-    VectorStoreFileDeleted,
-)
+from openai.types.vector_stores import FileContentResponse, VectorStoreFile, VectorStoreFileBatch
 from openai.types.vector_stores.vector_store_file_batch import FileCounts
 
 from gateway.tests.utils.base import GatewayFilesTestCase
-from management.models import FileObject, ServiceAccount, Team, Token, VectorStoreFileBatchStatus, VectorStoreStatus
+from management.models import FileObject, Token, VectorStoreFileBatchStatus, VectorStoreFileStatus, VectorStoreStatus
 from management.models import VectorStore as VectorStoreModel
 from management.models import VectorStoreFile as VectorStoreFileModel
 from management.models import VectorStoreFileBatch as VectorStoreFileBatchModel
 from mock_api.mock_configs import MockConfig
-
-
-def create_mock_vector_store(
-    id_suffix: str = "123",
-    status: Literal["expired", "in_progress", "completed"] = "completed",
-    name: str = "Test Store",
-) -> VectorStore:
-    """Create a mock vector store with given ID suffix and status using OpenAI types."""
-    now = int(timezone.now().timestamp())
-    return VectorStore(
-        id=f"vs-mock-{id_suffix}",
-        name=name,
-        status=status,
-        usage_bytes=0,
-        created_at=now,
-        expires_after=None,
-        metadata=None,
-        object="vector_store",
-        file_counts=VectorStoreFileCounts(total=0, completed=0, failed=0, in_progress=0, cancelled=0),
-        last_active_at=None,
-        expires_at=None,
-    )
-
-
-def create_mock_vector_store_file(
-    id_suffix: str = "123", status: Literal["in_progress", "completed", "cancelled", "failed"] = "completed"
-) -> VectorStoreFile:
-    """Create a mock vector store file with given ID suffix and status using OpenAI types."""
-    now = int(timezone.now().timestamp())
-    return VectorStoreFile(
-        id=f"vsf-mock-{id_suffix}",
-        status=status,
-        usage_bytes=100,
-        created_at=now,
-        last_error=None,
-        object="vector_store.file",
-        vector_store_id=f"vs-mock-{id_suffix}",
-        attributes=None,
-        chunking_strategy=None,
-    )
-
-
-def create_mock_file_batch(
-    id_suffix: str = "123", status: Literal["in_progress", "completed", "cancelled", "failed"] = "in_progress"
-) -> VectorStoreFileBatch:
-    """Create a mock vector store file batch with given ID suffix and status using OpenAI types."""
-    now = int(timezone.now().timestamp())
-    return VectorStoreFileBatch(
-        id=f"vsb-mock-{id_suffix}",
-        status=status,
-        created_at=now,
-        file_counts=FileCounts(total=2, completed=0, failed=0, in_progress=2, cancelled=0),
-        object="vector_store.files_batch",
-        vector_store_id=f"vs-mock-{id_suffix}",
-    )
-
-
-def create_mock_vector_store_client():
-    """Create a fully mocked OpenAI client for vector stores API."""
-    mock_client = MagicMock()
-
-    # Mock vector store operations
-    vs_counter = [0]
-
-    async def mock_vs_create(*args, **kwargs):
-        vs_counter[0] += 1
-        now = int(timezone.now().timestamp())
-        return VectorStore(
-            id=f"vs-mock-{vs_counter[0]}",
-            name=kwargs.get("name", "Test Store"),
-            status="completed",
-            usage_bytes=0,
-            created_at=now,
-            expires_after=kwargs.get("expires_after"),
-            metadata=kwargs.get("metadata"),
-            object="vector_store",
-            file_counts=VectorStoreFileCounts(total=0, completed=0, failed=0, in_progress=0, cancelled=0),
-            last_active_at=None,
-            expires_at=None,
-        )
-
-    async def mock_vs_retrieve(*args, **kwargs):
-        vs_id = kwargs.get("vector_store_id", args[0] if args else "vs-mock-123")
-        # Extract the suffix from the full ID (e.g. "vs-mock-1" -> "1")
-        suffix = vs_id.replace("vs-mock-", "") if vs_id.startswith("vs-mock-") else "123"
-        return create_mock_vector_store(suffix, "completed")
-
-    async def mock_vs_delete(*args, **kwargs):
-        return MagicMock()
-
-    async def mock_vs_update(*args, **kwargs):
-        vs_id = kwargs.get("vector_store_id", args[0] if args else "vs-mock-123")
-        suffix = vs_id.replace("vs-mock-", "") if vs_id.startswith("vs-mock-") else "123"
-        return create_mock_vector_store(suffix, "completed", name=kwargs.get("name", "Test Store"))
-
-    mock_client.vector_stores.create = AsyncMock(side_effect=mock_vs_create)
-    mock_client.vector_stores.retrieve = AsyncMock(side_effect=mock_vs_retrieve)
-    mock_client.vector_stores.delete = AsyncMock(side_effect=mock_vs_delete)
-    mock_client.vector_stores.update = AsyncMock(side_effect=mock_vs_update)
-
-    # Mock vector store search - returns a proper AsyncPage with VectorStoreSearchResponse
-    async def mock_vs_search(*args, **kwargs):
-        return AsyncPage[VectorStoreSearchResponse](
-            object="vector_store.search_results.page",
-            data=[
-                VectorStoreSearchResponse(
-                    file_id="file-mock-123",
-                    filename="test.txt",
-                    score=0.95,
-                    attributes={},
-                    content=[Content(text="Test content", type="text")],
-                )
-            ],
-        )
-
-    mock_client.vector_stores.search = AsyncMock(side_effect=mock_vs_search)
-
-    # Mock vector store files - track created files so list returns them
-    # In the OpenAI API, VectorStoreFile.id IS the source file ID.
-    vsf_counter = [0]
-    created_vs_files = []
-
-    async def mock_vsf_create(*args, **kwargs):
-        vsf_counter[0] += 1
-        file_id = kwargs.get("file_id", f"vsf-mock-{vsf_counter[0]}")
-        now = int(timezone.now().timestamp())
-        vs_file = VectorStoreFile(
-            id=file_id,
-            status="completed",
-            usage_bytes=100,
-            created_at=now,
-            last_error=None,
-            object="vector_store.file",
-            vector_store_id=kwargs.get("vector_store_id", f"vs-mock-{vsf_counter[0]}"),
-            attributes=None,
-            chunking_strategy=None,
-        )
-        created_vs_files.append(vs_file)
-        return vs_file
-
-    mock_client.vector_stores.files.create = AsyncMock(side_effect=mock_vsf_create)
-
-    async def mock_vsf_retrieve(*args, **kwargs):
-        file_id = kwargs.get("file_id", "")
-        for f in created_vs_files:
-            if f.id == file_id:
-                return f
-        return create_mock_vector_store_file("123", "completed")
-
-    mock_client.vector_stores.files.retrieve = AsyncMock(side_effect=mock_vsf_retrieve)
-
-    # Mock file delete - returns a proper delete response and removes from tracking
-    async def mock_vs_file_delete(*args, **kwargs):
-        file_id = kwargs.get("file_id", "")
-        for i, f in enumerate(created_vs_files):
-            if f.id == file_id:
-                created_vs_files.pop(i)
-                break
-        return VectorStoreFileDeleted(id=file_id, deleted=True, object="vector_store.file.deleted")
-
-    mock_client.vector_stores.files.delete = AsyncMock(side_effect=mock_vs_file_delete)
-
-    # Mock file update - returns file with updated attributes
-    async def mock_vs_file_update(*args, **kwargs):
-        file_id = kwargs.get("file_id", "")
-        for f in created_vs_files:
-            if f.id == file_id:
-                if kwargs.get("attributes"):
-                    f.attributes = kwargs["attributes"]
-                return f
-        file = create_mock_vector_store_file("123", "completed")
-        if kwargs.get("attributes"):
-            file.attributes = kwargs["attributes"]
-        return file
-
-    mock_client.vector_stores.files.update = AsyncMock(side_effect=mock_vs_file_update)
-
-    # Mock file content - returns FileContentResponse (primary case)
-    async def mock_vs_file_content(*args, **kwargs):
-        return FileContentResponse(text="Test file content", type="text")
-
-    mock_client.vector_stores.files.content = AsyncMock(side_effect=mock_vs_file_content)
-
-    # Mock files list - returns tracked created files
-    async def mock_vs_files_list(*args, **kwargs):
-        return AsyncCursorPage[VectorStoreFile](data=list(created_vs_files), has_more=False)
-
-    mock_client.vector_stores.files.list = AsyncMock(side_effect=mock_vs_files_list)
-
-    # Mock file batches
-    batch_counter = [0]
-
-    async def mock_batch_create(*args, **kwargs):
-        batch_counter[0] += 1
-        return create_mock_file_batch(str(batch_counter[0]), "in_progress")
-
-    async def mock_batch_retrieve(*args, **kwargs):
-        batch_id = kwargs.get("batch_id", args[0] if args else "vsb-mock-123")
-        suffix = batch_id.replace("vsb-mock-", "") if batch_id.startswith("vsb-mock-") else "123"
-        return create_mock_file_batch(suffix, "completed")
-
-    async def mock_batch_cancel(*args, **kwargs):
-        batch_id = kwargs.get("batch_id", args[0] if args else "vsb-mock-123")
-        suffix = batch_id.replace("vsb-mock-", "") if batch_id.startswith("vsb-mock-") else "123"
-        return create_mock_file_batch(suffix, "cancelled")
-
-    mock_client.vector_stores.file_batches.create = AsyncMock(side_effect=mock_batch_create)
-    mock_client.vector_stores.file_batches.retrieve = AsyncMock(side_effect=mock_batch_retrieve)
-    mock_client.vector_stores.file_batches.cancel = AsyncMock(side_effect=mock_batch_cancel)
-
-    # Mock batch files list - returns a mock response with data attribute
-    async def mock_batch_files_list(*args, **kwargs):
-        return AsyncCursorPage[VectorStoreFile](
-            data=[create_mock_vector_store_file("123", "completed")], has_more=False
-        )
-
-    mock_client.vector_stores.file_batches.list_files = AsyncMock(side_effect=mock_batch_files_list)
-
-    return mock_client
 
 
 @override_settings(MAX_USER_VECTOR_STORES=3, MAX_TEAM_VECTOR_STORES=10, MAX_VECTOR_STORE_FILES=100)
@@ -328,7 +99,8 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
-        return resp.json()["id"]
+        batch_id = resp.json()["id"]
+        return batch_id
 
     def test_vector_store_lifecycle(self):
         """Test full lifecycle: create, list, get, modify, delete vector store."""
@@ -505,6 +277,8 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         batch_id = data["id"]
         batch = VectorStoreFileBatchModel.objects.get(id=batch_id)
         self.assertEqual(batch.status, VectorStoreFileBatchStatus.IN_PROGRESS)
+        self.assertEqual(batch.file_counts["total"], 2)
+        self.assertEqual(batch.file_counts["in_progress"], 2)
 
         # Get batch
         batch_url = reverse(
@@ -527,6 +301,19 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(data["status"], "cancelled")
         batch = VectorStoreFileBatchModel.objects.get(id=batch_id)
         self.assertEqual(batch.status, VectorStoreFileBatchStatus.CANCELLED)
+        self.assertEqual(batch.file_counts["cancelled"], 2)
+
+        vs_files = VectorStoreFileModel.objects.filter(batch_id=batch_id)
+        self.assertEqual(vs_files.count(), 2)
+        for vsf in vs_files:
+            self.assertEqual(
+                vsf.status, VectorStoreFileStatus.CANCELLED, f"Wrong status for VS file {vsf.id}: {vsf.status}"
+            )
+            self.assertEqual(
+                vsf.last_error,
+                f"Batch {batch.status}: files were not processed",
+                f"Wrong last_error for VS file {vsf.id}: {vsf.last_error}",
+            )
 
     def test_validation_errors(self):
         """Missing required fields return 400."""
@@ -546,7 +333,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
     def test_isolation_between_tokens(self):
         """Users can't see each other's vector stores."""
         # Create new user and token
-        other_token_value, _other_user_id = self.create_new_user()
+        other_token_value, other_user_id = self.create_new_user()
         other_headers = {"Authorization": f"Bearer {other_token_value}"}
 
         # Try to access the vector store of one user with the different user's secret
@@ -566,98 +353,130 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         data = resp.json()
         self.assertEqual(len(data["data"]), 1)
 
-    # TODO
-    @patch("gateway.views.vector_stores.get_files_api_client")
-    def test_upstream_failure_create(self, mock_get_client):
-        """Test 502 response when upstream create fails."""
-        mock_client = MagicMock()
-        mock_client.vector_stores.create = AsyncMock(side_effect=Exception("Upstream connection failed"))
-        mock_get_client.return_value = mock_client
-
-        resp = self.client.post(
-            self.url_vector_stores,
-            data=json.dumps({"name": "Wrong Store"}),
-            headers=self.headers,
-            content_type="application/json",
+    def test_upstream_failure_create(self):
+        """Test vector_stores list view catches Bad Request (400) from upstream."""
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid vector store name",
+                    "type": "invalid_request_error",
+                    "param": "name",
+                    "code": "invalid_value",
+                }
+            },
         )
-        self.assertEqual(resp.status_code, 502)
-        self.assertIn("upstream", resp.json()["error"]["message"].lower())
+        with self.mock_server.patch_external_api(self.url_vector_stores, bad_request):
+            resp = self.client.post(
+                self.url_vector_stores,
+                data=json.dumps({"name": "Wrong Store"}),
+                headers=self.headers,
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid vector store name", resp.json()["error"]["message"])
 
-    # TODO
-    @patch("gateway.views.vector_stores.get_files_api_client")
-    def test_upstream_failure_retrieve(self, mock_get_client):
-        """Test 502 response when upstream retrieve fails."""
-        mock_client = create_mock_vector_store_client()
-        mock_get_client.return_value = mock_client
-
-        # Mock failure for vector store retrieve
-        mock_client.vector_stores.retrieve = AsyncMock(side_effect=Exception("Upstream timeout"))
-
-        vs_url = reverse("gateway:vector_store", kwargs={"vector_store_id": self.vs_id})
-        resp = self.client.get(vs_url, headers=self.headers)
-        self.assertEqual(resp.status_code, 502)
-        self.assertIn("upstream", resp.json()["error"]["message"].lower())
-
-    # TODO
-    @patch("gateway.views.vector_stores.get_files_api_client")
-    def test_upstream_failure_update(self, mock_get_client):
-        """Test 502 response when upstream update fails."""
-        mock_client = create_mock_vector_store_client()
-        mock_get_client.return_value = mock_client
-        # Mock failure for update
-        mock_client.vector_stores.update = AsyncMock(side_effect=Exception("Upstream error"))
-
-        vs_url = reverse("gateway:vector_store", kwargs={"vector_store_id": self.vs_id})
-        resp = self.client.post(
-            vs_url, data=json.dumps({"name": "Updated Name"}), headers=self.headers, content_type="application/json"
+    def test_upstream_failure_retrieve(self):
+        """Test vector_store retrieve view catches Bad Request (400) from upstream."""
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid vector store",
+                    "type": "invalid_request_error",
+                    "param": "vector_store_id",
+                    "code": "invalid_value",
+                }
+            },
         )
-        self.assertEqual(resp.status_code, 502)
-        self.assertIn("upstream", resp.json()["error"]["message"].lower())
-
-    # TODO
-    @patch("gateway.views.vector_stores.get_files_api_client")
-    def test_upstream_failure_delete(self, mock_get_client):
-        """Test 502 response when upstream delete fails."""
-        mock_client = create_mock_vector_store_client()
-        mock_get_client.return_value = mock_client
-        # Mock failure for delete
-        mock_client.vector_stores.delete = AsyncMock(side_effect=Exception("Upstream error"))
-
         vs_url = reverse("gateway:vector_store", kwargs={"vector_store_id": self.vs_id})
-        resp = self.client.delete(vs_url, headers=self.headers)
-        self.assertEqual(resp.status_code, 502)
-        self.assertIn("upstream", resp.json()["error"]["message"].lower())
+        with self.mock_server.patch_external_api(vs_url, bad_request):
+            resp = self.client.get(vs_url, headers=self.headers)
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid vector store", resp.json()["error"]["message"])
+
+    def test_upstream_failure_update(self):
+        """Test vector_stores update view catches Bad Request (400) from upstream."""
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Update failed upstream",
+                    "type": "invalid_request_error",
+                    "param": "vector_store_id",
+                    "code": "invalid_value",
+                }
+            },
+        )
+        vs_url = reverse("gateway:vector_store", kwargs={"vector_store_id": self.vs_id})
+
+        with self.mock_server.patch_external_api(vs_url, bad_request):
+            resp = self.client.post(
+                vs_url, data=json.dumps({"name": "Updated Name"}), headers=self.headers, content_type="application/json"
+            )
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Update failed upstream", resp.json()["error"]["message"])
+
+    def test_upstream_failure_delete(self):
+        """Test vector_stores delete view catches Bad Request (400) from upstream."""
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Delete failed upstream",
+                    "type": "invalid_request_error",
+                    "param": "vector_store_id",
+                    "code": "invalid_value",
+                }
+            },
+        )
+        vs_url = reverse("gateway:vector_store", kwargs={"vector_store_id": self.vs_id})
+        with self.mock_server.patch_external_api(vs_url, bad_request):
+            resp = self.client.delete(vs_url, headers=self.headers)
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Delete failed upstream", resp.json()["error"]["message"])
 
     def test_batch_file_counts(self):
         """Batch correctly tracks completed/failed files."""
-        # TODO: Where do we track completed/failed files there?
-        # Create file objects
-        file_obj1 = self._create_file_object("file-mock-1")
-        file_obj2 = self._create_file_object("file-mock-2")
+        # Create a batch with two files
+        batch_id = self._create_batch()
+        batch = VectorStoreFileBatchModel.objects.get(id=batch_id)
+        self.assertEqual(batch.status, VectorStoreFileBatchStatus.IN_PROGRESS)
+        self.assertEqual(batch.file_counts["total"], 2)
+        self.assertEqual(batch.file_counts["completed"], 0)
 
-        # Create batch
-        batches_url = reverse("gateway:vector_store_file_batches", kwargs={"vector_store_id": self.vs_id})
-        resp = self.client.post(
-            batches_url,
-            data=json.dumps({"file_ids": [file_obj1.id, file_obj2.id]}),
-            headers=self.headers,
-            content_type="application/json",
+        # Now assume the batch failed upstream; get it and verify file status is updated
+        failed_resp = MockConfig(
+            response_data=VectorStoreFileBatch(
+                id="vsb-mock-1",
+                status="failed",
+                created_at=1741476542,
+                file_counts=FileCounts(total=2, completed=0, failed=2, in_progress=0, cancelled=0),
+                object="vector_store.files_batch",
+                vector_store_id="vs-mock-123",
+            ).model_dump()
         )
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data["file_counts"]["total"], 2)
-        self.assertEqual(data["file_counts"]["completed"], 0)
-        batch_id = data["id"]
-
-        # Get batch and verify file counts are returned
         batch_url = reverse(
             "gateway:vector_store_file_batch", kwargs={"vector_store_id": self.vs_id, "batch_id": batch_id}
         )
-        resp = self.client.get(batch_url, headers=self.headers)
+        with self.mock_server.patch_external_api(batch_url, failed_resp):
+            resp = self.client.get(batch_url, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertIn("file_counts", data)
-        self.assertEqual(data["file_counts"]["total"], 2)
+        batch.refresh_from_db()
+        file_counts = resp.json()["file_counts"]
+        self.assertEqual(batch.file_counts["total"], file_counts["total"])
+        self.assertEqual(batch.file_counts["failed"], file_counts["failed"])
+        vs_files = VectorStoreFileModel.objects.filter(batch_id=batch_id)
+        self.assertEqual(vs_files.count(), 2)
+        for vsf in vs_files:
+            self.assertEqual(
+                vsf.status, VectorStoreFileStatus.FAILED, f"Wrong status for VS file {vsf.id}: {vsf.status}"
+            )
+            self.assertEqual(
+                vsf.last_error,
+                f"Batch {batch.status}: files were not processed",
+                f"Wrong last_error for VS file {vsf.id}: {vsf.last_error}",
+            )
 
     @override_settings(MAX_VECTOR_STORE_FILES=3)
     def test_max_vector_store_files_limit(self):
@@ -692,102 +511,137 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(resp.status_code, 403)
         self.assertIn("limit reached", resp.json()["error"]["message"].lower())
 
-    # TODO
-    @patch("gateway.views.vector_stores.get_files_api_client")
-    @patch("gateway.views.vector_store_file_batches.get_files_api_client")
-    def test_file_batch_upstream_failure(self, mock_batch_client, mock_vs_client):
-        """Test 502 response when upstream batch create fails."""
-        mock_vs_client.return_value = create_mock_vector_store_client()
-
+    def test_file_batch_upstream_failure_create(self):
+        """Test file_batches create view catches Bad Request (400) from upstream."""
         # Create file objects
         file_obj1 = self._create_file_object("file-mock-1")
         file_obj2 = self._create_file_object("file-mock-2")
 
-        # Mock batch client to fail
-        mock_batch = MagicMock()
-        mock_batch.vector_stores.file_batches.create = AsyncMock(side_effect=Exception("Upstream batch error"))
-        mock_batch_client.return_value = mock_batch
-
         batches_url = reverse("gateway:vector_store_file_batches", kwargs={"vector_store_id": self.vs_id})
-        resp = self.client.post(
-            batches_url,
-            data=json.dumps({"file_ids": [file_obj1.id, file_obj2.id]}),
-            headers=self.headers,
-            content_type="application/json",
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid file batch",
+                    "type": "invalid_request_error",
+                    "param": "batch_id",
+                    "code": "invalid_value",
+                }
+            },
         )
-        self.assertEqual(resp.status_code, 502)
-        self.assertIn("upstream", resp.json()["error"]["message"].lower())
+        with self.mock_server.patch_external_api(batches_url, bad_request):
+            resp = self.client.post(
+                batches_url,
+                data=json.dumps({"file_ids": [file_obj1.id, file_obj2.id]}),
+                headers=self.headers,
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid file batch", resp.json()["error"]["message"])
 
-    # TODO
-    @patch("gateway.views.vector_stores.get_files_api_client")
-    @patch("gateway.views.vector_store_file_batches.get_files_api_client")
-    def test_file_batch_cancel_upstream_failure(self, mock_batch_client, mock_vs_client):
-        """Test 502 response when upstream batch cancel fails."""
-        mock_vs_client.return_value = create_mock_vector_store_client()
-        mock_batch_client.return_value = create_mock_vector_store_client()
-
+    def test_file_batch_upstream_failure_retrieve(self):
+        """Test file_batches GET view catches Bad Request (400) from upstream."""
         batch_id = self._create_batch()
-
-        # Now mock failure for cancel
-        mock_batch_client.return_value.vector_stores.file_batches.cancel = AsyncMock(
-            side_effect=Exception("Upstream cancel error")
+        batch_url = reverse("gateway:vector_store_file_batch", args=[self.vs_id, batch_id])
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid file batch ID",
+                    "type": "invalid_request_error",
+                    "param": "batch_id",
+                    "code": "invalid_value",
+                }
+            },
         )
+        with self.mock_server.patch_external_api(batch_url, bad_request):
+            resp = self.client.get(batch_url, headers=self.headers)
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid file batch ID", resp.json()["error"]["message"])
 
+    def test_file_batch_cancel_upstream_failure(self):
+        """Test file_batches.cancel view catches Bad Request (400) from upstream."""
+        batch_id = self._create_batch()
         cancel_url = reverse(
             "gateway:vector_store_file_batch_cancel", kwargs={"vector_store_id": self.vs_id, "batch_id": batch_id}
         )
-        resp = self.client.post(cancel_url, headers=self.headers)
-        self.assertEqual(resp.status_code, 502)
-        self.assertIn("upstream", resp.json()["error"]["message"].lower())
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Cannot cancel file batch",
+                    "type": "invalid_request_error",
+                    "param": "batch_id",
+                    "code": "invalid_value",
+                }
+            },
+        )
+        with self.mock_server.patch_external_api(cancel_url, bad_request):
+            resp = self.client.post(cancel_url, headers=self.headers, content_type="application/json")
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Cannot cancel file batch", resp.json()["error"]["message"])
 
-    # TODO
-    @patch("gateway.views.vector_stores.get_files_api_client")
-    @patch("gateway.views.vector_store_files.get_files_api_client")
-    def test_vector_store_file_upstream_failure(self, mock_vs_files_client, mock_vs_client):
-        """Test 502 response when upstream file operations fail."""
-        mock_vs_client.return_value = create_mock_vector_store_client()
-
+    def test_vector_store_file_create_upstream_failure(self):
+        """Test vector_stores.files create view catches Bad Request (400) from upstream."""
         # Create file object
         file_obj = self._create_file_object()
 
-        # Mock file operations to fail
-        mock_vs_files_client.return_value = MagicMock()
-        mock_vs_files_client.return_value.vector_stores.files.create = AsyncMock(
-            side_effect=Exception("Upstream file create error")
-        )
-
-        # Try to add file - should fail with 502
+        # Try to add a vector store file - should fail with 400
         files_url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": self.vs_id})
-        resp = self.client.post(
-            files_url, data=json.dumps({"file_id": file_obj.id}), headers=self.headers, content_type="application/json"
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid file for vector store",
+                    "type": "invalid_request_error",
+                    "param": "file_id",
+                    "code": "invalid_value",
+                }
+            },
         )
-        self.assertEqual(resp.status_code, 502)
-        self.assertIn("upstream", resp.json()["error"]["message"].lower())
+        with self.mock_server.patch_external_api(files_url, bad_request):
+            resp = self.client.post(
+                files_url,
+                data=json.dumps({"file_id": file_obj.id}),
+                headers=self.headers,
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid file for vector store", resp.json()["error"]["message"])
 
-        # Now create successfully and test retrieve failure
-        mock_vs_files_client.return_value = create_mock_vector_store_client()
+    def test_vector_store_file_retrieve_and_delete_upstream_failure(self):
+        """Test vector_stores.files retrieve view catches Bad Request (400) from upstream."""
+        # Create a vector store file successfully and test retrieve failure
+        file_obj = self._create_file_object()
+        files_url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": self.vs_id})
         resp = self.client.post(
             files_url, data=json.dumps({"file_id": file_obj.id}), headers=self.headers, content_type="application/json"
         )
         self.assertEqual(resp.status_code, 200)
         vsf_id = resp.json()["id"]
 
-        # Mock retrieve to fail
-        mock_vs_files_client.return_value.vector_stores.files.retrieve = AsyncMock(
-            side_effect=Exception("Upstream file retrieve error")
-        )
-
         file_url = reverse("gateway:vector_store_file", kwargs={"vector_store_id": self.vs_id, "file_id": vsf_id})
-        resp = self.client.get(file_url, headers=self.headers)
-        self.assertEqual(resp.status_code, 502)
-
-        # Mock delete to fail
-        mock_vs_files_client.return_value.vector_stores.files.delete = AsyncMock(
-            side_effect=Exception("Upstream file delete error")
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid vector store file",
+                    "type": "invalid_request_error",
+                    "param": "file_id",
+                    "code": "invalid_value",
+                }
+            },
         )
+        with self.mock_server.patch_external_api(file_url, bad_request):
+            resp = self.client.get(file_url, headers=self.headers)
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid vector store file", resp.json()["error"]["message"])
 
-        resp = self.client.delete(file_url, headers=self.headers)
-        self.assertEqual(resp.status_code, 502)
+        # Now test delete failure
+        with self.mock_server.patch_external_api(file_url, bad_request):
+            resp = self.client.delete(file_url, headers=self.headers)
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid vector store file", resp.json()["error"]["message"])
 
     def test_vector_store_search(self):
         """Test searching a vector store with file_id mapping."""
@@ -795,7 +649,10 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
 
         search_url = reverse("gateway:vector_store_search", kwargs={"vector_store_id": self.vs_id})
         resp = self.client.post(
-            search_url, data=json.dumps({"query": "test query"}), headers=self.headers, content_type="application/json"
+            search_url,
+            data=json.dumps({"query": "test query", "max_num_results": 10}),
+            headers=self.headers,
+            content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200, f"Search failed: {resp.json()}")
         data = resp.json()
@@ -804,12 +661,36 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(len(data["data"]), 1)
         self.assertEqual(data["data"][0]["file_id"], file_obj.id)
 
+    def test_vector_store_search_upstream_failure(self):
+        """Test vector_store.search view catches Bad Request (400) from upstream."""
+        search_url = reverse("gateway:vector_store_search", kwargs={"vector_store_id": self.vs_id})
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid query",
+                    "type": "invalid_request_error",
+                    "param": "query",
+                    "code": "invalid_value",
+                }
+            },
+        )
+        with self.mock_server.patch_external_api(search_url, bad_request):
+            resp = self.client.post(
+                search_url,
+                data=json.dumps({"query": "test query"}),
+                headers=self.headers,
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Invalid query", resp.json()["error"]["message"])
+
     def test_vector_store_search_missing_query(self):
         """Test search without query returns 400."""
         search_url = reverse("gateway:vector_store_search", kwargs={"vector_store_id": self.vs_id})
         resp = self.client.post(search_url, data=json.dumps({}), headers=self.headers, content_type="application/json")
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("Missing required parameter: query", resp.json()["error"]["message"])
+        self.assertIn("query: Field required", resp.json()["error"]["message"])
 
     def test_vector_store_file_update_attributes(self):
         """Test updating file attributes."""
@@ -857,7 +738,6 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Missing required parameter: attributes", resp.json()["error"]["message"])
 
-    # TODO: fails
     def test_vector_store_file_content(self):
         """Test getting file content with both FileContentResponse and AsyncPage types."""
         # Create file object
@@ -903,9 +783,39 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         self.assertEqual(json_resp["data"][0]["text"], "Page content 1")
         self.assertEqual(json_resp["data"][0]["type"], "text")
 
+    def test_vector_store_file_content_upstream_failure(self):
+        """Test vector_stores.files.content view catches Bad Request (400) from upstream."""
+        # Add file to vector store
+        file_obj = self._create_file_object()
+        files_url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": self.vs_id})
+        resp = self.client.post(
+            files_url, data=json.dumps({"file_id": file_obj.id}), headers=self.headers, content_type="application/json"
+        )
+        self.assertEqual(resp.status_code, 200)
+        vsf_id = resp.json()["id"]
+
+        content_url = reverse(
+            "gateway:vector_store_file_content", kwargs={"vector_store_id": self.vs_id, "file_id": vsf_id}
+        )
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Cannot retrieve vector store file content",
+                    "type": "invalid_request_error",
+                    "param": "file_id",
+                    "code": "invalid_value",
+                }
+            },
+        )
+        with self.mock_server.patch_external_api(content_url, bad_request):
+            resp = self.client.get(content_url, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Cannot retrieve vector store file content", resp.json()["error"]["message"])
+
     def test_vector_store_file_batch_files(self):
         """Test listing files in a batch."""
-
         # Create a batch
         batch_id = self._create_batch()
 
@@ -924,7 +834,34 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             self.assertEqual(item["status"], "completed")
             self.assertEqual(item["object"], "vector_store.file")
 
-    # TODO: failed once for whatever reason
+    def test_vector_store_file_batch_files_updtream_failure(self):
+        """Test file_batches.list_files view catches Bad Request (400) from upstream."""
+        # Create a batch
+        batch_id = self._create_batch()
+
+        batch_files_url = reverse(
+            "gateway:vector_store_file_batch_files", kwargs={"vector_store_id": self.vs_id, "batch_id": batch_id}
+        )
+
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Cannot list files in batch",
+                    "type": "invalid_request_error",
+                    "param": "batch_id",
+                    "code": "invalid_value",
+                }
+            },
+        )
+
+        # Patch upstream file batch files listing to return 400
+        with self.mock_server.patch_external_api(batch_files_url, bad_request):
+            resp = self.client.get(batch_files_url, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Cannot list files in batch", resp.json()["error"]["message"])
+
     def test_batch_created_files_tracked_locally(self):
         """Test that batch-created VectorStoreFile records are created locally
         with proper upstream IDs, and listing returns upstream data directly."""
@@ -935,7 +872,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         # Verify batch-created records exist locally with file IDs as their IDs
         batch_files = VectorStoreFileModel.objects.filter(vector_store=self.vs_obj)
         self.assertEqual(batch_files.count(), 2)
-        batch_file_ids = {f.id for f in batch_files}
+        batch_file_ids = set(f.id for f in batch_files)
         self.assertEqual(batch_file_ids, {"file-mock-1", "file-mock-2"})
 
         # List files - returns upstream data directly
@@ -957,19 +894,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
     def test_list_vector_store_files_response_structure(self):
         """Test that list vector store files endpoint returns complete, correctly-mapped response items."""
 
-        file_obj1 = self._create_file_object("file-remote-1")
-        file_obj2 = self._create_file_object("file-remote-2")
-
         files_url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": self.vs_id})
-        resp = self.client.post(
-            files_url, data=json.dumps({"file_id": file_obj1.id}), headers=self.headers, content_type="application/json"
-        )
-        self.assertEqual(resp.status_code, 200)
-
-        resp = self.client.post(
-            files_url, data=json.dumps({"file_id": file_obj2.id}), headers=self.headers, content_type="application/json"
-        )
-        self.assertEqual(resp.status_code, 200)
 
         with self.mock_server.patch_external_api(files_url, self._mock_files_list):
             resp = self.client.get(files_url, headers=self.headers)
@@ -985,100 +910,3 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             # file_id and vector_store_id are upstream IDs
             self.assertEqual(item["status"], "completed")
             self.assertEqual(item["object"], "vector_store.file")
-
-    # TODO
-    @patch("gateway.views.files.get_files_api_client")
-    def test_service_account_file_operations(self, mock_get_client):
-        """Test that the files API works with service account tokens."""
-        mock_client = MagicMock()
-
-        async def mock_file_create(*args, **kwargs):
-            return MagicMock(
-                id="file-remote-new",
-                bytes=100,
-                filename="test.txt",
-                purpose="user_data",
-                created_at=int(timezone.now().timestamp()),
-                expires_at=None,
-                model_dump=MagicMock(
-                    return_value={
-                        "id": "file-remote-new",
-                        "bytes": 100,
-                        "filename": "test.txt",
-                        "purpose": "user_data",
-                        "created_at": int(timezone.now().timestamp()),
-                        "expires_at": None,
-                    }
-                ),
-            )
-
-        async def mock_file_retrieve(*args, **kwargs):
-            return MagicMock(
-                id="file-remote-new",
-                bytes=100,
-                filename="test.txt",
-                purpose="user_data",
-                created_at=int(timezone.now().timestamp()),
-                expires_at=None,
-                model_dump=MagicMock(
-                    return_value={
-                        "id": "file-remote-new",
-                        "bytes": 100,
-                        "filename": "test.txt",
-                        "purpose": "user_data",
-                        "created_at": int(timezone.now().timestamp()),
-                        "expires_at": None,
-                    }
-                ),
-            )
-
-        async def mock_file_delete(*args, **kwargs):
-            return MagicMock(
-                id="file-remote-new",
-                deleted=True,
-                model_dump=MagicMock(return_value={"id": "file-remote-new", "deleted": True}),
-            )
-
-        async def mock_file_content(*args, **kwargs):
-            return MagicMock(content=b"test file content")
-
-        mock_client.files.create = AsyncMock(side_effect=mock_file_create)
-        mock_client.files.retrieve = AsyncMock(side_effect=mock_file_retrieve)
-        mock_client.files.delete = AsyncMock(side_effect=mock_file_delete)
-        mock_client.files.content = AsyncMock(side_effect=mock_file_content)
-        mock_get_client.return_value = mock_client
-
-        team = Team.objects.get(name="Whale")
-        service_account = ServiceAccount.objects.create(team=team, name="Test Service Account")
-
-        token = Token.objects.get(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
-        token.service_account = service_account
-        token.save()
-
-        try:
-            file = SimpleUploadedFile("test.txt", b"test file content", content_type="text/plain")
-            files_url = reverse("gateway:files")
-            resp = self.client.post(files_url, data={"file": file, "purpose": "user_data"}, headers=self.headers)
-            self.assertEqual(resp.status_code, 200, f"Upload failed: {resp.json()}")
-            file_id = resp.json()["id"]
-
-            resp = self.client.get(files_url, headers=self.headers)
-            self.assertEqual(resp.status_code, 200, f"List failed: {resp.json()}")
-            self.assertEqual(len(resp.json()["data"]), 1)
-
-            file_detail_url = reverse("gateway:file", kwargs={"file_id": file_id})
-            resp = self.client.get(file_detail_url, headers=self.headers)
-            self.assertEqual(resp.status_code, 200, f"Retrieve failed: {resp.json()}")
-
-            file_content_url = reverse("gateway:file_content", kwargs={"file_id": file_id})
-            resp = self.client.get(file_content_url, headers=self.headers)
-            self.assertEqual(resp.status_code, 200, f"Content failed: {resp.content}")
-            self.assertEqual(resp.content, b"test file content")
-
-            resp = self.client.delete(file_detail_url, headers=self.headers)
-            self.assertEqual(resp.status_code, 200, f"Delete failed: {resp.json()}")
-
-        finally:
-            token.service_account = None
-            token.save()
-            service_account.delete()

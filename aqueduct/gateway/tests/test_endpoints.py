@@ -2,22 +2,17 @@ import base64
 import json
 from http import HTTPStatus
 from pathlib import Path
-from typing import ClassVar
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 from asgiref.sync import async_to_sync, sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
-from django.utils import timezone
 from httpx import Request as HttpxRequest
 from httpx import Response
 from litellm.types.utils import ModelResponse, Usage
-from openai.types.audio import Transcription
 from openai.types.chat import ChatCompletion
-from openai.types.image import Image
-from openai.types.images_response import ImagesResponse
 
 from gateway.config import get_router_config
 from gateway.tests.utils import (
@@ -31,51 +26,6 @@ from management.models import Org, Request, ServiceAccount, Team, Token, UserPro
 from mock_api.mock_configs import MockConfig, MockStreamingConfig, convert_to_stream_data
 
 User = get_user_model()
-
-
-def create_mock_file_for_chat_completion(
-    id_suffix: str = "123", filename: str = "test.jsonl", purpose: str = "user_data", bytes_size: int = 100
-) -> MagicMock:
-    """Create a mock file object matching OpenAI's FileObject structure."""
-    mock_file = MagicMock()
-    mock_file.id = f"file-mock-{id_suffix}"
-    mock_file.filename = filename
-    mock_file.bytes = bytes_size
-    mock_file.purpose = purpose
-    mock_file.created_at = int(timezone.now().timestamp())
-    mock_file.expires_at = None
-    mock_file.status = "processed"
-    mock_file.model_dump = MagicMock(
-        return_value={
-            "id": mock_file.id,
-            "filename": mock_file.filename,
-            "bytes": mock_file.bytes,
-            "purpose": mock_file.purpose,
-            "created_at": mock_file.created_at,
-            "expires_at": mock_file.expires_at,
-            "status": mock_file.status,
-        }
-    )
-    return mock_file
-
-
-def create_mock_file_client_with_content(file_content: bytes):
-    """Create a fully mocked OpenAI client for files API with custom content."""
-    mock_client = MagicMock()
-    file_counter = [0]
-
-    async def mock_create(*args, **kwargs):
-        file_counter[0] += 1
-        return create_mock_file_for_chat_completion(id_suffix=str(file_counter[0]))
-
-    mock_client.files.create = AsyncMock(side_effect=mock_create)
-    mock_client.files.retrieve = AsyncMock(return_value=create_mock_file_for_chat_completion())
-
-    mock_content_response = MagicMock()
-    mock_content_response.content = file_content
-    mock_client.files.content = AsyncMock(return_value=mock_content_response)
-
-    return mock_client
 
 
 class EmbeddingTest(GatewayIntegrationTestCase):
@@ -130,7 +80,7 @@ class EmbeddingTest(GatewayIntegrationTestCase):
 
 
 class ChatCompletionsBase(GatewayIntegrationTestCase):
-    MESSAGES: ClassVar[list[dict[str, str]]] = [
+    MESSAGES = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Write me a short poem!"},
     ]
@@ -145,7 +95,7 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
         Helper to build headers, payload, and endpoint for chat completion requests.
         """
         payload = _build_chat_payload(self.model, messages, stream=stream, **payload_kwargs)
-        return {"path": self.url, "data": json.dumps(payload), "headers": self.headers}
+        return dict(path=self.url, data=json.dumps(payload), headers=self.headers)
 
     def _send_chat_completion(self, messages, **payload_kwargs):
         """
@@ -179,6 +129,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
 
+        # print(f"\nChat completion response: {chat_completion}")
+
         self.assertIsNotNone(chat_completion)
         self.assertTrue(chat_completion.choices)
         self.assertIsInstance(chat_completion.choices, list)
@@ -189,6 +141,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsNotNone(first_choice.message)
         self.assertTrue(hasattr(first_choice.message, "content"))
         self.assertIsNotNone(first_choice.message.content)
+
+        # response_text = first_choice.message.content.strip()
+        # print(response_text)
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
@@ -253,20 +208,14 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for base64 file input")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for base64 file input")
 
-    @patch("gateway.views.files.get_files_api_client")
-    @patch("gateway.views.decorators.get_files_api_client")
-    def test_chat_completion_file_id_input(self, mock_decorators_client, mock_files_client):
+    def test_chat_completion_file_id_input(self):
         """
         Sends a chat completion request with file_id input.
         Tests the file upload functionality using a file ID from the files API.
         """
-        file_content = b'{"custom_id": "test_file_id_input"}\n'
-        mock_files_client.return_value = create_mock_file_client_with_content(file_content)
-        mock_decorators_client.return_value = create_mock_file_client_with_content(file_content)
-
         # First, upload a file using the files API
+        file_content = b'{"custom_id": "test_file_id_input"}\n'
         upload_file = SimpleUploadedFile("test_file_id.jsonl", file_content, content_type="application/jsonl")
-
         # Prepare headers for file upload (remove Content-Type for multipart)
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         headers.pop("Content-Type", None)
@@ -349,20 +298,14 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}: {response.content}"
         )
 
-    @patch("gateway.views.decorators.get_files_api_client")
-    @patch("gateway.views.files.get_files_api_client")
-    def test_chat_completion_file_id_different_user(self, mock_files_client, mock_decorators_client):
+    def test_chat_completion_file_id_different_user(self):
         """
         Sends a chat completion request with a file_id that was created by a different user.
         Should raise a 404 error.
         """
-        file_content = b'{"custom_id": "test_file_id_input"}\n'
-        mock_files_client.return_value = create_mock_file_client_with_content(file_content)
-        mock_decorators_client.return_value = create_mock_file_client_with_content(file_content)
-
         # First, upload a file using the files API with the default user
+        file_content = b'{"custom_id": "test_file_id_input"}\n'
         upload_file = SimpleUploadedFile("test_file_id.jsonl", file_content, content_type="application/jsonl")
-
         # Prepare headers for file upload (remove Content-Type for multipart)
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         headers.pop("Content-Type", None)
@@ -608,11 +551,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         After the request, checks that the database contains one request,
         the endpoint matches, and input/output tokens are > 0.
         """
-        # For some reason authentication does not work in async test case...
-        await sync_to_async(
-            lambda: self.async_client.force_login(User.objects.get_or_create(username="Me", email="me@example.com")[0])
-        )()
-
         response = await self._send_chat_completion_streaming(self.MESSAGES)
 
         # Should be a StreamingHttpResponse with status 200
@@ -620,12 +558,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
 
         # Collect all streamed lines (each line is a data: ... event)
         streamed_lines = await _read_streaming_response_lines(response)
-
         self.assertGreater(len(streamed_lines), 0, "Should receive at least one streamed data chunk.")
 
         # Parse each chunk as JSON and collect content pieces
         content_pieces = _parse_streamed_content_pieces(streamed_lines)
         full_content = "".join(content_pieces).strip()
+        # print(f"Full streamed content: {full_content}")
         self.assertTrue(full_content, "Streamed content should not be empty.")
 
         # Check that the database contains one request and endpoint matches
@@ -637,23 +575,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming)")
-
-    @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
-    @async_to_sync
-    async def test_chat_completion_streaming_relay_request_timeout(self):
-        """
-        Sends a streaming chat completion request to the vLLM server using the Django test client.
-        After the request, checks that the database contains one request,
-        the endpoint matches, and input/output tokens are > 0.
-        """
-        # For some reason authentication does not work in async test case...
-        await sync_to_async(
-            lambda: self.async_client.force_login(User.objects.get_or_create(username="Me", email="me@example.com")[0])
-        )()
-
-        response = await self._send_chat_completion_streaming(self.MESSAGES)
-
-        self.assertEqual(response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}")
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
     @async_to_sync
@@ -671,11 +592,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         """
         # Clear existing requests
         await sync_to_async(Request.objects.all().delete)()
-
-        # Authenticate
-        await sync_to_async(
-            lambda: self.async_client.force_login(User.objects.get_or_create(username="Me", email="me@example.com")[0])
-        )()
 
         response = await self._send_chat_completion_streaming(self.MESSAGES)
 
@@ -746,6 +662,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 {"role": "system", "content": "You produce JSON output based on a schema."},
                 {"role": "user", "content": "Generate JSON matching the provided schema."},
             ],
+            # { "type": "json_schema", "json_schema": {...} }
             "response_format": {"type": "json_schema", "json_schema": {"name": "schema", "schema": json_schema}},
             "max_completion_tokens": 50,
         }
@@ -807,7 +724,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase to manage multiple servers!"
             )
 
-        with (Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg").open("rb") as image_file:
+        with open(Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg", "rb") as image_file:
             img_b64 = base64.b64encode(image_file.read()).decode("utf-8")
 
         payload = {
@@ -816,7 +733,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "What's in this image?"},
+                        {"type": "text", "text": "What’s in this image?"},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
                     ],
                 }
@@ -850,10 +767,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         Sends a streaming chat completion request with a JSON schema.
         Verifies the streamed content adheres to the schema and logs the request.
         """
-        await sync_to_async(
-            lambda: self.async_client.force_login(User.objects.get_or_create(username="Me", email="me@example.com")[0])
-        )()
-
         json_schema = {
             "type": "object",
             "properties": {"greeting": {"type": "string"}, "count": {"type": "integer"}},
@@ -935,6 +848,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         response_json = response.json()
+        # print(f"\nList models response: {response_json}")
 
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
@@ -943,6 +857,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]
+        # print(f"Available model IDs: {model_ids}")
         self.assertIn(self.model, model_ids)
 
         # Check that the database contains one request and endpoint matches
@@ -987,6 +902,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         response_json = response.json()
+        # print(f"\nList models response: {response_json}")
 
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
@@ -994,6 +910,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]
+        # print(f"Available model IDs: {model_ids}")
         self.assertEqual(len(model_ids), len(model_list) - 1)
         self.assertNotIn(self.model, model_ids)
 
@@ -1256,22 +1173,21 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"):
-            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
-                get_router_config.cache_clear()
+        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+            get_router_config.cache_clear()
 
-                loaded_config = get_router_config()
+            loaded_config = get_router_config()
 
-                # Config should load without errors
-                self.assertIsInstance(loaded_config, dict)
-                self.assertIn("model_list", loaded_config)
+            # Config should load without errors
+            self.assertIsInstance(loaded_config, dict)
+            self.assertIn("model_list", loaded_config)
 
-                # Verify aliases are in the config
-                first_model = loaded_config["model_list"][0]
-                self.assertIn("model_info", first_model)
-                self.assertIn("aliases", first_model["model_info"])
-                self.assertEqual(first_model["model_info"]["aliases"], ["main", "coding"])
-                mock_load.assert_called_once()
+            # Verify aliases are in the config
+            first_model = loaded_config["model_list"][0]
+            self.assertIn("model_info", first_model)
+            self.assertIn("aliases", first_model["model_info"])
+            self.assertEqual(first_model["model_info"]["aliases"], ["main", "coding"])
+            mock_load.assert_called_once()
 
     def test_config_load_with_duplicate_aliases_raises_error(self):
         """
@@ -1296,18 +1212,17 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"):
-            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
-                get_router_config.cache_clear()
+        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+            get_router_config.cache_clear()
 
-                # Should raise RuntimeError due to duplicate aliases
-                with self.assertRaises(RuntimeError) as context:
-                    get_router_config()
+            # Should raise RuntimeError due to duplicate aliases
+            with self.assertRaises(RuntimeError) as context:
+                get_router_config()
 
-                # Verify the error message mentions the duplicate alias
-                self.assertIn("Duplicate alias", str(context.exception))
-                self.assertIn("main", str(context.exception))
-                mock_load.assert_called_once()
+            # Verify the error message mentions the duplicate alias
+            self.assertIn("Duplicate alias", str(context.exception))
+            self.assertIn("main", str(context.exception))
+            mock_load.assert_called_once()
 
     def test_config_load_with_multiple_aliases_per_model(self):
         """
@@ -1323,19 +1238,18 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"):
-            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
-                get_router_config.cache_clear()
+        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+            get_router_config.cache_clear()
 
-                loaded_config = get_router_config()
+            loaded_config = get_router_config()
 
-                # Config should load without errors
-                self.assertIsInstance(loaded_config, dict)
-                model = loaded_config["model_list"][0]
-                self.assertEqual(len(model["model_info"]["aliases"]), 4)
-                self.assertIn("main", model["model_info"]["aliases"])
-                self.assertIn("primary", model["model_info"]["aliases"])
-                mock_load.assert_called_once()
+            # Config should load without errors
+            self.assertIsInstance(loaded_config, dict)
+            model = loaded_config["model_list"][0]
+            self.assertEqual(len(model["model_info"]["aliases"]), 4)
+            self.assertIn("main", model["model_info"]["aliases"])
+            self.assertIn("primary", model["model_info"]["aliases"])
+            mock_load.assert_called_once()
 
     def test_alias_case_sensitivity(self):
         """
@@ -1360,26 +1274,25 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"):
-            with patch("yaml.safe_load", return_value=mock_config) as mock_load:
-                get_router_config.cache_clear()
+        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+            get_router_config.cache_clear()
 
-                loaded_config = get_router_config()
+            loaded_config = get_router_config()
 
-                # Should load successfully since "Main" and "main" are different
-                self.assertIsInstance(loaded_config, dict)
+            # Should load successfully since "Main" and "main" are different
+            self.assertIsInstance(loaded_config, dict)
 
-                # Collect all aliases
-                all_aliases = []
-                for model in loaded_config["model_list"]:
-                    if "model_info" in model and "aliases" in model["model_info"]:
-                        all_aliases.extend(model["model_info"]["aliases"])
+            # Collect all aliases
+            all_aliases = []
+            for model in loaded_config["model_list"]:
+                if "model_info" in model and "aliases" in model["model_info"]:
+                    all_aliases.extend(model["model_info"]["aliases"])
 
-                # Both should be present and distinct
-                self.assertIn("Main", all_aliases)
-                self.assertIn("main", all_aliases)
-                self.assertEqual(len([a for a in all_aliases if a.lower() == "main"]), 2)
-                mock_load.assert_called_once()
+            # Both should be present and distinct
+            self.assertIn("Main", all_aliases)
+            self.assertIn("main", all_aliases)
+            self.assertEqual(len([a for a in all_aliases if a.lower() == "main"]), 2)
+            mock_load.assert_called_once()
 
 
 class ModelAliasRoutingTest(GatewayIntegrationTestCase):
@@ -1388,7 +1301,6 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
     These tests check that aliases are correctly resolved to model names.
     """
 
-    mock_response = ModelResponse()
     tts_model = "gpt-4o-mini-tts"
     stt_model = "whisper-1"
     image_gen_model = "dall-e-2"
@@ -1449,38 +1361,29 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
 
     def test_transcriptions_endpoint_with_alias(self):
         """Test that STT endpoint correctly resolves model aliases."""
-        # Create a simple audio file for testing (using a small mock file)
+        # Create a simple audio file for testing
         test_audio_content = b"mock audio data"
         test_audio_file = SimpleUploadedFile("test.mp3", test_audio_content, content_type="audio/mp3")
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        # Remove Content-Type for multipart form data
+        headers.pop("Content-Type", None)
 
-        with patch("gateway.views.utils.get_openai_client") as mock_client:
-            mock_openai_client = AsyncMock()
-            mock_openai_client.audio.transcriptions.create.return_value = Transcription(text="How much is the fish?")
-            mock_client.return_value = mock_openai_client
+        # Using alias instead of actual model name
+        response = self.client.post("/audio/transcriptions", {"file": test_audio_file, "model": "stt"}, headers=headers)
 
-            headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-            # Remove Content-Type for multipart form data
-            headers.pop("Content-Type", None)
+        # Should return 200 with alias resolution
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Alias resolution not working for STT. Expected 200, got {response.status_code}: {response.content}",
+        )
 
-            response = self.client.post(
-                "/audio/transcriptions",
-                {"file": test_audio_file, "model": "stt"},  # Using alias instead of actual model name
-                headers=headers,
-            )
+        response_json = response.json()
+        self.assertIn("text", response_json, "Response should contain 'text' field")
 
-            # Should return 200 with alias resolution
-            self.assertEqual(
-                response.status_code,
-                200,
-                f"Alias resolution not working for STT. Expected 200, got {response.status_code}: {response.content}",
-            )
-
-            response_json = response.json()
-            self.assertIn("text", response_json, "Response should contain 'text' field")
-
-            # Check that the database contains one request
-            requests = list(Request.objects.all())
-            self.assertEqual(len(requests), 1, "There should be exactly one request after transcription.")
+        # Check that the database contains one request
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after transcription.")
 
     def test_chat_completion_with_nonexistent_alias(self):
         """
@@ -1519,44 +1422,32 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
 
     def test_image_generation_with_alias(self):
         """Test that image generation endpoint correctly resolves model aliases."""
-        mock_image_object = Image(
-            b64_json="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-            revised_prompt="A beautiful landscape with mountains and a lake",
+        payload = {
+            "model": "image",  # Using alias instead of actual model name
+            "prompt": "A beautiful landscape with mountains and a lake",
+            "size": "256x256",
+        }
+
+        response = self.client.post(
+            "/images/generations", data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
-        mock_image_response = ImagesResponse(data=[mock_image_object], created=123456789)
 
-        with patch("gateway.views.utils.get_openai_client") as mock_client:
-            mock_openai_client = AsyncMock()
-            mock_openai_client.images.generate.return_value = mock_image_response
+        # Should return 200 with alias resolution
+        self.assertEqual(response.status_code, 200)
 
-            mock_client.return_value = mock_openai_client
+        response_json = response.json()
+        self.assertIn("data", response_json, "Response should contain 'data' field")
+        self.assertIsInstance(response_json["data"], list, "Data should be a list")
+        self.assertGreater(len(response_json["data"]), 0, "Data should not be empty")
 
-            payload = {
-                "model": "image",  # Using alias instead of actual model name
-                "prompt": "A beautiful landscape with mountains and a lake",
-                "size": "256x256",
-            }
+        # Check first image object structure
+        img_data = response_json["data"][0]
+        self.assertIn("b64_json", img_data, "Image data should contain 'b64_json' field")
+        self.assertIsInstance(img_data["b64_json"], str, "Image data should be a string")
 
-            response = self.client.post(
-                "/images/generations", data=json.dumps(payload), headers=self.headers, content_type="application/json"
-            )
-
-            # Should return 200 with alias resolution
-            self.assertEqual(response.status_code, 200)
-
-            response_json = response.json()
-            self.assertIn("data", response_json, "Response should contain 'data' field")
-            self.assertIsInstance(response_json["data"], list, "Data should be a list")
-            self.assertGreater(len(response_json["data"]), 0, "Data should not be empty")
-
-            # Check first image object structure
-            img_data = response_json["data"][0]
-            self.assertIn("b64_json", img_data, "Image data should contain 'b64_json' field")
-            self.assertIsInstance(img_data["b64_json"], str, "Image data should be a string")
-
-            # Check that the database contains one request
-            requests = list(Request.objects.all())
-            self.assertEqual(len(requests), 1, "There should be exactly one request after image generation.")
+        # Check that the database contains one request
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "There should be exactly one request after image generation.")
 
     def test_multiple_aliases_same_model(self):
         """
@@ -1659,10 +1550,7 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         """
         Test that when a request is made with an alias, the Request object
         stored in the database has the actual model name, not the alias.
-        All endpoints are mocked to avoid real API calls.
         """
-        from litellm.types.llms.openai import HttpxBinaryResponseContent
-        from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse
 
         endpoints = [
             {
@@ -1671,9 +1559,6 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 "alias": "main",
                 "resolved_model": "gpt-4.1-nano",
                 "payload": {"model": "main", "messages": [{"role": "user", "content": "Test"}], "max_tokens": 5},
-                "mock_target": "gateway.config.get_router",
-                "mock_attr": "acompletion",
-                "mock_return": ModelResponse(),
             },
             {
                 "name": "completions",
@@ -1681,9 +1566,6 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 "alias": "main",
                 "resolved_model": "gpt-4.1-nano",
                 "payload": {"model": "main", "prompt": "Test prompt", "max_tokens": 5},
-                "mock_target": "gateway.config.get_router",
-                "mock_attr": "atext_completion",
-                "mock_return": TextCompletionResponse(),
             },
             {
                 "name": "embeddings",
@@ -1691,9 +1573,6 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 "alias": "embedding",
                 "resolved_model": "text-embedding-ada-002",
                 "payload": {"model": "embedding", "input": ["Test input"]},
-                "mock_target": "gateway.config.get_router",
-                "mock_attr": "aembedding",
-                "mock_return": EmbeddingResponse(),
             },
             {
                 "name": "speech",
@@ -1701,9 +1580,6 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 "alias": "tts",
                 "resolved_model": "gpt-4o-mini-tts",
                 "payload": {"model": "tts", "input": "Test", "voice": "alloy"},
-                "mock_target": "gateway.config.get_router",
-                "mock_attr": "aspeech",
-                "mock_return": HttpxBinaryResponseContent(response=MagicMock()),
             },
             {
                 "name": "image_generation",
@@ -1711,9 +1587,6 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 "alias": "image",
                 "resolved_model": "dall-e-2",
                 "payload": {"model": "image", "prompt": "Test image", "size": "256x256"},
-                "mock_target": "gateway.views.utils.get_openai_client",
-                "mock_attr": "images.generate",
-                "mock_return": ImagesResponse(data=[Image(b64_json="test", revised_prompt="test")], created=123456789),
             },
             {
                 "name": "transcriptions",
@@ -1721,9 +1594,6 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 "alias": "stt",
                 "resolved_model": "whisper-1",
                 "payload": None,
-                "mock_target": "gateway.views.utils.get_openai_client",
-                "mock_attr": "audio.transcriptions.create",
-                "mock_return": Transcription(text="Test transcription"),
                 "multipart": True,
             },
         ]
@@ -1732,47 +1602,33 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
             with self.subTest(endpoint=endpoint["name"]):
                 Request.objects.all().delete()
 
-                with patch(endpoint["mock_target"]) as mock_factory:
-                    mock_instance = AsyncMock()
-
-                    if "." in endpoint["mock_attr"]:
-                        parts = endpoint["mock_attr"].split(".")
-                        obj = mock_instance
-                        for part in parts[:-1]:
-                            obj = getattr(obj, part)
-                        setattr(obj, parts[-1], AsyncMock(return_value=endpoint["mock_return"]))
-                    else:
-                        setattr(mock_instance, endpoint["mock_attr"], AsyncMock(return_value=endpoint["mock_return"]))
-
-                    mock_factory.return_value = mock_instance
-
-                    if endpoint.get("multipart"):
-                        test_file = SimpleUploadedFile("test.mp3", b"mock audio", content_type="audio/mp3")
-                        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-                        headers.pop("Content-Type", None)
-                        response = self.client.post(
-                            endpoint["path"], {"file": test_file, "model": endpoint["alias"]}, headers=headers
-                        )
-                    else:
-                        response = self.client.post(
-                            endpoint["path"],
-                            data=json.dumps(endpoint["payload"]),
-                            headers=self.headers,
-                            content_type="application/json",
-                        )
-
-                    self.assertEqual(
-                        response.status_code, 200, f"{endpoint['name']}: Expected 200, got {response.status_code}"
+                if endpoint.get("multipart"):
+                    test_file = SimpleUploadedFile("test.mp3", b"mock audio", content_type="audio/mp3")
+                    headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+                    headers.pop("Content-Type", None)
+                    response = self.client.post(
+                        endpoint["path"], {"file": test_file, "model": endpoint["alias"]}, headers=headers
+                    )
+                else:
+                    response = self.client.post(
+                        endpoint["path"],
+                        data=json.dumps(endpoint["payload"]),
+                        headers=self.headers,
+                        content_type="application/json",
                     )
 
-                    request_log = Request.objects.first()
-                    self.assertIsNotNone(request_log, f"{endpoint['name']}: Request should be logged")
-                    self.assertEqual(
-                        request_log.model,
-                        endpoint["resolved_model"],
-                        f"{endpoint['name']}: Request model should be '{endpoint['resolved_model']}' "
-                        f"(resolved from alias '{endpoint['alias']}'), got '{request_log.model}'",
-                    )
+                self.assertEqual(
+                    response.status_code, 200, f"{endpoint['name']}: Expected 200, got {response.status_code}"
+                )
+
+                request_log = Request.objects.first()
+                self.assertIsNotNone(request_log, f"{endpoint['name']}: Request should be logged")
+                self.assertEqual(
+                    request_log.model,
+                    endpoint["resolved_model"],
+                    f"{endpoint['name']}: Request model should be '{endpoint['resolved_model']}' "
+                    f"(resolved from alias '{endpoint['alias']}'), got '{request_log.model}'",
+                )
 
     def test_invalid_alias_returns_error_and_logs_request(self):
         """

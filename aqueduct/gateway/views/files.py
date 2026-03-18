@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from openai import AsyncOpenAI
+from openai.types.file_create_params import FileCreateParams as OpenAIFileCreateParams
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from gateway.config import get_files_api_client
@@ -30,6 +31,7 @@ from .errors import error_response
 class FilesCreateParams(BaseModel):
     file: bytes
     purpose: Literal["assistants", "batch", "user_data"]
+    # IO[bytes] requires arbitrary_types_allowed for model settings
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -44,7 +46,7 @@ def calculate_expires_at(remote_expires_at: int | None) -> int:
     return local_expires_at
 
 
-def validate_batch_file(data: bytes) -> None:
+def validate_batch_file(data: bytes):
     """Validate batch file format: valid JSON lines with unique custom_ids."""
     lines = data.decode("utf-8").splitlines()
     custom_ids = set()
@@ -53,8 +55,8 @@ def validate_batch_file(data: bytes) -> None:
             continue
         try:
             d = json.loads(line)
-        except json.decoder.JSONDecodeError as err:
-            raise ValueError(f"Invalid JSON at line {i + 1}") from err
+        except json.decoder.JSONDecodeError:
+            raise ValueError(f"Invalid JSON at line {i + 1}")
         custom_id = d.get("custom_id")
         if not custom_id:
             raise ValueError(f"No custom_id found at line {i + 1}")
@@ -135,12 +137,12 @@ async def sync_batch_file_if_needed(
 async def files(
     request: ASGIRequest,
     token: Token,
-    pydantic_model: dict | None = None,
+    pydantic_model: OpenAIFileCreateParams | None = None,
     file_content: bytes | None = None,
     file_preview: str | None = None,
     *args,
     **kwargs,
-) -> JsonResponse:
+):
     try:
         client = get_files_api_client()
     except ValueError:
@@ -234,7 +236,7 @@ async def files(
 @token_authenticated(token_auth_only=True)
 @log_request
 @catch_router_exceptions
-async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs) -> JsonResponse:
+async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
     """
     Retrieve or delete a specific file.
 
@@ -264,13 +266,14 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
         response_data = remote_file.model_dump()
         return JsonResponse(response_data, status=200)
 
+    # DELETE /files/{file_id}
     await file_obj.adelete_upstream(client)
 
     # Delete local record
     await sync_to_async(file_obj.delete)()
 
     # Return response with upstream ID
-    response_data = {"id": file_obj.id, "object": "file", "deleted": True}
+    response_data = {"id": file_id, "object": "file", "deleted": True}
     return JsonResponse(response_data, status=200)
 
 
@@ -279,7 +282,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
 @token_authenticated(token_auth_only=True)
 @log_request
 @catch_router_exceptions
-async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs) -> HttpResponse:
+async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
     """
     Retrieve the content of a specific file.
 

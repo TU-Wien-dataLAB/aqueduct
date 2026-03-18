@@ -2,11 +2,14 @@ import json
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import reverse
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayBatchesTestCase
 from management.models import Batch as BatchModel
 from management.models import BatchStatus, Org, ServiceAccount, Team, Token, UserProfile
+from mock_api.mock_configs import MockConfig
 
 User = get_user_model()
 
@@ -426,3 +429,115 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
         # Personal token should not be able to cancel the SA batch
         resp = self.client.post(f"/batches/{sa_batch_id}/cancel", headers=personal_headers)
         self.assertEqual(resp.status_code, 404)
+
+
+class TestCatchRouterExceptionsIntegration(GatewayBatchesTestCase):
+    def test_batches_post_bad_request_error(self):
+        """Test batches POST view catches Bad Request (400) from upstream."""
+        # Create and upload a test file
+        content = b'{"custom_id": "test"}\n'
+        f = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post(self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+
+        # Patch upstream batches endpoint to return 400
+        batches_url = reverse("gateway:batches")
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid endpoint",
+                    "type": "invalid_request_error",
+                    "param": "endpoint",
+                    "code": "invalid_value",
+                }
+            },
+        )
+        with self.mock_server.patch_external_api(batches_url, bad_request):
+            # Attempt to create batch
+            resp = self.client.post(
+                batches_url,
+                data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}),
+                content_type="application/json",
+                headers=self.headers,
+            )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Invalid endpoint", resp.json()["error"]["message"])
+
+    def test_batch_get_bad_request_error(self):
+        """Test batch GET view catches Bad Request (400) from upstream."""
+        # Create and upload a test file
+        content = b'{"custom_id": "test"}\n'
+        f = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post(self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+
+        # Create a batch successfully first
+        resp = self.client.post(
+            reverse("gateway:batches"),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": "/v1/chat/completions"}),
+            content_type="application/json",
+            headers=self.headers,
+        )
+        self.assertEqual(resp.status_code, 200)
+        batch_id = resp.json()["id"]
+
+        # Patch upstream batch retrieval to return 400
+        batches_url = reverse("gateway:batch", kwargs={"batch_id": batch_id})
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Invalid batch ID",
+                    "type": "invalid_request_error",
+                    "param": "batch_id",
+                    "code": "invalid_value",
+                }
+            },
+        )
+        with self.mock_server.patch_external_api(batches_url, bad_request):
+            resp = self.client.get(batches_url, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Invalid batch ID", resp.json()["error"]["message"])
+
+    def test_batch_cancel_bad_request_error(self):
+        """Test batch.cancel POST view catches Bad Request (400) from upstream."""
+        # Create and upload a test file
+        content = b'{"custom_id": "test"}\n'
+        f = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
+        resp = self.client.post(self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        file_id = resp.json()["id"]
+
+        # Create a batch successfully first
+        resp = self.client.post(
+            reverse("gateway:batches"),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": "/v1/chat/completions"}),
+            content_type="application/json",
+            headers=self.headers,
+        )
+        self.assertEqual(resp.status_code, 200)
+        batch_id = resp.json()["id"]
+
+        # Patch upstream batch cancel to return 400
+        cancel_url = reverse("gateway:batch_cancel", args=[batch_id])
+        bad_request = MockConfig(
+            status_code=400,
+            response_data={
+                "error": {
+                    "message": "Cannot cancel batch",
+                    "type": "invalid_request_error",
+                    "param": "batch_id",
+                    "code": "invalid_value",
+                }
+            },
+        )
+        with self.mock_server.patch_external_api(cancel_url, bad_request):
+            resp = self.client.post(cancel_url, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Cannot cancel batch", resp.json()["error"]["message"])

@@ -3,6 +3,7 @@ from django.core.handlers.asgi import ASGIRequest
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from openai.types.audio.transcription_create_params import TranscriptionCreateParams as OpenAITranscriptionCreateParams
 from pydantic import ConfigDict, RootModel, TypeAdapter
 
 from management.models import Request
@@ -21,7 +22,7 @@ from .utils import _get_token_usage, _openai_stream, oai_client_from_body
 
 
 class TranscriptionCreateParams(RootModel):
-    root: openai.types.audio.TranscriptionCreateParams
+    root: OpenAITranscriptionCreateParams
     # IO[bytes] requires arbitrary_types_allowed for model settings
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -37,16 +38,15 @@ class TranscriptionCreateParams(RootModel):
 @check_model_availability
 @catch_router_exceptions
 async def transcriptions(
-    request: ASGIRequest, pydantic_model: dict, request_log: Request, *args, **kwargs
-) -> JsonResponse | HttpResponse | StreamingHttpResponse:
+    request: ASGIRequest, pydantic_model: OpenAITranscriptionCreateParams, request_log: Request, *args, **kwargs
+):
     client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay
 
     transcription = await client.audio.transcriptions.create(**pydantic_model)
 
-    if isinstance(
-        transcription,
-        (openai.types.audio.transcription.Transcription, openai.types.audio.transcription_verbose.TranscriptionVerbose),
+    if isinstance(transcription, openai.types.audio.transcription.Transcription) or isinstance(
+        transcription, openai.types.audio.transcription_verbose.TranscriptionVerbose
     ):
         data = transcription.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)

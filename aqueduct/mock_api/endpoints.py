@@ -1,8 +1,7 @@
 import asyncio
-import logging
 import logging.config
 import os
-import secrets
+import random
 from json import JSONDecodeError
 
 from fastapi import FastAPI, HTTPException
@@ -48,19 +47,22 @@ logger = logging.getLogger("fastapi")
 
 delays_enabled = os.getenv("MOCK_API_DELAYS", "false").lower() == "true"
 
+
+class MockException(HTTPException):
+    """Raised to simulate an exception while calling the external API."""
+
+
 app = FastAPI(debug=True)
 
 
 @app.get("/health")
-async def health_check() -> JSONResponse:
+async def health_check():
     logger.debug("health check successful")
     return JSONResponse({"status": "ok"})
 
 
 @app.post("/configure/{path:path}")
-async def configure_endpoint(
-    path: str, config: MockConfig | MockStreamingConfig | MockPlainTextConfig
-) -> dict[str, str]:
+async def configure_endpoint(path: str, config: MockConfig | MockStreamingConfig | MockPlainTextConfig):
     """
     Configure a special mock response for a specific endpoint.
 
@@ -74,7 +76,7 @@ async def configure_endpoint(
 
 
 @app.post("/reset/{path:path}")
-async def reset_endpoint(path: str) -> dict[str, str]:
+async def reset_endpoint(path: str):
     """
     Reset the special mock response for a specific endpoint to its default behavior.
 
@@ -89,7 +91,7 @@ async def reset_endpoint(path: str) -> dict[str, str]:
 @app.delete("/{path:path}")
 @app.get("/{path:path}")
 @app.post("/{path:path}")
-async def mock_endpoint(path: str, request: Request) -> JSONResponse | PlainTextResponse | StreamingResponse:
+async def mock_endpoint(path: str, request: Request):
     """
     The endpoint that mocks responses from the external OpenAI API.
 
@@ -117,15 +119,14 @@ async def mock_endpoint(path: str, request: Request) -> JSONResponse | PlainText
             else:
                 raise ValueError(f"No mocks configured for request method {request.method}")
             config = _find_config_for_path(path, config_dict)
-    except KeyError as err:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND, detail=f"No mock configured for this endpoint: {path}"
-        ) from err
+    except KeyError:
+        # print(f"\n\nNo mock configured for this endpoint: {path}", request.method, "\n")
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=f"No mock configured for this endpoint: {path}")
 
     logger.debug("Got a request to %s", path)
 
     if delays_enabled:
-        delay = 0.1 + (0.9 * (secrets.randbelow(1000) / 1000))
+        delay = 0.1 + (0.9 * random.random())
         logger.debug("Adding %.2fs delay to request", delay)
         await asyncio.sleep(delay)
 
@@ -173,7 +174,7 @@ def _path_matches_template(path: str, template: str) -> bool:
     if len(path_segments) != len(template_segments):
         return False
 
-    for path_seg, template_seg in zip(path_segments, template_segments, strict=False):
+    for path_seg, template_seg in zip(path_segments, template_segments):
         if template_seg == "id":
             continue  # 'id' matches anything
         if path_seg != template_seg:

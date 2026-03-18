@@ -1,5 +1,5 @@
 from contextlib import suppress
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -27,6 +27,33 @@ class FileUpdateBody(TypedDict, total=False):
     """
 
     attributes: dict
+
+
+@sync_to_async
+def _create_local_file_with_recheck(
+    vs_obj: VectorStore, file_obj: FileObject, max_files: int, remote_vs_file: Any
+) -> tuple[VectorStoreFile | None, str]:
+    with transaction.atomic():
+        try:
+            vs_locked = VectorStore.objects.select_for_update().get(id=vs_obj.id)
+        except VectorStore.DoesNotExist:
+            return None, "not_found"
+
+        current_count = VectorStoreFile.objects.filter(vector_store=vs_locked).count()
+        if current_count >= max_files:
+            return None, "limit_reached"
+
+        now = timezone.now()
+        vs_file_obj = VectorStoreFile(
+            id=remote_vs_file.id,
+            vector_store=vs_locked,
+            file_obj=file_obj,
+            status=remote_vs_file.status or "in_progress",
+            usage_bytes=remote_vs_file.usage_bytes,
+            created_at=int(now.timestamp()),
+        )
+        vs_file_obj.save()
+        return vs_file_obj, "ok"
 
 
 @csrf_exempt
@@ -108,37 +135,9 @@ async def vector_store_files(
     # Atomically check the file limit and create the local record.
     # If a concurrent request filled the last slot while the upstream call was in flight,
     # we reject and clean up the upstream file below.
-    @sync_to_async
-    def create_local_file_with_recheck() -> tuple[VectorStoreFile | None, str]:
-        with transaction.atomic():
-            # Re-acquire lock and re-check limit
-            try:
-                if token.service_account:
-                    vs_locked = VectorStore.objects.select_for_update().get(
-                        id=vector_store_id, token__service_account__team=token.service_account.team
-                    )
-                else:
-                    vs_locked = VectorStore.objects.select_for_update().get(id=vector_store_id, token__user=token.user)
-            except VectorStore.DoesNotExist:
-                return None, "not_found"
-
-            current_count = VectorStoreFile.objects.filter(vector_store=vs_locked).count()
-            if current_count >= max_files:
-                return None, "limit_reached"
-
-            now = timezone.now()
-            vs_file_obj = VectorStoreFile(
-                id=remote_vs_file.id,
-                vector_store=vs_locked,
-                file_obj=file_obj,
-                status=remote_vs_file.status or "in_progress",
-                usage_bytes=remote_vs_file.usage_bytes,
-                created_at=int(now.timestamp()),
-            )
-            vs_file_obj.save()
-            return vs_file_obj, "ok"
-
-    _result, recheck_status = await create_local_file_with_recheck()
+    _result, recheck_status = await _create_local_file_with_recheck(
+        vs_obj=vs_obj, file_obj=file_obj, max_files=max_files, remote_vs_file=remote_vs_file
+    )
 
     if recheck_status == "not_found":
         return error_response("Vector store not found.", param="vector_store_id", status=404)

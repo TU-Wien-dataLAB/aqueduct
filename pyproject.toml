@@ -49,6 +49,7 @@ extend-exclude = [
 [tool.ruff.lint]
 select = [
     "A",      # flake8-builtins
+    "C90",    # mccabe complexity
     "E",      # pycodestyle errors
     "T20",    # flake8-print
     "TID",    # flake8-tidy-imports
@@ -84,6 +85,9 @@ select = [
     "ANN206", # Missing return type annotation for classmethod
 ]
 ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX", "PLC0415"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 16
 
 [tool.ruff.format]
 docstring-code-format = true

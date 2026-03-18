@@ -750,6 +750,74 @@ def validate_response_id(view_func: AsyncView) -> AsyncView:
     return wrapper
 
 
+async def _validate_mcp_tool(request: ASGIRequest, token: Token, tool: ToolParam) -> ViewResult | None:
+    server_name = tool.get("server_label")
+    if await sync_to_async(token.mcp_server_excluded)(server_name):
+        log.error(f"MCP server not found - {server_name}")
+        return error_response(f"MCP server not found - {server_name}", status=404)
+
+    try:
+        mcp_config = get_mcp_config()
+        server_config = mcp_config[server_name]
+    except KeyError:
+        # the user wants to access an externally managed MCP server
+        if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
+            log.exception(f"MCP server not found - {server_name}")
+            return error_response(f"MCP server not found - {server_name}", status=404)
+        return None
+
+    expected_url = request.build_absolute_uri(reverse("gateway:mcp_server", kwargs={"name": server_name}))
+    if tool.get("server_url") != expected_url:
+        log.error("The server_url of the tool does not match the Aqueduct MCP server url.")
+        return error_response("The server_url of the tool does not match the Aqueduct MCP server url.", status=400)
+
+    tool["server_url"] = server_config["url"]
+    return None
+
+
+async def _validate_file_search_tool(token: Token, tool: ToolParam) -> ViewResult | None:
+    vector_store_ids = tool.get("vector_store_ids", [])
+    if not vector_store_ids:
+        return None
+
+    # Deduplicate to avoid false negatives in count check
+    unique_vs_ids = list(set(vector_store_ids))
+    # Verify ownership - users can only use their own vector stores
+    if token.service_account:
+        vs_count = await sync_to_async(
+            VectorStore.objects.filter(
+                id__in=unique_vs_ids, token__service_account__team=token.service_account.team
+            ).count
+        )()
+    else:
+        vs_count = await sync_to_async(VectorStore.objects.filter(id__in=unique_vs_ids, token__user=token.user).count)()
+
+    if vs_count != len(unique_vs_ids):
+        return error_response("One or more vector stores not found", status=404)
+    return None
+
+
+def _validate_native_tool(tool_type: str | None) -> ViewResult | None:
+    if tool_type not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
+        return error_response(f"Invalid tool type: {tool_type}", status=400)
+    return None
+
+
+async def _validate_tool(request: ASGIRequest, token: Token, tool: ToolParam) -> ViewResult | None:
+    tool_type = tool.get("type")
+
+    if tool_type in {"function", "custom"}:
+        return None
+
+    if tool_type == "mcp":
+        return await _validate_mcp_tool(request, token, tool)
+
+    if tool_type == "file_search":
+        return await _validate_file_search_tool(token, tool)
+
+    return _validate_native_tool(tool_type)
+
+
 def check_tool_availability(view_func: AsyncView) -> AsyncView:
     """
     Validate tool availability and configuration for Responses API requests.
@@ -772,56 +840,9 @@ def check_tool_availability(view_func: AsyncView) -> AsyncView:
 
         tools: Iterable[ToolParam] = pydantic_model.get("tools") or []
         for tool in tools:
-            match tool.get("type"):
-                case "function" | "custom":
-                    pass
-                case "mcp":
-                    server_name = tool.get("server_label")
-                    if await sync_to_async(token.mcp_server_excluded)(server_name):
-                        log.error(f"MCP server not found - {server_name}")
-                        return error_response(f"MCP server not found - {server_name}", status=404)
-
-                    try:
-                        mcp_config = get_mcp_config()
-                        server_config = mcp_config[server_name]
-                    except KeyError:
-                        # the user wants to access an externally managed MCP server
-                        if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-                            log.exception(f"MCP server not found - {server_name}")
-                            return error_response(f"MCP server not found - {server_name}", status=404)
-                    else:
-                        expected_url = request.build_absolute_uri(
-                            reverse("gateway:mcp_server", kwargs={"name": server_name})
-                        )
-                        if tool.get("server_url") != expected_url:
-                            log.error("The server_url of the tool does not match the Aqueduct MCP server url.")
-                            return error_response(
-                                "The server_url of the tool does not match the Aqueduct MCP server url.", status=400
-                            )
-
-                        tool["server_url"] = server_config["url"]
-                case "file_search":
-                    vector_store_ids = tool.get("vector_store_ids", [])
-                    if vector_store_ids:
-                        # Deduplicate to avoid false negatives in count check
-                        unique_vs_ids = list(set(vector_store_ids))
-                        # Verify ownership - users can only use their own vector stores
-                        if token.service_account:
-                            vs_count = await sync_to_async(
-                                VectorStore.objects.filter(
-                                    id__in=unique_vs_ids, token__service_account__team=token.service_account.team
-                                ).count
-                            )()
-                        else:
-                            vs_count = await sync_to_async(
-                                VectorStore.objects.filter(id__in=unique_vs_ids, token__user=token.user).count
-                            )()
-
-                        if vs_count != len(unique_vs_ids):
-                            return error_response("One or more vector stores not found", status=404)
-                case other:
-                    if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
-                        return error_response(f"Invalid tool type: {other}", status=400)
+            error = await _validate_tool(request, token, tool)
+            if error:
+                return error
 
         return await view_func(request, *args, **kwargs)
 

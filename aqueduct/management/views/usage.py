@@ -18,15 +18,15 @@ def get_all_buckets(start_time: datetime.datetime, now: datetime.datetime, freq_
     if freq_label == "1h":
         # one point per minute
         delta = timedelta(minutes=1)
-        round_time = lambda d: d.replace(second=0, microsecond=0)  # noqa: E731
+        round_time = lambda d: d.replace(second=0, microsecond=0)
     elif freq_label == "1d":
         # one point per hour
         delta = timedelta(hours=1)
-        round_time = lambda d: d.replace(minute=0, second=0, microsecond=0)  # noqa: E731
+        round_time = lambda d: d.replace(minute=0, second=0, microsecond=0)
     else:
         # one point per day
         delta = timedelta(days=1)
-        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)  # noqa: E731
+        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
 
     d = round_time(start_time)
     end_time = round_time(now)

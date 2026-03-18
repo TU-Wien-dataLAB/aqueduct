@@ -87,10 +87,23 @@ select = [
     "TC002",  # Move third-party imports into type-checking block
     "G201",   # Logging .exception() should be used instead of .error(..., exc_info=True)
     "ANN401", # Dynamically typed expressions (Any) are disallowed
-    "PERF102",# Incorrect dict iterator
-    "PERF401",# Manual list comprehension
+    "PERF102", # Incorrect dict iterator
+    "PERF401", # Manual list comprehension
+    "RUF019",  # Unkeyed membership checks
+    "RUF005",  # Collection literal concatenation
+    "RUF015",  # Unnecessary list conversion before indexing
+    "SIM118",  # Use key in dict instead of key in dict.keys()
+    "SIM110",  # Use any() instead of for-loop with early return
+    "FURB129", # Use list.extend() instead of for-loop with append
+    "FURB166", # Use int.from_bytes() instead of manual conversion
+    "FURB168", # Use is operator for type comparisons
+    "FURB169", # Use datetime.UTC instead of timezone.utc
+    "FURB171", # Use str.startswith() with tuple
+    "FURB177", # Use Path.cwd() instead of os.getcwd()
+    "FURB181", # Use re.compile() for repeated patterns
+    "RUF100",  # Unused noqa directive
 ]
-ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX", "PLC0415"]
+ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX", "PLC0415", "E731"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 16
@@ -139,3 +152,7 @@ suppress-none-returning = true
 "**/views/*.py" = ["BLE001"]
 # Phase 3: Additional BLE001 ignores
 "celery.py" = ["BLE001"]
+# E731: Lambda assignments in usage.py are intentional for datetime rounding
+"management/views/usage.py" = ["E731"]
+# S603: Mock API server subprocess call is intentional for test infrastructure
+"mock_api/*.py" = ["S603"]

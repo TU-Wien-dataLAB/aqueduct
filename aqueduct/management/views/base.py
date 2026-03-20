@@ -2,14 +2,15 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import QuerySet
-from django.http import Http404  # Removed HttpResponseForbidden as redirect is used
+from django.http import (
+    Http404,  # Removed HttpResponseForbidden as redirect is used
+    HttpResponse,
+)
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
 
-# from django.conf import settings # No longer needed in this file
-# Import your models (assuming they are in '..models')
-from ..models import Org, ServiceAccount, Team, UserProfile
+from management.models import Org, ServiceAccount, Team, UserProfile
 
 
 class BaseAqueductView(LoginRequiredMixin, View):
@@ -66,10 +67,9 @@ class BaseAqueductView(LoginRequiredMixin, View):
         if self.is_org_admin():
             # Org admin sees all teams in their organization.
             return self.org.teams.all()
-        else:
-            # Regular user sees only teams they are a member of via the ManyToManyField.
-            # The 'teams' attribute is guaranteed to exist due to the M2M definition.
-            return self.profile.teams.all()
+        # Regular user sees only teams they are a member of via the ManyToManyField.
+        # The 'teams' attribute is guaranteed to exist due to the M2M definition.
+        return self.profile.teams.all()
 
 
 # --- Mixins for Permission Checks ---
@@ -82,16 +82,13 @@ class OrgAdminRequiredMixin:
     or a view providing an `is_org_admin` method.
     """
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs) -> HttpResponse:
         # We rely on the inheriting view (like BaseAqueductView) providing is_org_admin.
         # This check ensures the method exists before calling it, making the mixin
         # slightly more robust if used outside the intended pattern, although
         # it's primarily designed to work with BaseAqueductView context.
         if not hasattr(self, "is_org_admin") or not self.is_org_admin():
-            messages.error(
-                request,
-                "You do not have permission to perform this action (Organization Admin required).",
-            )
+            messages.error(request, "You do not have permission to perform this action (Organization Admin required).")
             # Redirect to a sensible default page, like an org overview or dashboard.
             # Ensure 'org_dashboard' or similar exists in your URLs.
             # Using 'org' from the original code as a placeholder.
@@ -121,7 +118,7 @@ class TeamAdminRequiredMixin:
         """
         raise NotImplementedError(f"{self.__class__.__name__} must implement get_team_object()")
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs) -> HttpResponse:
         # Assumes LoginRequiredMixin ran first, so request.user is authenticated.
         # Assumes BaseAqueductView context provides self.profile.
 
@@ -143,9 +140,7 @@ class TeamAdminRequiredMixin:
         # Relies on the is_team_admin method in UserProfile model.
         # Assumes self.profile is available from BaseAqueductView.
         if not self.profile.is_team_admin(self.team_object):
-            messages.error(
-                request, f"You do not have permission to manage the team '{self.team_object.name}'."
-            )
+            messages.error(request, f"You do not have permission to manage the team '{self.team_object.name}'.")
             # Attempt to redirect back to the team's detail view if possible.
             # Fallback to the org dashboard if the team view URL fails.
             try:
@@ -183,8 +178,7 @@ class BaseTeamView(BaseAqueductView):
             team_pk = self.kwargs.get(self.pk_url_kwarg)
             if team_pk is None:
                 raise Http404(
-                    f"URL keyword argument '{self.pk_url_kwarg}' not found in URLconf for "
-                    f"{self.__class__.__name__}."
+                    f"URL keyword argument '{self.pk_url_kwarg}' not found in URLconf for {self.__class__.__name__}."
                 )
             # Fetch the team. Permission mixins (like TeamAdminRequiredMixin)
             # or view logic should handle authorization.
@@ -214,7 +208,7 @@ class BaseTeamView(BaseAqueductView):
     # --- Convenience for Generic Views ---
     # Override get_object common in DetailView/UpdateView/DeleteView
     # to return the team object by default if not overridden.
-    def get_object(self, queryset=None):
+    def get_object(self, queryset=None) -> Team | ServiceAccount:
         """
         Default implementation for generic views to return the fetched Team object.
         """
@@ -271,7 +265,7 @@ class BaseServiceAccountView(TeamAdminRequiredMixin, BaseAqueductView):
         return sa.team
 
     # --- Convenience for inheriting views ---
-    def get_object(self, queryset=None):
+    def get_object(self, queryset=None) -> ServiceAccount:
         """
         Default implementation for generic views (like DetailView, DeleteView)
         to return the fetched Service Account object after permissions are checked.

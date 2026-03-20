@@ -18,30 +18,19 @@ class TestBatchesAPI(GatewayBatchesTestCase):
     def test_invalid_json(self):
         """POST /batches with invalid JSON returns 400."""
         # Send malformed JSON in the body
-        resp = self.client.post(
-            "/batches", data="{not: 'json'}", headers=self.headers, content_type="application/json"
-        )
+        resp = self.client.post("/batches", data="{not: 'json'}", headers=self.headers, content_type="application/json")
         self.assertEqual(resp.status_code, 400)
         body = resp.json()
         self.assertIn("error", body)
         # Should indicate invalid JSON
         error_message = body.get("error", {}).get("message", "")
-        self.assertTrue(
-            "Invalid JSON" in error_message, f"Unexpected error message: {error_message}"
-        )
+        self.assertTrue("Invalid JSON" in error_message, f"Unexpected error message: {error_message}")
 
     def test_nonexistent_input_file(self):
         """POST /batches with a non-existent file ID returns 404."""
-        payload = {
-            "input_file_id": "does_not_exist",
-            "completion_window": "24h",
-            "endpoint": self.url_chat,
-        }
+        payload = {"input_file_id": "does_not_exist", "completion_window": "24h", "endpoint": self.url_chat}
         resp = self.client.post(
-            "/batches",
-            data=json.dumps(payload),
-            headers=self.headers,
-            content_type="application/json",
+            "/batches", data=json.dumps(payload), headers=self.headers, content_type="application/json"
         )
         self.assertEqual(resp.status_code, 404)
         err = resp.json()
@@ -127,16 +116,9 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         BatchModel.objects.bulk_create(existing_batches)
 
         # The next batch should be rejected with 403
-        batch_payload = {
-            "input_file_id": file_id,
-            "completion_window": "24h",
-            "endpoint": self.url_chat,
-        }
+        batch_payload = {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
         over = self.client.post(
-            "/batches",
-            data=json.dumps(batch_payload),
-            headers=self.headers,
-            content_type="application/json",
+            "/batches", data=json.dumps(batch_payload), headers=self.headers, content_type="application/json"
         )
         self.assertEqual(over.status_code, 403)
         err = over.json()
@@ -154,33 +136,25 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         # Create MAX_USER_BATCHES batches in the database
         file_id = self._create_jsonl_file(name="limit")
-        existing_batches = []
         token = Token.objects.get(pk=1)
-        for i in range(settings.MAX_USER_BATCHES):
-            existing_batches.append(
-                BatchModel(
-                    completion_window="24h",
-                    created_at=1773058900,
-                    endpoint=self.url_chat,
-                    id=f"batch-mock-{i}",
-                    input_file_id=file_id,
-                    status=BatchStatus.IN_PROGRESS,
-                    token=token,
-                )
+        existing_batches = [
+            BatchModel(
+                completion_window="24h",
+                created_at=1773058900,
+                endpoint=self.url_chat,
+                id=f"batch-mock-{i}",
+                input_file_id=file_id,
+                status=BatchStatus.IN_PROGRESS,
+                token=token,
             )
+            for i in range(settings.MAX_USER_BATCHES)
+        ]
         BatchModel.objects.bulk_create(existing_batches)
 
         # Next batch should be blocked
-        batch_payload = {
-            "input_file_id": file_id,
-            "completion_window": "24h",
-            "endpoint": self.url_chat,
-        }
+        batch_payload = {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
         blocked = self.client.post(
-            "/batches",
-            data=json.dumps(batch_payload),
-            headers=self.headers,
-            content_type="application/json",
+            "/batches", data=json.dumps(batch_payload), headers=self.headers, content_type="application/json"
         )
         self.assertEqual(blocked.status_code, 403)
 
@@ -191,10 +165,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 
         # Now a new batch should succeed
         again = self.client.post(
-            "/batches",
-            data=json.dumps(batch_payload),
-            headers=self.headers,
-            content_type="application/json",
+            "/batches", data=json.dumps(batch_payload), headers=self.headers, content_type="application/json"
         )
         self.assertEqual(again.status_code, 200)
 
@@ -239,9 +210,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
 class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     """Tests for service account team-scoped access control on the batches API."""
 
-    def _setup_two_sa_tokens_same_team(
-        self,
-    ) -> tuple[dict, dict, ServiceAccount, ServiceAccount, Token, Token]:
+    def _setup_two_sa_tokens_same_team(self) -> tuple[dict, dict, ServiceAccount, ServiceAccount, Token, Token]:
         """
         Set up two service account tokens on the same team (Whale).
 
@@ -296,7 +265,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     def test_create_batch_sa_cross_token_file(self):
         """SA token can create a batch using a file uploaded by another SA token on the same team."""
 
-        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        headers1, headers2, _sa1, _sa2, _token1, token2 = self._setup_two_sa_tokens_same_team()
 
         # Upload file with SA token 1
         file_id = self._create_jsonl_file(name="sa1", headers=headers1)
@@ -304,15 +273,11 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
         # Create batch with SA token 2 using SA token 1's file
         resp = self.client.post(
             "/batches",
-            data=json.dumps(
-                {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
-            ),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}),
             headers=headers2,
             content_type="application/json",
         )
-        self.assertEqual(
-            resp.status_code, 200, f"Expected 200, got {resp.status_code}: {resp.json()}"
-        )
+        self.assertEqual(resp.status_code, 200, f"Expected 200, got {resp.status_code}: {resp.json()}")
         batch_id = resp.json()["id"]
         batch = BatchModel.objects.get(id=batch_id)
         self.assertEqual(batch.token, token2)
@@ -321,8 +286,8 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     def test_create_batch_sa_cross_team_denied(self):
         """SA token cannot create a batch using a file from a different team."""
 
-        headers1, _, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
-        other_headers, other_sa, other_token = self._setup_cross_team_sa_token()
+        headers1, _, _sa1, _sa2, _token1, _token2 = self._setup_two_sa_tokens_same_team()
+        other_headers, _other_sa, _other_token = self._setup_cross_team_sa_token()
 
         # Upload file with SA token on team Whale
         file_id = self._create_jsonl_file(headers=headers1)
@@ -330,9 +295,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
         # Try to create batch with SA token on team Dolphin using Whale's file
         resp = self.client.post(
             "/batches",
-            data=json.dumps(
-                {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
-            ),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}),
             headers=other_headers,
             content_type="application/json",
         )
@@ -342,7 +305,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     def test_list_batches_sa_team_scope(self):
         """SA tokens on the same team can see each other's batches."""
 
-        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        headers1, headers2, _sa1, _sa2, token1, _token2 = self._setup_two_sa_tokens_same_team()
 
         # Upload file and create batch with SA token 1
         file_id1 = self._create_jsonl_file(name="sa1", headers=headers1)
@@ -385,15 +348,13 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     def test_retrieve_batch_sa_team_scope(self):
         """SA token can retrieve a batch created by another SA token on the same team."""
 
-        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        headers1, headers2, _sa1, _sa2, token1, _token2 = self._setup_two_sa_tokens_same_team()
 
         # Upload file and create batch with SA token 1
         file_id = self._create_jsonl_file(name="sa1", headers=headers1)
         resp = self.client.post(
             "/batches",
-            data=json.dumps(
-                {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
-            ),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}),
             headers=headers1,
             content_type="application/json",
         )
@@ -409,15 +370,13 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
     def test_cancel_batch_sa_team_scope(self):
         """SA token can cancel a batch created by another SA token on the same team."""
 
-        headers1, headers2, sa1, sa2, token1, token2 = self._setup_two_sa_tokens_same_team()
+        headers1, headers2, _sa1, _sa2, _token1, _token2 = self._setup_two_sa_tokens_same_team()
 
         # Upload file and create batch with SA token 1
         file_id = self._create_jsonl_file(name="sa1", headers=headers1)
         resp = self.client.post(
             "/batches",
-            data=json.dumps(
-                {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
-            ),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}),
             headers=headers1,
             content_type="application/json",
         )
@@ -444,9 +403,7 @@ class TestBatchesServiceAccountAPI(GatewayBatchesTestCase):
         file_id = self._create_jsonl_file(name="sa", headers=sa_headers)
         resp = self.client.post(
             "/batches",
-            data=json.dumps(
-                {"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}
-            ),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}),
             headers=sa_headers,
             content_type="application/json",
         )
@@ -479,9 +436,7 @@ class TestCatchRouterExceptionsIntegration(GatewayBatchesTestCase):
         # Create and upload a test file
         content = b'{"custom_id": "test"}\n'
         f = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post(
-            self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers
-        )
+        resp = self.client.post(self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
@@ -502,13 +457,7 @@ class TestCatchRouterExceptionsIntegration(GatewayBatchesTestCase):
             # Attempt to create batch
             resp = self.client.post(
                 batches_url,
-                data=json.dumps(
-                    {
-                        "input_file_id": file_id,
-                        "completion_window": "24h",
-                        "endpoint": self.url_chat,
-                    }
-                ),
+                data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": self.url_chat}),
                 content_type="application/json",
                 headers=self.headers,
             )
@@ -521,22 +470,14 @@ class TestCatchRouterExceptionsIntegration(GatewayBatchesTestCase):
         # Create and upload a test file
         content = b'{"custom_id": "test"}\n'
         f = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post(
-            self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers
-        )
+        resp = self.client.post(self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
         # Create a batch successfully first
         resp = self.client.post(
             reverse("gateway:batches"),
-            data=json.dumps(
-                {
-                    "input_file_id": file_id,
-                    "completion_window": "24h",
-                    "endpoint": "/v1/chat/completions",
-                }
-            ),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": "/v1/chat/completions"}),
             content_type="application/json",
             headers=self.headers,
         )
@@ -567,22 +508,14 @@ class TestCatchRouterExceptionsIntegration(GatewayBatchesTestCase):
         # Create and upload a test file
         content = b'{"custom_id": "test"}\n'
         f = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
-        resp = self.client.post(
-            self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers
-        )
+        resp = self.client.post(self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
         # Create a batch successfully first
         resp = self.client.post(
             reverse("gateway:batches"),
-            data=json.dumps(
-                {
-                    "input_file_id": file_id,
-                    "completion_window": "24h",
-                    "endpoint": "/v1/chat/completions",
-                }
-            ),
+            data=json.dumps({"input_file_id": file_id, "completion_window": "24h", "endpoint": "/v1/chat/completions"}),
             content_type="application/json",
             headers=self.headers,
         )

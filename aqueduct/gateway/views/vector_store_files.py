@@ -1,4 +1,8 @@
-from typing import Optional, TypedDict
+from contextlib import suppress
+from typing import TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    from openai.types.vector_stores.vector_store_file import VectorStoreFile
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -14,13 +18,7 @@ from pydantic import TypeAdapter
 from gateway.config import get_files_api_client
 from management.models import FileObject, Token, VectorStore, VectorStoreFile
 
-from .decorators import (
-    catch_router_exceptions,
-    log_request,
-    parse_body,
-    token_authenticated,
-    tos_accepted,
-)
+from .decorators import catch_router_exceptions, log_request, parse_body, token_authenticated, tos_accepted
 from .errors import error_response
 
 
@@ -34,6 +32,33 @@ class FileUpdateBody(TypedDict, total=False):
     attributes: dict
 
 
+@sync_to_async
+def _create_local_file_with_recheck(
+    vs_obj: VectorStore, file_obj: FileObject, max_files: int, remote_vs_file: "VectorStoreFile"
+) -> tuple[VectorStoreFile | None, str]:
+    with transaction.atomic():
+        try:
+            vs_locked = VectorStore.objects.select_for_update().get(id=vs_obj.id)
+        except VectorStore.DoesNotExist:
+            return None, "not_found"
+
+        current_count = VectorStoreFile.objects.filter(vector_store=vs_locked).count()
+        if current_count >= max_files:
+            return None, "limit_reached"
+
+        now = timezone.now()
+        vs_file_obj = VectorStoreFile(
+            id=remote_vs_file.id,
+            vector_store=vs_locked,
+            file_obj=file_obj,
+            status=remote_vs_file.status or "in_progress",
+            usage_bytes=remote_vs_file.usage_bytes,
+            created_at=int(now.timestamp()),
+        )
+        vs_file_obj.save()
+        return vs_file_obj, "ok"
+
+
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 @token_authenticated(token_auth_only=True)
@@ -45,10 +70,10 @@ async def vector_store_files(
     request: ASGIRequest,
     token: Token,
     vector_store_id: str,
-    pydantic_model: Optional[FileCreateParams] = None,
+    pydantic_model: FileCreateParams | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files - List files in vector store
     POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
@@ -80,9 +105,7 @@ async def vector_store_files(
             file_data = remote_file.model_dump(mode="json")
             response_files.append(file_data)
 
-        return JsonResponse(
-            {"object": "list", "data": response_files, "has_more": False}, status=200
-        )
+        return JsonResponse({"object": "list", "data": response_files, "has_more": False}, status=200)
 
     # POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
     params = pydantic_model if pydantic_model else {}
@@ -115,39 +138,9 @@ async def vector_store_files(
     # Atomically check the file limit and create the local record.
     # If a concurrent request filled the last slot while the upstream call was in flight,
     # we reject and clean up the upstream file below.
-    @sync_to_async
-    def create_local_file_with_recheck():
-        with transaction.atomic():
-            # Re-acquire lock and re-check limit
-            try:
-                if token.service_account:
-                    vs_locked = VectorStore.objects.select_for_update().get(
-                        id=vector_store_id, token__service_account__team=token.service_account.team
-                    )
-                else:
-                    vs_locked = VectorStore.objects.select_for_update().get(
-                        id=vector_store_id, token__user=token.user
-                    )
-            except VectorStore.DoesNotExist:
-                return None, "not_found"
-
-            current_count = VectorStoreFile.objects.filter(vector_store=vs_locked).count()
-            if current_count >= max_files:
-                return None, "limit_reached"
-
-            now = timezone.now()
-            vs_file_obj = VectorStoreFile(
-                id=remote_vs_file.id,
-                vector_store=vs_locked,
-                file_obj=file_obj,
-                status=remote_vs_file.status or "in_progress",
-                usage_bytes=remote_vs_file.usage_bytes,
-                created_at=int(now.timestamp()),
-            )
-            vs_file_obj.save()
-            return vs_file_obj, "ok"
-
-    result, recheck_status = await create_local_file_with_recheck()
+    _result, recheck_status = await _create_local_file_with_recheck(
+        vs_obj=vs_obj, file_obj=file_obj, max_files=max_files, remote_vs_file=remote_vs_file
+    )
 
     if recheck_status == "not_found":
         return error_response("Vector store not found.", param="vector_store_id", status=404)
@@ -155,12 +148,8 @@ async def vector_store_files(
     if recheck_status == "limit_reached":
         # Upstream file was already created but limit was exceeded by a concurrent request.
         # Clean up the upstream file.
-        try:
-            await client.vector_stores.files.delete(
-                vector_store_id=vs_obj.id, file_id=remote_vs_file.id
-            )
-        except Exception:
-            pass  # Best-effort cleanup
+        with suppress(Exception):
+            await client.vector_stores.files.delete(vector_store_id=vs_obj.id, file_id=remote_vs_file.id)
         return error_response(f"Vector store file limit reached ({max_files})", status=403)
 
     # Return upstream response directly (IDs already match)
@@ -181,10 +170,10 @@ async def vector_store_file(
     token: Token,
     vector_store_id: str,
     file_id: str,
-    pydantic_model: Optional[FileUpdateBody] = None,
+    pydantic_model: FileUpdateBody | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id} - Retrieve file
     POST /v1/vector_stores/{vector_store_id}/files/{file_id} - Update file attributes
@@ -223,7 +212,7 @@ async def vector_store_file(
 
         return JsonResponse(response_data, status=200)
 
-    elif request.method == "POST":
+    if request.method == "POST":
         # Update file attributes
         params = pydantic_model if pydantic_model else {}
 
@@ -232,9 +221,7 @@ async def vector_store_file(
             update_kwargs["attributes"] = params["attributes"]
 
         if not params.get("attributes"):
-            return error_response(
-                "Missing required parameter: attributes", param="attributes", status=400
-            )
+            return error_response("Missing required parameter: attributes", param="attributes", status=400)
 
         remote_vs_file = await client.vector_stores.files.update(**update_kwargs)
 
@@ -243,7 +230,6 @@ async def vector_store_file(
 
         return JsonResponse(response_data, status=200)
 
-    # DELETE /v1/vector_stores/{vector_store_id}/files/{file_id}
     await vs_file_obj.adelete_upstream(client)
 
     # Delete local record
@@ -263,7 +249,7 @@ async def vector_store_file(
 @catch_router_exceptions
 async def vector_store_file_content(
     request: ASGIRequest, token: Token, vector_store_id: str, file_id: str, *args, **kwargs
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id}/content - Get file content
     """
@@ -285,16 +271,12 @@ async def vector_store_file_content(
 
     # Get the vector store file
     try:
-        vs_file_obj = await VectorStoreFile.objects.select_related("file_obj").aget(
-            id=file_id, vector_store=vs_obj
-        )
+        vs_file_obj = await VectorStoreFile.objects.select_related("file_obj").aget(id=file_id, vector_store=vs_obj)
     except VectorStoreFile.DoesNotExist:
         return error_response("Vector store file not found.", param="file_id", status=404)
 
     # Get content from upstream
-    content_response = await client.vector_stores.files.content(
-        vector_store_id=vs_obj.id, file_id=vs_file_obj.id
-    )
+    content_response = await client.vector_stores.files.content(vector_store_id=vs_obj.id, file_id=vs_file_obj.id)
 
     # FileContentResponse and AsyncPage[FileContentResponse] are both Pydantic models
     response_data = content_response.model_dump()

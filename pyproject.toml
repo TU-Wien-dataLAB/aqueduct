@@ -33,17 +33,101 @@ dev = [
     "channels[daphne]>=4.3.1",
     "fastapi>=0.115.12",
     "pre-commit>=4.2.0",
-    "ruff>=0.13.3",
+    "ruff>=0.15.5",
     "tbump>=6.11.0",
 ]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
+target-version = "py311"
 extend-exclude = [
     "**/migrations/*.py",
     "aqueduct/aqueduct/settings.py",
     "charts/**/*",
 ]
+
+[tool.ruff.lint]
+select = [
+    "A",      # flake8-builtins
+    "C90",    # mccabe complexity
+    "E",      # pycodestyle errors
+    "G", # flake8-logging-format
+    "T20",    # flake8-print
+    "TID",    # flake8-tidy-imports
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "RUF",    # Ruff-specific rules
+    "DJ",     # Django-specific patterns
+    "SIM",    # flake8-simplify
+    "RET",    # flake8-return simplifications
+    "PTH",    # flake8-use-pathlib
+    "PIE",    # flake8-pie miscellaneous lints
+    "S",      # flake8-bandit security checks
+    "BLE",    # flake8-blind-except
+    "TRY",    # tryceratops
+    "EM",     # flake8-errmsg
+    "DTZ",    # flake8-datetimez
+    "ERA",    # flake8-eraduate commented-out code
+    "TC",  # flake8-type-checking
+    "PLR0402", # Use `from` instead of `import ... as ...`
+    "PLR1714", # Repeated equality comparisons -> use `in`
+    "PLR2004", # Avoid magic values in comparisons
+    "PLR5501", # Use `elif` instead of `else` then `if`
+    "PLW",     # pylint ruleset
+    "ANN201", # Missing return type annotation for public function
+    "ANN202", # Missing return type annotation for private function
+    "ANN204", # Missing return type annotation for special method
+    "ANN205", # Missing return type annotation for staticmethod
+    "ANN206", # Missing return type annotation for classmethod
+    "PGH003", # Use specific rule codes when ignoring type issues
+    "ANN401", # Dynamically typed expressions (Any) are disallowed
+    "PERF101", # Do not cast an iterable to list before iterating over it
+    "PERF102", # Incorrect dict iterator
+    "PERF203", # try-except within a loop incurs performance overhead
+    "PERF401", # Manual list comprehension
+    "PERF402", # Use list or list.copy to create a copy of a list
+    "PERF403", # Use a dictionary comprehension instead of {modifier} for-loop
+    "RUF019",  # Unkeyed membership checks
+    "RUF005",  # Collection literal concatenation
+    "RUF015",  # Unnecessary list conversion before indexing
+    "SIM118",  # Use key in dict instead of key in dict.keys()
+    "SIM110",  # Use any() instead of for-loop with early return
+    "FURB129", # Use list.extend() instead of for-loop with append
+    "FURB166", # Use int.from_bytes() instead of manual conversion
+    "FURB168", # Use is operator for type comparisons
+    "FURB169", # Use datetime.UTC instead of timezone.utc
+    "FURB171", # Use str.startswith() with tuple
+    "FURB177", # Use Path.cwd() instead of os.getcwd()
+    "FURB181", # Use re.compile() for repeated patterns
+    "RUF100",  # Unused noqa directive
+    "B904",    # raise-without-from-inside-except
+    "SIM101",  # Use isinstance() instead of type() ==
+    "SIM102",  # Nested if statements that could be combined
+    "SIM103",  # Return boolean directly
+    "SIM201",  # Use x != y instead of not x == y
+    "S110",    # try-except-pass detected
+    "S112",    # try-except-continue detected
+    "RUF013",  # Implicit Optional in type annotations
+    "ASYNC",   # flake8-async async/await best practices
+    "LOG",     # flake8-logging - logging best practices
+    "SLOT",    # flake8-slots - __slots__ optimization
+    "FA",      # flake8-future-annotations - future annotations
+    "T10",     # flake8-debugger - debugger detection
+    "ICN",     # flake8-import-conventions - import conventions
+    "RSE",     # flake8-raise - raise statement improvements
+    "PLE",     # Pylint Error - error detection
+    "INP",     # flake8-no-pep420 - implicit namespace packages
+    "N",       # pep8-naming - naming conventions
+    "PLC"
+]
+ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX", "PLC0415", "E731"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 16
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -52,6 +136,44 @@ skip-magic-trailing-comma = true
 [tool.ruff.lint.isort]
 known-first-party = ["aqueduct", "gateway", "management", "mock_api"]
 
+[tool.ruff.lint.flake8-annotations]
+mypy-init-return = true
+suppress-none-returning = true
+
 [tool.ruff.lint.per-file-ignores]
 # Ignore `F401` (imported but unused) in all `__init__.py` files
 "__init__.py" = ["F401"]
+# Ignore ANN return type rules in test files
+# DJ007: ModelForm using fields = "__all__" is acceptable for this use case
+# BLE001 in admin actions is intentional for error handling
+"**/admin.py" = ["DJ007", "BLE001"]
+# DJ012: Model ordering is a style preference, not critical for functionality
+"**/models.py" = ["DJ012"]
+# DJ001: null=True on Request.model with noqa comment - per-file ignore as fallback
+# ERA001: JSON structure example comment is useful documentation
+"**/management/models.py" = ["DJ001", "BLE001", "ERA"]
+# SIM117: Nested async with statements in tests - this pattern is correct and readable
+# PT: Using unittest-style assertions (self.assertEqual) in unittest test classes
+# FIX: TODO/FIXME comments are useful for tracking work
+# ANN: Return type annotations not enforced in tests
+"**/tests/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "PT", "FIX", "ANN201", "ANN202", "ANN204", "ANN205", "ANN206"]
+"**/tests/**/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "S607", "PT", "FIX", "ANN201", "ANN202", "ANN204", "ANN205", "ANN206"]
+# SIM105: suppress(Exception) may mask too much, prefer explicit error handling
+"**/management/*.py" = ["SIM105"]
+# SIM108: Ternary operator may reduce clarity for boolean logic with hasattr
+"**/management/*" = ["SIM108"]
+# SIM102: Nested if with `and` combining may change logic order
+"**/management/forms.py" = ["SIM102"]
+# RET504: Explicit return of form in view pattern is intentional
+"**/management/views/tokens.py" = ["RET504"]
+# Examples directory and debug scripts: exceptions allowed for code clarity
+"examples/*.py" = ["PTH", "SIM", "SIM115", "BLE001", "ERA", "T20"]
+"file_id_debug.py" = ["PTH", "SIM", "SIM115", "ERA", "T20"]
+# BLE001: Blind except is intentional in views to return proper error responses
+"**/views/*.py" = ["BLE001"]
+# Phase 3: Additional BLE001 ignores
+"celery.py" = ["BLE001"]
+# E731: Lambda assignments in usage.py are intentional for datetime rounding
+"management/views/usage.py" = ["E731"]
+# S603: Mock API server subprocess call is intentional for test infrastructure
+"mock_api/*.py" = ["S603"]

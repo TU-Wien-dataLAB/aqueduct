@@ -57,9 +57,7 @@ else:
 
 print("Creating batch...")
 batch_resp = client.batches.create(
-    completion_window=COMPLETION_WINDOW,
-    endpoint="/v1/chat/completions",
-    input_file_id=upload_resp.id,
+    completion_window=COMPLETION_WINDOW, endpoint="/v1/chat/completions", input_file_id=upload_resp.id
 )
 
 print("Batch created:")

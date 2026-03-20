@@ -13,24 +13,17 @@ class TOSTestCase(TOSGatewayTestCase):
         Test that when a user has accepted the TOS, they can access the /models endpoint.
         """
         # Accept TOS for non-admin user
-        UPDATED_ACCESS_TOKEN, user_id = self.create_new_user()
+        updated_access_token, user_id = self.create_new_user()
         self.accept_tos(user_id=user_id)
 
         with patch("gateway.views.decorators.cache", caches["default"]):
             # Call the /models endpoint
             response = self.client.get(
-                "/models",
-                data="",
-                content_type="application/json",
-                headers=_build_chat_headers(UPDATED_ACCESS_TOKEN),
+                "/models", data="", content_type="application/json", headers=_build_chat_headers(updated_access_token)
             )
 
         # Should return 200 OK
-        self.assertEqual(
-            response.status_code,
-            200,
-            f"Expected 200 OK, got {response.status_code}: {response.content}",
-        )
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         # Verify the response contains model data
         response_json = response.json()
@@ -45,7 +38,7 @@ class TOSTestCase(TOSGatewayTestCase):
         from tos.models import TermsOfService
 
         # non-admin user
-        UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
+        updated_access_token, _ = self.create_new_user()
 
         # Create an active Terms of Service but DON'T create a UserAgreement for the user
         TermsOfService.objects.create(active=True, content="Test Terms of Service content")
@@ -53,17 +46,12 @@ class TOSTestCase(TOSGatewayTestCase):
         with patch("gateway.views.decorators.cache", caches["default"]):
             # Call the /models endpoint - user should be blocked because they haven't accepted TOS
             response = self.client.get(
-                "/models",
-                data="",
-                content_type="application/json",
-                headers=_build_chat_headers(UPDATED_ACCESS_TOKEN),
+                "/models", data="", content_type="application/json", headers=_build_chat_headers(updated_access_token)
             )
 
         # Should return 403 Forbidden
         self.assertEqual(
-            response.status_code,
-            403,
-            f"Expected 403 Forbidden, got {response.status_code}: {response.content}",
+            response.status_code, 403, f"Expected 403 Forbidden, got {response.status_code}: {response.content}"
         )
 
         # Verify the response contains an error message about TOS
@@ -75,7 +63,7 @@ class TOSTestCase(TOSGatewayTestCase):
         """Tests that admin users are skipped in the decorator check."""
         cache = caches["default"]
         # set cache for user with id 1
-        cache.set("django:tos:skip_tos_check:{}".format(1), True)
+        cache.set(f"django:tos:skip_tos_check:{1}", True)
 
         from tos.models import TermsOfService
 
@@ -91,11 +79,7 @@ class TOSTestCase(TOSGatewayTestCase):
             )
 
         # Should return 200 OK
-        self.assertEqual(
-            response.status_code,
-            200,
-            f"Expected 200 OK, got {response.status_code}: {response.content}",
-        )
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
 
         # Verify the response contains model data
         response_json = response.json()
@@ -110,24 +94,19 @@ class TOSTestCase(TOSGatewayTestCase):
         from tos.models import TermsOfService
 
         # non-admin user
-        UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
+        updated_access_token, _ = self.create_new_user()
 
         # Create an active Terms of Service but DON'T create a UserAgreement for the user
         TermsOfService.objects.create(active=True, content="Test Terms of Service content")
 
         # Call the /models endpoint - user should be blocked because they haven't accepted TOS
         response = self.client.get(
-            "/models",
-            data="",
-            content_type="application/json",
-            headers=_build_chat_headers(UPDATED_ACCESS_TOKEN),
+            "/models", data="", content_type="application/json", headers=_build_chat_headers(updated_access_token)
         )
 
         # Should return 403 Forbidden
         self.assertEqual(
-            response.status_code,
-            200,
-            f"Expected 200 Forbidden, got {response.status_code}: {response.content}",
+            response.status_code, 200, f"Expected 200 Forbidden, got {response.status_code}: {response.content}"
         )
 
         # Verify the response contains model data

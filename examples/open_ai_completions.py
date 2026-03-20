@@ -46,10 +46,7 @@ try:
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "text",
-                        "text": "Analyze the letter and provide a summary of the key points.",
-                    },
+                    {"type": "text", "text": "Analyze the letter and provide a summary of the key points."},
                     {
                         "type": "file",
                         "file": {

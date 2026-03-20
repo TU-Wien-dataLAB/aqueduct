@@ -35,13 +35,11 @@ log = logging.getLogger("aqueduct")
 @catch_router_exceptions
 async def image_generation(
     request: ASGIRequest, pydantic_model: ImageGenerateParams, request_log: Request, *args, **kwargs
-):
+) -> JsonResponse:
     if pydantic_model.get("stream"):
         # LiteLLM cannot parse a Stream response, so we don't support streaming for now
         raise BadRequestError(
-            "Aqueduct does not support image streaming.",
-            pydantic_model.get("model"),
-            llm_provider=None,
+            "Aqueduct does not support image streaming.", pydantic_model.get("model"), llm_provider=None
         )
 
     response_format = pydantic_model.get("response_format", "b64_json")
@@ -60,10 +58,10 @@ async def image_generation(
         resp: ImagesResponse = await client.images.generate(**pydantic_model)
     except TypeError as err:
         # Sending extra fields in the data makes `AsyncImages.generate()` error out
-        log.error(err)
+        log.exception(err)
         raise BadRequestError(
             "Unexpected argument in request body", pydantic_model.get("model"), llm_provider=None
-        )
+        ) from err
 
     data = resp.model_dump(exclude_unset=True)
     request_log.token_usage = _get_token_usage(data)

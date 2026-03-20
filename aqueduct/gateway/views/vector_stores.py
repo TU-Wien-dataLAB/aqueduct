@@ -1,5 +1,3 @@
-from typing import Optional
-
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
@@ -38,12 +36,8 @@ from .errors import error_response
 @log_request
 @catch_router_exceptions
 async def vector_stores(
-    request: ASGIRequest,
-    token: Token,
-    pydantic_model: Optional[VectorStoreCreateParams] = None,
-    *args,
-    **kwargs,
-):
+    request: ASGIRequest, token: Token, pydantic_model: VectorStoreCreateParams | None = None, *args, **kwargs
+) -> JsonResponse:
     """
     GET /v1/vector_stores - List vector stores
     POST /v1/vector_stores - Create vector store
@@ -56,9 +50,7 @@ async def vector_stores(
     if request.method == "GET":
         # List user's vector stores from local DB
         if token.service_account:
-            vector_stores_qs = VectorStore.objects.filter(
-                token__service_account__team=token.service_account.team
-            )
+            vector_stores_qs = VectorStore.objects.filter(token__service_account__team=token.service_account.team)
         else:
             vector_stores_qs = VectorStore.objects.filter(token__user=token.user)
 
@@ -114,15 +106,11 @@ async def vector_stores(
     if token.service_account:
         limit = settings.MAX_TEAM_VECTOR_STORES
         active_count = await sync_to_async(
-            VectorStore.objects.filter(
-                token__service_account__team=token.service_account.team
-            ).count
+            VectorStore.objects.filter(token__service_account__team=token.service_account.team).count
         )()
     else:
         limit = settings.MAX_USER_VECTOR_STORES
-        active_count = await sync_to_async(
-            VectorStore.objects.filter(token__user=token.user).count
-        )()
+        active_count = await sync_to_async(VectorStore.objects.filter(token__user=token.user).count)()
 
     if active_count >= limit:
         return error_response(f"Vector store limit reached ({limit})", status=403)
@@ -172,11 +160,11 @@ async def vector_store(
     request: ASGIRequest,
     token: Token,
     vector_store_id: str,
-    pydantic_model: Optional[VectorStoreUpdateParams] = None,
-    client: Optional[AsyncOpenAI] = None,
+    pydantic_model: VectorStoreUpdateParams | None = None,
+    client: AsyncOpenAI | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id} - Retrieve vector store
     POST /v1/vector_stores/{vector_store_id} - Modify vector store
@@ -202,7 +190,7 @@ async def vector_store(
 
         return JsonResponse(response_data, status=200)
 
-    elif request.method == "POST":
+    if request.method == "POST":
         # Modify vector store
         params = pydantic_model if pydantic_model else {}
 
@@ -229,7 +217,6 @@ async def vector_store(
         response_data = remote_vs.model_dump(mode="json")
         return JsonResponse(response_data, status=200)
 
-    # DELETE /v1/vector_stores/{vector_store_id}
     await vs_obj.adelete_upstream(client)
 
     # Capture ID before delete (Django sets pk to None after delete)
@@ -239,9 +226,7 @@ async def vector_store(
     await sync_to_async(vs_obj.delete)()
 
     # Return with upstream ID
-    return JsonResponse(
-        {"id": deleted_id, "object": "vector_store.deleted", "deleted": True}, status=200
-    )
+    return JsonResponse({"id": deleted_id, "object": "vector_store.deleted", "deleted": True}, status=200)
 
 
 @csrf_exempt
@@ -253,13 +238,8 @@ async def vector_store(
 @require_files_api_client
 @catch_router_exceptions
 async def vector_store_search(
-    request: ASGIRequest,
-    token: Token,
-    vector_store_id: str,
-    pydantic_model: VectorStoreSearchParams,
-    *args,
-    **kwargs,
-):
+    request: ASGIRequest, token: Token, vector_store_id: str, pydantic_model: VectorStoreSearchParams, *args, **kwargs
+) -> JsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/search - Search vector store
     """

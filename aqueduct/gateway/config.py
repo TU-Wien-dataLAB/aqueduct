@@ -1,6 +1,7 @@
 import json
 import logging
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal, NotRequired, TypedDict
 
 import openai
@@ -53,11 +54,11 @@ def _validate_router_config(config: dict):
 def get_router_config() -> dict:
     path = settings.LITELLM_ROUTER_CONFIG_FILE_PATH
     try:
-        log.info(f"Loading router config from {path}")
-        with open(path) as f:
+        log.info("Loading router config from %s", path)
+        with Path(path).open() as f:
             data = yaml.safe_load(f)
     except (FileNotFoundError, TypeError):
-        raise RuntimeError(f"Unable to load router config from {path}")
+        raise RuntimeError(f"Unable to load router config from {path}") from None
 
     _validate_router_config(data)
 
@@ -128,8 +129,8 @@ def resolve_model_alias(model_or_alias: str) -> str:
 def get_mcp_config() -> dict[str, MCPServerConfig]:
     path = settings.MCP_CONFIG_FILE_PATH
     try:
-        with open(path) as f:
+        with Path(path).open() as f:
             data = json.load(f)["mcpServers"]
             return {server: MCPServerConfig(**config) for server, config in data.items()}
     except (FileNotFoundError, TypeError, json.JSONDecodeError, KeyError):
-        raise RuntimeError(f"Unable to load MCP config from {path}")
+        raise RuntimeError(f"Unable to load MCP config from {path}") from None

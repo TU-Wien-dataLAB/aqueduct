@@ -1,9 +1,12 @@
 import logging
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 from .models import Org, UserProfile
+
+User = get_user_model()
 
 log = logging.getLogger("aqueduct")
 
@@ -18,14 +21,13 @@ def default_org_name_from_groups(groups: list[str]) -> str | None:
     return groups[0]
 
 
-def get_org_name_from_groups(groups):
+def get_org_name_from_groups(groups) -> str | None:
     """
     Extracts the organization name from the user's groups.
     """
     if hasattr(settings, "ORG_NAME_FROM_OIDC_GROUPS_FUNCTION"):
         return settings.ORG_NAME_FROM_OIDC_GROUPS_FUNCTION(groups)
-    else:
-        return default_org_name_from_groups(groups)
+    return default_org_name_from_groups(groups)
 
 
 class OIDCBackend(OIDCAuthenticationBackend):
@@ -36,16 +38,16 @@ class OIDCBackend(OIDCAuthenticationBackend):
         org_name = get_org_name_from_groups(groups)
         if not org_name:
             return None  # Authentication fails if no org can be determined
-        org, created = Org.objects.get_or_create(name=org_name)
+        org, _created = Org.objects.get_or_create(name=org_name)
         return org
 
-    def create_user(self, claims):
+    def create_user(self, claims) -> User | None:
         groups = self._groups(claims)
         org = self._org(groups)
         if not org:
             return None  # Authentication fails if no org can be determined
 
-        user = super(OIDCBackend, self).create_user(claims)
+        user = super().create_user(claims)
         profile = UserProfile.objects.create(user=user, org=org)
 
         # Check if user is admin
@@ -63,10 +65,10 @@ class OIDCBackend(OIDCAuthenticationBackend):
         user.save()
         profile.save()
 
-        log.info(f"Created user '{user.email}' ({profile.group})")
+        log.info("Created user '%s' (%s)", user.email, profile.group)
         return user
 
-    def update_user(self, user, claims):
+    def update_user(self, user, claims) -> User:
         """Update existing user with new claims, if necessary save, and return user"""
         groups = self._groups(claims)
         org = self._org(groups)
@@ -96,5 +98,5 @@ class OIDCBackend(OIDCAuthenticationBackend):
         user.save()
         profile.save()
 
-        log.info(f"Updated user '{user.email}' ({profile.group})")
+        log.info("Updated user '%s' (%s)", user.email, profile.group)
         return user

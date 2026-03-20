@@ -1,14 +1,13 @@
 import asyncio
 import os
 import time
-from typing import Optional
 
 import httpx
 
 # Config from environment
 TOKEN = os.getenv("BENCH_TOKEN", "")
 BASE_URL = os.getenv("BENCH_URL", "http://localhost:8000")
-NUM_RUNS = int(os.getenv("BENCH_RUNS", 5))
+NUM_RUNS = int(os.getenv("BENCH_RUNS", "5"))
 MODE = os.getenv("BENCH_MODE", "sequential").lower()
 
 URL = f"{BASE_URL.rstrip('/')}/models"
@@ -19,26 +18,20 @@ MODEL = os.getenv("BENCH_MODEL", "Qwen-32B")
 if TARGET == "completions":
     ENDPOINT = f"{BASE_URL.rstrip('/')}/completions"
     REQUEST_TYPE = "POST"
-    COMPLETION_PAYLOAD = {
-        "model": MODEL,
-        "prompt": "Write a short poem about the ocean.",
-        "max_tokens": 32,
-    }
+    COMPLETION_PAYLOAD = {"model": MODEL, "prompt": "Write a short poem about the ocean.", "max_tokens": 32}
 else:
     ENDPOINT = f"{BASE_URL.rstrip('/')}/models"
     REQUEST_TYPE = "GET"
     COMPLETION_PAYLOAD = None
 
 
-async def fetch(client: httpx.AsyncClient, i: int) -> Optional[float]:
+async def fetch(client: httpx.AsyncClient, i: int) -> float | None:
     start = time.perf_counter()
     try:
         if REQUEST_TYPE == "GET":
             response = await client.get(ENDPOINT, headers=HEADERS, timeout=15.0)
         else:
-            response = await client.post(
-                ENDPOINT, headers=HEADERS, json=COMPLETION_PAYLOAD, timeout=15.0
-            )
+            response = await client.post(ENDPOINT, headers=HEADERS, json=COMPLETION_PAYLOAD, timeout=15.0)
         response.raise_for_status()
     except Exception as e:
         print(f"Run {i + 1}: Error - {e}")
@@ -48,7 +41,7 @@ async def fetch(client: httpx.AsyncClient, i: int) -> Optional[float]:
     return duration
 
 
-async def run_sequential():
+async def run_sequential() -> list[float]:
     async with httpx.AsyncClient() as client:
         times = []
         for i in range(NUM_RUNS):
@@ -58,7 +51,7 @@ async def run_sequential():
         return times
 
 
-async def run_parallel():
+async def run_parallel() -> list[float]:
     async with httpx.AsyncClient() as client:
         tasks = [fetch(client, i) for i in range(NUM_RUNS)]
         results = await asyncio.gather(*tasks)

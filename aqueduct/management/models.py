@@ -3,7 +3,8 @@ import dataclasses
 import hashlib
 import logging
 import secrets
-from typing import Callable, Literal, Optional
+from collections.abc import Callable
+from typing import ClassVar, Literal, Optional
 
 import openai.types
 from django.conf import settings
@@ -34,16 +35,14 @@ def generate_batch_id() -> str:
 class LimitSet:
     """Represents a resolved set of rate limits."""
 
-    requests_per_minute: Optional[int] = None
-    input_tokens_per_minute: Optional[int] = None
-    output_tokens_per_minute: Optional[int] = None
+    requests_per_minute: int | None = None
+    input_tokens_per_minute: int | None = None
+    output_tokens_per_minute: int | None = None
 
     # Add future limit fields here with default None
 
     @classmethod
-    def from_objects(
-        cls, specific_limiter: Optional["LimitMixin"], org_limiter: Optional["LimitMixin"]
-    ) -> "LimitSet":
+    def from_objects(cls, specific_limiter: Optional["LimitMixin"], org_limiter: Optional["LimitMixin"]) -> "LimitSet":
         """
         Creates a LimitSet by resolving limits from a specific limiter
         (like Team or UserProfile) and a fallback Org limiter object.
@@ -57,12 +56,10 @@ class LimitSet:
         """
 
         # Helper to resolve a single limit field value using the hierarchy
-        def _resolve(field_name: str) -> Optional[int]:
+        def _resolve(field_name: str) -> int | None:
             # Get value from the specific level first
             # Use getattr for safe access, defaulting to None if field absent
-            specific_value = (
-                getattr(specific_limiter, field_name, None) if specific_limiter else None
-            )
+            specific_value = getattr(specific_limiter, field_name, None) if specific_limiter else None
             if specific_value is not None:
                 # Return immediately if a specific limit is set
                 return specific_value
@@ -83,14 +80,10 @@ class LimitMixin(models.Model):
     """
 
     requests_per_minute = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="Maximum requests allowed per minute. Null means use fallback or no limit.",
+        null=True, blank=True, help_text="Maximum requests allowed per minute. Null means use fallback or no limit."
     )
     input_tokens_per_minute = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="Maximum input tokens allowed per minute. Null means use fallback or no limit.",
+        null=True, blank=True, help_text="Maximum input tokens allowed per minute. Null means use fallback or no limit."
     )
     output_tokens_per_minute = models.PositiveIntegerField(
         null=True,
@@ -138,9 +131,7 @@ class MCPServerExclusionMixin(models.Model):
     Add MCP server names to the list to indicate which servers should be excluded for the specific object.
     """
 
-    excluded_mcp_servers = JSONField(
-        default=list, help_text="MCP servers to exclude from the config."
-    )
+    excluded_mcp_servers = JSONField(default=list, help_text="MCP servers to exclude from the config.")
 
     merge_mcp_server_exclusion_lists = BooleanField(
         default=True,
@@ -169,7 +160,7 @@ class Org(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Model
 
     name = models.CharField(verbose_name="Org name", max_length=255, unique=True)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -184,7 +175,7 @@ class Team(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Mode
     class Meta:
         unique_together = ("name", "org")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} ({self.org.name})"
 
 
@@ -207,21 +198,18 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
         related_name="user_profiles",
     )
 
-    teams = models.ManyToManyField(
-        Team, through="TeamMembership", related_name="member_profiles", blank=True
-    )
+    teams = models.ManyToManyField(Team, through="TeamMembership", related_name="member_profiles", blank=True)
 
     @property
     def group(self) -> Literal["admin", "org-admin", "user"]:
         g = self.user.groups
         if g.filter(name="admin").exists():
             return "admin"
-        elif g.filter(name="org-admin").exists():
+        if g.filter(name="org-admin").exists():
             return "org-admin"
-        elif g.filter(name="user").exists():
+        if g.filter(name="user").exists():
             return "user"
-        else:
-            raise ValidationError("User has no group")
+        raise ValidationError("User has no group")
 
     @group.setter
     def group(self, group: Literal["admin", "org-admin", "user"]):
@@ -236,7 +224,7 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
             self.user.groups.add(group_obj)
         except Group.DoesNotExist:
             # Handle case where the group doesn't exist in DB (shouldn't happen with check above)
-            raise ObjectDoesNotExist(f"The group '{group}' does not exist in the database.")
+            raise ObjectDoesNotExist(f"The group '{group}' does not exist in the database.") from None
 
     def clean(self):
         """
@@ -272,9 +260,7 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
         """
         try:
             user_group = self.group  # Use the property to get the group name
-            if (
-                user_group == "admin"
-            ):  # Use admin group independent of super-user status to quickly debug in Admin UI.
+            if user_group == "admin":  # Use admin group independent of super-user status to quickly debug in Admin UI.
                 return True
             if user_group == "org-admin":
                 # Check if the profile's org matches the org being checked
@@ -300,14 +286,15 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
             # Django ensures 'teammembership_set' exists if TeamMembership has a ForeignKey
             # to UserProfile.
             membership = self.teammembership_set.get(team=team_to_check)
-            return membership.is_admin
         except ObjectDoesNotExist:
             # No specific membership record found for this user and team
             return False
+        else:
+            return membership.is_admin
         # Removed overly defensive AttributeError check. If 'teammembership_set' is missing,
         # it indicates a fundamental model setup error that should not be caught here.
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.user.email} (Profile - {self.org.name})"
 
 
@@ -323,7 +310,7 @@ class TeamMembership(models.Model):
         # Ensure a user can only be in a team once
         unique_together = ("user_profile", "team")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.user_profile} in {self.team}{' (Admin)' if self.is_admin else ''}"
 
 
@@ -337,7 +324,7 @@ class ServiceAccount(models.Model):
     class Meta:
         unique_together = ("name", "team")
 
-    def __str__(self):
+    def __str__(self) -> str:
         # Handle case where team might not be set yet
         return f"{self.name} (Team: {self.team.name if self.team_id else 'N/A'})"
 
@@ -388,7 +375,7 @@ class ServiceAccount(models.Model):
             except Team.DoesNotExist:
                 # This case shouldn't happen if ForeignKey validation runs,
                 # but good to handle defensively.
-                raise ValidationError("Associated team does not exist.")
+                raise ValidationError("Associated team does not exist.") from None
 
 
 class Token(models.Model):
@@ -428,17 +415,16 @@ class Token(models.Model):
     expires_at = models.DateTimeField(null=True, blank=True)  # Optional expiry
 
     @property
-    def is_expired(self):
+    def is_expired(self) -> bool:
         return self.expires_at is not None and self.expires_at <= timezone.now()
 
     # The clean method checking for self.user is implicitly handled by the ForeignKey
     # unless null=True is added to the user field, which doesn't seem intended here.
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.service_account:
             return f"'{self.name}' ({self.service_account.name})"
-        else:
-            return f"'{self.name}'"
+        return f"'{self.name}'"
 
     @staticmethod
     def _generate_secret_key(prefix="sk-") -> str:
@@ -476,8 +462,7 @@ class Token(models.Model):
         if not self.pk and (not self.key_hash or not self.key_preview):
             # This check ensures _set_new_key() was called before the first save.
             raise ValueError(
-                "Token cannot be saved without key_hash and key_preview. "
-                "Call _set_new_key() before saving."
+                "Token cannot be saved without key_hash and key_preview. Call _set_new_key() before saving."
             )
         super().save(*args, **kwargs)
 
@@ -501,7 +486,7 @@ class Token(models.Model):
         # (Handled by save() method)
         super().clean()
 
-    def _get_from_hierarchy(self, retrieval_function: Callable):
+    def _get_from_hierarchy(self, retrieval_function: Callable) -> list[str]:
         token_instance = Token.objects.select_related(
             "user__profile__org",  # Needed for User Tokens
             "service_account__team__org",  # Needed for Service Account Tokens
@@ -513,11 +498,10 @@ class Token(models.Model):
             team = token_instance.service_account.team  # Team holds specific SA limits
             org = team.org  # Team's Org holds fallback limits
             return retrieval_function(team, org)
-        else:
-            # Path for standard User Tokens
-            profile = token_instance.user.profile  # UserProfile holds specific user limits
-            org = profile.org  # Profile's Org holds fallback limits
-            return retrieval_function(profile, org)
+        # Path for standard User Tokens
+        profile = token_instance.user.profile  # UserProfile holds specific user limits
+        org = profile.org  # Profile's Org holds fallback limits
+        return retrieval_function(profile, org)
 
     def get_limit(self) -> "LimitSet":
         """
@@ -532,18 +516,14 @@ class Token(models.Model):
 
     @classmethod
     def _exclusion_list_from_objects(
-        cls,
-        specific_exclusion: Optional["ModelExclusionMixin"],
-        org_exclusion: Optional["ModelExclusionMixin"],
+        cls, specific_exclusion: Optional["ModelExclusionMixin"], org_exclusion: Optional["ModelExclusionMixin"]
     ) -> list[str]:
         exclusion_list: list[str] = specific_exclusion.excluded_models if specific_exclusion else []
         if specific_exclusion.merge_exclusion_lists:
             org_exclusion_list: list[str] = org_exclusion.excluded_models if org_exclusion else []
             exclusion_list = exclusion_list + org_exclusion_list
             if org_exclusion.merge_exclusion_lists:
-                settings_exclusion_list: list[str] = getattr(
-                    settings, "AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST", []
-                )
+                settings_exclusion_list: list[str] = getattr(settings, "AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST", [])
                 exclusion_list = exclusion_list + settings_exclusion_list
 
         return list(set(exclusion_list))
@@ -566,22 +546,14 @@ class Token(models.Model):
 
     @classmethod
     def _mcp_server_exclusion_list_from_objects(
-        cls,
-        specific_exclusion: Optional["MCPServerExclusionMixin"],
-        org_exclusion: Optional["MCPServerExclusionMixin"],
+        cls, specific_exclusion: Optional["MCPServerExclusionMixin"], org_exclusion: Optional["MCPServerExclusionMixin"]
     ) -> list[str]:
-        exclusion_list: list[str] = (
-            specific_exclusion.excluded_mcp_servers if specific_exclusion else []
-        )
+        exclusion_list: list[str] = specific_exclusion.excluded_mcp_servers if specific_exclusion else []
         if specific_exclusion and specific_exclusion.merge_mcp_server_exclusion_lists:
-            org_exclusion_list: list[str] = (
-                org_exclusion.excluded_mcp_servers if org_exclusion else []
-            )
+            org_exclusion_list: list[str] = org_exclusion.excluded_mcp_servers if org_exclusion else []
             exclusion_list = exclusion_list + org_exclusion_list
             if org_exclusion and org_exclusion.merge_mcp_server_exclusion_lists:
-                settings_exclusion_list: list[str] = getattr(
-                    settings, "AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST", []
-                )
+                settings_exclusion_list: list[str] = getattr(settings, "AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST", [])
                 exclusion_list = exclusion_list + settings_exclusion_list
 
         return list(set(exclusion_list))
@@ -597,7 +569,7 @@ class Token(models.Model):
         """
         return self._get_from_hierarchy(Token._mcp_server_exclusion_list_from_objects)
 
-    def mcp_server_excluded(self, server_name: str):
+    def mcp_server_excluded(self, server_name: str) -> bool:
         return server_name in self.mcp_server_exclusion_list()
 
     @classmethod
@@ -611,9 +583,9 @@ class Token(models.Model):
         try:
             hashed_key = cls._hash_key(key_value)
             # Use select_related for efficiency if you often need related objects after lookup
-            return cls.objects.select_related(
-                "user__profile__org", "service_account__team__org"
-            ).get(key_hash=hashed_key)
+            return cls.objects.select_related("user__profile__org", "service_account__team__org").get(
+                key_hash=hashed_key
+            )
         except cls.DoesNotExist:
             return None
 
@@ -627,32 +599,26 @@ class Usage:
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
 
-    def __add__(self, other):
+    def __add__(self, other) -> "Usage | NotImplemented":
         if not isinstance(other, Usage):
             return NotImplemented
         return Usage(
-            input_tokens=self.input_tokens + other.input_tokens,
-            output_tokens=self.output_tokens + other.output_tokens,
+            input_tokens=self.input_tokens + other.input_tokens, output_tokens=self.output_tokens + other.output_tokens
         )
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> "Usage | NotImplemented":
         if not isinstance(other, Usage):
             return NotImplemented
         return Usage(
-            input_tokens=self.input_tokens - other.input_tokens,
-            output_tokens=self.output_tokens - other.output_tokens,
+            input_tokens=self.input_tokens - other.input_tokens, output_tokens=self.output_tokens - other.output_tokens
         )
 
 
 class Request(models.Model):
     """Represents a request made using a custom Token."""
 
-    input_tokens = models.PositiveIntegerField(
-        default=0, help_text="Tokens consumed by the input for this request"
-    )
-    output_tokens = models.PositiveIntegerField(
-        default=0, help_text="Tokens generated by the output for this request"
-    )
+    input_tokens = models.PositiveIntegerField(default=0, help_text="Tokens consumed by the input for this request")
+    output_tokens = models.PositiveIntegerField(default=0, help_text="Tokens generated by the output for this request")
 
     @property
     def token_usage(self) -> Usage:
@@ -663,7 +629,7 @@ class Request(models.Model):
     def token_usage(self, usage: Usage):
         """Set input_tokens and output_tokens from a Usage dataclass instance."""
         if not isinstance(usage, Usage):
-            raise ValueError("token_usage must be a Usage dataclass instance")
+            raise TypeError("token_usage must be a Usage dataclass instance")
         self.input_tokens = usage.input_tokens
         self.output_tokens = usage.output_tokens
 
@@ -672,15 +638,12 @@ class Request(models.Model):
         on_delete=models.CASCADE,  # If Token is deleted, delete its associated Requests
         related_name="requests",
     )
-    model = models.CharField(
-        max_length=255, null=True, blank=True, help_text="Model used in request"
-    )
+    # django: DJ001 - null=True on CharField may cause SQL NULL instead of empty string
+    model = models.CharField(max_length=255, null=True, blank=True, help_text="Model used in request")
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
 
     # Additional fields (endpoint_url removed)
-    method = models.CharField(
-        max_length=16, blank=True, help_text="HTTP method used (e.g., GET, POST, etc.)"
-    )
+    method = models.CharField(max_length=16, blank=True, help_text="HTTP method used (e.g., GET, POST, etc.)")
     status_code = models.PositiveIntegerField(
         null=True, blank=True, help_text="HTTP status code returned by the endpoint"
     )
@@ -696,8 +659,7 @@ class Request(models.Model):
     path = models.CharField(
         max_length=512,
         blank=True,
-        help_text="The specific API path requested after the base endpoint URL "
-        "(e.g., '/chat/completions')",
+        help_text="The specific API path requested after the base endpoint URL (e.g., '/chat/completions')",
     )
     user_id = models.CharField(
         max_length=256,
@@ -710,13 +672,13 @@ class Request(models.Model):
 
     class Meta:
         # Crucial for the rate limit query!
-        indexes = [
+        indexes: ClassVar[list] = [
             models.Index(fields=["token", "timestamp"]),
             models.Index(fields=["model", "timestamp"]),
         ]
-        ordering = ["-timestamp"]  # Optional: default ordering
+        ordering: ClassVar[list] = ["-timestamp"]  # Optional: default ordering
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.id}"
 
 
@@ -732,11 +694,9 @@ class FileObject(models.Model):
         help_text="The file identifier, which can be referenced in the API endpoints.",
     )
     bytes = models.BigIntegerField(help_text="The size of the file, in bytes.")
-    created_at = models.PositiveIntegerField(
-        help_text="The Unix timestamp (in seconds) for when the file was created."
-    )
+    created_at = models.PositiveIntegerField(help_text="The Unix timestamp (in seconds) for when the file was created.")
     filename = models.CharField(max_length=255, help_text="The name of the file.")
-    PURPOSE_CHOICES = [
+    PURPOSE_CHOICES: ClassVar[list] = [
         ("assistants", "assistants"),
         ("assistants_output", "assistants_output"),
         ("batch", "batch"),
@@ -746,13 +706,9 @@ class FileObject(models.Model):
         ("user_data", "user_data"),
         ("evals", "evals"),
     ]
-    purpose = models.CharField(
-        max_length=20, choices=PURPOSE_CHOICES, help_text="The intended purpose of the file."
-    )
+    purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES, help_text="The intended purpose of the file.")
     expires_at = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="The Unix timestamp (in seconds) for when the file will expire.",
+        null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the file will expire."
     )
 
     token = models.ForeignKey(
@@ -765,9 +721,7 @@ class FileObject(models.Model):
         blank=True, default="", help_text="Preview of file content (first 10 lines for JSONL files)"
     )
 
-    upstream_url = models.URLField(
-        blank=True, default="", help_text="The upstream API URL this file was uploaded to"
-    )
+    upstream_url = models.URLField(blank=True, default="", help_text="The upstream API URL this file was uploaded to")
 
     class Meta:
         verbose_name = "File Object"
@@ -805,16 +759,15 @@ class FileObject(models.Model):
 
         try:
             await client.files.delete(self.id)
-            return True
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to delete file {self.id} from upstream: {e}")
+            log.warning("Failed to delete file %s from upstream: %s", self.id, e)
             return False
+        else:
+            return True
 
-    async def areload_from_upstream(
-        self, client=None, raise_on_error=True
-    ) -> Optional[openai.types.FileObject]:
+    async def areload_from_upstream(self, client=None, raise_on_error=True) -> openai.types.FileObject | None:
         """
         Fetch current state from upstream and update local DB fields.
 
@@ -832,15 +785,16 @@ class FileObject(models.Model):
 
         try:
             remote = await client.files.retrieve(self.id)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning("Failed to reload file %s from upstream: %s", self.id, e)
+            return None
+        else:
             self.purpose = remote.purpose
             self.expires_at = remote.expires_at
             await self.asave()
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload file {self.id} from upstream: {e}")
-            return None
 
     def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
@@ -855,12 +809,12 @@ class FileObject(models.Model):
             asyncio.run(self.adelete_upstream())
         super().delete(using=using, keep_parents=keep_parents)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.id
 
 
 def default_request_counts() -> dict[str, int]:
-    return dict(total=0, completed=0, failed=0)
+    return {"total": 0, "completed": 0, "failed": 0}
 
 
 class BatchStatus(models.TextChoices):
@@ -879,23 +833,16 @@ class Batch(models.Model):
     Mirrors the structure of OpenAI's Batch type.
     """
 
-    id = models.CharField(
-        max_length=100, primary_key=True, editable=False, help_text="The batch identifier."
-    )
+    id = models.CharField(max_length=100, primary_key=True, editable=False, help_text="The batch identifier.")
     completion_window = models.CharField(
         max_length=100, help_text="The time frame within which the batch should be processed."
     )
     created_at = models.PositiveIntegerField(
         help_text="The Unix timestamp (in seconds) for when the batch was created."
     )
-    endpoint = models.CharField(
-        max_length=255, help_text="The OpenAI API endpoint used by the batch."
-    )
+    endpoint = models.CharField(max_length=255, help_text="The OpenAI API endpoint used by the batch.")
     input_file = models.ForeignKey(
-        FileObject,
-        on_delete=models.CASCADE,
-        related_name="batches",
-        help_text="The input file for the batch.",
+        FileObject, on_delete=models.CASCADE, related_name="batches", help_text="The input file for the batch."
     )
     output_file = models.ForeignKey(
         FileObject,
@@ -913,48 +860,30 @@ class Batch(models.Model):
         blank=True,
         help_text="The error file for the batch (set when batch completes with errors).",
     )
-    status = models.CharField(
-        max_length=20, choices=BatchStatus.choices, help_text="The current status of the batch."
-    )
+    status = models.CharField(max_length=20, choices=BatchStatus.choices, help_text="The current status of the batch.")
     cancelled_at = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="The Unix timestamp (in seconds) for when the batch was cancelled.",
+        null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the batch was cancelled."
     )
     cancelling_at = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="The Unix timestamp (in seconds) for when the batch started cancelling.",
+        null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the batch started cancelling."
     )
     completed_at = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="The Unix timestamp (in seconds) for when the batch was completed.",
+        null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the batch was completed."
     )
     expired_at = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="The Unix timestamp (in seconds) for when the batch expired.",
+        null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the batch expired."
     )
     expires_at = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="The Unix timestamp (in seconds) for when the batch will expire.",
+        null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the batch will expire."
     )
     failed_at = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="The Unix timestamp (in seconds) for when the batch failed.",
+        null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the batch failed."
     )
     finalizing_at = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="The Unix timestamp (in seconds) for when the batch started finalizing.",
+        null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the batch started finalizing."
     )
     in_progress_at = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="The Unix timestamp (in seconds) for when the batch started processing.",
+        null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the batch started processing."
     )
     metadata = JSONField(null=True, blank=True, help_text="Metadata attached to the batch.")
     # {"input": 0, "total": 0, "completed": 0, "failed": 0 }
@@ -977,6 +906,9 @@ class Batch(models.Model):
     class Meta:
         verbose_name = "Batch"
         verbose_name_plural = "Batches"
+
+    def __str__(self) -> str:
+        return self.id
 
     @property
     def model(self) -> openai.types.batch.Batch:
@@ -1007,9 +939,7 @@ class Batch(models.Model):
             ),
         )
 
-    async def areload_from_upstream(
-        self, client=None, raise_on_error=True
-    ) -> Optional[openai.types.Batch]:
+    async def areload_from_upstream(self, client=None, raise_on_error=True) -> openai.types.Batch | None:
         """
         Fetch current state from upstream and update local DB fields.
 
@@ -1027,6 +957,12 @@ class Batch(models.Model):
 
         try:
             remote = await client.batches.retrieve(self.id)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning("Failed to reload batch %s from upstream: %s", self.id, e)
+            return None
+        else:
             self.status = remote.status
             if remote.request_counts:
                 self.request_counts = remote.request_counts.model_dump()
@@ -1039,11 +975,6 @@ class Batch(models.Model):
             self.finalizing_at = remote.finalizing_at
             await self.asave()
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload batch {self.id} from upstream: {e}")
-            return None
 
     def delete(self, using=None, keep_parents=False):
         """
@@ -1066,36 +997,26 @@ class VectorStore(models.Model):
     Stores metadata for vector stores with upstream relay.
     """
 
-    id = models.CharField(
-        max_length=100, primary_key=True, editable=False, help_text="The vector store identifier."
-    )
+    id = models.CharField(max_length=100, primary_key=True, editable=False, help_text="The vector store identifier.")
     token = models.ForeignKey(Token, on_delete=models.CASCADE, related_name="vector_stores")
     name = models.CharField(max_length=255, help_text="The name of the vector store.")
-    expires_after = models.JSONField(
-        null=True, blank=True, help_text="Expiration policy for the vector store."
-    )
+    expires_after = models.JSONField(null=True, blank=True, help_text="Expiration policy for the vector store.")
     chunking_strategy = models.JSONField(
         null=True, blank=True, help_text="Chunking configuration for the vector store."
     )
-    metadata = models.JSONField(
-        null=True, blank=True, help_text="Custom metadata for the vector store."
-    )
+    metadata = models.JSONField(null=True, blank=True, help_text="Custom metadata for the vector store.")
     status = models.CharField(
         max_length=20,
         choices=VectorStoreStatus.choices,
         default=VectorStoreStatus.IN_PROGRESS,
         help_text="The current status of the vector store.",
     )
-    usage_bytes = models.BigIntegerField(
-        default=0, help_text="The total number of bytes used by the vector store."
-    )
+    usage_bytes = models.BigIntegerField(default=0, help_text="The total number of bytes used by the vector store.")
     created_at = models.PositiveIntegerField(
         help_text="The Unix timestamp (in seconds) for when the vector store was created."
     )
     last_active_at = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="The Unix timestamp (in seconds) for when the vector store was last active.",
+        null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the vector store was last active."
     )
     upstream_url = models.URLField(
         blank=True, default="", help_text="The upstream API URL this vector store was created on"
@@ -1124,16 +1045,15 @@ class VectorStore(models.Model):
 
         try:
             await client.vector_stores.delete(self.id)
-            return True
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to delete vector store {self.id} from upstream: {e}")
+            log.warning("Failed to delete vector store %s from upstream: %s", self.id, e)
             return False
+        else:
+            return True
 
-    async def areload_from_upstream(
-        self, client=None, raise_on_error=True
-    ) -> Optional[openai.types.VectorStore]:
+    async def areload_from_upstream(self, client=None, raise_on_error=True) -> openai.types.VectorStore | None:
         """
         Fetch current state from upstream and update local DB fields.
 
@@ -1151,17 +1071,18 @@ class VectorStore(models.Model):
 
         try:
             remote = await client.vector_stores.retrieve(self.id)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning("Failed to reload vector store %s from upstream: %s", self.id, e)
+            return None
+        else:
             self.status = remote.status or self.status
             self.usage_bytes = getattr(remote, "usage_bytes", self.usage_bytes)
             self.last_active_at = int(timezone.now().timestamp())
             await self.asave()
             await self.async_file_statuses(client)
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload vector store {self.id} from upstream: {e}")
-            return None
 
     async def async_file_statuses(self, client=None) -> tuple[int, int]:
         """
@@ -1174,11 +1095,9 @@ class VectorStore(models.Model):
 
         try:
             remote_files_response = await client.vector_stores.files.list(vector_store_id=self.id)
-            remote_files = (
-                remote_files_response.data if hasattr(remote_files_response, "data") else []
-            )
+            remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
         except Exception as e:
-            log.warning(f"Failed to list files for vector store {self.id} from upstream: {e}")
+            log.warning("Failed to list files for vector store %s from upstream: %s", self.id, e)
             return 0, 0
 
         success = 0
@@ -1186,9 +1105,7 @@ class VectorStore(models.Model):
 
         for remote_file in remote_files:
             try:
-                local_file = await VectorStoreFile.objects.aget(
-                    id=remote_file.id, vector_store=self
-                )
+                local_file = await VectorStoreFile.objects.aget(id=remote_file.id, vector_store=self)
                 local_file.status = remote_file.status or local_file.status
                 local_file.usage_bytes = remote_file.usage_bytes
                 if hasattr(remote_file, "last_error") and remote_file.last_error:
@@ -1196,12 +1113,15 @@ class VectorStore(models.Model):
                 await local_file.asave()
                 success += 1
             except VectorStoreFile.DoesNotExist:
-                log.debug(f"VectorStoreFile {remote_file.id} not found locally, skipping sync")
+                log.debug("VectorStoreFile %s not found locally, skipping sync", remote_file.id)
             except Exception as e:
-                log.warning(f"Failed to sync VectorStoreFile {remote_file.id}: {e}")
+                log.warning("Failed to sync VectorStoreFile %s: %s", remote_file.id, e)
                 failed += 1
 
         return success, failed
+
+    def __str__(self) -> str:
+        return self.id
 
     def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
@@ -1234,10 +1154,7 @@ class VectorStoreFile(models.Model):
     """
 
     id = models.CharField(
-        max_length=100,
-        primary_key=True,
-        editable=False,
-        help_text="The vector store file identifier.",
+        max_length=100, primary_key=True, editable=False, help_text="The vector store file identifier."
     )
     vector_store = models.ForeignKey(VectorStore, on_delete=models.CASCADE, related_name="files")
     file_obj = models.ForeignKey(
@@ -1260,15 +1177,12 @@ class VectorStoreFile(models.Model):
         default=VectorStoreFileStatus.IN_PROGRESS,
         help_text="Processing status of the file in the vector store.",
     )
-    last_error = models.JSONField(
-        null=True, blank=True, help_text="Error details if processing failed."
-    )
+    last_error = models.JSONField(null=True, blank=True, help_text="Error details if processing failed.")
     created_at = models.PositiveIntegerField(
         help_text="The Unix timestamp (in seconds) for when the file was added to the vector store."
     )
     usage_bytes = models.BigIntegerField(
-        default=0,
-        help_text="Bytes used in vector store (may differ from original file after chunking).",
+        default=0, help_text="Bytes used in vector store (may differ from original file after chunking)."
     )
 
     async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
@@ -1287,7 +1201,7 @@ class VectorStoreFile(models.Model):
             False on failure (only if raise_on_error=False).
         """
         if not self.vector_store_id:
-            log.warning(f"Cannot delete vector store file {self.id}: vector_store not set")
+            log.warning("Cannot delete vector store file %s: vector_store not set", self.id)
             if raise_on_error:
                 raise ValueError("Vector store not loaded")
             return False
@@ -1298,15 +1212,14 @@ class VectorStoreFile(models.Model):
             client = get_files_api_client()
 
         try:
-            await client.vector_stores.files.delete(
-                vector_store_id=self.vector_store_id, file_id=self.id
-            )
-            return True
+            await client.vector_stores.files.delete(vector_store_id=self.vector_store_id, file_id=self.id)
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to delete vector store file {self.id} from upstream: {e}")
+            log.warning("Failed to delete vector store file %s from upstream: %s", self.id, e)
             return False
+        else:
+            return True
 
     async def areload_from_upstream(
         self, client=None, raise_on_error=True
@@ -1327,7 +1240,7 @@ class VectorStoreFile(models.Model):
         if not self.vector_store_id:
             if raise_on_error:
                 raise ValueError("Vector store not set")
-            log.warning(f"Cannot reload vector store file {self.id}: vector_store not set")
+            log.warning("Cannot reload vector store file %s: vector_store not set", self.id)
             return None
 
         from gateway.config import get_files_api_client
@@ -1336,20 +1249,19 @@ class VectorStoreFile(models.Model):
             client = get_files_api_client()
 
         try:
-            remote = await client.vector_stores.files.retrieve(
-                vector_store_id=self.vector_store_id, file_id=self.id
-            )
+            remote = await client.vector_stores.files.retrieve(vector_store_id=self.vector_store_id, file_id=self.id)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning("Failed to reload vector store file %s from upstream: %s", self.id, e)
+            return None
+        else:
             self.status = remote.status or self.status
             self.usage_bytes = remote.usage_bytes
             if hasattr(remote, "last_error") and remote.last_error:
                 self.last_error = remote.last_error
             await self.asave()
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload vector store file {self.id} from upstream: {e}")
-            return None
 
     def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
@@ -1368,6 +1280,9 @@ class VectorStoreFile(models.Model):
         verbose_name = "Vector Store File"
         verbose_name_plural = "Vector Store Files"
 
+    def __str__(self) -> str:
+        return self.id
+
 
 class VectorStoreFileBatchStatus(models.TextChoices):
     """Vector store file batch status choices."""
@@ -1384,14 +1299,9 @@ class VectorStoreFileBatch(models.Model):
     """
 
     id = models.CharField(
-        max_length=100,
-        primary_key=True,
-        editable=False,
-        help_text="The vector store file batch identifier.",
+        max_length=100, primary_key=True, editable=False, help_text="The vector store file batch identifier."
     )
-    vector_store = models.ForeignKey(
-        VectorStore, on_delete=models.CASCADE, related_name="file_batches"
-    )
+    vector_store = models.ForeignKey(VectorStore, on_delete=models.CASCADE, related_name="file_batches")
     file_counts = models.JSONField(
         default=dict, help_text="Processing counts (completed/failed/total/cancelled/in_progress)."
     )
@@ -1422,7 +1332,7 @@ class VectorStoreFileBatch(models.Model):
         if not self.vector_store_id:
             if raise_on_error:
                 raise ValueError("Vector store not set")
-            log.warning(f"Cannot reload vector store file batch {self.id}: vector_store not set")
+            log.warning("Cannot reload vector store file batch %s: vector_store not set", self.id)
             return None
 
         from gateway.config import get_files_api_client
@@ -1434,16 +1344,20 @@ class VectorStoreFileBatch(models.Model):
             remote = await client.vector_stores.file_batches.retrieve(
                 vector_store_id=self.vector_store_id, batch_id=self.id
             )
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning("Failed to reload vector store file batch %s from upstream: %s", self.id, e)
+            return None
+        else:
             self.status = remote.status or self.status
             if hasattr(remote, "file_counts") and remote.file_counts:
                 self.file_counts = remote.file_counts.model_dump()
             await self.asave()
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload vector store file batch {self.id} from upstream: {e}")
-            return None
+
+    def __str__(self) -> str:
+        return self.id
 
     class Meta:
         verbose_name = "Vector Store File Batch"

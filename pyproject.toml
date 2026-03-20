@@ -77,9 +77,7 @@ select = [
     "PLR1714", # Repeated equality comparisons -> use `in`
     "PLR2004", # Avoid magic values in comparisons
     "PLR5501", # Use `elif` instead of `else` then `if`
-    "PLW2901", # Redefined loop variables
-    "PLW1508", # Invalid environment variable default
-    "PLW1509", # Avoid preexec_fn in subprocess calls
+    "PLW",     # pylint ruleset
     "ANN201", # Missing return type annotation for public function
     "ANN202", # Missing return type annotation for private function
     "ANN204", # Missing return type annotation for special method

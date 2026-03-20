@@ -122,6 +122,7 @@ select = [
     "PLE",     # Pylint Error - error detection
     "INP",     # flake8-no-pep420 - implicit namespace packages
     "N",       # pep8-naming - naming conventions
+    "PLC"
 ]
 ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX", "PLC0415", "E731"]
 

@@ -127,7 +127,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         ):
             yield session
 
-    async def assertRequestLogged(self, n: int = 1):
+    async def assert_request_logged(self, n: int = 1):
         from management.models import Request
 
         # Check that (only) initialize request was logged

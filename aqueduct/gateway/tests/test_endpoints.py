@@ -312,8 +312,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         upload_data = upload_response.json()
         file_id = upload_data["id"]
 
-        UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
-        headers = _build_chat_headers(UPDATED_ACCESS_TOKEN)
+        updated_access_token, _ = self.create_new_user()
+        headers = _build_chat_headers(updated_access_token)
 
         payload = {
             "model": self.model,

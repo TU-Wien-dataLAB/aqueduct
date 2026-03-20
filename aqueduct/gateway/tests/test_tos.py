@@ -13,13 +13,13 @@ class TOSTestCase(TOSGatewayTestCase):
         Test that when a user has accepted the TOS, they can access the /models endpoint.
         """
         # Accept TOS for non-admin user
-        UPDATED_ACCESS_TOKEN, user_id = self.create_new_user()
+        updated_access_token, user_id = self.create_new_user()
         self.accept_tos(user_id=user_id)
 
         with patch("gateway.views.decorators.cache", caches["default"]):
             # Call the /models endpoint
             response = self.client.get(
-                "/models", data="", content_type="application/json", headers=_build_chat_headers(UPDATED_ACCESS_TOKEN)
+                "/models", data="", content_type="application/json", headers=_build_chat_headers(updated_access_token)
             )
 
         # Should return 200 OK
@@ -38,7 +38,7 @@ class TOSTestCase(TOSGatewayTestCase):
         from tos.models import TermsOfService
 
         # non-admin user
-        UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
+        updated_access_token, _ = self.create_new_user()
 
         # Create an active Terms of Service but DON'T create a UserAgreement for the user
         TermsOfService.objects.create(active=True, content="Test Terms of Service content")
@@ -46,7 +46,7 @@ class TOSTestCase(TOSGatewayTestCase):
         with patch("gateway.views.decorators.cache", caches["default"]):
             # Call the /models endpoint - user should be blocked because they haven't accepted TOS
             response = self.client.get(
-                "/models", data="", content_type="application/json", headers=_build_chat_headers(UPDATED_ACCESS_TOKEN)
+                "/models", data="", content_type="application/json", headers=_build_chat_headers(updated_access_token)
             )
 
         # Should return 403 Forbidden
@@ -94,14 +94,14 @@ class TOSTestCase(TOSGatewayTestCase):
         from tos.models import TermsOfService
 
         # non-admin user
-        UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
+        updated_access_token, _ = self.create_new_user()
 
         # Create an active Terms of Service but DON'T create a UserAgreement for the user
         TermsOfService.objects.create(active=True, content="Test Terms of Service content")
 
         # Call the /models endpoint - user should be blocked because they haven't accepted TOS
         response = self.client.get(
-            "/models", data="", content_type="application/json", headers=_build_chat_headers(UPDATED_ACCESS_TOKEN)
+            "/models", data="", content_type="application/json", headers=_build_chat_headers(updated_access_token)
         )
 
         # Should return 403 Forbidden

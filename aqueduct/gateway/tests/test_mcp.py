@@ -350,15 +350,19 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
     async def test_session_creation(self):
         """Test that sessions have unique IDs."""
         async with httpx.AsyncClient(headers=self.headers) as client:
-            async with streamable_http_client(self.mcp_url, http_client=client) as (r, w, get_session_id):
-                async with ClientSession(r, w) as session:
-                    await session.initialize()
-                    s1 = get_session_id()
+            async with (
+                streamable_http_client(self.mcp_url, http_client=client) as (r, w, get_session_id),
+                ClientSession(r, w) as session,
+            ):
+                await session.initialize()
+                s1 = get_session_id()
 
-            async with streamable_http_client(self.mcp_url, http_client=client) as (r, w, get_session_id):
-                async with ClientSession(r, w) as session:
-                    await session.initialize()
-                    s2 = get_session_id()
+            async with (
+                streamable_http_client(self.mcp_url, http_client=client) as (r, w, get_session_id),
+                ClientSession(r, w) as session,
+            ):
+                await session.initialize()
+                s2 = get_session_id()
 
         self.assertNotEqual(s1, s2)
         await self.assert_request_logged(n=2)

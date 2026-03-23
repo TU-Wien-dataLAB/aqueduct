@@ -39,7 +39,6 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py311"
 extend-exclude = [
     "**/migrations/*.py",
     "aqueduct/aqueduct/settings.py",
@@ -135,8 +134,7 @@ suppress-none-returning = true
 [tool.ruff.lint.per-file-ignores]
 # Ignore `F401` (imported but unused) in all `__init__.py` files
 "__init__.py" = ["F401"]
-# ERA001: JSON structure example comment is useful documentation
 # TODO: remove DJ001 on next db migration and add it there
 "**/management/models.py" = ["DJ001"]
-# SIM117: Nested async with statements in tests - this pattern is correct and readable
-"**/tests/**/*.py" = ["SIM117", "S", "ANN"]
+# Too much noise for tests
+"**/tests/**/*.py" = ["S", "ANN"]

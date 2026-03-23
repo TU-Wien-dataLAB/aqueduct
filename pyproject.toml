@@ -135,8 +135,6 @@ suppress-none-returning = true
 [tool.ruff.lint.per-file-ignores]
 # Ignore `F401` (imported but unused) in all `__init__.py` files
 "__init__.py" = ["F401"]
-# DJ012: Model ordering is a style preference, not critical for functionality
-"**/models.py" = ["DJ012"]
 # ERA001: JSON structure example comment is useful documentation
 # TODO: remove DJ001 on next db migration and add it there
 "**/management/models.py" = ["DJ001"]

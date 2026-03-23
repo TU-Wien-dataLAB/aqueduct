@@ -73,7 +73,7 @@ class MockAPIServer:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(sys.path)
         env["MOCK_API_DELAYS"] = "true" if self.delays else "false"
-        self.process = subprocess.Popen(cmd, text=True, env=env)  # noqa: S603
+        self.process = subprocess.Popen(cmd, text=True, env=env)
 
         self.logger.debug("Waiting for the mock server to accept connections on port %s", self.port)
         start_time = time.time()

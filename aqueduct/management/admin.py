@@ -58,7 +58,7 @@ def get_mcp_server_choices() -> list[str]:
 class ExcludedModelsAdminForm(forms.ModelForm):
     class Meta:
         model = None  # To be specified by subclass
-        fields = "__all__"
+        fields: ClassVar[list[str]] = []
 
     excluded_models = forms.MultipleChoiceField(
         choices=[],
@@ -85,7 +85,7 @@ class ExcludedModelsAdminForm(forms.ModelForm):
 class ExcludedMCPServersAdminForm(forms.ModelForm):
     class Meta:
         model = None  # To be specified by subclass
-        fields = "__all__"
+        fields: ClassVar[list[str]] = []
 
     excluded_mcp_servers = forms.MultipleChoiceField(
         choices=[],
@@ -109,7 +109,18 @@ class ExcludedMCPServersAdminForm(forms.ModelForm):
 class UserProfileAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
     class Meta(ExcludedModelsAdminForm.Meta):
         model = UserProfile
-        fields = "__all__"
+        fields: ClassVar[list[str]] = [
+            "user",
+            "org",
+            "teams",
+            "requests_per_minute",
+            "input_tokens_per_minute",
+            "output_tokens_per_minute",
+            "excluded_models",
+            "merge_exclusion_lists",
+            "excluded_mcp_servers",
+            "merge_mcp_server_exclusion_lists",
+        ]
 
 
 # Define an inline admin descriptor for UserProfile model
@@ -233,7 +244,18 @@ class TeamMembershipInline(admin.TabularInline):
 class TeamAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
     class Meta(ExcludedModelsAdminForm.Meta):
         model = Team
-        fields = "__all__"
+        fields: ClassVar[list[str]] = [
+            "name",
+            "description",
+            "org",
+            "requests_per_minute",
+            "input_tokens_per_minute",
+            "output_tokens_per_minute",
+            "excluded_models",
+            "merge_exclusion_lists",
+            "excluded_mcp_servers",
+            "merge_mcp_server_exclusion_lists",
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -265,7 +287,16 @@ class TeamAdmin(admin.ModelAdmin):
 class OrgAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
     class Meta(ExcludedModelsAdminForm.Meta):
         model = Org
-        fields = "__all__"
+        fields: ClassVar[list[str]] = [
+            "name",
+            "requests_per_minute",
+            "input_tokens_per_minute",
+            "output_tokens_per_minute",
+            "excluded_models",
+            "merge_exclusion_lists",
+            "excluded_mcp_servers",
+            "merge_mcp_server_exclusion_lists",
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -135,16 +135,12 @@ suppress-none-returning = true
 [tool.ruff.lint.per-file-ignores]
 # Ignore `F401` (imported but unused) in all `__init__.py` files
 "__init__.py" = ["F401"]
-# DJ007: ModelForm using fields = "__all__" is acceptable for this use case
-"**/admin.py" = ["DJ007"]
 # DJ012: Model ordering is a style preference, not critical for functionality
 "**/models.py" = ["DJ012"]
 # ERA001: JSON structure example comment is useful documentation
 # TODO: remove DJ001 on next db migration and add it there
 "**/management/models.py" = ["DJ001"]
 # SIM117: Nested async with statements in tests - this pattern is correct and readable
-# PT: Using unittest-style assertions (self.assertEqual) in unittest test classes
-# ANN: Return type annotations not enforced in tests
 "**/tests/**/*.py" = ["SIM117", "S", "ANN"]
 # SIM105: suppress(Exception) may mask too much, prefer explicit error handling
 "**/management/*.py" = ["SIM105"]

@@ -144,7 +144,5 @@ suppress-none-returning = true
 "**/tests/**/*.py" = ["SIM117", "S", "ANN"]
 # SIM105: suppress(Exception) may mask too much, prefer explicit error handling
 "**/management/*.py" = ["SIM105"]
-# RET504: Explicit return of form in view pattern is intentional
-"**/management/views/tokens.py" = ["RET504"]
 # S603: Mock API server subprocess call is intentional for test infrastructure
 "mock_api/*.py" = ["S603"]

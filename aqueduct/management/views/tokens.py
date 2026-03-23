@@ -57,8 +57,7 @@ class TokenCreateView(BaseAqueductView, CreateView):
         return kwargs
 
     def get_form(self, form_class=None) -> forms.BaseForm:
-        form = super().get_form(form_class)
-        return form
+        return super().get_form(form_class)
 
     @transaction.atomic
     def form_valid(self, form) -> HttpResponse:

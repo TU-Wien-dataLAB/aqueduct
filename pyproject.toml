@@ -140,6 +140,3 @@ suppress-none-returning = true
 "**/management/models.py" = ["DJ001"]
 # SIM117: Nested async with statements in tests - this pattern is correct and readable
 "**/tests/**/*.py" = ["SIM117", "S", "ANN"]
-# SIM105: suppress(Exception) may mask too much, prefer explicit error handling
-"**/management/*.py" = ["SIM105"]
-

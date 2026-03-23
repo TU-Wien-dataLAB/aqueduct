@@ -203,7 +203,14 @@ def reload_from_upstream(modeladmin, request, queryset):
 # Define a new User admin
 class UserAdmin(BaseUserAdmin):
     inlines: ClassVar[tuple] = (ProfileInline,)
-    list_display: ClassVar[tuple] = ("email", "is_staff", "get_groups", "request_limit", "input_limit", "output_limit")
+    list_display: ClassVar[tuple] = (
+        "email",
+        "is_staff",
+        "get_groups",
+        "request_limit",
+        "input_limit",
+        "output_limit",
+    )
     list_select_related: ClassVar[list] = ["profile"]
     actions: ClassVar[list] = [make_admin, make_org_admin, make_user, delete_tos_cache]
 
@@ -304,7 +311,12 @@ class OrgAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
 
 @admin.register(Org)
 class OrgAdmin(admin.ModelAdmin):
-    list_display = ("name", "requests_per_minute", "input_tokens_per_minute", "output_tokens_per_minute")
+    list_display = (
+        "name",
+        "requests_per_minute",
+        "input_tokens_per_minute",
+        "output_tokens_per_minute",
+    )
     form = OrgAdminForm
 
 
@@ -347,7 +359,11 @@ class TokenAdmin(admin.ModelAdmin):
         if obj.service_account is None:
             return "-"
         link = reverse("admin:management_serviceaccount_change", args=[obj.service_account.id])
-        return format_html('<a href="{}">{}</a>', link, f"{obj.service_account.name} ({obj.service_account.team.name})")
+        return format_html(
+            '<a href="{}">{}</a>',
+            link,
+            f"{obj.service_account.name} ({obj.service_account.team.name})",
+        )
 
     sa_link.short_description = "Service Account"
 
@@ -465,7 +481,9 @@ class VectorStoreAdmin(admin.ModelAdmin):
     def token_link(self, obj) -> str:
         link = reverse("admin:management_token_change", args=[obj.token.id])
         if obj.token.service_account:
-            return format_html('<a href="{}">{} ({})</a>', link, obj.token.name, obj.token.service_account.name)
+            return format_html(
+                '<a href="{}">{} ({})</a>', link, obj.token.name, obj.token.service_account.name
+            )
         return format_html('<a href="{}">{}</a>', link, obj.token.name)
 
     token_link.short_description = "Token"

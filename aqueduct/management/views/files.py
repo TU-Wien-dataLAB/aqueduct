@@ -20,9 +20,9 @@ class UserFilesView(BaseAqueductView, TemplateView):
         user = profile.user
         teams = profile.teams.all()
 
-        files = FileObject.objects.filter(Q(token__user=user) | Q(token__service_account__team__in=teams)).order_by(
-            "-created_at"
-        )
+        files = FileObject.objects.filter(
+            Q(token__user=user) | Q(token__service_account__team__in=teams)
+        ).order_by("-created_at")
 
         # Convert Unix timestamp to datetime for template date filter
         from datetime import datetime

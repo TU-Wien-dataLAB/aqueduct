@@ -18,13 +18,19 @@ from django.test import override_settings
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from gateway.tests.utils.test_runner import get_mcp_server_port, get_shared_mcp_server_process, set_shared_mcp_server
+from gateway.tests.utils.test_runner import (
+    get_mcp_server_port,
+    get_shared_mcp_server_process,
+    set_shared_mcp_server,
+)
 from mock_api.helpers import get_available_port
 
 logger = logging.getLogger(__name__)
 
 MCP_CONFIG_PATH = Path("/tmp/aqueduct/test-mcp-config.json")
-MCP_TEST_CONFIG = {"mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}}
+MCP_TEST_CONFIG = {
+    "mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}
+}
 
 
 def _is_cancel_scope_error(exc):
@@ -83,7 +89,11 @@ class MCPDaphneProcess(DaphneProcess):
         # Configure MCP security settings for testing
         settings.MCP_ENABLE_DNS_REBINDING_PROTECTION = True
         settings.MCP_ALLOWED_HOSTS = ["localhost:8000", "localhost:*", "127.0.0.1:*"]
-        settings.MCP_ALLOWED_ORIGINS = ["http://localhost:3000", "http://localhost:*", "http://127.0.0.1:*"]
+        settings.MCP_ALLOWED_ORIGINS = [
+            "http://localhost:3000",
+            "http://localhost:*",
+            "http://127.0.0.1:*",
+        ]
 
         # Allow test hosts in Django's ALLOWED_HOSTS so requests reach our security decorator
         # Add common test hosts that we'll use to test the security decorator
@@ -122,7 +132,11 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     async def client_session(self):
         async with (
             httpx.AsyncClient(headers=self.headers) as client,
-            streamable_http_client(self.mcp_url, http_client=client) as (read_stream, write_stream, _),
+            streamable_http_client(self.mcp_url, http_client=client) as (
+                read_stream,
+                write_stream,
+                _,
+            ),
             ClientSession(read_stream, write_stream) as session,
         ):
             yield session
@@ -163,7 +177,12 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             env = os.environ.copy()
             env["PORT"] = str(port)
             cls.mcp_server_process = subprocess.Popen(
-                ["npx", "-y", "@modelcontextprotocol/server-everything@2025.11.25", "streamableHttp"],
+                [
+                    "npx",
+                    "-y",
+                    "@modelcontextprotocol/server-everything@2025.11.25",
+                    "streamableHttp",
+                ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -172,7 +191,9 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 start_new_session=True,
             )
         except FileNotFoundError as err:
-            raise RuntimeError("npx command not found. Please ensure Node.js and npm are installed.") from err
+            raise RuntimeError(
+                "npx command not found. Please ensure Node.js and npm are installed."
+            ) from err
 
         # Set global variables enabling the tests to share the MCP server process
         set_shared_mcp_server(cls.mcp_server_process, cls.mcp_server_port)
@@ -201,7 +222,10 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 time.sleep(0.5)
 
         # If we get here, timeout occurred
-        raise RuntimeError(f"MCP server did not accept connections within {timeout} seconds. Last error: {last_error}")
+        raise RuntimeError(
+            f"MCP server did not accept connections within {timeout} seconds. "
+            f"Last error: {last_error}"
+        )
 
     @classmethod
     def setUpClass(cls):

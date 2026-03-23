@@ -22,7 +22,11 @@ from gateway.tests.utils import (
     _parse_streamed_content_pieces,
     _read_streaming_response_lines,
 )
-from gateway.tests.utils.base import INTEGRATION_TEST_BACKEND, ROUTER_CONFIG, GatewayIntegrationTestCase
+from gateway.tests.utils.base import (
+    INTEGRATION_TEST_BACKEND,
+    ROUTER_CONFIG,
+    GatewayIntegrationTestCase,
+)
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
 from mock_api.mock_configs import MockConfig, MockStreamingConfig, convert_to_stream_data
 
@@ -45,17 +49,25 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         """
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest(
-                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase to manage multiple servers!"
+                "Tests not adapted for vLLM yet... "
+                "Requires GatewayIntegrationTestCase to manage multiple servers!"
             )
 
         assert self.model in ROUTER_CONFIG
         payload = {"model": self.model, "input": ["The quick brown fox jumps over the lazy dog."]}
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
 
         response_json = response.json()
 
@@ -124,7 +136,11 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         """
         response = self._send_chat_completion(self.MESSAGES)
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
 
         # Parse the response as JSON and convert to OpenAI ChatCompletion type for compatibility
         response_json = response.json()
@@ -143,7 +159,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after chat completion.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after chat completion."
+        )
         req = requests[0]
         self.assertIn(self.url, req.path, "Request endpoint should be for chat completion.")
         self.assertIsNotNone(req.input_tokens)
@@ -171,7 +189,10 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                         {"type": "text", "text": "What's in this file?"},
                         {
                             "type": "file",
-                            "file": {"filename": "test.txt", "file_data": f"data:text/plain;base64,{file_base64}"},
+                            "file": {
+                                "filename": "test.txt",
+                                "file_data": f"data:text/plain;base64,{file_base64}",
+                            },
                         },
                     ],
                 }
@@ -184,10 +205,17 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
-                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
         content = chat_completion.choices[0].message.content
@@ -196,13 +224,19 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertGreater(len(content), 0)
 
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after base64 file input.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after base64 file input."
+        )
         req = requests[0]
-        self.assertIn(self.url, req.path, "Request endpoint should be chat completion for base64 file input.")
+        self.assertIn(
+            self.url, req.path, "Request endpoint should be chat completion for base64 file input."
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for base64 file input")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for base64 file input")
+        self.assertGreater(
+            req.output_tokens, 0, "output_tokens should be > 0 for base64 file input"
+        )
 
     def test_chat_completion_file_id_input(self):
         """
@@ -211,14 +245,20 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         """
         # First, upload a file using the files API
         file_content = b'{"custom_id": "test_file_id_input"}\n'
-        upload_file = SimpleUploadedFile("test_file_id.jsonl", file_content, content_type="application/jsonl")
+        upload_file = SimpleUploadedFile(
+            "test_file_id.jsonl", file_content, content_type="application/jsonl"
+        )
         # Prepare headers for file upload (remove Content-Type for multipart)
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         headers.pop("Content-Type", None)
 
         # Upload the file
-        upload_response = self.client.post("/files", {"file": upload_file, "purpose": "user_data"}, headers=headers)
-        self.assertEqual(upload_response.status_code, 200, f"File upload failed: {upload_response.json()}")
+        upload_response = self.client.post(
+            "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
+        )
+        self.assertEqual(
+            upload_response.status_code, 200, f"File upload failed: {upload_response.json()}"
+        )
         upload_data = upload_response.json()
         file_id = upload_data["id"]
 
@@ -242,10 +282,17 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
-                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
         content = chat_completion.choices[0].message.content.strip()
@@ -255,13 +302,16 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertEqual(
             len(requests),
             2,
-            "There should be exactly two requests after file_id input (file upload + chat completion).",
+            "There should be exactly two requests after file_id input "
+            "(file upload + chat completion).",
         )
 
         # Get the chat completion request (should be the one with /chat/completions path)
         chat_request = next(r for r in requests if self.url in r.path)
         req = chat_request
-        self.assertIn(self.url, req.path, "Request endpoint should be chat completion for file_id input.")
+        self.assertIn(
+            self.url, req.path, "Request endpoint should be chat completion for file_id input."
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for file_id input")
@@ -287,11 +337,16 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(
-            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}: {response.content}"
+            response.status_code,
+            404,
+            f"Expected 404 Not Found, got {response.status_code}: {response.content}",
         )
 
     def test_chat_completion_file_id_different_user(self):
@@ -301,14 +356,20 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         """
         # First, upload a file using the files API with the default user
         file_content = b'{"custom_id": "test_file_id_input"}\n'
-        upload_file = SimpleUploadedFile("test_file_id.jsonl", file_content, content_type="application/jsonl")
+        upload_file = SimpleUploadedFile(
+            "test_file_id.jsonl", file_content, content_type="application/jsonl"
+        )
         # Prepare headers for file upload (remove Content-Type for multipart)
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
         headers.pop("Content-Type", None)
 
         # Upload the file
-        upload_response = self.client.post("/files", {"file": upload_file, "purpose": "user_data"}, headers=headers)
-        self.assertEqual(upload_response.status_code, 200, f"File upload failed: {upload_response.json()}")
+        upload_response = self.client.post(
+            "/files", {"file": upload_file, "purpose": "user_data"}, headers=headers
+        )
+        self.assertEqual(
+            upload_response.status_code, 200, f"File upload failed: {upload_response.json()}"
+        )
         upload_data = upload_response.json()
         file_id = upload_data["id"]
 
@@ -338,7 +399,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             )
 
         self.assertEqual(
-            response.status_code, 404, f"Expected 404 Not Found, got {response.status_code}: {response.content}"
+            response.status_code,
+            404,
+            f"Expected 404 Not Found, got {response.status_code}: {response.content}",
         )
 
     @override_settings(AQUEDUCT_CHAT_COMPLETIONS_MAX_FILE_SIZE_MB=1)
@@ -373,13 +436,17 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(
             response.status_code,
             400,
-            f"Expected 400 Bad Request for file size > 1MB, got {response.status_code}: {response.content}",
+            f"Expected 400 Bad Request for file size > 1MB, "
+            f"got {response.status_code}: {response.content}",
         )
         self.assertIn(b"File too large", response.content)
 
@@ -434,13 +501,17 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
-                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
         self.assertEqual(
             response.status_code,
             400,
-            f"Expected 400 Bad Request for total file size > 1MB, got {response.status_code}: {response.content}",
+            f"Expected 400 Bad Request for total file size > 1MB, "
+            f"got {response.status_code}: {response.content}",
         )
         self.assertIn(b"Files too large in total", response.content)
 
@@ -459,7 +530,10 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                         {"type": "text", "text": "What's in this file?"},
                         {
                             "type": "file",
-                            "file": {"filename": "test.txt", "file_data": f"data:text/plain;base64,{file_base64}"},
+                            "file": {
+                                "filename": "test.txt",
+                                "file_data": f"data:text/plain;base64,{file_base64}",
+                            },
                         },
                     ],
                 }
@@ -472,12 +546,21 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             status_code=HTTPStatus.IM_A_TEAPOT,
         )
 
-        with patch("gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock):
+        with patch(
+            "gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock
+        ):
             response = self.client.post(
-                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
-        self.assertEqual(response.status_code, 400, f"Expected 400, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400, got {response.status_code}: {response.content}",
+        )
         self.assertIn("Tika error extracting text from file", response.json()["error"]["message"])
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
@@ -490,7 +573,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         response = self._send_chat_completion(self.MESSAGES)
 
         self.assertEqual(
-            response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}"
+            response.status_code,
+            504,
+            f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}",
         )
 
     @override_settings(RELAY_REQUEST_TIMEOUT=0.0001)
@@ -513,7 +598,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
 
         # Verify we get a timeout response
         self.assertEqual(
-            response.status_code, 504, f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}"
+            response.status_code,
+            504,
+            f"Expected 504 Gateway Timeout, got {response.status_code}: {response.content}",
         )
 
         # THIS IS THE CRITICAL CHECK: Verify request was logged despite timeout
@@ -528,16 +615,30 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         # Verify the logged request has correct information
         req = requests[0]
         self.assertEqual(
-            req.status_code, 504, f"Logged streaming timeout request should have status_code=504, got {req.status_code}"
+            req.status_code,
+            504,
+            f"Logged streaming timeout request should have status_code=504, got {req.status_code}",
         )
-        self.assertIn("chat/completions", req.path, f"Request path should be /chat/completions, got {req.path}")
-        self.assertIsNotNone(req.response_time_ms, "Response time should be recorded even for streaming timeout")
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            f"Request path should be /chat/completions, got {req.path}",
+        )
+        self.assertIsNotNone(
+            req.response_time_ms, "Response time should be recorded even for streaming timeout"
+        )
         self.assertGreater(
-            req.response_time_ms, 0, f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}"
+            req.response_time_ms,
+            0,
+            f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}",
         )
         # Access token_id instead of token to avoid async issues
         self.assertIsNotNone(req.token_id, "Token should be recorded for streaming timeout")
-        self.assertEqual(req.model, self.model, f"Model should be {self.model} for streaming timeout, got {req.model}")
+        self.assertEqual(
+            req.model,
+            self.model,
+            f"Model should be {self.model} for streaming timeout, got {req.model}",
+        )
 
     @override_settings(STREAM_REQUEST_TIMEOUT=5)
     @async_to_sync
@@ -554,7 +655,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
 
         # Collect all streamed lines (each line is a data: ... event)
         streamed_lines = await _read_streaming_response_lines(response)
-        self.assertGreater(len(streamed_lines), 0, "Should receive at least one streamed data chunk.")
+        self.assertGreater(
+            len(streamed_lines), 0, "Should receive at least one streamed data chunk."
+        )
 
         # Parse each chunk as JSON and collect content pieces
         content_pieces = _parse_streamed_content_pieces(streamed_lines)
@@ -563,9 +666,13 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
 
         # Check that the database contains one request and endpoint matches
         requests = await sync_to_async(lambda: list(Request.objects.all()))()
-        self.assertEqual(len(requests), 1, "There should be exactly one request after streaming chat completion.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after streaming chat completion."
+        )
         req = requests[0]
-        self.assertIn(self.url, req.path, "Request endpoint should be for chat completion (streaming).")
+        self.assertIn(
+            self.url, req.path, "Request endpoint should be for chat completion (streaming)."
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
@@ -592,7 +699,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
 
         # Verify we get a timeout response
         self.assertEqual(
-            response.status_code, 504, f"Expected 504 Gateway Timeout for streaming, got {response.status_code}"
+            response.status_code,
+            504,
+            f"Expected 504 Gateway Timeout for streaming, got {response.status_code}",
         )
 
         # THIS IS THE CRITICAL CHECK: Verify streaming timeout request was logged
@@ -600,23 +709,38 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertGreater(
             len(requests),
             0,
-            f"Expected at least 1 request to be logged for streaming timeout, but found {len(requests)}. "
+            f"Expected at least 1 request to be logged for streaming timeout, "
+            f"but found {len(requests)}. "
             "Streaming timeout requests MUST be logged for usage tracking!",
         )
 
         # Verify the logged request has correct information
         req = requests[0]
         self.assertEqual(
-            req.status_code, 504, f"Logged streaming timeout request should have status_code=504, got {req.status_code}"
+            req.status_code,
+            504,
+            f"Logged streaming timeout request should have status_code=504, got {req.status_code}",
         )
-        self.assertIn("chat/completions", req.path, f"Request path should be /chat/completions, got {req.path}")
-        self.assertIsNotNone(req.response_time_ms, "Response time should be recorded even for streaming timeout")
+        self.assertIn(
+            "chat/completions",
+            req.path,
+            f"Request path should be /chat/completions, got {req.path}",
+        )
+        self.assertIsNotNone(
+            req.response_time_ms, "Response time should be recorded even for streaming timeout"
+        )
         self.assertGreater(
-            req.response_time_ms, 0, f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}"
+            req.response_time_ms,
+            0,
+            f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}",
         )
         # Access token_id instead of token to avoid async issues
         self.assertIsNotNone(req.token_id, "Token should be recorded for streaming timeout")
-        self.assertEqual(req.model, self.model, f"Model should be {self.model} for streaming timeout, got {req.model}")
+        self.assertEqual(
+            req.model,
+            self.model,
+            f"Model should be {self.model} for streaming timeout, got {req.model}",
+        )
 
     def test_chat_completion_excluded_model(self):
         org = Org.objects.get(name="E060")
@@ -627,19 +751,28 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         response = self._send_chat_completion(self.MESSAGES)
 
         self.assertEqual(
-            response.status_code, 404, f"Expected 404 Model not found, got {response.status_code}: {response.content}"
+            response.status_code,
+            404,
+            f"Expected 404 Model not found, got {response.status_code}: {response.content}",
         )
 
     def test_chat_completion_unknown_model(self):
         payload = {"model": "unknown-model", "messages": self.MESSAGES}
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
         self.assertEqual(
-            response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}: {response.content}"
+            response.status_code,
+            400,
+            f"Expected 400 Bad Request, got {response.status_code}: {response.content}",
         )
-        self.assertIn("There is no 'model_name' with this string", response.json()["error"]["message"])
+        self.assertIn(
+            "There is no 'model_name' with this string", response.json()["error"]["message"]
+        )
 
     def test_chat_completion_schema_generation(self):
         """
@@ -657,7 +790,10 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 {"role": "system", "content": "You produce JSON output based on a schema."},
                 {"role": "user", "content": "Generate JSON matching the provided schema."},
             ],
-            "response_format": {"type": "json_schema", "json_schema": {"name": "schema", "schema": json_schema}},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "schema", "schema": json_schema},
+            },
             "max_completion_tokens": 50,
         }
 
@@ -671,7 +807,10 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                     {
                         "finish_reason": "stop",
                         "index": 0,
-                        "message": {"content": '{"greeting":"Hello, world!","count":1}', "role": "assistant"},
+                        "message": {
+                            "content": '{"greeting":"Hello, world!","count":1}',
+                            "role": "assistant",
+                        },
                     }
                 ],
                 usage=Usage(
@@ -690,10 +829,17 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         )
         with self.mock_server.patch_external_api("chat/completions", mock_resp):
             response = self.client.post(
-                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
         content = chat_completion.choices[0].message.content.strip()
@@ -704,21 +850,30 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsInstance(result["count"], int)
 
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after schema generation.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after schema generation."
+        )
         req = requests[0]
-        self.assertIn(self.url, req.path, "Request endpoint should be for chat completion schema generation.")
+        self.assertIn(
+            self.url, req.path, "Request endpoint should be for chat completion schema generation."
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for schema generation")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 for schema generation")
+        self.assertGreater(
+            req.output_tokens, 0, "output_tokens should be > 0 for schema generation"
+        )
 
     def test_chat_completion_multimodal_input(self):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest(
-                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase to manage multiple servers!"
+                "Tests not adapted for vLLM yet... "
+                "Requires GatewayIntegrationTestCase to manage multiple servers!"
             )
 
-        with (Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg").open("rb") as image_file:
+        with (Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg").open(
+            "rb"
+        ) as image_file:
             img_b64 = base64.b64encode(image_file.read()).decode("utf-8")
 
         payload = {
@@ -728,7 +883,10 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "What's in this image?"},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                        },
                     ],
                 }
             ],
@@ -736,19 +894,30 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
         content = chat_completion.choices[0].message.content.strip()
         self.assertGreater(len(content), 0)
 
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after multimodal input.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after multimodal input."
+        )
         req = requests[0]
-        self.assertIn(self.url, req.path, "Request endpoint should be chat completion for multimodal input.")
+        self.assertIn(
+            self.url, req.path, "Request endpoint should be chat completion for multimodal input."
+        )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 for multimodal input")
@@ -772,7 +941,10 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 {"role": "system", "content": "You produce JSON output based on a schema."},
                 {"role": "user", "content": "Generate JSON matching the provided schema."},
             ],
-            "response_format": {"type": "json_schema", "json_schema": {"name": "schema", "schema": json_schema}},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "schema", "schema": json_schema},
+            },
             "max_completion_tokens": 50,
             "stream": True,
         }
@@ -791,22 +963,31 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 choices=[{"index": 0, "delta": {"content": '{"greeting":', "role": "assistant"}}],
             ).model_dump(),
             ModelResponse(
-                **_common_stream_chunk_data, choices=[{"index": 0, "delta": {"content": '"Hello, world!",'}}]
+                **_common_stream_chunk_data,
+                choices=[{"index": 0, "delta": {"content": '"Hello, world!",'}}],
             ).model_dump(),
             ModelResponse(
-                **_common_stream_chunk_data, choices=[{"index": 0, "delta": {"content": '"count":1}'}}]
+                **_common_stream_chunk_data,
+                choices=[{"index": 0, "delta": {"content": '"count":1}'}}],
             ).model_dump(),
         ]
-        mock_resp = MockStreamingConfig(response_data=convert_to_stream_data(_chat_completion_stream_data))
+        mock_resp = MockStreamingConfig(
+            response_data=convert_to_stream_data(_chat_completion_stream_data)
+        )
 
         with self.mock_server.patch_external_api("chat/completions", mock_resp):
             response = await self.async_client.post(
-                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
         streamed_lines = await _read_streaming_response_lines(response)
-        self.assertGreater(len(streamed_lines), 0, "Should receive at least one streamed data chunk.")
+        self.assertGreater(
+            len(streamed_lines), 0, "Should receive at least one streamed data chunk."
+        )
 
         content_pieces = _parse_streamed_content_pieces(streamed_lines)
         full_content = "".join(content_pieces).strip()
@@ -817,15 +998,25 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsInstance(result["count"], int)
 
         requests = await sync_to_async(lambda: list(Request.objects.all()))()
-        self.assertEqual(len(requests), 1, "There should be exactly one request after schema generation streaming.")
+        self.assertEqual(
+            len(requests),
+            1,
+            "There should be exactly one request after schema generation streaming.",
+        )
         req = requests[0]
         self.assertIn(
-            self.url, req.path, "Request endpoint should be for chat completion (streaming schema generation)."
+            self.url,
+            req.path,
+            "Request endpoint should be for chat completion (streaming schema generation).",
         )
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
-        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming schema generation)")
-        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0 (streaming schema generation)")
+        self.assertGreater(
+            req.input_tokens, 0, "input_tokens should be > 0 (streaming schema generation)"
+        )
+        self.assertGreater(
+            req.output_tokens, 0, "output_tokens should be > 0 (streaming schema generation)"
+        )
 
 
 class ListModelsIntegrationTest(GatewayIntegrationTestCase):
@@ -839,7 +1030,11 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         """
         response = self._send_model_list_request()
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
 
         response_json = response.json()
 
@@ -864,7 +1059,10 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         Expects an authentication error (401 or 403).
         """
         # Prepare headers with an invalid token
-        headers = {"HTTP_AUTHORIZATION": "Bearer invalid-token-123", "CONTENT_TYPE": "application/json"}
+        headers = {
+            "HTTP_AUTHORIZATION": "Bearer invalid-token-123",
+            "CONTENT_TYPE": "application/json",
+        }
 
         # No payload needed for model listing
         response = self.client.get("/models", content_type="application/json", headers=headers)
@@ -873,10 +1071,12 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         self.assertIn(
             response.status_code,
             [401, 403],
-            f"Expected 401 or 403 for invalid token, got {response.status_code}: {response.content}",
+            f"Expected 401 or 403 for invalid token, "
+            f"got {response.status_code}: {response.content}",
         )
 
-        # There should be no request recorded in the database (or possibly one, depending on implementation)
+        # There should be no request recorded in the database
+        # (or possibly one, depending on implementation)
         requests = list(Request.objects.all())
         self.assertEqual(len(requests), 0, "There should be no request recorded for invalid token.")
 
@@ -891,7 +1091,11 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         response = self._send_model_list_request()
 
-        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}: {response.content}")
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 OK, got {response.status_code}: {response.content}",
+        )
 
         response_json = response.json()
 
@@ -929,11 +1133,13 @@ class TokenLimitTest(ChatCompletionsBase):
             setattr(team, field, value)
             team.save(update_fields=[field])
             # Ensure a service account exists for the team and associate it with the token
-            # Only associate the service account with the token if the token does not already have a service account
+            # Only associate the SA with the token if it does not already have a service account
 
             service_account = ServiceAccount.objects.create(team=team, name="Whale Service")
 
-            token = Token.objects.filter(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN)).first()
+            token = Token.objects.filter(
+                key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN)
+            ).first()
             if not token:
                 raise RuntimeError("Could not find Token associated with AQUEDUCT_ACCESS_TOKEN.")
 
@@ -942,21 +1148,26 @@ class TokenLimitTest(ChatCompletionsBase):
                 token.service_account = service_account
                 token.save(update_fields=["service_account"])
             elif token.service_account_id != service_account.id:
-                # If the token is already associated with a different service account, raise an error
+                # If the token is already associated with a different SA, raise an error
                 raise RuntimeError(
-                    f"Token is already associated with a different service account (id={token.service_account_id})."
+                    f"Token is already associated with a different service account "
+                    f"(id={token.service_account_id})."
                 )
             # Otherwise, already associated with the correct service account, do nothing
             return team
         if kind == "user":
             user = User.objects.get(username="Me")
-            profile = user.profile if hasattr(user, "profile") else UserProfile.objects.get(user=user)
+            profile = (
+                user.profile if hasattr(user, "profile") else UserProfile.objects.get(user=user)
+            )
             setattr(profile, field, value)
             profile.save(update_fields=[field])
             return profile
         raise ValueError(f"Unknown kind: {kind}")
 
-    def _rate_limit_test_template(self, kind: str, field: str, value: int, messages, max_completion_tokens, limit_desc):
+    def _rate_limit_test_template(
+        self, kind: str, field: str, value: int, messages, max_completion_tokens, limit_desc
+    ):
         """
         Generic template for rate limit tests for org, team, or user.
         Uses the Django test client to POST to the chat completion endpoint.
@@ -964,9 +1175,13 @@ class TokenLimitTest(ChatCompletionsBase):
         # Set the limit
         self._setup_limits(kind, field, value)
 
-        response1 = self._send_chat_completion(messages, max_completion_tokens=max_completion_tokens)
+        response1 = self._send_chat_completion(
+            messages, max_completion_tokens=max_completion_tokens
+        )
         self.assertEqual(
-            response1.status_code, 200, f"Expected 200 OK, got {response1.status_code}: {response1.content}"
+            response1.status_code,
+            200,
+            f"Expected 200 OK, got {response1.status_code}: {response1.content}",
         )
         response_json = response1.json()
         chat_completion = ChatCompletion.model_validate(response_json)
@@ -977,7 +1192,9 @@ class TokenLimitTest(ChatCompletionsBase):
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
         self.assertEqual(
-            len(requests), 1, f"There should be exactly one request after first chat completion ({limit_desc})."
+            len(requests),
+            1,
+            f"There should be exactly one request after first chat completion ({limit_desc}).",
         )
         req = requests[0]
         self.assertIn(self.url, req.path, "Request endpoint should be for chat completion.")
@@ -987,7 +1204,9 @@ class TokenLimitTest(ChatCompletionsBase):
         self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
 
         # Second request should fail with 429
-        response2 = self._send_chat_completion(messages, max_completion_tokens=max_completion_tokens)
+        response2 = self._send_chat_completion(
+            messages, max_completion_tokens=max_completion_tokens
+        )
         self.assertEqual(
             response2.status_code,
             429,
@@ -1003,7 +1222,8 @@ class TokenLimitTest(ChatCompletionsBase):
         except Exception:
             # If not JSON, just check content
             self.assertTrue(
-                "rate limit" in response2.content.decode().lower() or "429" in response2.content.decode(),
+                "rate limit" in response2.content.decode().lower()
+                or "429" in response2.content.decode(),
                 f"Expected rate limit error message, got: {response2.content}",
             )
 
@@ -1079,8 +1299,8 @@ class TokenLimitTest(ChatCompletionsBase):
 
     def test_user_rate_limit_input_tokens_per_minute(self):
         """
-        Edits the input_tokens_per_minute of UserProfile for user 'Me' to 5, then makes two requests.
-        The second request should raise a 429 HTTP error.
+        Edits input_tokens_per_minute of UserProfile for user 'Me' to 5,
+        then makes two requests. The second request should raise a 429 HTTP error.
         """
         self._rate_limit_test_template(
             kind="user",
@@ -1121,8 +1341,8 @@ class TokenLimitTest(ChatCompletionsBase):
 
     def test_user_rate_limit_output_tokens_per_minute(self):
         """
-        Edits the output_tokens_per_minute of UserProfile for user 'Me' to 5, then makes two requests.
-        The second request should raise a 429 HTTP error.
+        Edits output_tokens_per_minute of UserProfile for user 'Me' to 5,
+        then makes two requests. The second request should raise a 429 HTTP error.
         """
         self._rate_limit_test_template(
             kind="user",
@@ -1150,7 +1370,10 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             "model_list": [
                 {
                     "model_name": "gpt-4.1-nano",
-                    "litellm_params": {"model": "openai/gpt-4.1-nano", "api_key": "os.environ/OPENAI_API_KEY"},
+                    "litellm_params": {
+                        "model": "openai/gpt-4.1-nano",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
                     "model_info": {"aliases": ["main", "coding"]},
                 },
                 {
@@ -1164,7 +1387,10 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("pathlib.Path.open"),
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()
@@ -1189,7 +1415,10 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             "model_list": [
                 {
                     "model_name": "gpt-4.1-nano",
-                    "litellm_params": {"model": "openai/gpt-4.1-nano", "api_key": "os.environ/OPENAI_API_KEY"},
+                    "litellm_params": {
+                        "model": "openai/gpt-4.1-nano",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
                     "model_info": {"aliases": ["main"]},
                 },
                 {
@@ -1203,7 +1432,10 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("pathlib.Path.open"),
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
             get_router_config.cache_clear()
 
             # Should raise RuntimeError due to duplicate aliases
@@ -1223,13 +1455,19 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             "model_list": [
                 {
                     "model_name": "gpt-4.1-nano",
-                    "litellm_params": {"model": "openai/gpt-4.1-nano", "api_key": "os.environ/OPENAI_API_KEY"},
+                    "litellm_params": {
+                        "model": "openai/gpt-4.1-nano",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
                     "model_info": {"aliases": ["main", "coding", "default", "primary"]},
                 }
             ]
         }
 
-        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("pathlib.Path.open"),
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()
@@ -1251,7 +1489,10 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             "model_list": [
                 {
                     "model_name": "gpt-4.1-nano",
-                    "litellm_params": {"model": "openai/gpt-4.1-nano", "api_key": "os.environ/OPENAI_API_KEY"},
+                    "litellm_params": {
+                        "model": "openai/gpt-4.1-nano",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
                     "model_info": {"aliases": ["Main"]},  # Capital M
                 },
                 {
@@ -1265,7 +1506,10 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("pathlib.Path.open"),
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()
@@ -1313,14 +1557,18 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         payload = {"model": "main", "messages": messages, "max_tokens": 10}
 
         response = self.client.post(
-            "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         # Should return 200 with alias resolution
         self.assertEqual(
             response.status_code,
             200,
-            f"Alias resolution not working. Expected 200, got {response.status_code}: {response.content}",
+            f"Alias resolution not working. Expected 200, "
+            f"got {response.status_code}: {response.content}",
         )
 
         response_json = response.json()
@@ -1338,35 +1586,47 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         }
 
         response = self.client.post(
-            "/audio/speech", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            "/audio/speech",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
-
-        # Should return 200 with alias resolution
-        self.assertEqual(
-            response.status_code, 200, f"Alias resolution not working for TTS. Expected 200, got {response.status_code}"
-        )
-
-        # Check that the database contains one request
-        requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after speech generation.")
-
-    def test_transcriptions_endpoint_with_alias(self):
-        """Test that STT endpoint correctly resolves model aliases."""
-        # Create a simple audio file for testing
-        test_audio_content = b"mock audio data"
-        test_audio_file = SimpleUploadedFile("test.mp3", test_audio_content, content_type="audio/mp3")
-        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
-        # Remove Content-Type for multipart form data
-        headers.pop("Content-Type", None)
-
-        # Using alias instead of actual model name
-        response = self.client.post("/audio/transcriptions", {"file": test_audio_file, "model": "stt"}, headers=headers)
 
         # Should return 200 with alias resolution
         self.assertEqual(
             response.status_code,
             200,
-            f"Alias resolution not working for STT. Expected 200, got {response.status_code}: {response.content}",
+            f"Alias resolution not working for TTS. Expected 200, got {response.status_code}",
+        )
+
+        # Check that the database contains one request
+        requests = list(Request.objects.all())
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after speech generation."
+        )
+
+    def test_transcriptions_endpoint_with_alias(self):
+        """Test that STT endpoint correctly resolves model aliases."""
+        # Create a simple audio file for testing
+        test_audio_content = b"mock audio data"
+        test_audio_file = SimpleUploadedFile(
+            "test.mp3", test_audio_content, content_type="audio/mp3"
+        )
+        headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+        # Remove Content-Type for multipart form data
+        headers.pop("Content-Type", None)
+
+        # Using alias instead of actual model name
+        response = self.client.post(
+            "/audio/transcriptions", {"file": test_audio_file, "model": "stt"}, headers=headers
+        )
+
+        # Should return 200 with alias resolution
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Alias resolution not working for STT. Expected 200, "
+            f"got {response.status_code}: {response.content}",
         )
 
         response_json = response.json()
@@ -1374,7 +1634,9 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
 
         # Check that the database contains one request
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after transcription.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after transcription."
+        )
 
     def test_chat_completion_with_nonexistent_alias(self):
         """
@@ -1384,7 +1646,10 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         payload = {"model": "nonexistent-alias-12345", "messages": messages, "max_tokens": 10}
 
         response = self.client.post(
-            "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, 400)
@@ -1396,14 +1661,18 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         payload = {"model": "embedding", "input": ["The quick brown fox."]}
 
         response = self.client.post(
-            "/embeddings", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            "/embeddings",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         # Should return 200 with alias resolution
         self.assertEqual(
             response.status_code,
             200,
-            f"Alias resolution not working for embeddings. Expected 200, got {response.status_code}",
+            f"Alias resolution not working for embeddings. "
+            f"Expected 200, got {response.status_code}",
         )
 
         response_json = response.json()
@@ -1420,7 +1689,10 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         }
 
         response = self.client.post(
-            "/images/generations", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            "/images/generations",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         # Should return 200 with alias resolution
@@ -1438,7 +1710,9 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
 
         # Check that the database contains one request
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after image generation.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after image generation."
+        )
 
     def test_multiple_aliases_same_model(self):
         """
@@ -1452,7 +1726,10 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
             payload = {"model": alias, "messages": messages, "max_tokens": 5}
 
             response = self.client.post(
-                "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+                "/chat/completions",
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
             # All should behave the same (either all work or all fail)
@@ -1464,7 +1741,8 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 self.assertEqual(
                     response.status_code,
                     first_status,
-                    f"Alias '{alias}' returned {response.status_code}, but first alias returned {first_status}",
+                    f"Alias '{alias}' returned {response.status_code}, "
+                    f"but first alias returned {first_status}",
                 )
 
     def test_excluded_model_alias_rejected(self):
@@ -1482,19 +1760,27 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         payload = {"model": self.model, "messages": messages, "max_tokens": 5}
 
         response_actual = self.client.post(
-            "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         # Test with alias
         payload = {"model": "main", "messages": messages, "max_tokens": 5}
 
         response_alias = self.client.post(
-            "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         # Both should be rejected (404)
         self.assertEqual(
-            response_actual.status_code, 404, f"Expected 404 for excluded model, got {response_actual.status_code}"
+            response_actual.status_code,
+            404,
+            f"Expected 404 for excluded model, got {response_actual.status_code}",
         )
 
         # Alias should also be rejected since it resolves to excluded model
@@ -1514,20 +1800,27 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         payload = {"model": "main", "messages": messages, "max_tokens": 5}
 
         response_lowercase = self.client.post(
-            "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         # Should return 200 with alias resolution
         self.assertEqual(
             response_lowercase.status_code,
             200,
-            f"Alias resolution not working for lowercase. Expected 200, got {response_lowercase.status_code}",
+            f"Alias resolution not working for lowercase. Expected 200, "
+            f"got {response_lowercase.status_code}",
         )
 
         # Test with wrong case
         payload = {"model": "Main", "messages": messages, "max_tokens": 5}
         response_uppercase = self.client.post(
-            "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         # "Main" should fail since only "main" is defined (case-sensitive)
@@ -1549,7 +1842,11 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 "path": "/chat/completions",
                 "alias": "main",
                 "resolved_model": "gpt-4.1-nano",
-                "payload": {"model": "main", "messages": [{"role": "user", "content": "Test"}], "max_tokens": 5},
+                "payload": {
+                    "model": "main",
+                    "messages": [{"role": "user", "content": "Test"}],
+                    "max_tokens": 5,
+                },
             },
             {
                 "name": "completions",
@@ -1594,11 +1891,15 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 Request.objects.all().delete()
 
                 if endpoint.get("multipart"):
-                    test_file = SimpleUploadedFile("test.mp3", b"mock audio", content_type="audio/mp3")
+                    test_file = SimpleUploadedFile(
+                        "test.mp3", b"mock audio", content_type="audio/mp3"
+                    )
                     headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
                     headers.pop("Content-Type", None)
                     response = self.client.post(
-                        endpoint["path"], {"file": test_file, "model": endpoint["alias"]}, headers=headers
+                        endpoint["path"],
+                        {"file": test_file, "model": endpoint["alias"]},
+                        headers=headers,
                     )
                 else:
                     response = self.client.post(
@@ -1609,7 +1910,9 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                     )
 
                 self.assertEqual(
-                    response.status_code, 200, f"{endpoint['name']}: Expected 200, got {response.status_code}"
+                    response.status_code,
+                    200,
+                    f"{endpoint['name']}: Expected 200, got {response.status_code}",
                 )
 
                 request_log = Request.objects.first()
@@ -1630,7 +1933,10 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         payload = {"model": "nonexistent-alias-xyz", "messages": messages, "max_tokens": 5}
 
         response = self.client.post(
-            "/chat/completions", data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            "/chat/completions",
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, 400)

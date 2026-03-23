@@ -56,7 +56,10 @@ def token_authenticated(token_auth_only: bool) -> Decorator:
                 request.user = await request.auser()
 
             if not getattr(request, "user", None) or not request.user.is_authenticated:
-                log.error("Authentication check failed in ai_gateway_view: request.user is not authenticated.")
+                log.error(
+                    "Authentication check failed in ai_gateway_view: "
+                    "request.user is not authenticated."
+                )
                 return unauthorized_response
             log.debug("User %s authenticated.", request.user.email)
 
@@ -68,9 +71,11 @@ def token_authenticated(token_auth_only: bool) -> Decorator:
             if token_key:
                 token = await sync_to_async(Token.find_by_key)(token_key)
             else:
-                # user is authenticated but not via token -> take first token via Token.objects to use async ORM
+                # user authenticated but not via token -> use Token.objects for async ORM
                 token = (
-                    await Token.objects.select_related("user__profile__org", "service_account__team__org")
+                    await Token.objects.select_related(
+                        "user__profile__org", "service_account__team__org"
+                    )
                     .filter(user=request.user)
                     .afirst()
                 )
@@ -108,8 +113,10 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
             data[key] = json.loads(value)
         except (TypeError, json.JSONDecodeError):
             if key == "timestamp_granularities[]":
-                # OpenAI SKD turns timestamp_granularities into timestamp_granularities[] when sending HTTP request
-                # This has to be undone to avoid errors with the subsequent client.audio.transcriptions.create call
+                # OpenAI SDK turns timestamp_granularities into timestamp_granularities[]
+                # when sending HTTP request
+                # This has to be undone to avoid errors with subsequent
+                # client.audio.transcriptions.create call
                 data["timestamp_granularities"] = request.POST.getlist(key)
             else:
                 data[key] = value
@@ -181,7 +188,8 @@ def parse_body(model: TypeAdapter) -> Decorator:
             else:
                 log.error("Unsupported Content-Type: %s", content_type)
                 return error_response(
-                    f"Unsupported Content-Type: {content_type}", status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE
+                    f"Unsupported Content-Type: {content_type}",
+                    status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 )
 
             # "user_id" can be sent in the body (it is saved in the request log),
@@ -193,7 +201,8 @@ def parse_body(model: TypeAdapter) -> Decorator:
             except ValidationError as e:
                 log.exception("Validation error: %s", e)
                 error_messages = ", ".join(
-                    f"{err['loc'][0] if err['loc'] else 'field'}: {err['msg']}" for err in e.errors()
+                    f"{err['loc'][0] if err['loc'] else 'field'}: {err['msg']}"
+                    for err in e.errors()
                 )
                 return error_response(error_messages, status=HTTPStatus.BAD_REQUEST)
             except Exception as e:
@@ -283,19 +292,31 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 # --- Check Limits ---
                 exceeded = []
 
-                if limits.requests_per_minute is not None and request_count >= limits.requests_per_minute:
+                if (
+                    limits.requests_per_minute is not None
+                    and request_count >= limits.requests_per_minute
+                ):
                     exceeded.append(f"Request limit ({limits.requests_per_minute}/min)")
 
-                if limits.input_tokens_per_minute is not None and total_input >= limits.input_tokens_per_minute:
+                if (
+                    limits.input_tokens_per_minute is not None
+                    and total_input >= limits.input_tokens_per_minute
+                ):
                     exceeded.append(f"Input token limit ({limits.input_tokens_per_minute}/min)")
 
-                if limits.output_tokens_per_minute is not None and total_output >= limits.output_tokens_per_minute:
+                if (
+                    limits.output_tokens_per_minute is not None
+                    and total_output >= limits.output_tokens_per_minute
+                ):
                     exceeded.append(f"Output token limit ({limits.output_tokens_per_minute}/min)")
 
                 if len(exceeded) > 0:
                     error_message = "Rate limit exceeded. " + ", ".join(exceeded) + "."
                     log.warning(
-                        "Rate limit exceeded for Token %r (ID: %s). Details: %s", token.name, token.id, error_message
+                        "Rate limit exceeded for Token %r (ID: %s). Details: %s",
+                        token.name,
+                        token.id,
+                        error_message,
                     )
                     log.error("Rate limit exceeded - %s", error_message)
                     # Return 429 Too Many Requests
@@ -376,7 +397,9 @@ def check_model_availability(view_func: AsyncView) -> AsyncView:
     async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
         token: Token | None = kwargs.get("token")
         if not token:
-            log.error("check_model_availability decorator used without @token_authenticated decorator")
+            log.error(
+                "check_model_availability decorator used without @token_authenticated decorator"
+            )
             return error_response("Internal server error", status=500)
         body: dict | None = kwargs.get("pydantic_model")
         if not body:
@@ -397,7 +420,10 @@ def check_mcp_server_availability(view_func: AsyncView) -> AsyncView:
     async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
         token: Token | None = kwargs.get("token")
         if not token:
-            log.error("check_mcp_server_availability decorator used without @token_authenticated decorator")
+            log.error(
+                "check_mcp_server_availability decorator used without "
+                "@token_authenticated decorator"
+            )
             return error_response("Internal server error", status=500)
         server_name: str | None = kwargs.get("name")
         if not server_name:
@@ -428,7 +454,9 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
     if file_data:
         # file data contains b64 encoded files -> decode as bytes
         try:
-            header, file_b64 = file_data.split(",", maxsplit=1)  # removes data uri (data:application/pdf;base64,<b64>)
+            header, file_b64 = file_data.split(
+                ",", maxsplit=1
+            )  # removes data uri (data:application/pdf;base64,<b64>)
             if not header.startswith("data:"):
                 raise ValueError("Incorrect data URI for base64 encoded file.")
             return base64.b64decode(file_b64)
@@ -506,7 +534,9 @@ def process_file_content(view_func: AsyncView) -> AsyncView:
 
                     if len(file_bytes) > max_file_bytes:
                         log.error(
-                            "File processing error - File too large (individual file must be <= %sMB)", max_file_mb
+                            "File processing error - File too large "
+                            "(individual file must be <= %sMB)",
+                            max_file_mb,
                         )
                         return error_response(
                             f"Error processing file content: File too large. "
@@ -516,7 +546,8 @@ def process_file_content(view_func: AsyncView) -> AsyncView:
                     total_file_size_bytes += len(file_bytes)
                     if total_file_size_bytes > max_total_size_bytes:
                         log.error(
-                            "File processing error - Files too large in total (all files must be <= %sMB)",
+                            "File processing error - Files too large in total "
+                            "(all files must be <= %sMB)",
                             max_total_size_mb,
                         )
                         return error_response(
@@ -531,10 +562,13 @@ def process_file_content(view_func: AsyncView) -> AsyncView:
                     except httpx.HTTPStatusError as e:
                         # return json response here if there was a tika request error
                         log.exception("Tika error extracting text from file - %s", e)
-                        return error_response(f"Tika error extracting text from file: {e!s}", status=400)
+                        return error_response(
+                            f"Tika error extracting text from file: {e!s}", status=400
+                        )
 
                     extracted_text = (
-                        f"Content of user-uploaded file '{file.get('filename', 'unknown filename')}':"
+                        f"Content of user-uploaded file "
+                        f"'{file.get('filename', 'unknown filename')}':"
                         f"\n---\n{extracted_text}\n---"
                     )
 
@@ -599,7 +633,11 @@ def catch_router_exceptions(view_func: AsyncView) -> AsyncView:
         except (litellm.Timeout, openai.APITimeoutError) as e:
             log.exception("Timeout - %s", _r(e))
             return _exception_response(e, status=504)
-        except (litellm.ServiceUnavailableError, litellm.APIConnectionError, openai.APIConnectionError) as e:
+        except (
+            litellm.ServiceUnavailableError,
+            litellm.APIConnectionError,
+            openai.APIConnectionError,
+        ) as e:
             log.exception("Service unavailable - %s", _r(e))
             return _exception_response(e, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
@@ -625,7 +663,9 @@ def tos_accepted(view_func: AsyncView) -> AsyncView:
             key_version = cache.get("django:tos:key_version")
             user_id = token.user.id
 
-            skip: bool = cache.get(f"django:tos:skip_tos_check:{user_id}", False, version=key_version)
+            skip: bool = cache.get(
+                f"django:tos:skip_tos_check:{user_id}", False, version=key_version
+            )
 
             if not skip:
                 user_agreed = cache.get(f"django:tos:agreed:{user_id}", None, version=key_version)
@@ -635,7 +675,8 @@ def tos_accepted(view_func: AsyncView) -> AsyncView:
                 if not user_agreed:
                     log.error("Terms of service agreement required")
                     return error_response(
-                        "In order to use the API you have to agree to the terms of service!", status=403
+                        "In order to use the API you have to agree to the terms of service!",
+                        status=403,
                     )
 
         return await view_func(request, *args, **kwargs)
@@ -718,7 +759,10 @@ def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
         # For mcp requests, timeout should not be passed to the JSON RPC Message
         data.pop("timeout", None)
         json_rpc_message = JSONRPCMessage.model_validate(data)
-        is_initialize = hasattr(json_rpc_message.root, "method") and json_rpc_message.root.method == "initialize"
+        is_initialize = (
+            hasattr(json_rpc_message.root, "method")
+            and json_rpc_message.root.method == "initialize"
+        )
 
         if not is_initialize and not session_id:
             log.error("Session ID required for MCP server %r", kwargs.get("name"))
@@ -752,7 +796,9 @@ def validate_response_id(view_func: AsyncView) -> AsyncView:
     return wrapper
 
 
-async def _validate_mcp_tool(request: ASGIRequest, token: Token, tool: ToolParam) -> ViewResult | None:
+async def _validate_mcp_tool(
+    request: ASGIRequest, token: Token, tool: ToolParam
+) -> ViewResult | None:
     server_name = tool.get("server_label")
     if await sync_to_async(token.mcp_server_excluded)(server_name):
         log.error("MCP server not found - %s", server_name)
@@ -768,10 +814,14 @@ async def _validate_mcp_tool(request: ASGIRequest, token: Token, tool: ToolParam
             return error_response(f"MCP server not found - {server_name}", status=404)
         return None
 
-    expected_url = request.build_absolute_uri(reverse("gateway:mcp_server", kwargs={"name": server_name}))
+    expected_url = request.build_absolute_uri(
+        reverse("gateway:mcp_server", kwargs={"name": server_name})
+    )
     if tool.get("server_url") != expected_url:
         log.error("The server_url of the tool does not match the Aqueduct MCP server url.")
-        return error_response("The server_url of the tool does not match the Aqueduct MCP server url.", status=400)
+        return error_response(
+            "The server_url of the tool does not match the Aqueduct MCP server url.", status=400
+        )
 
     tool["server_url"] = server_config["url"]
     return None
@@ -792,7 +842,9 @@ async def _validate_file_search_tool(token: Token, tool: ToolParam) -> ViewResul
             ).count
         )()
     else:
-        vs_count = await sync_to_async(VectorStore.objects.filter(id__in=unique_vs_ids, token__user=token.user).count)()
+        vs_count = await sync_to_async(
+            VectorStore.objects.filter(id__in=unique_vs_ids, token__user=token.user).count
+        )()
 
     if vs_count != len(unique_vs_ids):
         return error_response("One or more vector stores not found", status=404)
@@ -917,7 +969,7 @@ def rewrite_batch_file_models(content: bytes) -> bytes:
 
     This function:
     1. Ensures custom_id is a string type (required by OpenAI Batch API)
-    2. Replaces the model name in each request body with the actual upstream model name from the router configuration
+    2. Replaces the model name in each request body with the actual upstream model name
     3. Rejects unknown models with a ValueError that includes custom_id
     """
     lines = content.decode("utf-8").splitlines()
@@ -934,7 +986,9 @@ def rewrite_batch_file_models(content: bytes) -> bytes:
                 relay_model = _lookup_relay_model_name(original_model)
                 if relay_model is None:
                     custom_id = request.get("custom_id", "<missing custom_id>")
-                    raise ValueError(f"Unknown model '{original_model}' for custom_id '{custom_id}'")
+                    raise ValueError(
+                        f"Unknown model '{original_model}' for custom_id '{custom_id}'"
+                    )
                 body["model"] = relay_model
                 request["body"] = body
             if "custom_id" in request:

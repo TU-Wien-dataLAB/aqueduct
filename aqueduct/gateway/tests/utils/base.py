@@ -13,7 +13,12 @@ from django.urls import reverse
 from litellm import Router
 from litellm.types.llms.openai import HttpxBinaryResponseContent
 from litellm.types.router import Deployment
-from litellm.types.utils import EmbeddingResponse, ImageResponse, ModelResponse, TextCompletionResponse
+from litellm.types.utils import (
+    EmbeddingResponse,
+    ImageResponse,
+    ModelResponse,
+    TextCompletionResponse,
+)
 from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
@@ -21,7 +26,9 @@ from gateway.tests.utils.test_runner import get_shared_mock_server
 from management.models import Org, Token, UserProfile
 from mock_api.mock_server import MockAPIServer
 
-INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get("INTEGRATION_TEST_BACKEND", "openai")
+INTEGRATION_TEST_BACKEND: Literal["vllm", "openai"] = os.environ.get(
+    "INTEGRATION_TEST_BACKEND", "openai"
+)
 if INTEGRATION_TEST_BACKEND not in ["vllm", "openai"]:
     raise ValueError("Integration test backend must be one of 'vllm' or 'openai'.")
 
@@ -41,14 +48,16 @@ def get_mock_router(model: str = "test-model"):
     router.aembedding = AsyncMock(return_value=EmbeddingResponse())
     router.image_generation = MagicMock(return_value=ImageResponse())
     router.aspeech = AsyncMock(return_value=HttpxBinaryResponseContent(response=MagicMock()))
-    router.get_deployment = MagicMock(return_value=Deployment("test-model", {"model": f"openai/{model}"}))
+    router.get_deployment = MagicMock(
+        return_value=Deployment("test-model", {"model": f"openai/{model}"})
+    )
     return router
 
 
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-    API_MAX_RETRIES=1,  # for some reason, in a few tests the 1st request to the mock API fails (503)
+    API_MAX_RETRIES=1,  # sometimes 1st request to the mock API fails (503)
 )
 class GatewayIntegrationTestCase(TestCase):
     """
@@ -73,7 +82,9 @@ class GatewayIntegrationTestCase(TestCase):
             and not os.environ.get("OPENAI_API_KEY")
         ):
             # When running tests against the real OpenAI API, the API key has to be set
-            raise RuntimeError("OPENAI_API_KEY environment variable has to be set for OpenAI integration.")
+            raise RuntimeError(
+                "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
+            )
 
         if settings.TESTS_USE_MOCK_API:
             # Mock all requests to the external OpenAI API
@@ -83,7 +94,8 @@ class GatewayIntegrationTestCase(TestCase):
             # The patching is not strictly necessary if the router config defines these values,
             # but it's here as a safety measure.
             cls._patcher = patch.dict(
-                "os.environ", {"OPENAI_BASE_URL": cls.mock_server.base_url, "OPENAI_API_KEY": "fake_openai_key"}
+                "os.environ",
+                {"OPENAI_BASE_URL": cls.mock_server.base_url, "OPENAI_API_KEY": "fake_openai_key"},
             )
             cls._patcher.start()
 
@@ -157,7 +169,8 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
     def _make_jsonl_content(self) -> bytes:
         """Create valid JSONL content for batch upload."""
         payload = _build_chat_payload(
-            self.model, messages=[{"role": "system", "content": "Hi"}, {"role": "user", "content": "Test"}]
+            self.model,
+            messages=[{"role": "system", "content": "Hi"}, {"role": "user", "content": "Test"}],
         )
         wrapped = {"custom_id": "1", "method": "POST", "url": self.url_chat, "body": payload}
         return json.dumps(wrapped).encode() + b"\n"

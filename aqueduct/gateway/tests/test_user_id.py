@@ -59,7 +59,9 @@ class TestUserId(GatewayIntegrationTestCase):
             "user_id": user_id,
         }
 
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.last()
@@ -69,7 +71,9 @@ class TestUserId(GatewayIntegrationTestCase):
         url = reverse("gateway:completions")
         user_id = "testuser"
         payload = {"model": self.model, "prompt": "Hello", "user_id": user_id}
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.last()
@@ -82,9 +86,16 @@ class TestUserId(GatewayIntegrationTestCase):
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Write me a short poem!"},
         ]
-        payload = {"model": self.model, "messages": messages, "max_completion_tokens": 2, "user_id": user_id}
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_completion_tokens": 2,
+            "user_id": user_id,
+        }
 
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
@@ -93,9 +104,15 @@ class TestUserId(GatewayIntegrationTestCase):
     def test_embeddings_with_user_id(self):
         url = reverse("gateway:embeddings")
         user_id = "testuser"
-        payload = {"model": self.model, "input": ["The quick brown fox jumps over the lazy dog."], "user_id": user_id}
+        payload = {
+            "model": self.model,
+            "input": ["The quick brown fox jumps over the lazy dog."],
+            "user_id": user_id,
+        }
 
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
@@ -104,7 +121,9 @@ class TestUserId(GatewayIntegrationTestCase):
     def test_file_upload_with_user_id(self):
         url = reverse("gateway:files")
         user_id = "testuser"
-        file = SimpleUploadedFile("test.jsonl", b'{"custom_id": "bar"}\n', content_type="application/jsonl")
+        file = SimpleUploadedFile(
+            "test.jsonl", b'{"custom_id": "bar"}\n', content_type="application/jsonl"
+        )
         payload = {"file": file, "purpose": "batch", "user_id": user_id}
         resp = self.client.post(url, data=payload, headers=self.multipart_headers)
 
@@ -124,7 +143,9 @@ class TestUserId(GatewayIntegrationTestCase):
             "user_id": user_id,
         }
 
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
@@ -149,10 +170,15 @@ class TestUserId(GatewayIntegrationTestCase):
         }
         mcp_url = reverse("gateway:mcp_server", kwargs={"name": "test_mcp_server"})
 
-        mock_msg = SessionMessage(message=JSONRPCMessage(JSONRPCResponse(jsonrpc="2.0", id=0, result={"test": "yes"})))
+        mock_msg = SessionMessage(
+            message=JSONRPCMessage(JSONRPCResponse(jsonrpc="2.0", id=0, result={"test": "yes"}))
+        )
         with patch("gateway.views.mcp.ManagedMCPSession.receive_message", return_value=mock_msg):
             resp = self.client.post(
-                mcp_url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+                mcp_url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK)
@@ -169,7 +195,9 @@ class TestUserId(GatewayIntegrationTestCase):
             "user_id": user_id,
         }
 
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
@@ -186,7 +214,9 @@ class TestUserId(GatewayIntegrationTestCase):
             "user_id": user_id,
         }
 
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK)
         req = Request.objects.get()
@@ -198,7 +228,9 @@ class TestUserId(GatewayIntegrationTestCase):
         file = SimpleUploadedFile("test.oga", b"", content_type="audio/ogg")
 
         resp = self.client.post(
-            url, {"file": file, "model": "whisper-1", "user_id": user_id}, headers=self.multipart_headers
+            url,
+            {"file": file, "model": "whisper-1", "user_id": user_id},
+            headers=self.multipart_headers,
         )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
@@ -210,7 +242,9 @@ class TestUserId(GatewayIntegrationTestCase):
         user_id = "testuser"
         payload = {"name": "Test Store", "user_id": user_id}
 
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.get()
@@ -221,7 +255,9 @@ class TestUserId(GatewayIntegrationTestCase):
         user_id = "testuser"
         payload = {"query": "test query", "user_id": user_id}
 
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.filter(path__contains="search").last()
@@ -241,7 +277,9 @@ class TestUserId(GatewayIntegrationTestCase):
         user_id = "testuser"
         payload = {"file_id": file_obj.id, "user_id": user_id}
 
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.filter(path__contains="vector_stores").last()
@@ -261,7 +299,9 @@ class TestUserId(GatewayIntegrationTestCase):
         user_id = "testuser"
         payload = {"file_ids": [file_obj.id], "user_id": user_id}
 
-        resp = self.client.post(url, data=json.dumps(payload), headers=self.headers, content_type="application/json")
+        resp = self.client.post(
+            url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+        )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
         req = Request.objects.filter(path__contains="vector_stores").last()
@@ -279,7 +319,9 @@ class TestUserId(GatewayIntegrationTestCase):
         for i, user_id in enumerate(user_ids):
             with self.subTest(user_id=user_id, i=i):
                 data = json.dumps({"model": self.model, "prompt": "Hello", "user_id": user_id})
-                resp = self.client.post(url, data=data, headers=self.headers, content_type="application/json")
+                resp = self.client.post(
+                    url, data=data, headers=self.headers, content_type="application/json"
+                )
 
                 self.assertEqual(resp.status_code, HTTPStatus.OK, resp.json())
                 self.assertIsNotNone(Request.objects.filter(user_id=user_id))

@@ -60,7 +60,8 @@ class TokenAuthenticationBackend(BaseBackend):
 
         if not token_instance:
             logger.warning(
-                "Authentication failed: Invalid token provided (starts with %s). Token.find_by_key returned None.",
+                "Authentication failed: Invalid token provided (starts with %s). "
+                "Token.find_by_key returned None.",
                 Token._generate_preview(token_key),
             )
             return None
@@ -68,14 +69,18 @@ class TokenAuthenticationBackend(BaseBackend):
         # Optional: Check for token expiry
         if token_instance.expires_at and token_instance.expires_at < timezone.now():
             logger.warning(
-                "Authentication failed: Token %s (%s) has expired.", token_instance.name, token_instance.key_preview
+                "Authentication failed: Token %s (%s) has expired.",
+                token_instance.name,
+                token_instance.key_preview,
             )
             return None
 
         # Token is valid, return the associated user
         # Ensure the related user exists (should always be true due to ForeignKey constraints)
         if not token_instance.user:
-            logger.error("Critical: Valid token %s found but has no associated user.", token_instance.id)
+            logger.error(
+                "Critical: Valid token %s found but has no associated user.", token_instance.id
+            )
             return None
 
         logger.info(
@@ -85,7 +90,7 @@ class TokenAuthenticationBackend(BaseBackend):
             token_instance.user.email,
         )
         # Attach the token to the user object for potential use in views/middleware downstream
-        # Note: Modifying request.user directly isn't standard, attaching to request is better if needed
+        # Note: Modifying request.user directly isn't standard, attaching to request is better
         # For now, we just return the user as required by authenticate()
         # If the token object itself is needed later, consider attaching it to request
         # E.g. in middleware: request.auth_token = token_instance

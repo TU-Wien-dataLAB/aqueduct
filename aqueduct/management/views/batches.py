@@ -22,9 +22,9 @@ class UserBatchesView(BaseAqueductView, TemplateView):
         user = profile.user
         teams = profile.teams.all()
 
-        batches = Batch.objects.filter(Q(token__user=user) | Q(token__service_account__team__in=teams)).order_by(
-            "-created_at"
-        )
+        batches = Batch.objects.filter(
+            Q(token__user=user) | Q(token__service_account__team__in=teams)
+        ).order_by("-created_at")
 
         # Convert Unix timestamp to datetime for template date filter
         for b in batches:

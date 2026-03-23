@@ -38,7 +38,7 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 120
+line-length = 100
 extend-exclude = [
     "**/migrations/*.py",
     "aqueduct/aqueduct/settings.py",

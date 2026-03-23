@@ -11,7 +11,9 @@ from .models import ServiceAccount, Team, Token
 class ServiceAccountForm(forms.ModelForm):
     token_expires_at = forms.DateTimeField(
         required=False,
-        widget=forms.DateTimeInput(attrs={"type": "datetime-local", "class": "input"}, format="%Y-%m-%dT%H:%M"),
+        widget=forms.DateTimeInput(
+            attrs={"type": "datetime-local", "class": "input"}, format="%Y-%m-%dT%H:%M"
+        ),
         label="Token Expiration Date (optional)",
         help_text="Set an expiration date for the service account token (optional).",
     )
@@ -21,7 +23,9 @@ class ServiceAccountForm(forms.ModelForm):
         fields: ClassVar[list] = ["name", "description"]
         widgets: ClassVar[dict] = {
             "name": forms.TextInput(attrs={"placeholder": "Enter service account name"}),
-            "description": forms.Textarea(attrs={"rows": 3, "placeholder": "Optional description..."}),
+            "description": forms.Textarea(
+                attrs={"rows": 3, "placeholder": "Optional description..."}
+            ),
         }
         labels: ClassVar[dict] = {"name": "Service Account Name", "description": "Description"}
 
@@ -48,7 +52,9 @@ class ServiceAccountForm(forms.ModelForm):
                     query = query.exclude(pk=instance_pk)
                 if query.exists():
                     self.add_error(
-                        "name", f"A service account with the name '{name}' already exists in team '{self.team.name}'."
+                        "name",
+                        f"A service account with the name '{name}' already exists "
+                        f"in team '{self.team.name}'.",
                     )
 
             # Check team limit
@@ -67,7 +73,8 @@ class ServiceAccountForm(forms.ModelForm):
             if instance_pk is None and current_count >= limit:
                 # Attach the error to the form, not a specific field, as it's a general limit issue
                 raise ValidationError(
-                    f"Team '{self.team.name}' has reached the maximum limit of {limit} service accounts.",
+                    f"Team '{self.team.name}' has reached the maximum limit of "
+                    f"{limit} service accounts.",
                     code="limit_reached",
                 )
         expires_at = cleaned_data.get("token_expires_at")
@@ -82,7 +89,9 @@ class TeamCreateForm(forms.ModelForm):
         fields: ClassVar[list] = ["name", "description"]
         widgets: ClassVar[dict] = {
             "name": forms.TextInput(attrs={"placeholder": "Enter team name"}),
-            "description": forms.Textarea(attrs={"rows": 3, "placeholder": "Optional description..."}),
+            "description": forms.Textarea(
+                attrs={"rows": 3, "placeholder": "Optional description..."}
+            ),
         }
         labels: ClassVar[dict] = {"name": "Team Name", "description": "Description"}
 

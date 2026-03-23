@@ -26,10 +26,17 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
     def test_image_generation_endpoint_defaults(self):
         """Test basic image generation with valid parameters."""
 
-        payload = {"model": self.model, "prompt": "A beautiful landscape with mountains and a lake", "size": "256x256"}
+        payload = {
+            "model": self.model,
+            "prompt": "A beautiful landscape with mountains and a lake",
+            "size": "256x256",
+        }
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
@@ -45,9 +52,13 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
 
         # Check that the database contains one request
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after image generation.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after image generation."
+        )
         req = requests[0]
-        self.assertIn("images/generations", req.path, "Request endpoint should be for image generation.")
+        self.assertIn(
+            "images/generations", req.path, "Request endpoint should be for image generation."
+        )
         self.assertIsInstance(req.token_usage, Usage)
 
     def test_image_generation_with_b64_json_response_format(self):
@@ -61,7 +72,10 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         }
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
@@ -78,7 +92,9 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
 
         # Check that the database contains one request
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one request after image generation.")
+        self.assertEqual(
+            len(requests), 1, "There should be exactly one request after image generation."
+        )
         req = requests[0]
         self.assertIsInstance(req.token_usage, Usage)
 
@@ -92,7 +108,10 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         }
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
@@ -109,10 +128,16 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
 
         with self.mock_server.patch_external_api(
             self.url,
-            MockConfig(status_code=HTTPStatus.BAD_REQUEST, response_data={"error": "Invalid 'prompt': empty string"}),
+            MockConfig(
+                status_code=HTTPStatus.BAD_REQUEST,
+                response_data={"error": "Invalid 'prompt': empty string"},
+            ),
         ):
             response = self.client.post(
-                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
@@ -121,7 +146,12 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
     def test_image_generation_endpoint_with_multiple_images(self):
         """Test image generation endpoint with multiple images (n parameter)."""
 
-        payload = {"model": self.model, "prompt": "Generate multiple images of a sunset", "n": 2, "size": "256x256"}
+        payload = {
+            "model": self.model,
+            "prompt": "Generate multiple images of a sunset",
+            "n": 2,
+            "size": "256x256",
+        }
         expected = MockConfig(
             status_code=HTTPStatus.OK,
             response_data=ImagesResponse(
@@ -145,7 +175,10 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
 
         with self.mock_server.patch_external_api(self.url, expected):
             response = self.client.post(
-                self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+                self.url,
+                data=json.dumps(payload),
+                headers=self.headers,
+                content_type="application/json",
             )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
@@ -164,7 +197,10 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         payload = {"model": self.model, "prompt": "A test image", "size": "1x1"}
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
@@ -175,11 +211,16 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         payload = {"model": self.model, "prompt": "A test image", "stream": True}
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
-        self.assertIn("Aqueduct does not support image streaming.", response.json()["error"]["message"])
+        self.assertIn(
+            "Aqueduct does not support image streaming.", response.json()["error"]["message"]
+        )
 
     def test_image_generation_with_extra_fields_in_body(self):
         """Extra fields in the request body are not allowed."""
@@ -187,7 +228,10 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         payload = {"model": self.model, "prompt": "A test image", "sth_extra": "Oh yeah"}
 
         response = self.client.post(
-            self.url, data=json.dumps(payload), headers=self.headers, content_type="application/json"
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)

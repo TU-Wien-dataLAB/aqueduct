@@ -72,7 +72,9 @@ class TeamUpdateView(BaseTeamView, UpdateView):
 
         # Permission Check: User must be admin of this specific team
         if not self.profile.is_team_admin(self.team):
-            messages.error(request, f"You do not have permission to edit the team '{self.team.name}'.")
+            messages.error(
+                request, f"You do not have permission to edit the team '{self.team.name}'."
+            )
             return redirect(reverse("team", kwargs={"id": self.team.id}))  # Redirect to team detail
 
         return super().dispatch(request, *args, **kwargs)
@@ -116,7 +118,8 @@ class TeamDeleteView(OrgAdminRequiredMixin, BaseTeamView, DeleteView):
     success_url = reverse_lazy("org")
 
     # Permission checking is handled by OrgAdminRequiredMixin and BaseTeamView fetches team.
-    # No need for get_queryset to filter by org, as OrgAdminRequiredMixin ensures user is admin of their own org.
+    # No need for get_queryset to filter by org, as OrgAdminRequiredMixin ensures user
+    # is admin of their own org.
     # get_object() inherited from BaseTeamView returns self.team
 
     def form_valid(self, form) -> HttpResponse:
@@ -147,11 +150,14 @@ class TeamAdminManagementView(OrgAdminRequiredMixin, BaseTeamView, View):
     def post(self, request, *args, **kwargs) -> HttpResponse:
         # self.team is fetched by BaseTeamView
         team = self.team
-        # self.profile and self.org (user's org) are available from BaseAqueductView/OrgAdminRequiredMixin
+        # self.profile and self.org (user's org) are available from
+        # BaseAqueductView/OrgAdminRequiredMixin
         profile_id = request.POST.get("profile_id")
         action = request.POST.get("action")
         # Ensure the profile being managed belongs to the same org as the team (and the admin)
-        profile = get_object_or_404(UserProfile, id=profile_id, org=self.team_org)  # Use team_org for consistency
+        profile = get_object_or_404(
+            UserProfile, id=profile_id, org=self.team_org
+        )  # Use team_org for consistency
 
         # OrgAdminRequiredMixin already confirmed the requesting user is an org admin.
         # Check if the target profile is the org admin themself (no-op)
@@ -160,13 +166,15 @@ class TeamAdminManagementView(OrgAdminRequiredMixin, BaseTeamView, View):
             return redirect(reverse("team", kwargs={"id": team.id}))
 
         # Ensure the target profile is actually a member of the team before changing admin status
-        # Although get_or_create handles creation, it might be confusing if they weren't explicitly added first.
+        # Although get_or_create handles creation, it might be confusing if not explicitly added.
         # Let's find the membership first.
         try:
             membership = team.teammembership_set.get(user_profile=profile)
         except team.teammembership_set.model.DoesNotExist:
             messages.error(
-                request, f"{profile.user.email} is not a member of team {team.name}. Cannot modify admin status."
+                request,
+                f"{profile.user.email} is not a member of team {team.name}. "
+                f"Cannot modify admin status.",
             )
             return redirect(reverse("team", kwargs={"id": team.id}))
 
@@ -176,12 +184,16 @@ class TeamAdminManagementView(OrgAdminRequiredMixin, BaseTeamView, View):
             else:
                 membership.is_admin = True
                 membership.save(update_fields=["is_admin"])
-                messages.success(request, f"{profile.user.email} is now a team admin for {team.name}.")
+                messages.success(
+                    request, f"{profile.user.email} is now a team admin for {team.name}."
+                )
         elif action == "remove":
             if membership.is_admin:
                 membership.is_admin = False
                 membership.save(update_fields=["is_admin"])
-                messages.success(request, f"{profile.user.email} is no longer a team admin for {team.name}.")
+                messages.success(
+                    request, f"{profile.user.email} is no longer a team admin for {team.name}."
+                )
             else:
                 messages.info(request, f"{profile.user.email} is not a team admin.")
         else:
@@ -213,7 +225,9 @@ class TeamDetailView(BaseTeamView, DetailView):
         # Now check if the user has permission to view this team
         # Users should see teams they are members of OR if they are admin of the team's org.
         if self.team not in self.get_teams_for_user():
-            messages.error(request, f"You do not have permission to view the team '{self.team.name}'.")
+            messages.error(
+                request, f"You do not have permission to view the team '{self.team.name}'."
+            )
             return redirect(reverse_lazy("org"))  # Redirect to org dashboard
 
         return super().dispatch(request, *args, **kwargs)
@@ -224,13 +238,17 @@ class TeamDetailView(BaseTeamView, DetailView):
         # self.profile is available from BaseAqueductView
         # context['team'] is set automatically by DetailView using get_object() -> self.team
 
-        context["is_org_admin"] = self.profile.is_org_admin(self.team_org)  # Check against team's org
+        context["is_org_admin"] = self.profile.is_org_admin(
+            self.team_org
+        )  # Check against team's org
         # is_team_admin checks org admin status implicitly
         context["is_team_admin"] = self.profile.is_team_admin(self.team)
 
         context["org_object"] = self.team_org  # Pass the org object for limit display
 
-        context["service_accounts"] = self.team.service_accounts.select_related("token__user__profile").all()
+        context["service_accounts"] = self.team.service_accounts.select_related(
+            "token__user__profile"
+        ).all()
 
         context["profile_ids_owning_service_accounts"] = set(
             self.team.service_accounts.filter(token__user__profile__isnull=False).values_list(
@@ -239,8 +257,10 @@ class TeamDetailView(BaseTeamView, DetailView):
         )
 
         current_member_profile_ids = self.team.member_profiles.values_list("id", flat=True)
-        # Show profiles from the TEAM's org, not necessarily the user's org if different (though unlikely)
-        context["available_profiles"] = self.team_org.user_profiles.exclude(id__in=current_member_profile_ids)
+        # Show profiles from the TEAM's org, not necessarily the user's org if different
+        context["available_profiles"] = self.team_org.user_profiles.exclude(
+            id__in=current_member_profile_ids
+        )
 
         # --- Build member_badges: list of dicts for each member with badge info ---
         member_badges = []
@@ -285,14 +305,20 @@ class TeamDetailView(BaseTeamView, DetailView):
                     org=self.team_org,  # Ensures org consistency with the team
                 )
                 if team.member_profiles.filter(id=profile_to_add.id).exists():
-                    messages.warning(request, f"{profile_to_add.user.email} is already in the team.")
+                    messages.warning(
+                        request, f"{profile_to_add.user.email} is already in the team."
+                    )
                 else:
                     team.member_profiles.add(profile_to_add)
                     # Note: TeamMembership object (with is_admin=False) is created automatically.
-                    messages.success(request, f"Added {profile_to_add.user.email} to team {team.name}.")
+                    messages.success(
+                        request, f"Added {profile_to_add.user.email} to team {team.name}."
+                    )
             except UserProfile.DoesNotExist:
                 # This message covers both not found and wrong org cases due to the filter.
-                messages.error(request, "User profile to add not found or not in this team's organization.")
+                messages.error(
+                    request, "User profile to add not found or not in this team's organization."
+                )
             except Exception:
                 messages.error(request, "An unexpected error occurred while adding the user.")
 
@@ -322,14 +348,21 @@ class TeamDetailView(BaseTeamView, DetailView):
                 # Verify the user is actually a member before attempting removal.
                 if team.member_profiles.filter(id=profile_to_remove.id).exists():
                     team.member_profiles.remove(profile_to_remove)
-                    messages.success(request, f"Removed {profile_to_remove.user.email} from team {team.name}.")
+                    messages.success(
+                        request, f"Removed {profile_to_remove.user.email} from team {team.name}."
+                    )
                 else:
                     # User wasn't a member anyway.
-                    messages.warning(request, f"{profile_to_remove.user.email} is not currently a member of this team.")
+                    messages.warning(
+                        request,
+                        f"{profile_to_remove.user.email} is not currently a member of this team.",
+                    )
 
             except UserProfile.DoesNotExist:
                 # Covers not found or wrong org
-                messages.error(request, "User profile to remove not found or not in this team's organization.")
+                messages.error(
+                    request, "User profile to remove not found or not in this team's organization."
+                )
             except Exception:
                 messages.error(request, "An unexpected error occurred while removing the user.")
 

@@ -18,7 +18,13 @@ from pydantic import TypeAdapter
 from gateway.config import get_files_api_client
 from management.models import FileObject, Token, VectorStore, VectorStoreFile
 
-from .decorators import catch_router_exceptions, log_request, parse_body, token_authenticated, tos_accepted
+from .decorators import (
+    catch_router_exceptions,
+    log_request,
+    parse_body,
+    token_authenticated,
+    tos_accepted,
+)
 from .errors import error_response
 
 
@@ -105,7 +111,9 @@ async def vector_store_files(
             file_data = remote_file.model_dump(mode="json")
             response_files.append(file_data)
 
-        return JsonResponse({"object": "list", "data": response_files, "has_more": False}, status=200)
+        return JsonResponse(
+            {"object": "list", "data": response_files, "has_more": False}, status=200
+        )
 
     # POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
     params = pydantic_model if pydantic_model else {}
@@ -149,7 +157,9 @@ async def vector_store_files(
         # Upstream file was already created but limit was exceeded by a concurrent request.
         # Clean up the upstream file.
         with suppress(Exception):
-            await client.vector_stores.files.delete(vector_store_id=vs_obj.id, file_id=remote_vs_file.id)
+            await client.vector_stores.files.delete(
+                vector_store_id=vs_obj.id, file_id=remote_vs_file.id
+            )
         return error_response(f"Vector store file limit reached ({max_files})", status=403)
 
     # Return upstream response directly (IDs already match)
@@ -221,7 +231,9 @@ async def vector_store_file(
             update_kwargs["attributes"] = params["attributes"]
 
         if not params.get("attributes"):
-            return error_response("Missing required parameter: attributes", param="attributes", status=400)
+            return error_response(
+                "Missing required parameter: attributes", param="attributes", status=400
+            )
 
         remote_vs_file = await client.vector_stores.files.update(**update_kwargs)
 
@@ -271,12 +283,16 @@ async def vector_store_file_content(
 
     # Get the vector store file
     try:
-        vs_file_obj = await VectorStoreFile.objects.select_related("file_obj").aget(id=file_id, vector_store=vs_obj)
+        vs_file_obj = await VectorStoreFile.objects.select_related("file_obj").aget(
+            id=file_id, vector_store=vs_obj
+        )
     except VectorStoreFile.DoesNotExist:
         return error_response("Vector store file not found.", param="file_id", status=404)
 
     # Get content from upstream
-    content_response = await client.vector_stores.files.content(vector_store_id=vs_obj.id, file_id=vs_file_obj.id)
+    content_response = await client.vector_stores.files.content(
+        vector_store_id=vs_obj.id, file_id=vs_file_obj.id
+    )
 
     # FileContentResponse and AsyncPage[FileContentResponse] are both Pydantic models
     response_data = content_response.model_dump()

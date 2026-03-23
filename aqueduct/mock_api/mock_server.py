@@ -44,7 +44,11 @@ logger = logging.getLogger("mock_server")
 
 class MockAPIServer:
     def __init__(
-        self, host: str = "localhost", port: int | None = None, delays: bool = True, log_level: str = "error"
+        self,
+        host: str = "localhost",
+        port: int | None = None,
+        delays: bool = True,
+        log_level: str = "error",
     ) -> None:
         self.host: str = host
         self.port: int = port or get_available_port()
@@ -88,8 +92,12 @@ class MockAPIServer:
                 if time.time() - start_time < timeout:
                     time.sleep(0.5)
                 else:
-                    self.logger.exception("Mock server failed to start within %s s. Last error: %s", timeout, err)
-                    raise RuntimeError(f"Mock server failed to start within {timeout} s. Last error: {err}") from err
+                    self.logger.exception(
+                        "Mock server failed to start within %s s. Last error: %s", timeout, err
+                    )
+                    raise RuntimeError(
+                        f"Mock server failed to start within {timeout} s. Last error: {err}"
+                    ) from err
 
     def stop(self):
         """Stop the mock server"""
@@ -135,7 +143,9 @@ class MockAPIServer:
         if config is not None:
             self.configure_endpoint(url, config)
 
-        with patch.dict("os.environ", {"OPENAI_BASE_URL": self.base_url, "OPENAI_API_KEY": "fake_openai_key"}):
+        with patch.dict(
+            "os.environ", {"OPENAI_BASE_URL": self.base_url, "OPENAI_API_KEY": "fake_openai_key"}
+        ):
             try:
                 yield
             finally:
@@ -153,7 +163,8 @@ def main():
         "--host",
         type=str,
         default="localhost",
-        help="Host to bind the server to (use '0.0.0.0' for Docker, 'localhost' when running Django tests)",
+        help="Host to bind the server to (use '0.0.0.0' for Docker, "
+        "'localhost' when running Django tests)",
     )
     parser.add_argument(
         "--port",
@@ -164,7 +175,9 @@ def main():
     parser.add_argument("--delays", action="store_true", help="Add delays to responses")
     parser.add_argument("--log-level", type=str, default="error", help="Log level for uvicorn")
     args = parser.parse_args()
-    mock_server = MockAPIServer(host=args.host, port=args.port, delays=args.delays, log_level=args.log_level)
+    mock_server = MockAPIServer(
+        host=args.host, port=args.port, delays=args.delays, log_level=args.log_level
+    )
     try:
         mock_server.start()
         logger.info("Mock server running on %s. Press Ctrl+C to stop.", mock_server.base_url)

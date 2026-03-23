@@ -134,10 +134,16 @@ async def mock_endpoint(path: str, request: Request) -> Response:
         await asyncio.sleep(delay)
 
     if isinstance(config, MockStreamingConfig):
-        return StreamingResponse(content=config.response_data, status_code=config.status_code, headers=config.headers)
+        return StreamingResponse(
+            content=config.response_data, status_code=config.status_code, headers=config.headers
+        )
     if isinstance(config, MockPlainTextConfig):
-        return PlainTextResponse(content=config.response_data, status_code=config.status_code, headers=config.headers)
-    return JSONResponse(content=config.response_data, status_code=config.status_code, headers=config.headers)
+        return PlainTextResponse(
+            content=config.response_data, status_code=config.status_code, headers=config.headers
+        )
+    return JSONResponse(
+        content=config.response_data, status_code=config.status_code, headers=config.headers
+    )
 
 
 async def _should_stream(request: Request) -> bool:

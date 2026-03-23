@@ -157,13 +157,17 @@ async def files(
             )
         else:
             file_objects = await sync_to_async(list)(
-                FileObject.objects.filter(token__user=token.user).order_by("-created_at").select_related("token")
+                FileObject.objects.filter(token__user=token.user)
+                .order_by("-created_at")
+                .select_related("token")
             )
 
         return JsonResponse(
             {
                 "object": "list",
-                "data": [f.model.model_dump(exclude_none=True, exclude_unset=True) for f in file_objects],
+                "data": [
+                    f.model.model_dump(exclude_none=True, exclude_unset=True) for f in file_objects
+                ],
                 "has_more": False,
             },
             status=200,
@@ -176,20 +180,26 @@ async def files(
 
     # Validate file extension for batch files
     if purpose == "batch" and not filename.endswith(".jsonl"):
-        return error_response("Only .jsonl files are currently supported for purpose 'batch'.", status=400)
+        return error_response(
+            "Only .jsonl files are currently supported for purpose 'batch'.", status=400
+        )
 
     # Enforce per-token total storage limit
     if token.service_account:
-        sum_res = await FileObject.objects.filter(token__service_account__team=token.service_account.team).aaggregate(
+        sum_res = await FileObject.objects.filter(
+            token__service_account__team=token.service_account.team
+        ).aaggregate(sum_bytes=Sum("bytes"))
+    else:
+        sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(
             sum_bytes=Sum("bytes")
         )
-    else:
-        sum_res = await FileObject.objects.filter(token__user=token.user).aaggregate(sum_bytes=Sum("bytes"))
     current_total = sum_res.get("sum_bytes") or 0
     max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB * 1024 * 1024
     if current_total + len(file_content) > max_total_bytes:
         return error_response(
-            f"Total files size exceeds {settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB}MB limit.", status=413
+            f"Total files size exceeds "
+            f"{settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB}MB limit.",
+            status=413,
         )
 
     # Validate batch file format (valid JSON, unique custom_ids)

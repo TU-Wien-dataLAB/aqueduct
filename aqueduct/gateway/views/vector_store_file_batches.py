@@ -22,13 +22,21 @@ from management.models import (
     VectorStoreFileStatus,
 )
 
-from .decorators import catch_router_exceptions, log_request, parse_body, token_authenticated, tos_accepted
+from .decorators import (
+    catch_router_exceptions,
+    log_request,
+    parse_body,
+    token_authenticated,
+    tos_accepted,
+)
 from .errors import error_response
 
 logger = logging.getLogger(__name__)
 
 
-async def mark_orphaned_files(batch_obj: VectorStoreFileBatch, status: VectorStoreFileStatus, error_msg: str):
+async def mark_orphaned_files(
+    batch_obj: VectorStoreFileBatch, status: VectorStoreFileStatus, error_msg: str
+):
     """Mark in-progress files in a batch as failed when the batch fails or is cancelled.
 
     Args:
@@ -59,7 +67,12 @@ async def mark_orphaned_files(batch_obj: VectorStoreFileBatch, status: VectorSto
 @log_request
 @catch_router_exceptions
 async def vector_store_file_batches(
-    request: ASGIRequest, token: Token, vector_store_id: str, pydantic_model: FileBatchCreateParams, *args, **kwargs
+    request: ASGIRequest,
+    token: Token,
+    vector_store_id: str,
+    pydantic_model: FileBatchCreateParams,
+    *args,
+    **kwargs,
 ) -> JsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/file_batches - Create file batch
@@ -85,10 +98,13 @@ async def vector_store_file_batches(
     files = params.get("files", [])
 
     if not file_ids and not files:
-        return error_response("Missing required parameter: file_ids or files", param="file_ids", status=400)
+        return error_response(
+            "Missing required parameter: file_ids or files", param="file_ids", status=400
+        )
 
     # Handle both file_ids and files formats
-    # Extract file_ids for lookup; pass full files dicts to upstream to preserve attributes and chunking_strategy
+    # Extract file_ids for lookup; pass full files dicts to upstream to preserve
+    # attributes and chunking_strategy
     if files:
         file_ids = [f["file_id"] for f in files]
 
@@ -128,7 +144,13 @@ async def vector_store_file_batches(
         file_counts=(
             remote_batch.file_counts.model_dump(mode="json")
             if hasattr(remote_batch, "file_counts") and remote_batch.file_counts
-            else {"total": len(file_ids), "completed": 0, "failed": 0, "in_progress": len(file_ids), "cancelled": 0}
+            else {
+                "total": len(file_ids),
+                "completed": 0,
+                "failed": 0,
+                "in_progress": len(file_ids),
+                "cancelled": 0,
+            }
         ),
         created_at=int(now.timestamp()),
     )
@@ -207,7 +229,10 @@ async def vector_store_file_batch(
     remote_batch = await batch_obj.areload_from_upstream(client)
 
     # Handle orphaned VectorStoreFile records when batch fails or is cancelled
-    if batch_obj.status in (VectorStoreFileBatchStatus.FAILED, VectorStoreFileBatchStatus.CANCELLED):
+    if batch_obj.status in (
+        VectorStoreFileBatchStatus.FAILED,
+        VectorStoreFileBatchStatus.CANCELLED,
+    ):
         await mark_orphaned_files(
             batch_obj,
             status=VectorStoreFileStatus.FAILED,
@@ -257,7 +282,9 @@ async def vector_store_file_batch_cancel(
         return error_response("File batch not found.", param="batch_id", status=404)
 
     # Cancel on upstream
-    remote_batch = await client.vector_stores.file_batches.cancel(vector_store_id=vs_obj.id, batch_id=batch_obj.id)
+    remote_batch = await client.vector_stores.file_batches.cancel(
+        vector_store_id=vs_obj.id, batch_id=batch_obj.id
+    )
 
     # Update local record
     batch_obj.status = remote_batch.status or VectorStoreFileBatchStatus.CANCELLED
@@ -267,7 +294,9 @@ async def vector_store_file_batch_cancel(
 
     # Handle orphaned VectorStoreFile records when batch is cancelled
     await mark_orphaned_files(
-        batch_obj, status=VectorStoreFileStatus.CANCELLED, error_msg="Batch cancelled: files were not processed"
+        batch_obj,
+        status=VectorStoreFileStatus.CANCELLED,
+        error_msg="Batch cancelled: files were not processed",
     )
 
     # Return upstream response directly (IDs already match)

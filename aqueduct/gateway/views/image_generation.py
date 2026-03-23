@@ -39,7 +39,9 @@ async def image_generation(
     if pydantic_model.get("stream"):
         # LiteLLM cannot parse a Stream response, so we don't support streaming for now
         raise BadRequestError(
-            "Aqueduct does not support image streaming.", pydantic_model.get("model"), llm_provider=None
+            "Aqueduct does not support image streaming.",
+            pydantic_model.get("model"),
+            llm_provider=None,
         )
 
     response_format = pydantic_model.get("response_format", "b64_json")

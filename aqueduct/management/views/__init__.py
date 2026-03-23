@@ -10,8 +10,20 @@ from .service_account import (
     ServiceAccountTransferOwnershipView,
     ServiceAccountUpdateView,
 )
-from .team import TeamAdminManagementView, TeamCreateView, TeamDeleteView, TeamDetailView, TeamUpdateView
-from .tokens import TokenCreateView, TokenDeleteView, TokenEditView, TokenRegenerateView, UserTokensView
+from .team import (
+    TeamAdminManagementView,
+    TeamCreateView,
+    TeamDeleteView,
+    TeamDetailView,
+    TeamUpdateView,
+)
+from .tokens import (
+    TokenCreateView,
+    TokenDeleteView,
+    TokenEditView,
+    TokenRegenerateView,
+    UserTokensView,
+)
 from .usage import UsageDashboardView
 from .vector_stores import (
     UserVectorStoresView,

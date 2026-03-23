@@ -13,7 +13,9 @@ from management.models import Org, Request, Token
 from management.views.base import BaseAqueductView
 
 
-def get_all_buckets(start_time: datetime.datetime, now: datetime.datetime, freq_label: str) -> list[int]:
+def get_all_buckets(
+    start_time: datetime.datetime, now: datetime.datetime, freq_label: str
+) -> list[int]:
     points = []
     if freq_label == "1h":
         # one point per minute
@@ -61,7 +63,8 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         # Org-level access: full org view for org admins
         elif profile.is_org_admin(selected_org):
             reqs = Request.objects.filter(
-                Q(token__user__profile__org=selected_org) | Q(token__service_account__team__org=selected_org)
+                Q(token__user__profile__org=selected_org)
+                | Q(token__service_account__team__org=selected_org)
             )
         else:
             # Standard user: restrict to own tokens or service accounts' token in their teams;
@@ -117,9 +120,15 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         ]
         per_model += missing_models
 
-        avg_time_comp = reqs_span.filter(path__icontains="completion").aggregate(avg=Avg("response_time_ms"))["avg"]
-        avg_time_emb = reqs_span.filter(path__icontains="embedding").aggregate(avg=Avg("response_time_ms"))["avg"]
-        tokens_sum = reqs_span.aggregate(input_sum=Sum("input_tokens"), output_sum=Sum("output_tokens"))
+        avg_time_comp = reqs_span.filter(path__icontains="completion").aggregate(
+            avg=Avg("response_time_ms")
+        )["avg"]
+        avg_time_emb = reqs_span.filter(path__icontains="embedding").aggregate(
+            avg=Avg("response_time_ms")
+        )["avg"]
+        tokens_sum = reqs_span.aggregate(
+            input_sum=Sum("input_tokens"), output_sum=Sum("output_tokens")
+        )
         input_tokens = tokens_sum.get("input_sum") or 0
         output_tokens = tokens_sum.get("output_sum") or 0
 
@@ -155,7 +164,9 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         else:
             try:
                 selected_org = (
-                    Org.objects.get(pk=int(sel)) if sel and sel.isdigit() and is_global_admin else self.profile.org
+                    Org.objects.get(pk=int(sel))
+                    if sel and sel.isdigit() and is_global_admin
+                    else self.profile.org
                 )
             except Org.DoesNotExist:
                 selected_org = self.org

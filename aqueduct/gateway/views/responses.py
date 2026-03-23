@@ -81,7 +81,9 @@ async def create_response(
 @log_request
 @validate_response_id
 @catch_router_exceptions
-async def response(request: ASGIRequest, response_id: str, token: Token, *args, **kwargs) -> JsonResponse | None:
+async def response(
+    request: ASGIRequest, response_id: str, token: Token, *args, **kwargs
+) -> JsonResponse | None:
     """Combined handler for GET and DELETE /v1/responses/{response_id}"""
     response = get_response_from_cache(response_id)
     model = response["model"]

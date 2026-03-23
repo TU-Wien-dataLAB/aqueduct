@@ -23,11 +23,16 @@ User = get_user_model()
 class TestFilesAPI(GatewayFilesTestCase):
     def test_file_lifecycle(self):
         """Test uploading, listing, retrieving, downloading, and deleting a file."""
-        content = b'{"custom_id": "bar"}\n{"custom_id": "123"}\n{"custom_id": "baz"}\n{"custom_id": "1234"}\n'
+        content = (
+            b'{"custom_id": "bar"}\n{"custom_id": "123"}\n'
+            b'{"custom_id": "baz"}\n{"custom_id": "1234"}\n'
+        )
         upload_file = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
 
         # Upload file
-        response = self.client.post(self.url_files, {"file": upload_file, "purpose": "batch"}, headers=self.headers)
+        response = self.client.post(
+            self.url_files, {"file": upload_file, "purpose": "batch"}, headers=self.headers
+        )
         self.assertEqual(response.status_code, 200, f"Upload failed: {response.json()}")
         upload_data = response.json()
         file_id = upload_data["id"]
@@ -82,7 +87,9 @@ class TestFilesAPI(GatewayFilesTestCase):
         # Missing both file and purpose
         resp = self.client.post(self.url_files, {}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("file: Field required, purpose: Field required", resp.json()["error"]["message"])
+        self.assertIn(
+            "file: Field required, purpose: Field required", resp.json()["error"]["message"]
+        )
         # Missing file only
         resp = self.client.post(self.url_files, {"purpose": "batch"}, headers=self.headers)
         self.assertEqual(resp.status_code, 400)
@@ -97,19 +104,31 @@ class TestFilesAPI(GatewayFilesTestCase):
         """Unsupported purpose or wrong file extension yields 400."""
         good = SimpleUploadedFile("ok.jsonl", b"{}\n", content_type="application/json")
         # unsupported purpose
-        resp = self.client.post(self.url_files, {"file": good, "purpose": "fine-tune"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": good, "purpose": "fine-tune"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("purpose: Input should be 'assistants', 'batch' or 'user_data'", resp.json()["error"]["message"])
+        self.assertIn(
+            "purpose: Input should be 'assistants', 'batch' or 'user_data'",
+            resp.json()["error"]["message"],
+        )
         # wrong extension
         bad = SimpleUploadedFile("nope.txt", b"{}\n", content_type="text/plain")
-        resp = self.client.post(self.url_files, {"file": bad, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": bad, "purpose": "batch"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("Only .jsonl files are currently supported for purpose 'batch'", resp.json()["error"]["message"])
+        self.assertIn(
+            "Only .jsonl files are currently supported for purpose 'batch'",
+            resp.json()["error"]["message"],
+        )
 
     def test_user_data_purpose(self):
         """File with purpose user_data should return 200."""
         good = SimpleUploadedFile("ok.jsonl", b"{}\n", content_type="application/json")
-        resp = self.client.post(self.url_files, {"file": good, "purpose": "user_data"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": good, "purpose": "user_data"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 200)
         file_obj = FileObjectModel.objects.get()
         self.assertEqual(file_obj.purpose, "user_data")
@@ -120,13 +139,15 @@ class TestFilesAPI(GatewayFilesTestCase):
         max_mb = settings.AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB
         big = b"a" * (max_mb * 1024 * 1024 + 1)
         f = SimpleUploadedFile("big.jsonl", big, content_type="application/json")
-        resp = self.client.post(self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 413)
         self.assertIn("File 'file' exceeds maximum size", resp.json()["error"]["message"])
 
     @override_settings(AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB=1)
     def test_exceeded_total_files_size(self):
-        """Uploading files with total size bigger than `AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB` should fail."""
+        """Uploading files with total size bigger than limit should fail."""
         content = b"a" * (600 * 1024)  # 600 kB => two such files exceed the limit of 1 MB
         data = {
             "test_file_1": SimpleUploadedFile("test_file_1.txt", content),
@@ -148,10 +169,20 @@ class TestFilesAPI(GatewayFilesTestCase):
         FileObjectModel.objects.bulk_create(
             [
                 FileObjectModel(
-                    id="file-storage-1", bytes=512 * 1024, created_at=42, token=token, purpose="batch", preview=""
+                    id="file-storage-1",
+                    bytes=512 * 1024,
+                    created_at=42,
+                    token=token,
+                    purpose="batch",
+                    preview="",
                 ),
                 FileObjectModel(
-                    id="file-storage-2", bytes=512 * 1024, created_at=43, token=token, purpose="batch", preview=""
+                    id="file-storage-2",
+                    bytes=512 * 1024,
+                    created_at=43,
+                    token=token,
+                    purpose="batch",
+                    preview="",
                 ),
             ]
         )
@@ -159,7 +190,9 @@ class TestFilesAPI(GatewayFilesTestCase):
         content = b"a" * 1024  # 1 kB
         upload_file = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
         # Upload file
-        resp = self.client.post(self.url_files, {"file": upload_file, "purpose": "user_data"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": upload_file, "purpose": "user_data"}, headers=self.headers
+        )
 
         self.assertEqual(resp.status_code, 413, resp.json())
         error = resp.json()["error"]
@@ -199,10 +232,14 @@ class TestFilesAPI(GatewayFilesTestCase):
 
         ids = []
         for i, name in enumerate(["a.jsonl", "b.jsonl", "c.jsonl"]):
-            mock_resp = MockConfig(response_data=FileObject(id=f"file-mock-{i}", **file_data).model_dump())
+            mock_resp = MockConfig(
+                response_data=FileObject(id=f"file-mock-{i}", **file_data).model_dump()
+            )
             f = SimpleUploadedFile(name, b'{"custom_id": "bar"}\n', content_type="application/json")
             with self.mock_server.patch_external_api(self.url_files, mock_resp):
-                resp = self.client.post(self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers)
+                resp = self.client.post(
+                    self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers
+                )
             self.assertEqual(resp.status_code, 200)
             ids.append(resp.json()["id"])
 
@@ -230,7 +267,9 @@ class TestFilesAPI(GatewayFilesTestCase):
         # Upload a file
         content = b'{"custom_id": 1}\n'
         f = SimpleUploadedFile("e.jsonl", content, content_type="application/json")
-        resp = self.client.post(self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": f, "purpose": "batch"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
         file_obj = FileObjectModel.objects.get(id=file_id)
@@ -247,30 +286,48 @@ class TestFilesAPI(GatewayFilesTestCase):
 
     def test_batch_duplicate_custom_ids(self):
         bad = SimpleUploadedFile(
-            "bad.jsonl", b'{"custom_id": "bar"}\n{"custom_id": "bar"}\n', content_type="application/json"
+            "bad.jsonl",
+            b'{"custom_id": "bar"}\n{"custom_id": "bar"}\n',
+            content_type="application/json",
         )
         # unsupported purpose
-        resp = self.client.post(self.url_files, {"file": bad, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": bad, "purpose": "batch"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 400)
         self.assertIn(
-            "Batch file validation failed: Duplicate custom_id found at line 2", resp.json()["error"]["message"]
+            "Batch file validation failed: Duplicate custom_id found at line 2",
+            resp.json()["error"]["message"],
         )
 
     def test_batch_no_custom_ids(self):
         bad = SimpleUploadedFile(
-            "bad.jsonl", b'{"custom_id": "bar"}\n{"something_id": "bar"}\n', content_type="application/json"
+            "bad.jsonl",
+            b'{"custom_id": "bar"}\n{"something_id": "bar"}\n',
+            content_type="application/json",
         )
         # unsupported purpose
-        resp = self.client.post(self.url_files, {"file": bad, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": bad, "purpose": "batch"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("Batch file validation failed: No custom_id found at line 2", resp.json()["error"]["message"])
+        self.assertIn(
+            "Batch file validation failed: No custom_id found at line 2",
+            resp.json()["error"]["message"],
+        )
 
     def test_batch_invalid_json(self):
-        bad = SimpleUploadedFile("bad.jsonl", b'{"custom_id": "bar"}\nnot json\n', content_type="application/json")
+        bad = SimpleUploadedFile(
+            "bad.jsonl", b'{"custom_id": "bar"}\nnot json\n', content_type="application/json"
+        )
         # unsupported purpose
-        resp = self.client.post(self.url_files, {"file": bad, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": bad, "purpose": "batch"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("Batch file validation failed: Invalid JSON at line 2", resp.json()["error"]["message"])
+        self.assertIn(
+            "Batch file validation failed: Invalid JSON at line 2", resp.json()["error"]["message"]
+        )
 
     def test_service_account_file_operations(self):
         """Test that the files API works with service account tokens."""
@@ -290,7 +347,9 @@ class TestFilesAPI(GatewayFilesTestCase):
         headers.pop("Content-Type", None)
 
         file = SimpleUploadedFile("test.txt", b"test file content", content_type="text/plain")
-        resp = self.client.post(self.url_files, data={"file": file, "purpose": "user_data"}, headers=headers)
+        resp = self.client.post(
+            self.url_files, data={"file": file, "purpose": "user_data"}, headers=headers
+        )
         self.assertEqual(resp.status_code, 200, f"Upload failed: {resp.json()}")
         file_id = resp.json()["id"]
         file_obj = FileObjectModel.objects.get()
@@ -323,7 +382,9 @@ class TestFilesAPI(GatewayFilesTestCase):
             if aliases:
                 valid_model_alias = aliases[0]
                 break
-        self.assertIsNotNone(valid_model_alias, "Router config must include at least one model alias")
+        self.assertIsNotNone(
+            valid_model_alias, "Router config must include at least one model alias"
+        )
 
         batch_file = SimpleUploadedFile(
             "batch.jsonl",
@@ -336,7 +397,9 @@ class TestFilesAPI(GatewayFilesTestCase):
             content_type="application/json",
         )
 
-        resp = self.client.post(self.url_files, {"file": batch_file, "purpose": "batch"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": batch_file, "purpose": "batch"}, headers=self.headers
+        )
 
         self.assertEqual(resp.status_code, 400, resp.json())
         error_message = resp.json()["error"]["message"]
@@ -363,7 +426,9 @@ class TestCatchRouterExceptionsFiles(GatewayFilesTestCase):
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
         with self.mock_server.patch_external_api(self.url_files, bad_request):
-            resp = self.client.post(self.url_files, {"file": f, "purpose": "assistants"}, headers=self.headers)
+            resp = self.client.post(
+                self.url_files, {"file": f, "purpose": "assistants"}, headers=self.headers
+            )
 
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Invalid file purpose", resp.json()["error"]["message"])
@@ -373,7 +438,9 @@ class TestCatchRouterExceptionsFiles(GatewayFilesTestCase):
         # Create a file successfully first
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(self.url_files, {"file": f, "purpose": "assistants"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": f, "purpose": "assistants"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 
@@ -402,7 +469,9 @@ class TestCatchRouterExceptionsFiles(GatewayFilesTestCase):
         # Create a file successfully first
         content = b"test content"
         f = SimpleUploadedFile("test.txt", content, content_type="text/plain")
-        resp = self.client.post(self.url_files, {"file": f, "purpose": "assistants"}, headers=self.headers)
+        resp = self.client.post(
+            self.url_files, {"file": f, "purpose": "assistants"}, headers=self.headers
+        )
         self.assertEqual(resp.status_code, 200)
         file_id = resp.json()["id"]
 

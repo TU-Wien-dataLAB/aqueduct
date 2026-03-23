@@ -149,7 +149,9 @@ class TokenRegenerateView(BaseAqueductView, View):
         user = request.user
 
         try:
-            token = get_object_or_404(Token.objects.select_related("service_account__team", "user"), pk=token_id)
+            token = get_object_or_404(
+                Token.objects.select_related("service_account__team", "user"), pk=token_id
+            )
             token_name = token.name
             is_service_account_token = token.service_account is not None
 
@@ -196,7 +198,9 @@ class TokenRegenerateView(BaseAqueductView, View):
             # Redirect to a default page if token not found
             redirect_url = reverse_lazy("tokens")
         except Exception as e:
-            messages.error(request, f"An unexpected error occurred while regenerating the token: {e}")
+            messages.error(
+                request, f"An unexpected error occurred while regenerating the token: {e}"
+            )
             # Try to determine redirect URL based on what we know, default if necessary
             try:
                 # Attempt to get redirect URL again if token was fetched

@@ -3,7 +3,11 @@ from openai.types import ErrorObject
 
 
 def error_response(
-    message: str, error_type: str | None = None, param: str | None = None, code: str | None = None, status: int = 400
+    message: str,
+    error_type: str | None = None,
+    param: str | None = None,
+    code: str | None = None,
+    status: int = 400,
 ) -> JsonResponse:
     """Return an OpenAI-compatible error response."""
     if error_type is None:

@@ -101,7 +101,7 @@ def cache_lock(lock_id, ttl: int):
 
 
 def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
-    """Check if a value is in a list of allowed values or if it matches a wildcard pattern within these values."""
+    """Check if a value is in a list of allowed values or matches a wildcard pattern."""
     if value is None:
         return False
 
@@ -117,8 +117,9 @@ def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
 
 
 def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.AsyncClient, str]:
-    """Returns an OpenAI-compatible async client and provider-specific model name for proxying requests.
-    Used when direct OpenAI SDK client is needed instead of LiteLLM router (e.g., Responses API, Batches API).
+    """Returns an OpenAI-compatible async client and provider-specific model name for proxying.
+    Used when direct OpenAI SDK client is needed instead of LiteLLM router
+    (e.g., Responses API, Batches API).
     """
     try:
         client: openai.AsyncClient = get_openai_client(model)
@@ -127,7 +128,8 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
         raise openai.NotFoundError(
             message=f"Incompatible model '{model}'!",
             response=httpx.Response(
-                request=httpx.Request(method=request.method, url=request.build_absolute_uri()), status_code=404
+                request=httpx.Request(method=request.method, url=request.build_absolute_uri()),
+                status_code=404,
             ),
             body=None,
         ) from None

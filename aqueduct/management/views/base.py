@@ -88,7 +88,10 @@ class OrgAdminRequiredMixin:
         # slightly more robust if used outside the intended pattern, although
         # it's primarily designed to work with BaseAqueductView context.
         if not hasattr(self, "is_org_admin") or not self.is_org_admin():
-            messages.error(request, "You do not have permission to perform this action (Organization Admin required).")
+            messages.error(
+                request,
+                "You do not have permission to perform this action (Organization Admin required).",
+            )
             # Redirect to a sensible default page, like an org overview or dashboard.
             # Ensure 'org_dashboard' or similar exists in your URLs.
             # Using 'org' from the original code as a placeholder.
@@ -114,7 +117,7 @@ class TeamAdminRequiredMixin:
         Example implementation in a view:
             def get_team_object(self):
                 team_id = self.kwargs.get('team_id') # Or other URL parameter
-                return get_object_or_404(Team, pk=team_id, org=self.org) # Optionally scope to user's org
+                return get_object_or_404(Team, pk=team_id, org=self.org)
         """
         raise NotImplementedError(f"{self.__class__.__name__} must implement get_team_object()")
 
@@ -140,7 +143,9 @@ class TeamAdminRequiredMixin:
         # Relies on the is_team_admin method in UserProfile model.
         # Assumes self.profile is available from BaseAqueductView.
         if not self.profile.is_team_admin(self.team_object):
-            messages.error(request, f"You do not have permission to manage the team '{self.team_object.name}'.")
+            messages.error(
+                request, f"You do not have permission to manage the team '{self.team_object.name}'."
+            )
             # Attempt to redirect back to the team's detail view if possible.
             # Fallback to the org dashboard if the team view URL fails.
             try:
@@ -161,7 +166,8 @@ class BaseTeamView(BaseAqueductView):
     Base view providing context for a specific Team instance fetched via URL kwarg.
 
     Inheriting views must:
-    - Set `pk_url_kwarg` to the name of the URL keyword argument containing the Team's primary key (defaults to 'id').
+    - Set `pk_url_kwarg` to the name of the URL keyword argument containing the
+      Team's primary key (defaults to 'id').
     - Ensure the corresponding URL pattern captures this keyword argument.
     """
 
@@ -178,7 +184,8 @@ class BaseTeamView(BaseAqueductView):
             team_pk = self.kwargs.get(self.pk_url_kwarg)
             if team_pk is None:
                 raise Http404(
-                    f"URL keyword argument '{self.pk_url_kwarg}' not found in URLconf for {self.__class__.__name__}."
+                    f"URL keyword argument '{self.pk_url_kwarg}' not found in URLconf "
+                    f"for {self.__class__.__name__}."
                 )
             # Fetch the team. Permission mixins (like TeamAdminRequiredMixin)
             # or view logic should handle authorization.

@@ -71,9 +71,8 @@ class ServiceAccountForm(forms.ModelForm):
                     code="limit_reached",
                 )
         expires_at = cleaned_data.get("token_expires_at")
-        if expires_at:
-            if expires_at <= timezone.now():
-                self.add_error("expires_at", "Expiration date must be in the future.")
+        if expires_at and expires_at <= timezone.now():
+            self.add_error("expires_at", "Expiration date must be in the future.")
         return cleaned_data
 
 
@@ -150,8 +149,7 @@ class TokenCreateForm(forms.ModelForm):
             raise ValidationError(f"You can only have {max_tokens} tokens.")
 
         expires_at = cleaned_data.get("expires_at")
-        if expires_at:
-            if expires_at <= timezone.now():
-                self.add_error("expires_at", "Expiration date must be in the future.")
+        if expires_at and expires_at <= timezone.now():
+            self.add_error("expires_at", "Expiration date must be in the future.")
 
         return cleaned_data

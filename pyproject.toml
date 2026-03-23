@@ -67,7 +67,6 @@ select = [
     "PTH",    # flake8-use-pathlib
     "PIE",    # flake8-pie miscellaneous lints
     "S",      # flake8-bandit security checks
-    "BLE",    # flake8-blind-except
     "TRY",    # tryceratops
     "EM",     # flake8-errmsg
     "DTZ",    # flake8-datetimez
@@ -94,8 +93,6 @@ select = [
     "RUF019",  # Unkeyed membership checks
     "RUF005",  # Collection literal concatenation
     "RUF015",  # Unnecessary list conversion before indexing
-    "SIM118",  # Use key in dict instead of key in dict.keys()
-    "SIM110",  # Use any() instead of for-loop with early return
     "FURB129", # Use list.extend() instead of for-loop with append
     "FURB166", # Use int.from_bytes() instead of manual conversion
     "FURB168", # Use is operator for type comparisons
@@ -105,17 +102,12 @@ select = [
     "FURB181", # Use re.compile() for repeated patterns
     "RUF100",  # Unused noqa directive
     "B904",    # raise-without-from-inside-except
-    "SIM101",  # Use isinstance() instead of type() ==
-    "SIM102",  # Nested if statements that could be combined
-    "SIM103",  # Return boolean directly
-    "SIM201",  # Use x != y instead of not x == y
     "S110",    # try-except-pass detected
     "S112",    # try-except-continue detected
     "RUF013",  # Implicit Optional in type annotations
     "ASYNC",   # flake8-async async/await best practices
     "LOG",     # flake8-logging - logging best practices
     "SLOT",    # flake8-slots - __slots__ optimization
-    "FA",      # flake8-future-annotations - future annotations
     "T10",     # flake8-debugger - debugger detection
     "ICN",     # flake8-import-conventions - import conventions
     "RSE",     # flake8-raise - raise statement improvements
@@ -124,7 +116,7 @@ select = [
     "N",       # pep8-naming - naming conventions
     "PLC"
 ]
-ignore = ["TRY003", "EM101", "EM102", "TRY401", "TRY301", "FIX", "PLC0415", "E731"]
+ignore = ["E731", "TRY003", "EM101", "EM102", "TRY401", "TRY301", "PLC0415", "E731", "SIM108"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 16
@@ -143,37 +135,20 @@ suppress-none-returning = true
 [tool.ruff.lint.per-file-ignores]
 # Ignore `F401` (imported but unused) in all `__init__.py` files
 "__init__.py" = ["F401"]
-# Ignore ANN return type rules in test files
 # DJ007: ModelForm using fields = "__all__" is acceptable for this use case
-# BLE001 in admin actions is intentional for error handling
-"**/admin.py" = ["DJ007", "BLE001"]
+"**/admin.py" = ["DJ007"]
 # DJ012: Model ordering is a style preference, not critical for functionality
 "**/models.py" = ["DJ012"]
-# DJ001: null=True on Request.model with noqa comment - per-file ignore as fallback
 # ERA001: JSON structure example comment is useful documentation
-"**/management/models.py" = ["DJ001", "BLE001", "ERA"]
+# TODO: remove DJ001 on next db migration and add it there
+"**/management/models.py" = ["DJ001"]
 # SIM117: Nested async with statements in tests - this pattern is correct and readable
 # PT: Using unittest-style assertions (self.assertEqual) in unittest test classes
-# FIX: TODO/FIXME comments are useful for tracking work
 # ANN: Return type annotations not enforced in tests
-"**/tests/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "PT", "FIX", "ANN201", "ANN202", "ANN204", "ANN205", "ANN206"]
-"**/tests/**/*.py" = ["SIM117", "S101", "S105", "S106", "S108", "BLE001", "S607", "PT", "FIX", "ANN201", "ANN202", "ANN204", "ANN205", "ANN206"]
+"**/tests/**/*.py" = ["SIM117", "S", "ANN"]
 # SIM105: suppress(Exception) may mask too much, prefer explicit error handling
 "**/management/*.py" = ["SIM105"]
-# SIM108: Ternary operator may reduce clarity for boolean logic with hasattr
-"**/management/*" = ["SIM108"]
-# SIM102: Nested if with `and` combining may change logic order
-"**/management/forms.py" = ["SIM102"]
 # RET504: Explicit return of form in view pattern is intentional
 "**/management/views/tokens.py" = ["RET504"]
-# Examples directory and debug scripts: exceptions allowed for code clarity
-"examples/*.py" = ["PTH", "SIM", "SIM115", "BLE001", "ERA", "T20"]
-"file_id_debug.py" = ["PTH", "SIM", "SIM115", "ERA", "T20"]
-# BLE001: Blind except is intentional in views to return proper error responses
-"**/views/*.py" = ["BLE001"]
-# Phase 3: Additional BLE001 ignores
-"celery.py" = ["BLE001"]
-# E731: Lambda assignments in usage.py are intentional for datetime rounding
-"management/views/usage.py" = ["E731"]
 # S603: Mock API server subprocess call is intentional for test infrastructure
 "mock_api/*.py" = ["S603"]

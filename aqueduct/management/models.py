@@ -886,7 +886,7 @@ class Batch(models.Model):
         null=True, blank=True, help_text="The Unix timestamp (in seconds) for when the batch started processing."
     )
     metadata = JSONField(null=True, blank=True, help_text="Metadata attached to the batch.")
-    # {"input": 0, "total": 0, "completed": 0, "failed": 0 }
+    # {"input": 0, "total": 0, "completed": 0, "failed": 0 }  # noqa: ERA001
     request_counts = JSONField(
         default=default_request_counts,
         null=True,

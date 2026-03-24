@@ -1,10 +1,18 @@
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from django.conf import settings
-from django.utils import timezone
-from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse, Usage
+from litellm.types.utils import (
+    Choices,
+    Delta,
+    EmbeddingResponse,
+    Message,
+    ModelResponse,
+    StreamingChoices,
+    TextChoices,
+    TextCompletionResponse,
+    Usage,
+)
 from openai.pagination import AsyncCursorPage
 from openai.types import (
     Batch,
@@ -139,12 +147,12 @@ default_post_configs = {
             created=1694268190,
             model="text-davinci-003",
             choices=[
-                {
-                    "text": "This is a mock completion response.",
-                    "index": 0,
-                    "logprobs": None,
-                    "finish_reason": "stop",
-                }
+                TextChoices(
+                    text="This is a mock completion response.",
+                    index=0,
+                    logprobs=None,
+                    finish_reason="stop",
+                )
             ],
             usage=Usage(prompt_tokens=10, completion_tokens=7, total_tokens=17),
         ).model_dump()
@@ -156,14 +164,13 @@ default_post_configs = {
             created=1694268190,
             model="gpt-3.5-turbo",
             choices=[
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": "This is a mock chat completion response.",
-                    },
-                    "finish_reason": "stop",
-                }
+                Choices(
+                    index=0,
+                    message=Message(
+                        role="assistant", content="This is a mock chat completion response."
+                    ),
+                    finish_reason="stop",
+                )
             ],
             usage=Usage(
                 prompt_tokens=15,
@@ -195,12 +202,8 @@ default_post_configs = {
             filename="test.jsonl",
             bytes=100,
             purpose="batch",
-            created_at=int(timezone.now().timestamp()),
-            expires_at=int(
-                (
-                    timezone.now() + timedelta(days=settings.AQUEDUCT_FILES_API_EXPIRY_DAYS)
-                ).timestamp()
-            ),
+            created_at=int(datetime.now(tz=UTC).timestamp()),
+            expires_at=int((datetime.now(tz=UTC) + timedelta(days=7)).timestamp()),
             status="processed",
             status_details=None,
             object="file",
@@ -284,7 +287,7 @@ default_post_configs = {
     ),
     "vector_stores/id/file_batches": MockConfig(
         response_data=VectorStoreFileBatch(
-            id="vsb-mock-1",
+            id="vsb-mock-123",
             status="in_progress",
             created_at=1741476542,
             file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=2, cancelled=0),
@@ -294,7 +297,7 @@ default_post_configs = {
     ),
     "vector_stores/id/file_batches/id/cancel": MockConfig(
         response_data=VectorStoreFileBatch(
-            id="vsb-mock-1",
+            id="vsb-mock-123",
             status="cancelled",
             created_at=1741476542,
             file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=0, cancelled=2),
@@ -346,10 +349,10 @@ _chat_completion_stream_data = [
         model="gpt-4.1-nano",
         object="chat.completion.chunk",
         choices=[
-            {
-                "index": 0,
-                "delta": {"content": "Beneath the sky so vast and blue,  \n", "role": "assistant"},
-            }
+            StreamingChoices(
+                index=0,
+                delta=Delta(content="Beneath the sky so vast and blue,  \n", role="assistant"),
+            )
         ],
         stream=True,
         stream_options={"include_usage": True},
@@ -360,7 +363,9 @@ _chat_completion_stream_data = [
         model="gpt-4.1-nano",
         object="chat.completion.chunk",
         choices=[
-            {"index": 0, "delta": {"content": "Whispers of dreams drift softly through,  \n"}}
+            StreamingChoices(
+                index=0, delta=Delta(content="Whispers of dreams drift softly through,  \n")
+            )
         ],
         stream=True,
         stream_options={"include_usage": True},
@@ -370,7 +375,9 @@ _chat_completion_stream_data = [
         created=1768398242,
         model="gpt-4.1-nano",
         object="chat.completion.chunk",
-        choices=[{"index": 0, "delta": {"content": "A gentle breeze, a song so sweet,  \n"}}],
+        choices=[
+            StreamingChoices(index=0, delta=Delta(content="A gentle breeze, a song so sweet,  \n"))
+        ],
         stream=True,
         stream_options={"include_usage": True},
     ).model_dump(),
@@ -379,7 +386,9 @@ _chat_completion_stream_data = [
         created=1768398242,
         model="gpt-4.1-nano",
         object="chat.completion.chunk",
-        choices=[{"index": 0, "delta": {"content": "Moments of magic, softly complete."}}],
+        choices=[
+            StreamingChoices(index=0, delta=Delta(content="Moments of magic, softly complete."))
+        ],
         stream=True,
         stream_options={"include_usage": True},
     ).model_dump(),
@@ -388,7 +397,7 @@ _chat_completion_stream_data = [
         created=1768398242,
         model="gpt-4.1-nano",
         object="chat.completion.chunk",
-        choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        choices=[StreamingChoices(index=0, delta=Delta(), finish_reason="stop")],
         stream=True,
         stream_options={"include_usage": True},
     ).model_dump(),
@@ -635,7 +644,7 @@ default_get_configs = {
     ),
     "vector_stores/id/file_batches/id": MockConfig(
         response_data=VectorStoreFileBatch(
-            id="vsb-mock-1",
+            id="vsb-mock-123",
             status="in_progress",
             created_at=1741476542,
             file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=2, cancelled=0),

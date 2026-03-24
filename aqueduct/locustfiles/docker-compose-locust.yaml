@@ -5,9 +5,9 @@ services:
       context: ../..
       dockerfile: ./aqueduct/locustfiles/Dockerfile
     container_name: mock_api
-    command: python -m mock_api.mock_server --port 45999 --log-level debug
-#    volumes:
-#      - ./locust_router_config.yaml:/app/aqueduct/locust_router_config.yaml
+    command: python -m mock_api.mock_server --port 45999 --delays --log-level debug
+    volumes:
+      - ./locust_router_config.yaml:/app/aqueduct/locust_router_config.yaml
     ports:
       - "45999:45999"
     env_file:

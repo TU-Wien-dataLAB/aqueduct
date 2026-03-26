@@ -31,7 +31,9 @@ vllm = [
 [dependency-groups]
 dev = [
     "channels[daphne]>=4.3.1",
+    "django-stubs[compatible-mypy]==5.2.9",
     "fastapi>=0.115.12",
+    "mypy==1.19.1",
     "pre-commit>=4.2.0",
     "ruff>=0.15.5",
     "tbump>=6.11.0",
@@ -138,3 +140,29 @@ suppress-none-returning = true
 "**/management/models.py" = ["DJ001"]
 # Too much noise for tests
 "**/tests/**/*.py" = ["S", "ANN"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["mypy_django_plugin.main"]
+files = ["gateway"]
+exclude = [
+    "tests",
+    "migrations",
+]
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+    "litellm.*",
+    "mcp.*",
+    "celery.*",
+    "mozilla_django_oidc.*",
+    "openai.*",
+]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "aqueduct.settings"

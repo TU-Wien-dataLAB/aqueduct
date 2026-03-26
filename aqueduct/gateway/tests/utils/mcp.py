@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -6,7 +7,8 @@ import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import wraps
-from typing import Optional
+from pathlib import Path
+from typing import ClassVar
 
 import httpx
 from asgiref.sync import sync_to_async
@@ -23,7 +25,9 @@ from gateway.tests.utils.test_runner import (
 )
 from mock_api.helpers import get_available_port
 
-MCP_CONFIG_PATH = "/tmp/aqueduct/test-mcp-config.json"
+logger = logging.getLogger(__name__)
+
+MCP_CONFIG_PATH = Path("/tmp/aqueduct/test-mcp-config.json")
 MCP_TEST_CONFIG = {
     "mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}
 }
@@ -79,8 +83,8 @@ class MCPDaphneProcess(DaphneProcess):
     def run(self):
         from django.conf import settings
 
-        settings.MCP_CONFIG_FILE_PATH = MCP_CONFIG_PATH
-        print(f"Updating MCP_CONFIG_FILE_PATH: {settings.MCP_CONFIG_FILE_PATH}")
+        settings.MCP_CONFIG_FILE_PATH = str(MCP_CONFIG_PATH)
+        logger.info("Updating MCP_CONFIG_FILE_PATH: %s", settings.MCP_CONFIG_FILE_PATH)
 
         # Configure MCP security settings for testing
         settings.MCP_ENABLE_DNS_REBINDING_PROTECTION = True
@@ -98,9 +102,10 @@ class MCPDaphneProcess(DaphneProcess):
         if "malicious.com" not in settings.ALLOWED_HOSTS:
             settings.ALLOWED_HOSTS.append("malicious.com")
 
-        print(
-            f"MCP Security: Protection={settings.MCP_ENABLE_DNS_REBINDING_PROTECTION}, "
-            f"Hosts={settings.MCP_ALLOWED_HOSTS}"
+        logger.info(
+            "MCP Security: Protection=%s, Hosts=%s",
+            settings.MCP_ENABLE_DNS_REBINDING_PROTECTION,
+            settings.MCP_ALLOWED_HOSTS,
         )
 
         super().run()
@@ -116,8 +121,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
     serve_static = False
     ProtocolServerProcess = MCPDaphneProcess
 
-    fixtures = ["gateway_data.json"]
-    mcp_server_process: Optional[subprocess.Popen] = None
+    fixtures: ClassVar[list[str]] = ["gateway_data.json"]
+    mcp_server_process: subprocess.Popen | None = None
 
     @property
     def mcp_url(self):
@@ -136,7 +141,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         ):
             yield session
 
-    async def assertRequestLogged(self, n: int = 1):
+    async def assert_request_logged(self, n: int = 1):
         from management.models import Request
 
         # Check that (only) initialize request was logged
@@ -146,8 +151,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
 
     @classmethod
     def _write_mcp_config(cls):
-        os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
-        with open(MCP_CONFIG_PATH, "w") as f:
+        MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with MCP_CONFIG_PATH.open("w") as f:
             json.dump(MCP_TEST_CONFIG, f)
 
     @classmethod
@@ -155,8 +160,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         config = deepcopy(MCP_TEST_CONFIG)
         config["mcpServers"]["test-server"]["url"] = f"http://localhost:{port}/mcp"
 
-        os.makedirs(os.path.dirname(MCP_CONFIG_PATH), exist_ok=True)
-        with open(MCP_CONFIG_PATH, "w") as f:
+        MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with MCP_CONFIG_PATH.open("w") as f:
             json.dump(config, f)
 
     @classmethod
@@ -167,7 +172,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         cls.mcp_server_port = port
         cls._update_mcp_config_port(port)
 
-        print(f"\nStarting MCP everything server on port {port}...")
+        logger.info("Starting MCP everything server on port %s...", port)
         try:
             env = os.environ.copy()
             env["PORT"] = str(port)
@@ -182,19 +187,19 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 stderr=subprocess.STDOUT,
                 text=True,
                 env=env,
-                cwd=os.path.dirname(MCP_CONFIG_PATH),
-                preexec_fn=os.setsid,  # Create new process group for Unix
+                cwd=str(MCP_CONFIG_PATH.parent),
+                start_new_session=True,
             )
-        except FileNotFoundError:
+        except FileNotFoundError as err:
             raise RuntimeError(
                 "npx command not found. Please ensure Node.js and npm are installed."
-            )
+            ) from err
 
         # Set global variables enabling the tests to share the MCP server process
         set_shared_mcp_server(cls.mcp_server_process, cls.mcp_server_port)
 
         # Wait for server to be ready by checking if it accepts connections
-        print(f"Waiting for MCP server to accept connections on port {port}...")
+        logger.info("Waiting for MCP server to accept connections on port %s...", port)
         start_time = time.time()
         timeout = 30
         last_error = None
@@ -210,15 +215,16 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                     sock.settimeout(1.0)
                     sock.connect(("localhost", port))
-                    print(f"✓ MCP everything server started successfully on port {port}")
+                    logger.info("✓ MCP everything server started successfully on port %s", port)
                     return
-            except (socket.error, ConnectionRefusedError, OSError) as e:
+            except (ConnectionRefusedError, OSError) as e:
                 last_error = e
                 time.sleep(0.5)
 
         # If we get here, timeout occurred
         raise RuntimeError(
-            f"MCP server did not accept connections within {timeout} seconds. Last error: {last_error}"
+            f"MCP server did not accept connections within {timeout} seconds. "
+            f"Last error: {last_error}"
         )
 
     @classmethod
@@ -236,7 +242,8 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             cls._write_mcp_config()
             cls._start_mcp_server()
         else:
-            assert (mcp_port := get_mcp_server_port()) is not None, (
+            mcp_port = get_mcp_server_port()
+            assert mcp_port is not None, (
                 "Global MCP test server port is not set, even though the server process "
                 "exists already. This should not happen!"
             )

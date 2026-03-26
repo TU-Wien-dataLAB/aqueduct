@@ -1,17 +1,18 @@
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.contrib import messages
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
-from ..models import VectorStore
-from .base import BaseAqueductView
+from management.models import VectorStore
+from management.views.base import BaseAqueductView
 
 log = logging.getLogger(__name__)
 
@@ -24,11 +25,11 @@ class UserVectorStoresView(BaseAqueductView, TemplateView):
 
     template_name = "management/vector_stores.html"
 
-    def _annotate_vector_stores(self, vector_stores):
+    def _annotate_vector_stores(self, vector_stores) -> list:
         """Add computed fields to vector store instances for template rendering."""
         result = []
         for vs in vector_stores:
-            vs.created_dt = datetime.fromtimestamp(vs.created_at)
+            vs.created_dt = datetime.fromtimestamp(vs.created_at, tz=UTC)
             vs.files_count = vs.files.count()
             vs.batches_count = vs.file_batches.count()
             vs.size_bytes = sum(
@@ -37,7 +38,7 @@ class UserVectorStoresView(BaseAqueductView, TemplateView):
             result.append(vs)
         return result
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         profile = self.profile
         user = profile.user
@@ -79,7 +80,7 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
 
     template_name = "management/vector_store_detail.html"
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         profile = self.profile
         user = profile.user
@@ -99,15 +100,17 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
 
         if vector_store:
             # Convert timestamps to datetime
-            vector_store.created_dt = datetime.fromtimestamp(vector_store.created_at)
+            vector_store.created_dt = datetime.fromtimestamp(vector_store.created_at, tz=UTC)
             if vector_store.last_active_at:
-                vector_store.last_active_dt = datetime.fromtimestamp(vector_store.last_active_at)
+                vector_store.last_active_dt = datetime.fromtimestamp(
+                    vector_store.last_active_at, tz=UTC
+                )
 
             # Prepare files with datetime conversion and calculate total size
             files = []
             total_size = 0
             for vf in vector_store.files.all():
-                vf.created_dt = datetime.fromtimestamp(vf.created_at)
+                vf.created_dt = datetime.fromtimestamp(vf.created_at, tz=UTC)
                 if vf.file_obj:
                     total_size += vf.file_obj.bytes
                 files.append(vf)
@@ -116,7 +119,7 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
             # Prepare batches with progress calculation
             batches = []
             for batch in vector_store.file_batches.all():
-                batch.created_dt = datetime.fromtimestamp(batch.created_at)
+                batch.created_dt = datetime.fromtimestamp(batch.created_at, tz=UTC)
                 file_counts = batch.file_counts or {}
                 total = file_counts.get("total", 0)
                 completed = file_counts.get("completed", 0)
@@ -146,7 +149,7 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
         return context
 
 
-def _refresh_vector_store(vs):
+def _refresh_vector_store(vs) -> bool:
     """
     Refresh a single VectorStore from upstream.
     Calls areload_from_upstream() with raise_on_error=False.
@@ -154,10 +157,11 @@ def _refresh_vector_store(vs):
     """
     try:
         result = async_to_sync(vs.areload_from_upstream)(raise_on_error=False)
-        return result is not None
     except Exception:
-        log.exception(f"Failed to refresh vector store {vs.id} from upstream")
+        log.exception("Failed to refresh vector store %s from upstream", vs.id)
         return False
+    else:
+        return result is not None
 
 
 class VectorStoreCardRefreshView(BaseAqueductView, View):
@@ -166,7 +170,7 @@ class VectorStoreCardRefreshView(BaseAqueductView, View):
     then redirects back to the vector stores list page.
     """
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs) -> HttpResponse:
         user = self.profile.user
         teams = self.get_teams_for_user()
         vector_store_id = self.kwargs.get("id")
@@ -194,7 +198,7 @@ class VectorStoreDetailRefreshView(BaseAqueductView):
     from the upstream API, then redirects back to the detail page.
     """
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs) -> HttpResponse:
         user = self.profile.user
         teams = self.get_teams_for_user()
         vector_store_id = self.kwargs.get("id")

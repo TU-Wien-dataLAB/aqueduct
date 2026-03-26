@@ -107,8 +107,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
-        batch_id = resp.json()["id"]
-        return batch_id
+        return resp.json()["id"]
 
     def test_vector_store_lifecycle(self):
         """Test full lifecycle: create, list, get, modify, delete vector store."""
@@ -171,11 +170,8 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
 
         # Create up to limit
         VectorStoreModel.objects.all().delete()
-        user_stores = []
         for i in range(settings.MAX_USER_VECTOR_STORES):
-            user_stores.append(
-                self._create_vector_store(vs_id=f"vs-mock-{i}", name=f"Store nr {i}")
-            )
+            self._create_vector_store(vs_id=f"vs-mock-{i}", name=f"Store nr {i}")
 
         # Try to exceed limit
         resp = self.client.post(
@@ -365,7 +361,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
     def test_isolation_between_tokens(self):
         """Users can't see each other's vector stores."""
         # Create new user and token
-        other_token_value, other_user_id = self.create_new_user()
+        other_token_value, _other_user_id = self.create_new_user()
         other_headers = {"Authorization": f"Bearer {other_token_value}"}
 
         # Try to access the vector store of one user with the different user's secret
@@ -945,7 +941,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         # Verify batch-created records exist locally with file IDs as their IDs
         batch_files = VectorStoreFileModel.objects.filter(vector_store=self.vs_obj)
         self.assertEqual(batch_files.count(), 2)
-        batch_file_ids = set(f.id for f in batch_files)
+        batch_file_ids = {f.id for f in batch_files}
         self.assertEqual(batch_file_ids, {"file-mock-1", "file-mock-2"})
 
         # List files - returns upstream data directly
@@ -967,7 +963,7 @@ class TestVectorStoresAPI(GatewayFilesTestCase):
         )
 
     def test_list_vector_store_files_response_structure(self):
-        """Test that list vector store files endpoint returns complete, correctly-mapped response items."""
+        """Test that list vector store files endpoint returns complete, correctly-mapped items."""
 
         files_url = reverse("gateway:vector_store_files", kwargs={"vector_store_id": self.vs_id})
 

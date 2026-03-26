@@ -1,8 +1,9 @@
 import json
 import logging
 import time
+from collections.abc import AsyncGenerator
 from contextlib import contextmanager
-from typing import Any, AsyncGenerator
+from typing import Any
 
 import httpx
 import litellm
@@ -49,8 +50,7 @@ def _get_token_usage(content: bytes | dict) -> Usage:
         input_tokens = usage_dict.get("prompt_tokens") or usage_dict.get("input_tokens", 0)
         output_tokens = usage_dict.get("completion_tokens") or usage_dict.get("output_tokens", 0)
         return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
-    else:
-        return Usage(input_tokens=0, output_tokens=0)
+    return Usage(input_tokens=0, output_tokens=0)
 
 
 def _openai_stream(
@@ -73,7 +73,7 @@ def _openai_stream(
             try:
                 yield f"data: {chunk_str}\n\n"
             except Exception as e:
-                yield f"data: {str(e)}\n\n"
+                yield f"data: {e!s}\n\n"
 
         request_log.token_usage = token_usage
         request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
@@ -101,7 +101,7 @@ def cache_lock(lock_id, ttl: int):
 
 
 def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
-    """Check if a value is in a list of allowed values or if it matches a wildcard pattern within these values."""
+    """Check if a value is in a list of allowed values or matches a wildcard pattern."""
     if value is None:
         return False
 
@@ -117,13 +117,14 @@ def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
 
 
 def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.AsyncClient, str]:
-    """Returns an OpenAI-compatible async client and provider-specific model name for proxying requests.
-    Used when direct OpenAI SDK client is needed instead of LiteLLM router (e.g., Responses API, Batches API).
+    """Returns an OpenAI-compatible async client and provider-specific model name for proxying.
+    Used when direct OpenAI SDK client is needed instead of LiteLLM router
+    (e.g., Responses API, Batches API).
     """
     try:
         client: openai.AsyncClient = get_openai_client(model)
     except ValueError:
-        log.error(f"Incompatible model '{model}'! Is model id set in router config?")
+        log.exception("Incompatible model '%s'! Is model id set in router config?", model)
         raise openai.NotFoundError(
             message=f"Incompatible model '{model}'!",
             response=httpx.Response(
@@ -131,12 +132,12 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
                 status_code=404,
             ),
             body=None,
-        )
+        ) from None
 
     router = get_router()
     deployment: litellm.Deployment = router.get_deployment(model_id=model)
 
-    model_relay, provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
+    model_relay, _provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
     return client, model_relay
 
 
@@ -149,10 +150,10 @@ class ResponseRegistrationWrapper:
         self.user_email = email
         self._registered = False
 
-    def __aiter__(self):
+    def __aiter__(self) -> "ResponseRegistrationWrapper":
         return self
 
-    async def __anext__(self):
+    async def __anext__(self) -> str:
         try:
             # Iterate through the streaming content
             if hasattr(self.streaming_content, "__anext__"):
@@ -160,18 +161,17 @@ class ResponseRegistrationWrapper:
             else:
                 # Handle iterator-like objects
                 chunk = next(self.streaming_content)
-
+        except StopAsyncIteration:
+            raise
+        except StopIteration:
+            raise StopAsyncIteration from None
+        else:
             if not self._registered and chunk:
                 response_id = self.extract_response_id_from_chunk(chunk)
                 if response_id:
                     register_response_in_cache(response_id, self.model_name, self.user_email)
                     self._registered = True
-
             return chunk
-        except StopAsyncIteration:
-            raise
-        except StopIteration:
-            raise StopAsyncIteration
 
     @staticmethod
     def extract_response_id_from_chunk(chunk: bytes) -> str | None:
@@ -191,7 +191,7 @@ class ResponseRegistrationWrapper:
 def register_response_in_cache(response_id: str | None, model: str, email: str):
     """Registers a response in the cache for later retrieval."""
     if not response_id:
-        log.warning(f"Missing response data: id={response_id}, model={model}")
+        log.warning("Missing response data: id=%s, model=%s", response_id, model)
         raise ValueError("Missing response_id")
 
     cache_key = f"response:{response_id}"
@@ -199,7 +199,7 @@ def register_response_in_cache(response_id: str | None, model: str, email: str):
 
     response_cache = caches["default"]
     response_cache.set(cache_key, cache_value, timeout=settings.RESPONSES_API_TTL_SECONDS)
-    log.debug(f"Registered response {response_id} for user {email} with model {model}")
+    log.debug("Registered response %s for user %s with model %s", response_id, email, model)
 
 
 def get_response_from_cache(response_id: str) -> dict | None:

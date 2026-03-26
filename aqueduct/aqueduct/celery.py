@@ -1,9 +1,12 @@
 import asyncio
+import logging
 import os
 
 from celery import Celery
 from django.conf import settings
 from django.utils import timezone
+
+logger = logging.getLogger("aqueduct")
 
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "aqueduct.settings")
@@ -32,7 +35,7 @@ def delete_old_requests(self):
     old_requests = Request.objects.filter(timestamp__lt=cutoff)
     count = old_requests.count()
     old_requests.delete()
-    print(f"Deleted {count} requests older than {retention_days} days (before {cutoff})")
+    logger.info("Deleted %s requests older than %s days (before %s)", count, retention_days, cutoff)
 
 
 @app.task(bind=True, ignore_result=True)
@@ -47,7 +50,7 @@ def delete_silk_models(self):
     delete_model(silk.models.SQLQuery)
     delete_model(silk.models.Response)
     delete_model(silk.models.Request)
-    print("Cleared Silk profiling logs.")
+    logger.info("Cleared Silk profiling logs.")
 
 
 @app.task(bind=True, ignore_result=True)
@@ -70,7 +73,7 @@ def delete_expired_files_and_batches(self):
     except ValueError:
         client = None
         files_api_configured = False
-        print("Files API not configured - will skip upstream deletion")
+        logger.warning("Files API not configured - will skip upstream deletion")
 
     # Expired files
     files_qs = FileObject.objects.filter(expires_at__isnull=False, expires_at__lt=now_ts)
@@ -88,12 +91,12 @@ def delete_expired_files_and_batches(self):
             # Always delete local record
             file_obj.delete()
         except Exception as e:
-            print(f"Failed to delete expired file {file_obj.id}: {e}")
+            logger.warning("Failed to delete expired file %s: %s", file_obj.id, e)
 
-    print(f"Deleted {files_count} expired files ({upstream_deleted} from upstream).")
+    logger.info("Deleted %s expired files (%s from upstream).", files_count, upstream_deleted)
 
     # Expired batches - just delete local records
     # (batch resources are managed by the upstream provider)
     batches_qs = Batch.objects.filter(expires_at__isnull=False, expires_at__lt=now_ts)
     batches_count, _ = batches_qs.delete()
-    print(f"Deleted {batches_count} expired batches.")
+    logger.info("Deleted %s expired batches.", batches_count)

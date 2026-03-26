@@ -13,7 +13,7 @@ class ModelListView(LoginRequiredMixin, TemplateView):
 
     template_name = "management/model_list.html"
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         try:
             model_list = deepcopy(get_router_config())["model_list"]

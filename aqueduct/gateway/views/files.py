@@ -35,7 +35,7 @@ class FilesCreateParams(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-def calculate_expires_at(remote_expires_at: Optional[int]) -> int:
+def calculate_expires_at(remote_expires_at: int | None) -> int:
     """Calculate local expiry timestamp, using earlier of local or upstream expiry."""
     now = timezone.now()
     expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
@@ -46,7 +46,7 @@ def calculate_expires_at(remote_expires_at: Optional[int]) -> int:
     return local_expires_at
 
 
-def validate_batch_file(data: bytes):
+def validate_batch_file(data: bytes) -> None:
     """Validate batch file format: valid JSON lines with unique custom_ids."""
     lines = data.decode("utf-8").splitlines()
     custom_ids = set()
@@ -55,24 +55,23 @@ def validate_batch_file(data: bytes):
             continue
         try:
             d = json.loads(line)
-        except json.decoder.JSONDecodeError:
-            raise ValueError(f"Invalid JSON at line {i + 1}")
+        except json.decoder.JSONDecodeError as err:
+            raise ValueError(f"Invalid JSON at line {i + 1}") from err
         custom_id = d.get("custom_id")
         if not custom_id:
             raise ValueError(f"No custom_id found at line {i + 1}")
-        elif custom_id in custom_ids:
+        if custom_id in custom_ids:
             raise ValueError(f"Duplicate custom_id found at line {i + 1}")
-        else:
-            custom_ids.add(custom_id)
+        custom_ids.add(custom_id)
 
 
 async def sync_batch_file_if_needed(
-    remote_file_id: Optional[str],
+    remote_file_id: str | None,
     token: Token,
     client: AsyncOpenAI,
     batch_obj: Optional["Batch"] = None,
     field_name: Literal["output_file", "error_file"] = "output_file",
-) -> Optional[FileObject]:
+) -> FileObject | None:
     """
     Ensure a local FileObject record exists for a batch output/error file.
 
@@ -138,12 +137,12 @@ async def sync_batch_file_if_needed(
 async def files(
     request: ASGIRequest,
     token: Token,
-    pydantic_model: Optional[OpenAIFileCreateParams] = None,
-    file_content: Optional[bytes] = None,
-    file_preview: Optional[str] = None,
+    pydantic_model: OpenAIFileCreateParams | None = None,
+    file_content: bytes | None = None,
+    file_preview: str | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     try:
         client = get_files_api_client()
     except ValueError:
@@ -198,7 +197,8 @@ async def files(
     max_total_bytes = settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB * 1024 * 1024
     if current_total + len(file_content) > max_total_bytes:
         return error_response(
-            f"Total files size exceeds {settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB}MB limit.",
+            f"Total files size exceeds "
+            f"{settings.AQUEDUCT_FILES_API_MAX_PER_TOKEN_SIZE_MB}MB limit.",
             status=413,
         )
 
@@ -207,7 +207,7 @@ async def files(
         try:
             validate_batch_file(file_content)
         except ValueError as e:
-            return error_response(f"Batch file validation failed: {str(e)}", status=400)
+            return error_response(f"Batch file validation failed: {e!s}", status=400)
 
     # file_content is already read and processed by @process_batch_file decorator
     # For batch files: model names are rewritten
@@ -246,7 +246,7 @@ async def files(
 @token_authenticated(token_auth_only=True)
 @log_request
 @catch_router_exceptions
-async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
+async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs) -> JsonResponse:
     """
     Retrieve or delete a specific file.
 
@@ -276,7 +276,6 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
         response_data = remote_file.model_dump()
         return JsonResponse(response_data, status=200)
 
-    # DELETE /files/{file_id}
     await file_obj.adelete_upstream(client)
 
     # Delete local record
@@ -292,7 +291,9 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
 @token_authenticated(token_auth_only=True)
 @log_request
 @catch_router_exceptions
-async def file_content(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs):
+async def file_content(
+    request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
+) -> HttpResponse | JsonResponse:
     """
     Retrieve the content of a specific file.
 

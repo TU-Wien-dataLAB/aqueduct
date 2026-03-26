@@ -2,14 +2,15 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import QuerySet
-from django.http import Http404  # Removed HttpResponseForbidden as redirect is used
+from django.http import (
+    Http404,  # Removed HttpResponseForbidden as redirect is used
+    HttpResponse,
+)
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
 
-# from django.conf import settings # No longer needed in this file
-# Import your models (assuming they are in '..models')
-from ..models import Org, ServiceAccount, Team, UserProfile
+from management.models import Org, ServiceAccount, Team, UserProfile
 
 
 class BaseAqueductView(LoginRequiredMixin, View):
@@ -66,10 +67,9 @@ class BaseAqueductView(LoginRequiredMixin, View):
         if self.is_org_admin():
             # Org admin sees all teams in their organization.
             return self.org.teams.all()
-        else:
-            # Regular user sees only teams they are a member of via the ManyToManyField.
-            # The 'teams' attribute is guaranteed to exist due to the M2M definition.
-            return self.profile.teams.all()
+        # Regular user sees only teams they are a member of via the ManyToManyField.
+        # The 'teams' attribute is guaranteed to exist due to the M2M definition.
+        return self.profile.teams.all()
 
 
 # --- Mixins for Permission Checks ---
@@ -82,7 +82,7 @@ class OrgAdminRequiredMixin:
     or a view providing an `is_org_admin` method.
     """
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs) -> HttpResponse:
         # We rely on the inheriting view (like BaseAqueductView) providing is_org_admin.
         # This check ensures the method exists before calling it, making the mixin
         # slightly more robust if used outside the intended pattern, although
@@ -117,11 +117,11 @@ class TeamAdminRequiredMixin:
         Example implementation in a view:
             def get_team_object(self):
                 team_id = self.kwargs.get('team_id') # Or other URL parameter
-                return get_object_or_404(Team, pk=team_id, org=self.org) # Optionally scope to user's org
+                return get_object_or_404(Team, pk=team_id, org=self.org)
         """
         raise NotImplementedError(f"{self.__class__.__name__} must implement get_team_object()")
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs) -> HttpResponse:
         # Assumes LoginRequiredMixin ran first, so request.user is authenticated.
         # Assumes BaseAqueductView context provides self.profile.
 
@@ -166,7 +166,8 @@ class BaseTeamView(BaseAqueductView):
     Base view providing context for a specific Team instance fetched via URL kwarg.
 
     Inheriting views must:
-    - Set `pk_url_kwarg` to the name of the URL keyword argument containing the Team's primary key (defaults to 'id').
+    - Set `pk_url_kwarg` to the name of the URL keyword argument containing the
+      Team's primary key (defaults to 'id').
     - Ensure the corresponding URL pattern captures this keyword argument.
     """
 
@@ -183,8 +184,8 @@ class BaseTeamView(BaseAqueductView):
             team_pk = self.kwargs.get(self.pk_url_kwarg)
             if team_pk is None:
                 raise Http404(
-                    f"URL keyword argument '{self.pk_url_kwarg}' not found in URLconf for "
-                    f"{self.__class__.__name__}."
+                    f"URL keyword argument '{self.pk_url_kwarg}' not found in URLconf "
+                    f"for {self.__class__.__name__}."
                 )
             # Fetch the team. Permission mixins (like TeamAdminRequiredMixin)
             # or view logic should handle authorization.
@@ -214,7 +215,7 @@ class BaseTeamView(BaseAqueductView):
     # --- Convenience for Generic Views ---
     # Override get_object common in DetailView/UpdateView/DeleteView
     # to return the team object by default if not overridden.
-    def get_object(self, queryset=None):
+    def get_object(self, queryset=None) -> Team | ServiceAccount:
         """
         Default implementation for generic views to return the fetched Team object.
         """
@@ -271,7 +272,7 @@ class BaseServiceAccountView(TeamAdminRequiredMixin, BaseAqueductView):
         return sa.team
 
     # --- Convenience for inheriting views ---
-    def get_object(self, queryset=None):
+    def get_object(self, queryset=None) -> ServiceAccount:
         """
         Default implementation for generic views (like DetailView, DeleteView)
         to return the fetched Service Account object after permissions are checked.

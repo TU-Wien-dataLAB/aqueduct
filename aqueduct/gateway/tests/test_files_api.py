@@ -23,7 +23,10 @@ User = get_user_model()
 class TestFilesAPI(GatewayFilesTestCase):
     def test_file_lifecycle(self):
         """Test uploading, listing, retrieving, downloading, and deleting a file."""
-        content = b'{"custom_id": "bar"}\n{"custom_id": "123"}\n{"custom_id": "baz"}\n{"custom_id": "1234"}\n'
+        content = (
+            b'{"custom_id": "bar"}\n{"custom_id": "123"}\n'
+            b'{"custom_id": "baz"}\n{"custom_id": "1234"}\n'
+        )
         upload_file = SimpleUploadedFile("test.jsonl", content, content_type="application/jsonl")
 
         # Upload file
@@ -60,7 +63,7 @@ class TestFilesAPI(GatewayFilesTestCase):
         response_lines = response.content.splitlines()
         original_lines = content.splitlines()
         self.assertEqual(len(response_lines), len(original_lines))
-        for resp_line, orig_line in zip(response_lines, original_lines):
+        for resp_line, orig_line in zip(response_lines, original_lines, strict=True):
             resp_data = json.loads(resp_line)
             orig_data = json.loads(orig_line)
             self.assertEqual(resp_data["custom_id"], orig_data["custom_id"])
@@ -144,7 +147,7 @@ class TestFilesAPI(GatewayFilesTestCase):
 
     @override_settings(AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB=1)
     def test_exceeded_total_files_size(self):
-        """Uploading files with total size bigger than `AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB` should fail."""
+        """Uploading files with total size bigger than limit should fail."""
         content = b"a" * (600 * 1024)  # 600 kB => two such files exceed the limit of 1 MB
         data = {
             "test_file_1": SimpleUploadedFile("test_file_1.txt", content),
@@ -390,7 +393,7 @@ class TestFilesAPI(GatewayFilesTestCase):
                 f'"body":{{"model":"{valid_model_alias}","messages":[{{"role":"user","content":"hi"}}]}}}}\n'
                 '{"custom_id":"bad-2","method":"POST","url":"/v1/chat/completions",'
                 '"body":{"model":"not-configured-model","messages":[{"role":"user","content":"hi"}]}}\n'
-            ).encode("utf-8"),
+            ).encode(),
             content_type="application/json",
         )
 

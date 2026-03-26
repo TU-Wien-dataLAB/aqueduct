@@ -73,7 +73,7 @@ async def vector_store_file_batches(
     pydantic_model: FileBatchCreateParams,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/file_batches - Create file batch
     """
@@ -103,7 +103,8 @@ async def vector_store_file_batches(
         )
 
     # Handle both file_ids and files formats
-    # Extract file_ids for lookup; pass full files dicts to upstream to preserve attributes and chunking_strategy
+    # Extract file_ids for lookup; pass full files dicts to upstream to preserve
+    # attributes and chunking_strategy
     if files:
         file_ids = [f["file_id"] for f in files]
 
@@ -158,7 +159,7 @@ async def vector_store_file_batches(
     # Create VectorStoreFile records for each file in the batch
     # Use transaction and check file limit
     @sync_to_async
-    def create_batch_files():
+    def create_batch_files() -> list[VectorStoreFile] | None:
         with transaction.atomic():
             max_files = settings.MAX_VECTOR_STORE_FILES
             current_count = VectorStoreFile.objects.filter(vector_store=vs_obj).count()
@@ -196,7 +197,7 @@ async def vector_store_file_batches(
 @catch_router_exceptions
 async def vector_store_file_batch(
     request: ASGIRequest, token: Token, vector_store_id: str, batch_id: str, *args, **kwargs
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/file_batches/{batch_id} - Retrieve batch
     """
@@ -252,7 +253,7 @@ async def vector_store_file_batch(
 @catch_router_exceptions
 async def vector_store_file_batch_cancel(
     request: ASGIRequest, token: Token, vector_store_id: str, batch_id: str, *args, **kwargs
-):
+) -> JsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/file_batches/{batch_id}/cancel - Cancel batch
     """
@@ -312,7 +313,7 @@ async def vector_store_file_batch_cancel(
 @catch_router_exceptions
 async def vector_store_file_batch_files(
     request: ASGIRequest, token: Token, vector_store_id: str, batch_id: str, *args, **kwargs
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/file_batches/{batch_id}/files - List files in batch
     """

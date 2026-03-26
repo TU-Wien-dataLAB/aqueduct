@@ -43,7 +43,7 @@ async def chat_completions(
     request_log: Request,
     *args,
     **kwargs,
-):
+) -> JsonResponse | StreamingHttpResponse:
     router = get_router()
     chat_completion: CustomStreamWrapper | ModelResponse = await router.acompletion(
         **pydantic_model
@@ -53,11 +53,10 @@ async def chat_completions(
             streaming_content=_openai_stream(stream=chat_completion, request_log=request_log),
             content_type="text/event-stream",
         )
-    elif isinstance(chat_completion, ModelResponse):
+    if isinstance(chat_completion, ModelResponse):
         data = chat_completion.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)
         return JsonResponse(data=data, status=200)
-    else:
-        raise NotImplementedError(
-            f"Completion for response type {type(chat_completion)} is not implemented."
-        )
+    raise NotImplementedError(
+        f"Completion for response type {type(chat_completion)} is not implemented."
+    )

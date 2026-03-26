@@ -5,10 +5,10 @@ import logging
 import re
 import sys
 import time
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
-from typing import Iterable
 
 import httpx
 import litellm
@@ -37,11 +37,15 @@ from management.models import FileObject, Request, Token, VectorStore
 
 log = logging.getLogger("aqueduct")
 
+ViewResult = HttpResponse | StreamingHttpResponse
+AsyncView = Callable[..., Awaitable[ViewResult]]
+Decorator = Callable[[AsyncView], AsyncView]
 
-def token_authenticated(token_auth_only: bool):
-    def decorator(view_func):
+
+def token_authenticated(token_auth_only: bool) -> Decorator:
+    def decorator(view_func: AsyncView) -> AsyncView:
         @wraps(view_func)
-        async def wrapper(request: ASGIRequest, *args, **kwargs):
+        async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
             unauthorized_response = error_response("Authentication Required", status=401)
             # Authentication Check
             if not (await request.auser()).is_authenticated:
@@ -53,11 +57,11 @@ def token_authenticated(token_auth_only: bool):
 
             if not getattr(request, "user", None) or not request.user.is_authenticated:
                 log.error(
-                    "Authentication check failed in ai_gateway_view: request.user "
-                    "is not authenticated."
+                    "Authentication check failed in ai_gateway_view: "
+                    "request.user is not authenticated."
                 )
                 return unauthorized_response
-            log.debug(f"User {request.user.email} authenticated.")
+            log.debug("User %s authenticated.", request.user.email)
 
             token_key = token_from_request(request)
             if token_auth_only and not token_key:
@@ -67,7 +71,7 @@ def token_authenticated(token_auth_only: bool):
             if token_key:
                 token = await sync_to_async(Token.find_by_key)(token_key)
             else:
-                # user is authenticated but not via token -> take first token via Token.objects to use async ORM
+                # user authenticated but not via token -> use Token.objects for async ORM
                 token = (
                     await Token.objects.select_related(
                         "user__profile__org", "service_account__team__org"
@@ -90,8 +94,6 @@ def token_authenticated(token_auth_only: bool):
 class FileSizeError(Exception):
     """Raised when file size limits are exceeded."""
 
-    pass
-
 
 def _parse_multipart_body(request: ASGIRequest) -> dict:
     """
@@ -111,8 +113,10 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
             data[key] = json.loads(value)
         except (TypeError, json.JSONDecodeError):
             if key == "timestamp_granularities[]":
-                # OpenAI SKD turns timestamp_granularities into timestamp_granularities[] when sending HTTP request
-                # This has to be undone to avoid errors with the subsequent client.audio.transcriptions.create call
+                # OpenAI SDK turns timestamp_granularities into timestamp_granularities[]
+                # when sending HTTP request
+                # This has to be undone to avoid errors with subsequent
+                # client.audio.transcriptions.create call
                 data["timestamp_granularities"] = request.POST.getlist(key)
             else:
                 data[key] = value
@@ -139,7 +143,7 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
     return data
 
 
-def parse_body(model: TypeAdapter):
+def parse_body(model: TypeAdapter) -> Decorator:
     """
     Decorator that parses and validates HTTP request bodies for async view functions.
 
@@ -157,9 +161,9 @@ def parse_body(model: TypeAdapter):
         Decorator function that wraps async view functions.
     """
 
-    def decorator(view_func):
+    def decorator(view_func: AsyncView) -> AsyncView:
         @wraps(view_func)
-        async def wrapper(request: ASGIRequest, *args, **kwargs):
+        async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
             if request.method != "POST":
                 return await view_func(request, *args, **kwargs)
 
@@ -174,15 +178,15 @@ def parse_body(model: TypeAdapter):
                 try:
                     data = json.loads(body)
                 except json.JSONDecodeError as e:
-                    log.error(f"JSON decode error: {str(e)}, body was: {request.body!r}")
-                    return error_response(f"Invalid JSON: {str(e)}", status=400)
+                    log.exception("JSON decode error: %s, body was: %r", e, request.body)
+                    return error_response(f"Invalid JSON: {e!s}", status=400)
             elif content_type.startswith("multipart/form-data"):
                 try:
                     data = _parse_multipart_body(request)
                 except FileSizeError as e:
                     return error_response(str(e), status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             else:
-                log.error(f"Unsupported Content-Type: {content_type}")
+                log.error("Unsupported Content-Type: %s", content_type)
                 return error_response(
                     f"Unsupported Content-Type: {content_type}",
                     status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
@@ -195,15 +199,15 @@ def parse_body(model: TypeAdapter):
             try:
                 model.validate_python(data)
             except ValidationError as e:
-                log.error(f"Validation error: {e}")
+                log.exception("Validation error: %s", e)
                 error_messages = ", ".join(
                     f"{err['loc'][0] if err['loc'] else 'field'}: {err['msg']}"
                     for err in e.errors()
                 )
                 return error_response(error_messages, status=HTTPStatus.BAD_REQUEST)
             except Exception as e:
-                log.error(f"Request body parse error: {str(e)}, data was: {data!r}")
-                return error_response(f"Failed to parse the request body: {str(e)}", status=400)
+                log.exception("Request body parse error: %s, data was: %r", e, data)
+                return error_response(f"Failed to parse the request body: {e!s}", status=400)
 
             # If there are files sent with the request (i.e. content type is "multipart/form-data"),
             # update bytes to BytesIO because pydantic TypeAdapter has problems with BytesIO.
@@ -225,29 +229,28 @@ def parse_body(model: TypeAdapter):
     return decorator
 
 
-def ensure_usage(view_func):
+def ensure_usage(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
-        model: dict | None = kwargs.get("pydantic_model", None)
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+        model: dict | None = kwargs.get("pydantic_model")
         if not model:
             return await view_func(request, *args, **kwargs)
-        else:
-            stream = model.get("stream", False)
-            if stream:
-                stream_options = model.get("stream_options", None)
-                if not stream_options:
-                    model["stream_options"] = ChatCompletionStreamOptionsParam(include_usage=True)
-                else:
-                    model["stream_options"]["include_usage"] = True
-            return await view_func(request, *args, **kwargs)
+        stream = model.get("stream", False)
+        if stream:
+            stream_options = model.get("stream_options", None)
+            if not stream_options:
+                model["stream_options"] = ChatCompletionStreamOptionsParam(include_usage=True)
+            else:
+                model["stream_options"]["include_usage"] = True
+        return await view_func(request, *args, **kwargs)
 
     return wrapper
 
 
-def check_limits(view_func):
+def check_limits(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get("token", None)
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+        token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_limits decorator used without @token_authenticated decorator")
             return error_response("Internal server error", status=500)
@@ -255,7 +258,7 @@ def check_limits(view_func):
         try:
             # Get limits asynchronously
             limits = await sync_to_async(token.get_limit)()
-            log.debug(f"Rate limits for Token '{token.name}' (ID: {token.id}): {limits}")
+            log.debug("Rate limits for Token %r (ID: %s): %s", token.name, token.id, limits)
 
             if (
                 limits.requests_per_minute is not None
@@ -279,8 +282,11 @@ def check_limits(view_func):
                 total_output = recent_requests_agg.get("total_output_tokens", 0) or 0
 
                 log.debug(
-                    f"Recent usage (last 60s) for Token '{token.name}': "
-                    f"Requests={request_count}, Input={total_input}, Output={total_output}"
+                    "Recent usage (last 60s) for Token %r: Requests=%s, Input=%s, Output=%s",
+                    token.name,
+                    request_count,
+                    total_input,
+                    total_output,
                 )
 
                 # --- Check Limits ---
@@ -307,16 +313,17 @@ def check_limits(view_func):
                 if len(exceeded) > 0:
                     error_message = "Rate limit exceeded. " + ", ".join(exceeded) + "."
                     log.warning(
-                        f"Rate limit exceeded for Token '{token.name}' (ID: {token.id}). "
-                        f"Details: {error_message}"
+                        "Rate limit exceeded for Token %r (ID: %s). Details: %s",
+                        token.name,
+                        token.id,
+                        error_message,
                     )
-                    log.error(f"Rate limit exceeded - {error_message}")
+                    log.error("Rate limit exceeded - %s", error_message)
                     # Return 429 Too Many Requests
                     return error_response(error_message, status=429)
 
         except Exception as e:
-            log.error(f"Error checking rate limits for Token '{token.name}': {e}", exc_info=True)
-            log.error("Internal gateway error checking rate limits")
+            log.exception("Error checking rate limits for Token %r: %s", token.name, e)
             return error_response("Internal gateway error checking rate limits", status=500)
 
         return await view_func(request, *args, **kwargs)
@@ -324,17 +331,17 @@ def check_limits(view_func):
     return wrapper
 
 
-def log_request(view_func):
+def log_request(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
         is_initialize = kwargs.get("is_initialize", False)
 
         if request.path.startswith("/mcp-servers/") and not is_initialize:
             kwargs["request_log"] = None
             return await view_func(request, *args, **kwargs)
 
-        pydantic_model: dict | None = kwargs.get("pydantic_model", None)
-        token = kwargs.get("token", None)
+        pydantic_model: dict | None = kwargs.get("pydantic_model")
+        token = kwargs.get("token")
         request_log = Request(
             token=token,
             model=None if not pydantic_model else pydantic_model.get("model", None),
@@ -365,12 +372,12 @@ def log_request(view_func):
     return wrapper
 
 
-def resolve_alias(view_func):
+def resolve_alias(view_func: AsyncView) -> AsyncView:
     """Resolve model aliases to actual model names before processing."""
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
-        pydantic_model: dict | None = kwargs.get("pydantic_model", None)
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+        pydantic_model: dict | None = kwargs.get("pydantic_model")
         if not pydantic_model:
             return await view_func(request, *args, **kwargs)
 
@@ -378,55 +385,53 @@ def resolve_alias(view_func):
         if model_or_alias:
             resolved_model = resolve_model_alias(model_or_alias)
             pydantic_model["model"] = resolved_model
-            log.debug(f"Resolved model '{model_or_alias}' to '{resolved_model}'")
+            log.debug("Resolved model %r to %r", model_or_alias, resolved_model)
 
         return await view_func(request, *args, **kwargs)
 
     return wrapper
 
 
-def check_model_availability(view_func):
+def check_model_availability(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get("token", None)
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+        token: Token | None = kwargs.get("token")
         if not token:
             log.error(
                 "check_model_availability decorator used without @token_authenticated decorator"
             )
             return error_response("Internal server error", status=500)
-        body: dict | None = kwargs.get("pydantic_model", None)
+        body: dict | None = kwargs.get("pydantic_model")
         if not body:
             return await view_func(request, *args, **kwargs)
-        else:
-            model: str | None = body.get("model", None)
-            if not model:
-                return await view_func(request, *args, **kwargs)
-            else:
-                if await sync_to_async(token.model_excluded)(model):
-                    log.error(f"Model not found - {model}")
-                    return error_response("Model not found!", status=404)
-                return await view_func(request, *args, **kwargs)
+        model: str | None = body.get("model", None)
+        if not model:
+            return await view_func(request, *args, **kwargs)
+        if await sync_to_async(token.model_excluded)(model):
+            log.error("Model not found - %s", model)
+            return error_response("Model not found!", status=404)
+        return await view_func(request, *args, **kwargs)
 
     return wrapper
 
 
-def check_mcp_server_availability(view_func):
+def check_mcp_server_availability(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get("token", None)
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+        token: Token | None = kwargs.get("token")
         if not token:
             log.error(
-                "check_mcp_server_availability decorator used without @token_authenticated decorator"
+                "check_mcp_server_availability decorator used without "
+                "@token_authenticated decorator"
             )
             return error_response("Internal server error", status=500)
-        server_name: str | None = kwargs.get("name", None)
+        server_name: str | None = kwargs.get("name")
         if not server_name:
             return await view_func(request, *args, **kwargs)
-        else:
-            if await sync_to_async(token.mcp_server_excluded)(server_name):
-                log.error(f"MCP server not found - {server_name}")
-                return error_response("MCP server not found!", status=404)
-            return await view_func(request, *args, **kwargs)
+        if await sync_to_async(token.mcp_server_excluded)(server_name):
+            log.error("MCP server not found - %s", server_name)
+            return error_response("MCP server not found!", status=404)
+        return await view_func(request, *args, **kwargs)
 
     return wrapper
 
@@ -454,10 +459,9 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
             )  # removes data uri (data:application/pdf;base64,<b64>)
             if not header.startswith("data:"):
                 raise ValueError("Incorrect data URI for base64 encoded file.")
-            file_bytes = base64.b64decode(file_b64)
-            return file_bytes
+            return base64.b64decode(file_b64)
         except Exception as e:
-            raise ValueError(f"Failed to decode base64 file data: {e}")
+            raise ValueError(f"Failed to decode base64 file data: {e}") from e
 
     elif file_id:
         # file is given as an id of a file object
@@ -473,28 +477,29 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
             else:
                 file_obj = await FileObject.objects.select_related("token__user").aget(id=file_id)
 
-            # Fetch content from upstream using the async client
             try:
                 client = get_files_api_client()
-                response = await client.files.content(file_obj.id)
-                return response.content
             except ValueError as e:
-                raise ValueError(f"Files API not configured: {e}")
-        except FileObject.DoesNotExist as e:
-            raise e
+                raise ValueError(f"Files API not configured: {e}") from e
+            response = await client.files.content(file_obj.id)
+            return response.content
+        except FileObject.DoesNotExist:
+            raise
         except Exception as e:
-            raise ValueError(f"Failed to read file with id {file_id}: {e}")
+            raise ValueError(f"Failed to read file with id {file_id}: {e}") from e
+        else:
+            return response.content
     else:
         raise RuntimeError("Neither 'file_data' nor 'file_id' are given.")
 
 
-def process_file_content(view_func):
+def process_file_content(view_func: AsyncView) -> AsyncView:
     """Decorator to process file content in chat completions using Tika."""
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get("token", None)
-        pydantic_model: dict | None = kwargs.get("pydantic_model", None)
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+        token: Token | None = kwargs.get("token")
+        pydantic_model: dict | None = kwargs.get("pydantic_model")
         if not pydantic_model:
             log.error("Invalid request - missing request body")
             return error_response("Invalid request: missing request body", status=400)
@@ -520,17 +525,18 @@ def process_file_content(view_func):
                     try:
                         file_bytes = await file_to_bytes(token, file)
                     except FileObject.DoesNotExist:
-                        log.error("File not found")
+                        log.exception("File not found")
                         return error_response("File not found", status=404)
                     except Exception as e:
                         # return json response here if there was an error
-                        log.error(f"Error processing file - {str(e)}")
-                        return error_response(f"Error processing file: {str(e)}", status=400)
+                        log.exception("Error processing file - %s", e)
+                        return error_response(f"Error processing file: {e!s}", status=400)
 
                     if len(file_bytes) > max_file_bytes:
                         log.error(
-                            f"File processing error - File too large (individual file must be "
-                            f"<= {max_file_mb}MB)"
+                            "File processing error - File too large "
+                            "(individual file must be <= %sMB)",
+                            max_file_mb,
                         )
                         return error_response(
                             f"Error processing file content: File too large. "
@@ -540,8 +546,9 @@ def process_file_content(view_func):
                     total_file_size_bytes += len(file_bytes)
                     if total_file_size_bytes > max_total_size_bytes:
                         log.error(
-                            f"File processing error - Files too large in total "
-                            f"(all files must be <= {max_total_size_mb}MB)"
+                            "File processing error - Files too large in total "
+                            "(all files must be <= %sMB)",
+                            max_total_size_mb,
                         )
                         return error_response(
                             f"Error processing file content: Files too large in total. "
@@ -554,13 +561,14 @@ def process_file_content(view_func):
                         extracted_text = await extract_text_with_tika(file_bytes)
                     except httpx.HTTPStatusError as e:
                         # return json response here if there was a tika request error
-                        log.error(f"Tika error extracting text from file - {str(e)}")
+                        log.exception("Tika error extracting text from file - %s", e)
                         return error_response(
-                            f"Tika error extracting text from file: {str(e)}", status=400
+                            f"Tika error extracting text from file: {e!s}", status=400
                         )
 
                     extracted_text = (
-                        f"Content of user-uploaded file '{file.get('filename', 'unknown filename')}':"
+                        f"Content of user-uploaded file "
+                        f"'{file.get('filename', 'unknown filename')}':"
                         f"\n---\n{extracted_text}\n---"
                     )
 
@@ -574,7 +582,7 @@ def process_file_content(view_func):
     return wrapper
 
 
-def catch_router_exceptions(view_func):
+def catch_router_exceptions(view_func: AsyncView) -> AsyncView:
     def _r(e: Exception) -> str:
         s = str(e)
         s = re.sub(r"Lite-?[lL][lL][mM]", "Aqueduct", s)  # uppercase
@@ -599,57 +607,57 @@ def catch_router_exceptions(view_func):
         )
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
         # https://docs.litellm.ai/docs/exception_mapping#litellm-exceptions
         # also except equivalent openai exceptions
         try:
             return await view_func(request, *args, **kwargs)
         except (litellm.BadRequestError, openai.BadRequestError) as e:
-            log.error(f"Bad request - {_r(e)}")
+            log.exception("Bad request - %s", _r(e))
             return _exception_response(e, status=400)
         except (litellm.AuthenticationError, openai.AuthenticationError) as e:
-            log.error(f"Authentication error - {_r(e)}")
+            log.exception("Authentication error - %s", _r(e))
             return _exception_response(e, status=401)
         except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
-            log.error(f"Permission denied - {_r(e)}")
+            log.exception("Permission denied - %s", _r(e))
             return _exception_response(e, status=403)
         except (litellm.NotFoundError, openai.NotFoundError) as e:
-            log.error(f"Not found - {_r(e)}")
+            log.exception("Not found - %s", _r(e))
             return _exception_response(e, status=404)
         except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
-            log.error(f"Unprocessable entity - {_r(e)}")
+            log.exception("Unprocessable entity - %s", _r(e))
             return _exception_response(e, status=422)
         except (litellm.RateLimitError, openai.RateLimitError) as e:
-            log.error(f"Rate limit exceeded - {_r(e)}")
+            log.exception("Rate limit exceeded - %s", _r(e))
             return _exception_response(e, status=429)
         except (litellm.Timeout, openai.APITimeoutError) as e:
-            log.error(f"Timeout - {_r(e)}")
+            log.exception("Timeout - %s", _r(e))
             return _exception_response(e, status=504)
         except (
             litellm.ServiceUnavailableError,
             litellm.APIConnectionError,
             openai.APIConnectionError,
         ) as e:
-            log.error(f"Service unavailable - {_r(e)}")
+            log.exception("Service unavailable - %s", _r(e))
             return _exception_response(e, status=503)
         except (litellm.InternalServerError, openai.InternalServerError) as e:
-            log.error(f"Internal server error - {_r(e)}")
+            log.exception("Internal server error - %s", _r(e))
             return _exception_response(e, status=500)
         except (litellm.APIError, openai.APIError) as e:
             # APIError is raised e.g. when user sends extra kwargs in the request body,
             # so we return a 400 Bad request.
-            log.error(f"API error - {_r(e)}")
+            log.exception("API error - %s", _r(e))
             return _exception_response(e, status=400)
         except Exception as e:
-            log.error(f"Unexpected error - {_r(e)}")
+            log.exception("Unexpected error - %s", _r(e))
             return error_response(_r(e), error_type="server_error", status=502)
 
     return wrapper
 
 
-def tos_accepted(view_func):
+def tos_accepted(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
         if settings.TOS_ENABLED and settings.TOS_GATEWAY_VALIDATION:
             token: Token = kwargs.get("token")
             key_version = cache.get("django:tos:key_version")
@@ -676,7 +684,7 @@ def tos_accepted(view_func):
     return wrapper
 
 
-def mcp_transport_security(view_func):
+def mcp_transport_security(view_func: AsyncView) -> AsyncView:
     """Validate MCP transport security (DNS rebinding protection).
 
     Validates:
@@ -691,19 +699,19 @@ def mcp_transport_security(view_func):
     """
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
         # Skip validation if DNS rebinding protection is disabled
         if not getattr(settings, "MCP_ENABLE_DNS_REBINDING_PROTECTION", True):
             return await view_func(request, *args, **kwargs)
 
-        log.debug(f"MCP request headers: {dict(request.headers)}")
+        log.debug("MCP request headers: %s", dict(request.headers))
 
         # Validate Content-Type for POST requests
         if request.method == "POST":
             content_type = request.headers.get("content-type", "")
-            log.debug(f"POST request Content-Type: '{content_type}'")
+            log.debug("POST request Content-Type: %r", content_type)
             if not content_type.lower().startswith("application/json"):
-                log.error(f"Invalid Content-Type header: {content_type}")
+                log.error("Invalid Content-Type header: %s", content_type)
                 return error_response("Invalid Content-Type header", status=400)
 
         # Validate Host header against allowed values
@@ -716,7 +724,7 @@ def mcp_transport_security(view_func):
 
         host_valid = in_wildcard(host, allowed_hosts)
         if not host_valid:
-            log.error(f"Invalid Host header: {host}")
+            log.error("Invalid Host header: %s", host)
             return error_response("Invalid Host header", status=421)
 
         # Validate Origin header against allowed values
@@ -726,7 +734,7 @@ def mcp_transport_security(view_func):
         if origin:
             origin_valid = in_wildcard(origin, allowed_origins)
             if not origin_valid:
-                log.error(f"Invalid Origin header: {origin}")
+                log.error("Invalid Origin header: %s", origin)
                 return error_response("Invalid Origin header", status=403)
 
         return await view_func(request, *args, **kwargs)
@@ -734,18 +742,18 @@ def mcp_transport_security(view_func):
     return wrapper
 
 
-def parse_jsonrpc_message(view_func):
+def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
         session_id = request.headers.get("Mcp-Session-Id")
         kwargs["session_id"] = session_id
 
         if request.method != "POST":
             if not session_id:
-                log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
+                log.error("Session ID required for MCP server %r", kwargs.get("name"))
                 return error_response("Mcp-Session-Id header required", status=400)
 
-            return await view_func(request, request_log=None, *args, **kwargs)
+            return await view_func(request, *args, request_log=None, **kwargs)
 
         data = kwargs["pydantic_model"]
         # For mcp requests, timeout should not be passed to the JSON RPC Message
@@ -757,7 +765,7 @@ def parse_jsonrpc_message(view_func):
         )
 
         if not is_initialize and not session_id:
-            log.error(f"Session ID required for MCP server '{kwargs.get('name')}'")
+            log.error("Session ID required for MCP server %r", kwargs.get("name"))
             return error_response("Mcp-Session-Id header required", status=400)
 
         kwargs["json_rpc_message"] = json_rpc_message
@@ -768,10 +776,10 @@ def parse_jsonrpc_message(view_func):
     return wrapper
 
 
-def validate_response_id(view_func):
+def validate_response_id(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs):
-        token = kwargs.get("token", None)
+    async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs) -> ViewResult:
+        token = kwargs.get("token")
         if not token:
             log.error("validate_response_id decorator used without @token_authenticated decorator")
             return error_response("Internal server error", status=500)
@@ -788,7 +796,83 @@ def validate_response_id(view_func):
     return wrapper
 
 
-def check_tool_availability(view_func):
+async def _validate_mcp_tool(
+    request: ASGIRequest, token: Token, tool: ToolParam
+) -> ViewResult | None:
+    server_name = tool.get("server_label")
+    if await sync_to_async(token.mcp_server_excluded)(server_name):
+        log.error("MCP server not found - %s", server_name)
+        return error_response(f"MCP server not found - {server_name}", status=404)
+
+    try:
+        mcp_config = get_mcp_config()
+        server_config = mcp_config[server_name]
+    except KeyError:
+        # the user wants to access an externally managed MCP server
+        if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
+            log.exception("MCP server not found - %s", server_name)
+            return error_response(f"MCP server not found - {server_name}", status=404)
+        return None
+
+    expected_url = request.build_absolute_uri(
+        reverse("gateway:mcp_server", kwargs={"name": server_name})
+    )
+    if tool.get("server_url") != expected_url:
+        log.error("The server_url of the tool does not match the Aqueduct MCP server url.")
+        return error_response(
+            "The server_url of the tool does not match the Aqueduct MCP server url.", status=400
+        )
+
+    tool["server_url"] = server_config["url"]
+    return None
+
+
+async def _validate_file_search_tool(token: Token, tool: ToolParam) -> ViewResult | None:
+    vector_store_ids = tool.get("vector_store_ids", [])
+    if not vector_store_ids:
+        return None
+
+    # Deduplicate to avoid false negatives in count check
+    unique_vs_ids = list(set(vector_store_ids))
+    # Verify ownership - users can only use their own vector stores
+    if token.service_account:
+        vs_count = await sync_to_async(
+            VectorStore.objects.filter(
+                id__in=unique_vs_ids, token__service_account__team=token.service_account.team
+            ).count
+        )()
+    else:
+        vs_count = await sync_to_async(
+            VectorStore.objects.filter(id__in=unique_vs_ids, token__user=token.user).count
+        )()
+
+    if vs_count != len(unique_vs_ids):
+        return error_response("One or more vector stores not found", status=404)
+    return None
+
+
+def _validate_native_tool(tool_type: str | None) -> ViewResult | None:
+    if tool_type not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
+        return error_response(f"Invalid tool type: {tool_type}", status=400)
+    return None
+
+
+async def _validate_tool(request: ASGIRequest, token: Token, tool: ToolParam) -> ViewResult | None:
+    tool_type = tool.get("type")
+
+    if tool_type in {"function", "custom"}:
+        return None
+
+    if tool_type == "mcp":
+        return await _validate_mcp_tool(request, token, tool)
+
+    if tool_type == "file_search":
+        return await _validate_file_search_tool(token, tool)
+
+    return _validate_native_tool(tool_type)
+
+
+def check_tool_availability(view_func: AsyncView) -> AsyncView:
     """
     Validate tool availability and configuration for Responses API requests.
 
@@ -802,79 +886,24 @@ def check_tool_availability(view_func):
     """
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs):
-        token: Token | None = kwargs.get("token", None)
-        pydantic_model: ResponseCreateParams | None = kwargs.get("pydantic_model", None)
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+        token: Token | None = kwargs.get("token")
+        pydantic_model: ResponseCreateParams | None = kwargs.get("pydantic_model")
         if not token or not pydantic_model:
             return error_response("Invalid request", status=400)
 
         tools: Iterable[ToolParam] = pydantic_model.get("tools") or []
         for tool in tools:
-            match tool.get("type"):
-                case "function" | "custom":
-                    pass
-                case "mcp":
-                    server_name = tool.get("server_label")
-                    if await sync_to_async(token.mcp_server_excluded)(server_name):
-                        log.error(f"MCP server not found - {server_name}")
-                        return error_response(f"MCP server not found - {server_name}", status=404)
-
-                    try:
-                        mcp_config = get_mcp_config()
-                        server_config = mcp_config[server_name]
-                    except KeyError:
-                        # the user wants to access an externally managed MCP server
-                        if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-                            log.error(f"MCP server not found - {server_name}")
-                            return error_response(
-                                f"MCP server not found - {server_name}", status=404
-                            )
-                    else:
-                        expected_url = request.build_absolute_uri(
-                            reverse("gateway:mcp_server", kwargs={"name": server_name})
-                        )
-                        if tool.get("server_url") != expected_url:
-                            log.error(
-                                "The server_url of the tool does not match the Aqueduct MCP server url."
-                            )
-                            return error_response(
-                                "The server_url of the tool does not match the Aqueduct MCP server url.",
-                                status=400,
-                            )
-
-                        tool["server_url"] = server_config["url"]
-                case "file_search":
-                    vector_store_ids = tool.get("vector_store_ids", [])
-                    if vector_store_ids:
-                        # Deduplicate to avoid false negatives in count check
-                        unique_vs_ids = list(set(vector_store_ids))
-                        # Verify ownership - users can only use their own vector stores
-                        if token.service_account:
-                            vs_count = await sync_to_async(
-                                VectorStore.objects.filter(
-                                    id__in=unique_vs_ids,
-                                    token__service_account__team=token.service_account.team,
-                                ).count
-                            )()
-                        else:
-                            vs_count = await sync_to_async(
-                                VectorStore.objects.filter(
-                                    id__in=unique_vs_ids, token__user=token.user
-                                ).count
-                            )()
-
-                        if vs_count != len(unique_vs_ids):
-                            return error_response("One or more vector stores not found", status=404)
-                case other:
-                    if other not in settings.RESPONSES_API_ALLOWED_NATIVE_TOOLS:
-                        return error_response(f"Invalid tool type: {other}", status=400)
+            error = await _validate_tool(request, token, tool)
+            if error:
+                return error
 
         return await view_func(request, *args, **kwargs)
 
     return wrapper
 
 
-def require_files_api_client(view_func):
+def require_files_api_client(view_func: AsyncView) -> AsyncView:
     """Decorator that injects a files API client into the view kwargs, or returns 503.
 
     Uses late-bound import of get_files_api_client so that tests can
@@ -882,7 +911,7 @@ def require_files_api_client(view_func):
     """
 
     @wraps(view_func)
-    async def wrapper(request, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
         # Look up get_files_api_client from the module where view_func is defined,
         # so tests patching that module's reference will be respected.
         view_module = sys.modules.get(view_func.__module__)
@@ -940,7 +969,7 @@ def rewrite_batch_file_models(content: bytes) -> bytes:
 
     This function:
     1. Ensures custom_id is a string type (required by OpenAI Batch API)
-    2. Replaces the model name in each request body with the actual upstream model name from the router configuration
+    2. Replaces the model name in each request body with the actual upstream model name
     3. Rejects unknown models with a ValueError that includes custom_id
     """
     lines = content.decode("utf-8").splitlines()
@@ -981,7 +1010,7 @@ def extract_preview(content: bytes, num_lines: int = 10) -> str:
         return "[Binary content - no preview available]"
 
 
-def process_batch_file(view_func):
+def process_batch_file(view_func: AsyncView) -> AsyncView:
     """
     Decorator for batch file upload that processes file content before proxying.
 
@@ -998,7 +1027,7 @@ def process_batch_file(view_func):
     """
 
     @wraps(view_func)
-    async def wrapper(request, *args, **kwargs):
+    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
         if request.method != "POST":
             return await view_func(request, *args, **kwargs)
 
@@ -1020,7 +1049,7 @@ def process_batch_file(view_func):
             try:
                 kwargs["file_content"] = rewrite_batch_file_models(content)
             except ValueError as e:
-                return error_response(f"Batch file validation failed: {str(e)}", status=400)
+                return error_response(f"Batch file validation failed: {e!s}", status=400)
         else:
             kwargs["file_content"] = content
             kwargs["file_preview"] = ""

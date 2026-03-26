@@ -89,8 +89,8 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(
             get_response.status_code,
             200,
-            f"GET response should return 200, got {get_response.status_code}: "
-            f"{get_response.content}",
+            f"GET response should return 200, "
+            f"got {get_response.status_code}: {get_response.content}",
         )
         get_data = get_response.json()
         self.assertIn("id", get_data)
@@ -118,8 +118,8 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(
             delete_response.status_code,
             200,
-            f"DELETE response should return 200, got {delete_response.status_code}: "
-            f"{delete_response.content}",
+            f"DELETE response should return 200, "
+            f"got {delete_response.status_code}: {delete_response.content}",
         )
 
         # Verify response is deleted - GET should now return 404
@@ -127,8 +127,8 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(
             verify_get_response.status_code,
             404,
-            f"GET after DELETE should return 404, got {verify_get_response.status_code}: "
-            f"{verify_get_response.content}",
+            f"GET after DELETE should return 404, "
+            f"got {verify_get_response.status_code}: {verify_get_response.content}",
         )
 
     async def test_create_response_streaming(self):
@@ -225,7 +225,8 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(
             get_response.status_code,
             200,
-            f"GET response should return 200, got {get_response.status_code}: {get_response.content}",
+            f"GET response should return 200, "
+            f"got {get_response.status_code}: {get_response.content}",
         )
         get_data = get_response.json()
         self.assertIn("id", get_data)
@@ -253,8 +254,8 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(
             delete_response.status_code,
             200,
-            f"DELETE response should return 200, got {delete_response.status_code}: "
-            f"{delete_response.content}",
+            f"DELETE response should return 200, "
+            f"got {delete_response.status_code}: {delete_response.content}",
         )
 
         # Verify streaming response is deleted - GET should now return 404
@@ -262,8 +263,8 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(
             verify_get_response.status_code,
             404,
-            f"GET after DELETE should return 404, got {verify_get_response.status_code}: "
-            f"{verify_get_response.content}",
+            f"GET after DELETE should return 404, "
+            f"got {verify_get_response.status_code}: {verify_get_response.content}",
         )
 
     def test_get_response_invalid_id(self):
@@ -305,8 +306,8 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(
             get_response_me.status_code,
             200,
-            f"User me@example.com should access their own response, got "
-            f"{get_response_me.status_code}",
+            f"User me@example.com should access their own response, "
+            f"got {get_response_me.status_code}",
         )
 
         # Step 3: User2 (someone@example.com) cannot access User1's response

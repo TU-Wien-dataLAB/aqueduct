@@ -3,7 +3,8 @@ import dataclasses
 import hashlib
 import logging
 import secrets
-from typing import Callable, Literal, Optional
+from collections.abc import Callable
+from typing import ClassVar, Literal, Optional
 
 import openai.types
 from django.conf import settings
@@ -34,9 +35,9 @@ def generate_batch_id() -> str:
 class LimitSet:
     """Represents a resolved set of rate limits."""
 
-    requests_per_minute: Optional[int] = None
-    input_tokens_per_minute: Optional[int] = None
-    output_tokens_per_minute: Optional[int] = None
+    requests_per_minute: int | None = None
+    input_tokens_per_minute: int | None = None
+    output_tokens_per_minute: int | None = None
 
     # Add future limit fields here with default None
 
@@ -57,7 +58,7 @@ class LimitSet:
         """
 
         # Helper to resolve a single limit field value using the hierarchy
-        def _resolve(field_name: str) -> Optional[int]:
+        def _resolve(field_name: str) -> int | None:
             # Get value from the specific level first
             # Use getattr for safe access, defaulting to None if field absent
             specific_value = (
@@ -118,6 +119,9 @@ class ModelExclusionMixin(models.Model):
         "Disable to use only this object's exclusions.",
     )
 
+    class Meta:
+        abstract = True  # Important: Makes this a mixin, no DB table created
+
     def add_excluded_model(self, model_name: str):
         if model_name not in self.excluded_models:
             self.excluded_models.append(model_name)
@@ -128,14 +132,11 @@ class ModelExclusionMixin(models.Model):
             self.excluded_models.remove(model_name)
             self.save(update_fields=["excluded_models"])
 
-    class Meta:
-        abstract = True  # Important: Makes this a mixin, no DB table created
-
 
 class MCPServerExclusionMixin(models.Model):
     """
     An abstract base model providing an MCP server exclusion list.
-    Add MCP server names to the list to indicate which servers should be excluded for the specific object.
+    Add MCP server names to the list to indicate which servers should be excluded.
     """
 
     excluded_mcp_servers = JSONField(
@@ -145,10 +146,14 @@ class MCPServerExclusionMixin(models.Model):
     merge_mcp_server_exclusion_lists = BooleanField(
         default=True,
         null=False,
-        help_text="When enabled, this object's MCP server exclusion list will be combined with the exclusion "
-        "list from its parent in the hierarchy (such as combining a User's and an Org's lists). "
+        help_text="When enabled, this object's MCP server exclusion list will be combined "
+        "with the exclusion list from its parent in the hierarchy "
+        "(such as combining a User's and an Org's lists). "
         "Disable to use only this object's exclusions.",
     )
+
+    class Meta:
+        abstract = True  # Important: Makes this a mixin, no DB table created
 
     def add_excluded_mcp_server(self, server_name: str):
         if server_name not in self.excluded_mcp_servers:
@@ -160,16 +165,13 @@ class MCPServerExclusionMixin(models.Model):
             self.excluded_mcp_servers.remove(server_name)
             self.save(update_fields=["excluded_mcp_servers"])
 
-    class Meta:
-        abstract = True  # Important: Makes this a mixin, no DB table created
-
 
 class Org(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Model):
     """Represents an Organization."""
 
     name = models.CharField(verbose_name="Org name", max_length=255, unique=True)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -184,7 +186,7 @@ class Team(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Mode
     class Meta:
         unique_together = ("name", "org")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} ({self.org.name})"
 
 
@@ -211,17 +213,19 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
         Team, through="TeamMembership", related_name="member_profiles", blank=True
     )
 
+    def __str__(self) -> str:
+        return f"{self.user.email} (Profile - {self.org.name})"
+
     @property
     def group(self) -> Literal["admin", "org-admin", "user"]:
         g = self.user.groups
         if g.filter(name="admin").exists():
             return "admin"
-        elif g.filter(name="org-admin").exists():
+        if g.filter(name="org-admin").exists():
             return "org-admin"
-        elif g.filter(name="user").exists():
+        if g.filter(name="user").exists():
             return "user"
-        else:
-            raise ValidationError("User has no group")
+        raise ValidationError("User has no group")
 
     @group.setter
     def group(self, group: Literal["admin", "org-admin", "user"]):
@@ -236,7 +240,9 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
             self.user.groups.add(group_obj)
         except Group.DoesNotExist:
             # Handle case where the group doesn't exist in DB (shouldn't happen with check above)
-            raise ObjectDoesNotExist(f"The group '{group}' does not exist in the database.")
+            raise ObjectDoesNotExist(
+                f"The group '{group}' does not exist in the database."
+            ) from None
 
     def clean(self):
         """
@@ -300,15 +306,13 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
             # Django ensures 'teammembership_set' exists if TeamMembership has a ForeignKey
             # to UserProfile.
             membership = self.teammembership_set.get(team=team_to_check)
-            return membership.is_admin
         except ObjectDoesNotExist:
             # No specific membership record found for this user and team
             return False
+        else:
+            return membership.is_admin
         # Removed overly defensive AttributeError check. If 'teammembership_set' is missing,
         # it indicates a fundamental model setup error that should not be caught here.
-
-    def __str__(self):
-        return f"{self.user.email} (Profile - {self.org.name})"
 
 
 class TeamMembership(models.Model):
@@ -323,7 +327,7 @@ class TeamMembership(models.Model):
         # Ensure a user can only be in a team once
         unique_together = ("user_profile", "team")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.user_profile} in {self.team}{' (Admin)' if self.is_admin else ''}"
 
 
@@ -337,7 +341,7 @@ class ServiceAccount(models.Model):
     class Meta:
         unique_together = ("name", "team")
 
-    def __str__(self):
+    def __str__(self) -> str:
         # Handle case where team might not be set yet
         return f"{self.name} (Team: {self.team.name if self.team_id else 'N/A'})"
 
@@ -388,7 +392,7 @@ class ServiceAccount(models.Model):
             except Team.DoesNotExist:
                 # This case shouldn't happen if ForeignKey validation runs,
                 # but good to handle defensively.
-                raise ValidationError("Associated team does not exist.")
+                raise ValidationError("Associated team does not exist.") from None
 
 
 class Token(models.Model):
@@ -427,18 +431,29 @@ class Token(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)  # Optional expiry
 
+    def __str__(self) -> str:
+        if self.service_account:
+            return f"'{self.name}' ({self.service_account.name})"
+        return f"'{self.name}'"
+
+    def save(self, *args, **kwargs):
+        """
+        Ensures key_hash and key_preview are set before the first save.
+        """
+        if not self.pk and (not self.key_hash or not self.key_preview):
+            # This check ensures _set_new_key() was called before the first save.
+            raise ValueError(
+                "Token cannot be saved without key_hash and key_preview. "
+                "Call _set_new_key() before saving."
+            )
+        super().save(*args, **kwargs)
+
     @property
-    def is_expired(self):
+    def is_expired(self) -> bool:
         return self.expires_at is not None and self.expires_at <= timezone.now()
 
     # The clean method checking for self.user is implicitly handled by the ForeignKey
     # unless null=True is added to the user field, which doesn't seem intended here.
-
-    def __str__(self):
-        if self.service_account:
-            return f"'{self.name}' ({self.service_account.name})"
-        else:
-            return f"'{self.name}'"
 
     @staticmethod
     def _generate_secret_key(prefix="sk-") -> str:
@@ -469,18 +484,6 @@ class Token(models.Model):
         self.key_preview = self._generate_preview(secret_key)
         return secret_key
 
-    def save(self, *args, **kwargs):
-        """
-        Ensures key_hash and key_preview are set before the first save.
-        """
-        if not self.pk and (not self.key_hash or not self.key_preview):
-            # This check ensures _set_new_key() was called before the first save.
-            raise ValueError(
-                "Token cannot be saved without key_hash and key_preview. "
-                "Call _set_new_key() before saving."
-            )
-        super().save(*args, **kwargs)
-
     # Removed the key_preview @property as it's now a direct field
 
     def regenerate_key(self) -> str:
@@ -501,7 +504,7 @@ class Token(models.Model):
         # (Handled by save() method)
         super().clean()
 
-    def _get_from_hierarchy(self, retrieval_function: Callable):
+    def _get_from_hierarchy(self, retrieval_function: Callable) -> list[str]:
         token_instance = Token.objects.select_related(
             "user__profile__org",  # Needed for User Tokens
             "service_account__team__org",  # Needed for Service Account Tokens
@@ -513,11 +516,10 @@ class Token(models.Model):
             team = token_instance.service_account.team  # Team holds specific SA limits
             org = team.org  # Team's Org holds fallback limits
             return retrieval_function(team, org)
-        else:
-            # Path for standard User Tokens
-            profile = token_instance.user.profile  # UserProfile holds specific user limits
-            org = profile.org  # Profile's Org holds fallback limits
-            return retrieval_function(profile, org)
+        # Path for standard User Tokens
+        profile = token_instance.user.profile  # UserProfile holds specific user limits
+        org = profile.org  # Profile's Org holds fallback limits
+        return retrieval_function(profile, org)
 
     def get_limit(self) -> "LimitSet":
         """
@@ -588,7 +590,8 @@ class Token(models.Model):
 
     def mcp_server_exclusion_list(self) -> list[str]:
         """
-        Determines if an MCP server is excluded for this token, returning a list of excluded servers.
+        Determines if an MCP server is excluded for this token,
+        returning a list of excluded servers.
         Assumes database integrity for related objects.
 
         Hierarchy Rules:
@@ -597,7 +600,7 @@ class Token(models.Model):
         """
         return self._get_from_hierarchy(Token._mcp_server_exclusion_list_from_objects)
 
-    def mcp_server_excluded(self, server_name: str):
+    def mcp_server_excluded(self, server_name: str) -> bool:
         return server_name in self.mcp_server_exclusion_list()
 
     @classmethod
@@ -627,7 +630,7 @@ class Usage:
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
 
-    def __add__(self, other):
+    def __add__(self, other) -> "Usage | NotImplemented":
         if not isinstance(other, Usage):
             return NotImplemented
         return Usage(
@@ -635,7 +638,7 @@ class Usage:
             output_tokens=self.output_tokens + other.output_tokens,
         )
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> "Usage | NotImplemented":
         if not isinstance(other, Usage):
             return NotImplemented
         return Usage(
@@ -653,25 +656,12 @@ class Request(models.Model):
     output_tokens = models.PositiveIntegerField(
         default=0, help_text="Tokens generated by the output for this request"
     )
-
-    @property
-    def token_usage(self) -> Usage:
-        """Get a TokenUsage dataclass instance representing this request's token usage."""
-        return Usage(input_tokens=self.input_tokens, output_tokens=self.output_tokens)
-
-    @token_usage.setter
-    def token_usage(self, usage: Usage):
-        """Set input_tokens and output_tokens from a Usage dataclass instance."""
-        if not isinstance(usage, Usage):
-            raise ValueError("token_usage must be a Usage dataclass instance")
-        self.input_tokens = usage.input_tokens
-        self.output_tokens = usage.output_tokens
-
     token = models.ForeignKey(
         Token,
         on_delete=models.CASCADE,  # If Token is deleted, delete its associated Requests
         related_name="requests",
     )
+    # django: DJ001 - null=True on CharField may cause SQL NULL instead of empty string
     model = models.CharField(
         max_length=255, null=True, blank=True, help_text="Model used in request"
     )
@@ -710,14 +700,27 @@ class Request(models.Model):
 
     class Meta:
         # Crucial for the rate limit query!
-        indexes = [
+        indexes: ClassVar[list] = [
             models.Index(fields=["token", "timestamp"]),
             models.Index(fields=["model", "timestamp"]),
         ]
-        ordering = ["-timestamp"]  # Optional: default ordering
+        ordering: ClassVar[list] = ["-timestamp"]  # Optional: default ordering
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.id}"
+
+    @property
+    def token_usage(self) -> Usage:
+        """Get a TokenUsage dataclass instance representing this request's token usage."""
+        return Usage(input_tokens=self.input_tokens, output_tokens=self.output_tokens)
+
+    @token_usage.setter
+    def token_usage(self, usage: Usage):
+        """Set input_tokens and output_tokens from a Usage dataclass instance."""
+        if not isinstance(usage, Usage):
+            raise TypeError("token_usage must be a Usage dataclass instance")
+        self.input_tokens = usage.input_tokens
+        self.output_tokens = usage.output_tokens
 
 
 class FileObject(models.Model):
@@ -736,7 +739,7 @@ class FileObject(models.Model):
         help_text="The Unix timestamp (in seconds) for when the file was created."
     )
     filename = models.CharField(max_length=255, help_text="The name of the file.")
-    PURPOSE_CHOICES = [
+    PURPOSE_CHOICES: ClassVar[list] = [
         ("assistants", "assistants"),
         ("assistants_output", "assistants_output"),
         ("batch", "batch"),
@@ -773,6 +776,9 @@ class FileObject(models.Model):
         verbose_name = "File Object"
         verbose_name_plural = "File Objects"
 
+    def __str__(self) -> str:
+        return self.id
+
     @property
     def model(self) -> openai.types.FileObject:
         return openai.types.FileObject(
@@ -805,16 +811,17 @@ class FileObject(models.Model):
 
         try:
             await client.files.delete(self.id)
-            return True
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to delete file {self.id} from upstream: {e}")
+            log.warning("Failed to delete file %s from upstream: %s", self.id, e)
             return False
+        else:
+            return True
 
     async def areload_from_upstream(
         self, client=None, raise_on_error=True
-    ) -> Optional[openai.types.FileObject]:
+    ) -> openai.types.FileObject | None:
         """
         Fetch current state from upstream and update local DB fields.
 
@@ -832,15 +839,16 @@ class FileObject(models.Model):
 
         try:
             remote = await client.files.retrieve(self.id)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning("Failed to reload file %s from upstream: %s", self.id, e)
+            return None
+        else:
             self.purpose = remote.purpose
             self.expires_at = remote.expires_at
             await self.asave()
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload file {self.id} from upstream: {e}")
-            return None
 
     def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
@@ -855,12 +863,9 @@ class FileObject(models.Model):
             asyncio.run(self.adelete_upstream())
         super().delete(using=using, keep_parents=keep_parents)
 
-    def __str__(self):
-        return self.id
-
 
 def default_request_counts() -> dict[str, int]:
-    return dict(total=0, completed=0, failed=0)
+    return {"total": 0, "completed": 0, "failed": 0}
 
 
 class BatchStatus(models.TextChoices):
@@ -957,7 +962,7 @@ class Batch(models.Model):
         help_text="The Unix timestamp (in seconds) for when the batch started processing.",
     )
     metadata = JSONField(null=True, blank=True, help_text="Metadata attached to the batch.")
-    # {"input": 0, "total": 0, "completed": 0, "failed": 0 }
+    # {"input": 0, "total": 0, "completed": 0, "failed": 0 }  # noqa: ERA001
     request_counts = JSONField(
         default=default_request_counts,
         null=True,
@@ -977,6 +982,9 @@ class Batch(models.Model):
     class Meta:
         verbose_name = "Batch"
         verbose_name_plural = "Batches"
+
+    def __str__(self) -> str:
+        return self.id
 
     @property
     def model(self) -> openai.types.batch.Batch:
@@ -1009,7 +1017,7 @@ class Batch(models.Model):
 
     async def areload_from_upstream(
         self, client=None, raise_on_error=True
-    ) -> Optional[openai.types.Batch]:
+    ) -> openai.types.Batch | None:
         """
         Fetch current state from upstream and update local DB fields.
 
@@ -1027,6 +1035,12 @@ class Batch(models.Model):
 
         try:
             remote = await client.batches.retrieve(self.id)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning("Failed to reload batch %s from upstream: %s", self.id, e)
+            return None
+        else:
             self.status = remote.status
             if remote.request_counts:
                 self.request_counts = remote.request_counts.model_dump()
@@ -1039,11 +1053,6 @@ class Batch(models.Model):
             self.finalizing_at = remote.finalizing_at
             await self.asave()
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload batch {self.id} from upstream: {e}")
-            return None
 
     def delete(self, using=None, keep_parents=False):
         """
@@ -1105,6 +1114,9 @@ class VectorStore(models.Model):
         verbose_name = "Vector Store"
         verbose_name_plural = "Vector Stores"
 
+    def __str__(self) -> str:
+        return self.id
+
     async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
         """
         Delete the vector store from the upstream API.
@@ -1124,16 +1136,17 @@ class VectorStore(models.Model):
 
         try:
             await client.vector_stores.delete(self.id)
-            return True
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to delete vector store {self.id} from upstream: {e}")
+            log.warning("Failed to delete vector store %s from upstream: %s", self.id, e)
             return False
+        else:
+            return True
 
     async def areload_from_upstream(
         self, client=None, raise_on_error=True
-    ) -> Optional[openai.types.VectorStore]:
+    ) -> openai.types.VectorStore | None:
         """
         Fetch current state from upstream and update local DB fields.
 
@@ -1151,17 +1164,18 @@ class VectorStore(models.Model):
 
         try:
             remote = await client.vector_stores.retrieve(self.id)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning("Failed to reload vector store %s from upstream: %s", self.id, e)
+            return None
+        else:
             self.status = remote.status or self.status
             self.usage_bytes = getattr(remote, "usage_bytes", self.usage_bytes)
             self.last_active_at = int(timezone.now().timestamp())
             await self.asave()
             await self.async_file_statuses(client)
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload vector store {self.id} from upstream: {e}")
-            return None
 
     async def async_file_statuses(self, client=None) -> tuple[int, int]:
         """
@@ -1178,7 +1192,7 @@ class VectorStore(models.Model):
                 remote_files_response.data if hasattr(remote_files_response, "data") else []
             )
         except Exception as e:
-            log.warning(f"Failed to list files for vector store {self.id} from upstream: {e}")
+            log.warning("Failed to list files for vector store %s from upstream: %s", self.id, e)
             return 0, 0
 
         success = 0
@@ -1196,16 +1210,17 @@ class VectorStore(models.Model):
                 await local_file.asave()
                 success += 1
             except VectorStoreFile.DoesNotExist:
-                log.debug(f"VectorStoreFile {remote_file.id} not found locally, skipping sync")
+                log.debug("VectorStoreFile %s not found locally, skipping sync", remote_file.id)
             except Exception as e:
-                log.warning(f"Failed to sync VectorStoreFile {remote_file.id}: {e}")
+                log.warning("Failed to sync VectorStoreFile %s: %s", remote_file.id, e)
                 failed += 1
 
         return success, failed
 
     def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
-        Override ORM delete - vector stores are stored upstream, so we only delete the local DB record.
+        Override ORM delete - vector stores are stored upstream,
+        so we only delete the local DB record.
 
         Args:
             delete_upstream: If True, also delete from upstream API before local delete.
@@ -1271,6 +1286,13 @@ class VectorStoreFile(models.Model):
         help_text="Bytes used in vector store (may differ from original file after chunking).",
     )
 
+    class Meta:
+        verbose_name = "Vector Store File"
+        verbose_name_plural = "Vector Store Files"
+
+    def __str__(self) -> str:
+        return self.id
+
     async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
         """
         Delete the vector store file from the upstream API.
@@ -1287,7 +1309,7 @@ class VectorStoreFile(models.Model):
             False on failure (only if raise_on_error=False).
         """
         if not self.vector_store_id:
-            log.warning(f"Cannot delete vector store file {self.id}: vector_store not set")
+            log.warning("Cannot delete vector store file %s: vector_store not set", self.id)
             if raise_on_error:
                 raise ValueError("Vector store not loaded")
             return False
@@ -1301,12 +1323,13 @@ class VectorStoreFile(models.Model):
             await client.vector_stores.files.delete(
                 vector_store_id=self.vector_store_id, file_id=self.id
             )
-            return True
         except Exception as e:
             if raise_on_error:
                 raise
-            log.warning(f"Failed to delete vector store file {self.id} from upstream: {e}")
+            log.warning("Failed to delete vector store file %s from upstream: %s", self.id, e)
             return False
+        else:
+            return True
 
     async def areload_from_upstream(
         self, client=None, raise_on_error=True
@@ -1327,7 +1350,7 @@ class VectorStoreFile(models.Model):
         if not self.vector_store_id:
             if raise_on_error:
                 raise ValueError("Vector store not set")
-            log.warning(f"Cannot reload vector store file {self.id}: vector_store not set")
+            log.warning("Cannot reload vector store file %s: vector_store not set", self.id)
             return None
 
         from gateway.config import get_files_api_client
@@ -1339,17 +1362,18 @@ class VectorStoreFile(models.Model):
             remote = await client.vector_stores.files.retrieve(
                 vector_store_id=self.vector_store_id, file_id=self.id
             )
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning("Failed to reload vector store file %s from upstream: %s", self.id, e)
+            return None
+        else:
             self.status = remote.status or self.status
             self.usage_bytes = remote.usage_bytes
             if hasattr(remote, "last_error") and remote.last_error:
                 self.last_error = remote.last_error
             await self.asave()
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload vector store file {self.id} from upstream: {e}")
-            return None
 
     def delete(self, using=None, keep_parents=False, delete_upstream=False):
         """
@@ -1363,10 +1387,6 @@ class VectorStoreFile(models.Model):
 
             asyncio.run(self.adelete_upstream())
         super().delete(using=using, keep_parents=keep_parents)
-
-    class Meta:
-        verbose_name = "Vector Store File"
-        verbose_name_plural = "Vector Store Files"
 
 
 class VectorStoreFileBatchStatus(models.TextChoices):
@@ -1405,6 +1425,13 @@ class VectorStoreFileBatch(models.Model):
         help_text="The Unix timestamp (in seconds) for when the batch was created."
     )
 
+    class Meta:
+        verbose_name = "Vector Store File Batch"
+        verbose_name_plural = "Vector Store File Batches"
+
+    def __str__(self) -> str:
+        return self.id
+
     async def areload_from_upstream(
         self, client=None, raise_on_error=True
     ) -> Optional["openai.types.vector_stores.VectorStoreFileBatch"]:
@@ -1422,7 +1449,7 @@ class VectorStoreFileBatch(models.Model):
         if not self.vector_store_id:
             if raise_on_error:
                 raise ValueError("Vector store not set")
-            log.warning(f"Cannot reload vector store file batch {self.id}: vector_store not set")
+            log.warning("Cannot reload vector store file batch %s: vector_store not set", self.id)
             return None
 
         from gateway.config import get_files_api_client
@@ -1434,17 +1461,14 @@ class VectorStoreFileBatch(models.Model):
             remote = await client.vector_stores.file_batches.retrieve(
                 vector_store_id=self.vector_store_id, batch_id=self.id
             )
+        except Exception as e:
+            if raise_on_error:
+                raise
+            log.warning("Failed to reload vector store file batch %s from upstream: %s", self.id, e)
+            return None
+        else:
             self.status = remote.status or self.status
             if hasattr(remote, "file_counts") and remote.file_counts:
                 self.file_counts = remote.file_counts.model_dump()
             await self.asave()
             return remote
-        except Exception as e:
-            if raise_on_error:
-                raise
-            log.warning(f"Failed to reload vector store file batch {self.id} from upstream: {e}")
-            return None
-
-    class Meta:
-        verbose_name = "Vector Store File Batch"
-        verbose_name_plural = "Vector Store File Batches"

@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from django import forms
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -18,14 +20,14 @@ class ServiceAccountForm(forms.ModelForm):
 
     class Meta:
         model = ServiceAccount
-        fields = ["name", "description"]
-        widgets = {
+        fields: ClassVar[list] = ["name", "description"]
+        widgets: ClassVar[dict] = {
             "name": forms.TextInput(attrs={"placeholder": "Enter service account name"}),
             "description": forms.Textarea(
                 attrs={"rows": 3, "placeholder": "Optional description..."}
             ),
         }
-        labels = {"name": "Service Account Name", "description": "Description"}
+        labels: ClassVar[dict] = {"name": "Service Account Name", "description": "Description"}
 
     def __init__(self, *args, **kwargs):
         # Pop the team object passed from the view
@@ -36,7 +38,7 @@ class ServiceAccountForm(forms.ModelForm):
             # This indicates a programming error in the view setup
             raise ValueError("Team instance must be provided to the ServiceAccountForm.")
 
-    def clean(self):
+    def clean(self) -> dict:
         cleaned_data = super().clean()
         name = cleaned_data.get("name")
 
@@ -71,28 +73,27 @@ class ServiceAccountForm(forms.ModelForm):
             if instance_pk is None and current_count >= limit:
                 # Attach the error to the form, not a specific field, as it's a general limit issue
                 raise ValidationError(
-                    f"Team '{self.team.name}' has reached the maximum limit of {limit} "
-                    f"service accounts.",
+                    f"Team '{self.team.name}' has reached the maximum limit of "
+                    f"{limit} service accounts.",
                     code="limit_reached",
                 )
         expires_at = cleaned_data.get("token_expires_at")
-        if expires_at:
-            if expires_at <= timezone.now():
-                self.add_error("expires_at", "Expiration date must be in the future.")
+        if expires_at and expires_at <= timezone.now():
+            self.add_error("expires_at", "Expiration date must be in the future.")
         return cleaned_data
 
 
 class TeamCreateForm(forms.ModelForm):
     class Meta:
         model = Team
-        fields = ["name", "description"]
-        widgets = {
+        fields: ClassVar[list] = ["name", "description"]
+        widgets: ClassVar[dict] = {
             "name": forms.TextInput(attrs={"placeholder": "Enter team name"}),
             "description": forms.Textarea(
                 attrs={"rows": 3, "placeholder": "Optional description..."}
             ),
         }
-        labels = {"name": "Team Name", "description": "Description"}
+        labels: ClassVar[dict] = {"name": "Team Name", "description": "Description"}
 
     def __init__(self, *args, **kwargs):
         # Pop the organization kwarg before initializing the parent ModelForm
@@ -100,7 +101,7 @@ class TeamCreateForm(forms.ModelForm):
         self.org = kwargs.pop("org", None)
         super().__init__(*args, **kwargs)
 
-    def clean(self):
+    def clean(self) -> dict:
         """
         Perform validation checks that depend on multiple fields or
         require access to data outside the form fields (like organization).
@@ -129,14 +130,14 @@ class TeamCreateForm(forms.ModelForm):
 class TokenCreateForm(forms.ModelForm):
     class Meta:
         model = Token
-        fields = ["name", "expires_at"]
-        widgets = {
+        fields: ClassVar[list] = ["name", "expires_at"]
+        widgets: ClassVar[dict] = {
             "name": forms.TextInput(attrs={"placeholder": "Enter token name"}),
             "expires_at": forms.DateTimeInput(
                 attrs={"type": "datetime-local", "class": "input"}, format="%Y-%m-%dT%H:%M"
             ),
         }
-        labels = {"name": "Token Name", "expires_at": "Expiration Date (optional)"}
+        labels: ClassVar[dict] = {"name": "Token Name", "expires_at": "Expiration Date (optional)"}
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user", None)
@@ -145,7 +146,7 @@ class TokenCreateForm(forms.ModelForm):
             raise ValueError("User must be provided to TokenCreateForm.")
         self.fields["expires_at"].input_formats = ["%Y-%m-%dT%H:%M"]
 
-    def clean(self):
+    def clean(self) -> dict:
         cleaned_data = super().clean()
         from django.conf import settings
 
@@ -157,8 +158,7 @@ class TokenCreateForm(forms.ModelForm):
             raise ValidationError(f"You can only have {max_tokens} tokens.")
 
         expires_at = cleaned_data.get("expires_at")
-        if expires_at:
-            if expires_at <= timezone.now():
-                self.add_error("expires_at", "Expiration date must be in the future.")
+        if expires_at and expires_at <= timezone.now():
+            self.add_error("expires_at", "Expiration date must be in the future.")
 
         return cleaned_data

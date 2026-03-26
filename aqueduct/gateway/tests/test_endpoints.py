@@ -2,6 +2,7 @@ import base64
 import json
 from http import HTTPStatus
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import patch
 
 from asgiref.sync import async_to_sync, sync_to_async
@@ -48,8 +49,8 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         """
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest(
-                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase "
-                "to manage multiple servers!"
+                "Tests not adapted for vLLM yet... "
+                "Requires GatewayIntegrationTestCase to manage multiple servers!"
             )
 
         assert self.model in ROUTER_CONFIG
@@ -92,7 +93,7 @@ class EmbeddingTest(GatewayIntegrationTestCase):
 
 
 class ChatCompletionsBase(GatewayIntegrationTestCase):
-    MESSAGES = [
+    MESSAGES: ClassVar[list[dict[str, str]]] = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Write me a short poem!"},
     ]
@@ -107,7 +108,7 @@ class ChatCompletionsBase(GatewayIntegrationTestCase):
         Helper to build headers, payload, and endpoint for chat completion requests.
         """
         payload = _build_chat_payload(self.model, messages, stream=stream, **payload_kwargs)
-        return dict(path=self.url, data=json.dumps(payload), headers=self.headers)
+        return {"path": self.url, "data": json.dumps(payload), "headers": self.headers}
 
     def _send_chat_completion(self, messages, **payload_kwargs):
         """
@@ -145,8 +146,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         response_json = response.json()
         chat_completion = ChatCompletion.model_validate(response_json)
 
-        # print(f"\nChat completion response: {chat_completion}")
-
         self.assertIsNotNone(chat_completion)
         self.assertTrue(chat_completion.choices)
         self.assertIsInstance(chat_completion.choices, list)
@@ -157,9 +156,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsNotNone(first_choice.message)
         self.assertTrue(hasattr(first_choice.message, "content"))
         self.assertIsNotNone(first_choice.message.content)
-
-        # response_text = first_choice.message.content.strip()
-        # print(response_text)
 
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
@@ -306,7 +302,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertEqual(
             len(requests),
             2,
-            "There should be exactly two requests after file_id input (file upload + chat completion).",
+            "There should be exactly two requests after file_id input "
+            "(file upload + chat completion).",
         )
 
         # Get the chat completion request (should be the one with /chat/completions path)
@@ -376,8 +373,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         upload_data = upload_response.json()
         file_id = upload_data["id"]
 
-        UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
-        headers = _build_chat_headers(UPDATED_ACCESS_TOKEN)
+        updated_access_token, _ = self.create_new_user()
+        headers = _build_chat_headers(updated_access_token)
 
         payload = {
             "model": self.model,
@@ -448,7 +445,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertEqual(
             response.status_code,
             400,
-            f"Expected 400 Bad Request for file size > 1MB, got {response.status_code}: {response.content}",
+            f"Expected 400 Bad Request for file size > 1MB, "
+            f"got {response.status_code}: {response.content}",
         )
         self.assertIn(b"File too large", response.content)
 
@@ -512,8 +510,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertEqual(
             response.status_code,
             400,
-            f"Expected 400 Bad Request for total file size > 1MB, got {response.status_code}: "
-            f"{response.content}",
+            f"Expected 400 Bad Request for total file size > 1MB, "
+            f"got {response.status_code}: {response.content}",
         )
         self.assertIn(b"Files too large in total", response.content)
 
@@ -664,7 +662,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         # Parse each chunk as JSON and collect content pieces
         content_pieces = _parse_streamed_content_pieces(streamed_lines)
         full_content = "".join(content_pieces).strip()
-        # print(f"Full streamed content: {full_content}")
         self.assertTrue(full_content, "Streamed content should not be empty.")
 
         # Check that the database contains one request and endpoint matches
@@ -712,7 +709,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertGreater(
             len(requests),
             0,
-            f"Expected at least 1 request to be logged for streaming timeout, but found {len(requests)}. "
+            f"Expected at least 1 request to be logged for streaming timeout, "
+            f"but found {len(requests)}. "
             "Streaming timeout requests MUST be logged for usage tracking!",
         )
 
@@ -792,7 +790,6 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 {"role": "system", "content": "You produce JSON output based on a schema."},
                 {"role": "user", "content": "Generate JSON matching the provided schema."},
             ],
-            # { "type": "json_schema", "json_schema": {...} }
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "schema", "schema": json_schema},
@@ -870,12 +867,12 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
     def test_chat_completion_multimodal_input(self):
         if INTEGRATION_TEST_BACKEND == "vllm":
             self.skipTest(
-                "Tests not adapted for vLLM yet... Requires GatewayIntegrationTestCase "
-                "to manage multiple servers!"
+                "Tests not adapted for vLLM yet... "
+                "Requires GatewayIntegrationTestCase to manage multiple servers!"
             )
 
-        with open(
-            Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg", "rb"
+        with (Path(__file__).parent / "resources" / "Polytechnisches-Institut-1823.jpg").open(
+            "rb"
         ) as image_file:
             img_b64 = base64.b64encode(image_file.read()).decode("utf-8")
 
@@ -885,7 +882,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "What’s in this image?"},
+                        {"type": "text", "text": "What's in this image?"},
                         {
                             "type": "image_url",
                             "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
@@ -1040,7 +1037,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         )
 
         response_json = response.json()
-        # print(f"\nList models response: {response_json}")
 
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
@@ -1049,7 +1045,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]
-        # print(f"Available model IDs: {model_ids}")
         self.assertIn(self.model, model_ids)
 
         # Check that the database contains one request and endpoint matches
@@ -1076,10 +1071,12 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         self.assertIn(
             response.status_code,
             [401, 403],
-            f"Expected 401 or 403 for invalid token, got {response.status_code}: {response.content}",
+            f"Expected 401 or 403 for invalid token, "
+            f"got {response.status_code}: {response.content}",
         )
 
-        # There should be no request recorded in the database (or possibly one, depending on implementation)
+        # There should be no request recorded in the database
+        # (or possibly one, depending on implementation)
         requests = list(Request.objects.all())
         self.assertEqual(len(requests), 0, "There should be no request recorded for invalid token.")
 
@@ -1101,7 +1098,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         )
 
         response_json = response.json()
-        # print(f"\nList models response: {response_json}")
 
         # OpenAI API returns an object with a 'data' attribute that is a list of models
         self.assertIn("data", response_json)
@@ -1109,7 +1105,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
         # Check that at least one model matches the expected model name
         model_ids = [m["id"] for m in response_json["data"] if "id" in m]
-        # print(f"Available model IDs: {model_ids}")
         self.assertEqual(len(model_ids), len(model_list) - 1)
         self.assertNotIn(self.model, model_ids)
 
@@ -1133,12 +1128,12 @@ class TokenLimitTest(ChatCompletionsBase):
             setattr(org, field, value)
             org.save(update_fields=[field])
             return org
-        elif kind == "team":
+        if kind == "team":
             team = Team.objects.get(name="Whale")
             setattr(team, field, value)
             team.save(update_fields=[field])
             # Ensure a service account exists for the team and associate it with the token
-            # Only associate the service account with the token if the token does not already have a service account
+            # Only associate the SA with the token if it does not already have a service account
 
             service_account = ServiceAccount.objects.create(team=team, name="Whale Service")
 
@@ -1153,13 +1148,14 @@ class TokenLimitTest(ChatCompletionsBase):
                 token.service_account = service_account
                 token.save(update_fields=["service_account"])
             elif token.service_account_id != service_account.id:
-                # If the token is already associated with a different service account, raise an error
+                # If the token is already associated with a different SA, raise an error
                 raise RuntimeError(
-                    f"Token is already associated with a different service account (id={token.service_account_id})."
+                    f"Token is already associated with a different service account "
+                    f"(id={token.service_account_id})."
                 )
             # Otherwise, already associated with the correct service account, do nothing
             return team
-        elif kind == "user":
+        if kind == "user":
             user = User.objects.get(username="Me")
             profile = (
                 user.profile if hasattr(user, "profile") else UserProfile.objects.get(user=user)
@@ -1167,8 +1163,7 @@ class TokenLimitTest(ChatCompletionsBase):
             setattr(profile, field, value)
             profile.save(update_fields=[field])
             return profile
-        else:
-            raise ValueError(f"Unknown kind: {kind}")
+        raise ValueError(f"Unknown kind: {kind}")
 
     def _rate_limit_test_template(
         self, kind: str, field: str, value: int, messages, max_completion_tokens, limit_desc
@@ -1304,8 +1299,8 @@ class TokenLimitTest(ChatCompletionsBase):
 
     def test_user_rate_limit_input_tokens_per_minute(self):
         """
-        Edits the input_tokens_per_minute of UserProfile for user 'Me' to 5, then makes two requests.
-        The second request should raise a 429 HTTP error.
+        Edits input_tokens_per_minute of UserProfile for user 'Me' to 5,
+        then makes two requests. The second request should raise a 429 HTTP error.
         """
         self._rate_limit_test_template(
             kind="user",
@@ -1346,8 +1341,8 @@ class TokenLimitTest(ChatCompletionsBase):
 
     def test_user_rate_limit_output_tokens_per_minute(self):
         """
-        Edits the output_tokens_per_minute of UserProfile for user 'Me' to 5, then makes two requests.
-        The second request should raise a 429 HTTP error.
+        Edits output_tokens_per_minute of UserProfile for user 'Me' to 5,
+        then makes two requests. The second request should raise a 429 HTTP error.
         """
         self._rate_limit_test_template(
             kind="user",
@@ -1359,6 +1354,7 @@ class TokenLimitTest(ChatCompletionsBase):
         )
 
 
+@override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH="router.yaml")
 class ModelAliasConfigValidationTest(TransactionTestCase):
     """
     Tests for model alias configuration validation.
@@ -1391,7 +1387,10 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("pathlib.Path.open"),
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()
@@ -1433,7 +1432,10 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("pathlib.Path.open"),
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
             get_router_config.cache_clear()
 
             # Should raise RuntimeError due to duplicate aliases
@@ -1462,7 +1464,10 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("pathlib.Path.open"),
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()
@@ -1501,7 +1506,10 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             ]
         }
 
-        with patch("builtins.open"), patch("yaml.safe_load", return_value=mock_config) as mock_load:
+        with (
+            patch("pathlib.Path.open"),
+            patch("yaml.safe_load", return_value=mock_config) as mock_load,
+        ):
             get_router_config.cache_clear()
 
             loaded_config = get_router_config()
@@ -1559,8 +1567,8 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         self.assertEqual(
             response.status_code,
             200,
-            f"Alias resolution not working. "
-            f"Expected 200, got {response.status_code}: {response.content}",
+            f"Alias resolution not working. Expected 200, "
+            f"got {response.status_code}: {response.content}",
         )
 
         response_json = response.json()
@@ -1617,8 +1625,8 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         self.assertEqual(
             response.status_code,
             200,
-            f"Alias resolution not working for STT. "
-            f"Expected 200, got {response.status_code}: {response.content}",
+            f"Alias resolution not working for STT. Expected 200, "
+            f"got {response.status_code}: {response.content}",
         )
 
         response_json = response.json()
@@ -1663,7 +1671,8 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         self.assertEqual(
             response.status_code,
             200,
-            f"Alias resolution not working for embeddings. Expected 200, got {response.status_code}",
+            f"Alias resolution not working for embeddings. "
+            f"Expected 200, got {response.status_code}",
         )
 
         response_json = response.json()
@@ -1801,7 +1810,8 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         self.assertEqual(
             response_lowercase.status_code,
             200,
-            f"Alias resolution not working for lowercase. Expected 200, got {response_lowercase.status_code}",
+            f"Alias resolution not working for lowercase. Expected 200, "
+            f"got {response_lowercase.status_code}",
         )
 
         # Test with wrong case

@@ -35,7 +35,7 @@ async def batches(
     pydantic_model: BatchCreateParams | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     GET /batches - list user's batches from local DB
     POST /batches - create a new batch on upstream
@@ -148,7 +148,7 @@ async def batches(
 @token_authenticated(token_auth_only=True)
 @log_request
 @catch_router_exceptions
-async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs):
+async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs) -> JsonResponse:
     """
     GET /batches/{batch_id} - retrieve a batch from upstream
 
@@ -176,7 +176,8 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
 
     remote_batch = await batch_obj.areload_from_upstream(client)
 
-    # Create local FileObject records for output/error files if missing (inherit ownership from input_file token)
+    # Create local FileObject records for output/error files if missing
+    # (inherit ownership from input_file token)
     output_file_obj = await sync_batch_file_if_needed(
         remote_batch.output_file_id, token, client, batch_obj, "output_file"
     )
@@ -200,7 +201,9 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
 @token_authenticated(token_auth_only=False)
 @log_request
 @catch_router_exceptions
-async def batch_cancel(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs):
+async def batch_cancel(
+    request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs
+) -> JsonResponse:
     """
     POST /batches/{batch_id}/cancel - cancel a batch on upstream
 

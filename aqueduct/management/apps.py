@@ -44,18 +44,12 @@ class AqueductManagementConfig(AppConfig):
                     return
 
                 if group == "admin":
-                    cache.set(
-                        "django:tos:skip_tos_check:{}".format(instance.id),
-                        True,
-                        version=key_version,
-                    )
-                    log.info(f"Added admin user '{instance.email}' to TOS cache")
+                    cache.set(f"django:tos:skip_tos_check:{instance.id}", True, version=key_version)
+                    log.info("Added admin user '%s' to TOS cache", instance.email)
 
                 # But if they aren't make sure we invalidate them from the cache
-                elif cache.get("django:tos:skip_tos_check:{}".format(instance.id), False):
-                    cache.delete(
-                        "django:tos:skip_tos_check:{}".format(instance.id), version=key_version
-                    )
+                elif cache.get(f"django:tos:skip_tos_check:{instance.id}", False):
+                    cache.delete(f"django:tos:skip_tos_check:{instance.id}", version=key_version)
 
             @receiver(
                 post_save,
@@ -74,7 +68,7 @@ class AqueductManagementConfig(AppConfig):
                 # agreement check
                 cache.set_many(
                     {
-                        "django:tos:skip_tos_check:{}".format(user.id): True
+                        f"django:tos:skip_tos_check:{user.id}": True
                         for user in get_user_model().objects.filter(groups__name="admin")
                     },
                     version=key_version,

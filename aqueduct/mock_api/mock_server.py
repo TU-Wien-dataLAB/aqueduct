@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 from contextlib import contextmanager
-from typing import Optional
+from http import HTTPStatus
 from unittest.mock import patch
 
 import requests
@@ -22,19 +22,19 @@ LOGGING_CONFIG = {
     "formatters": {
         "standard": {
             "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        }
+        },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler", "formatter": "standard",
-        }
+        },
     },
     "loggers": {
         "mock_server": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
-        }
+        },
     },
 }  # fmt: skip
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -44,13 +44,17 @@ logger = logging.getLogger("mock_server")
 
 class MockAPIServer:
     def __init__(
-        self, host: str = "0.0.0.0", port: int = None, delays: bool = True, log_level: str = "error"
+        self,
+        host: str = "localhost",
+        port: int | None = None,
+        delays: bool = True,
+        log_level: str = "error",
     ) -> None:
         self.host: str = host
         self.port: int = port or get_available_port()
         self.base_url: str = f"http://{self.host}:{self.port}"
         self.delays: bool = delays
-        self.process: Optional[subprocess.Popen] = None
+        self.process: subprocess.Popen | None = None
         self.log_level: str = log_level
         self.logger = logging.getLogger("mock_server")
 
@@ -82,18 +86,18 @@ class MockAPIServer:
         while True:
             try:
                 response = requests.get(f"{self.base_url}/health", timeout=0.5)
-                if response.status_code == 200:
+                if response.status_code == HTTPStatus.OK:
                     break
             except requests.RequestException as err:
                 if time.time() - start_time < timeout:
                     time.sleep(0.5)
                 else:
-                    self.logger.error(
+                    self.logger.exception(
                         "Mock server failed to start within %s s. Last error: %s", timeout, err
                     )
                     raise RuntimeError(
                         f"Mock server failed to start within {timeout} s. Last error: {err}"
-                    )
+                    ) from err
 
     def stop(self):
         """Stop the mock server"""
@@ -158,8 +162,9 @@ def main():
     parser.add_argument(
         "--host",
         type=str,
-        default="0.0.0.0",
-        help="Host to bind the server to (use '0.0.0.0' for Docker, 'localhost' when running Django tests)",
+        default="localhost",
+        help="Host to bind the server to (use '0.0.0.0' for Docker, "
+        "'localhost' when running Django tests)",
     )
     parser.add_argument(
         "--port",

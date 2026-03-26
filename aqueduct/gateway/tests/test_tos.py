@@ -13,7 +13,7 @@ class TOSTestCase(TOSGatewayTestCase):
         Test that when a user has accepted the TOS, they can access the /models endpoint.
         """
         # Accept TOS for non-admin user
-        UPDATED_ACCESS_TOKEN, user_id = self.create_new_user()
+        updated_access_token, user_id = self.create_new_user()
         self.accept_tos(user_id=user_id)
 
         with patch("gateway.views.decorators.cache", caches["default"]):
@@ -22,7 +22,7 @@ class TOSTestCase(TOSGatewayTestCase):
                 "/models",
                 data="",
                 content_type="application/json",
-                headers=_build_chat_headers(UPDATED_ACCESS_TOKEN),
+                headers=_build_chat_headers(updated_access_token),
             )
 
         # Should return 200 OK
@@ -45,7 +45,7 @@ class TOSTestCase(TOSGatewayTestCase):
         from tos.models import TermsOfService
 
         # non-admin user
-        UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
+        updated_access_token, _ = self.create_new_user()
 
         # Create an active Terms of Service but DON'T create a UserAgreement for the user
         TermsOfService.objects.create(active=True, content="Test Terms of Service content")
@@ -56,7 +56,7 @@ class TOSTestCase(TOSGatewayTestCase):
                 "/models",
                 data="",
                 content_type="application/json",
-                headers=_build_chat_headers(UPDATED_ACCESS_TOKEN),
+                headers=_build_chat_headers(updated_access_token),
             )
 
         # Should return 403 Forbidden
@@ -75,7 +75,7 @@ class TOSTestCase(TOSGatewayTestCase):
         """Tests that admin users are skipped in the decorator check."""
         cache = caches["default"]
         # set cache for user with id 1
-        cache.set("django:tos:skip_tos_check:{}".format(1), True)
+        cache.set(f"django:tos:skip_tos_check:{1}", True)
 
         from tos.models import TermsOfService
 
@@ -105,12 +105,13 @@ class TOSTestCase(TOSGatewayTestCase):
     @override_settings(TOS_GATEWAY_VALIDATION=False)
     def test_tos_gateway_validation_disabled(self):
         """
-        Test that when a user has not accepted the TOS, but gateway validation is disabled, the request is handled.
+        Test that when a user has not accepted the TOS,
+        but gateway validation is disabled, the request is handled.
         """
         from tos.models import TermsOfService
 
         # non-admin user
-        UPDATED_ACCESS_TOKEN, _ = self.create_new_user()
+        updated_access_token, _ = self.create_new_user()
 
         # Create an active Terms of Service but DON'T create a UserAgreement for the user
         TermsOfService.objects.create(active=True, content="Test Terms of Service content")
@@ -120,7 +121,7 @@ class TOSTestCase(TOSGatewayTestCase):
             "/models",
             data="",
             content_type="application/json",
-            headers=_build_chat_headers(UPDATED_ACCESS_TOKEN),
+            headers=_build_chat_headers(updated_access_token),
         )
 
         # Should return 403 Forbidden

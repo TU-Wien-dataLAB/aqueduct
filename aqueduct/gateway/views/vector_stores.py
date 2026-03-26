@@ -1,5 +1,3 @@
-from typing import Optional
-
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
@@ -40,10 +38,10 @@ from .errors import error_response
 async def vector_stores(
     request: ASGIRequest,
     token: Token,
-    pydantic_model: Optional[VectorStoreCreateParams] = None,
+    pydantic_model: VectorStoreCreateParams | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores - List vector stores
     POST /v1/vector_stores - Create vector store
@@ -172,11 +170,11 @@ async def vector_store(
     request: ASGIRequest,
     token: Token,
     vector_store_id: str,
-    pydantic_model: Optional[VectorStoreUpdateParams] = None,
-    client: Optional[AsyncOpenAI] = None,
+    pydantic_model: VectorStoreUpdateParams | None = None,
+    client: AsyncOpenAI | None = None,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id} - Retrieve vector store
     POST /v1/vector_stores/{vector_store_id} - Modify vector store
@@ -202,7 +200,7 @@ async def vector_store(
 
         return JsonResponse(response_data, status=200)
 
-    elif request.method == "POST":
+    if request.method == "POST":
         # Modify vector store
         params = pydantic_model if pydantic_model else {}
 
@@ -229,7 +227,6 @@ async def vector_store(
         response_data = remote_vs.model_dump(mode="json")
         return JsonResponse(response_data, status=200)
 
-    # DELETE /v1/vector_stores/{vector_store_id}
     await vs_obj.adelete_upstream(client)
 
     # Capture ID before delete (Django sets pk to None after delete)
@@ -259,7 +256,7 @@ async def vector_store_search(
     pydantic_model: VectorStoreSearchParams,
     *args,
     **kwargs,
-):
+) -> JsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/search - Search vector store
     """

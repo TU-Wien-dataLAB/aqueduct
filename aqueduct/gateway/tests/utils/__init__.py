@@ -1,6 +1,5 @@
 import json
 import warnings
-from typing import List
 
 from openai.types.chat import ChatCompletionChunk
 
@@ -16,25 +15,24 @@ def _build_chat_payload(model, messages, max_completion_tokens=50, stream=False)
     return payload
 
 
-async def _read_streaming_response_lines(response) -> List[str]:
+async def _read_streaming_response_lines(response) -> list[str]:
     """
     Collect all streamed lines (each line is a data: ... event) from a StreamingHttpResponse.
     """
     streamed_lines = []
     async for chunk in response.streaming_content:
-        if isinstance(chunk, bytes):
-            chunk = chunk.decode("utf-8")
-        for line in chunk.strip().splitlines():
-            line = line.strip()
-            if line.startswith("data: "):
-                data = line.removeprefix("data: ")
+        chunk_text = chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk
+        for line_text in chunk_text.strip().splitlines():
+            stripped_line = line_text.strip()
+            if stripped_line.startswith("data: "):
+                data = stripped_line.removeprefix("data: ")
                 if data == "[DONE]":
                     continue
                 streamed_lines.append(data)
     return streamed_lines
 
 
-def _parse_streamed_content_pieces(streamed_lines: List[str]) -> List[str]:
+def _parse_streamed_content_pieces(streamed_lines: list[str]) -> list[str]:
     """
     Parse each chunk as JSON and collect content pieces from OpenAI streaming response.
     """
@@ -43,7 +41,7 @@ def _parse_streamed_content_pieces(streamed_lines: List[str]) -> List[str]:
         try:
             chunk = ChatCompletionChunk.model_validate(json.loads(data))
         except Exception:
-            warnings.warn("Chat completion request returned invalid JSON data!")
+            warnings.warn("Chat completion request returned invalid JSON data!", stacklevel=2)
             continue
         choices = chunk.choices
         if choices:

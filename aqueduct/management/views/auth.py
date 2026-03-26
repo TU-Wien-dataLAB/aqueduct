@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.http import HttpResponseBase
 from django.shortcuts import redirect
 from django.urls import NoReverseMatch, reverse
 from django.views.generic import TemplateView
@@ -7,7 +8,7 @@ from django.views.generic import TemplateView
 class SSOTemplateView(TemplateView):
     template_name = "management/login.html"
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs) -> HttpResponseBase:
         if request.user.is_authenticated:
             next_url = request.GET.get("next")
             if next_url:
@@ -19,7 +20,7 @@ class SSOTemplateView(TemplateView):
                 return redirect(settings.LOGIN_REDIRECT_URL)
         return super().dispatch(request, *args, **kwargs)
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["OIDC_PROVIDER"] = getattr(settings, "OIDC_PROVIDER", "SSO")
         return context

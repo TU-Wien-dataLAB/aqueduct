@@ -45,29 +45,32 @@ async def transcriptions(
     request_log: Request,
     *args,
     **kwargs,
-):
+) -> JsonResponse | HttpResponse | StreamingHttpResponse:
     client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay
 
     transcription = await client.audio.transcriptions.create(**pydantic_model)
 
-    if isinstance(transcription, openai.types.audio.transcription.Transcription) or isinstance(
-        transcription, openai.types.audio.transcription_verbose.TranscriptionVerbose
+    if isinstance(
+        transcription,
+        (
+            openai.types.audio.transcription.Transcription,
+            openai.types.audio.transcription_verbose.TranscriptionVerbose,
+        ),
     ):
         data = transcription.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)
         return JsonResponse(data=data, status=200)
-    elif isinstance(transcription, str):
+    if isinstance(transcription, str):
         # Text-based formats (VTT, SRT, text) return plain strings
         return HttpResponse(
             content=transcription.encode("utf-8"),
             content_type="text/plain; charset=utf-8",
             status=200,
         )
-    elif isinstance(transcription, openai.AsyncStream):
+    if isinstance(transcription, openai.AsyncStream):
         return StreamingHttpResponse(
             streaming_content=_openai_stream(stream=transcription, request_log=request_log),
             content_type="text/event-stream",
         )
-    else:
-        raise RuntimeError(f"Received unexpected response type: {type(transcription)}")
+    raise RuntimeError(f"Received unexpected response type: {type(transcription)}")

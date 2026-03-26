@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import ClassVar
 from urllib.parse import urlparse
 
 import httpx
@@ -30,7 +31,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             tool_names = [tool.name for tool in tools.tools]
             self.assertIn("echo", tool_names)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -47,7 +48,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             # Verify the echo tool returns the input message
             self.assertIn("test", result.content[0].text)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -74,7 +75,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             # Resources may be empty, but the response should be valid
             self.assertGreater(len(resources.resources), 0)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -92,7 +93,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsInstance(result.contents, list)
             self.assertGreater(len(result.contents), 0)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -109,7 +110,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             for prompt in prompts.prompts:
                 self.assertIsInstance(prompt.name, str)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -127,7 +128,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsInstance(result.messages, list)
             self.assertGreater(len(result.messages), 0)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -139,7 +140,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
             self.assertIsNotNone(result)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -155,7 +156,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             for template in templates.resourceTemplates:
                 self.assertIsInstance(template.uriTemplate, str)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -175,7 +176,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsNotNone(result.completion)
             self.assertIsInstance(result.completion.values, list)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -195,7 +196,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsNotNone(result.completion)
             self.assertIsInstance(result.completion.values, list)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -207,7 +208,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
             self.assertIsNotNone(result)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -219,7 +220,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
             self.assertIsNone(result)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -233,7 +234,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
             self.assertIsNone(result)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -259,10 +260,10 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             # Verify structure of progress updates
             for update in progress_updates:
                 self.assertEqual(len(update), 3)
-                progress_token, progress, total = update
+                _progress_token, progress, _total = update
                 self.assertIsInstance(progress, (int, float))
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -279,7 +280,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsInstance(result.content, list)
             self.assertGreater(len(result.content), 0)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -304,7 +305,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
                 self.assertIsNotNone(next_resources)
                 self.assertIsInstance(next_resources.resources, list)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -317,7 +318,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
             self.assertEqual("Unknown tool: nonexistent_tool", str(context.exception))
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -332,7 +333,7 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
 
             self.assertEqual("Unknown resource: invalid://not-a-real-uri", str(context.exception))
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     async def test_initialize(self):
         """Test initialize method directly."""
@@ -344,39 +345,35 @@ class MCPLiveClientTest(MCPLiveServerTestCase):
             self.assertIsNotNone(result.serverInfo)
             self.assertIsNotNone(result.capabilities)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
     async def test_session_creation(self):
         """Test that sessions have unique IDs."""
         async with httpx.AsyncClient(headers=self.headers) as client:
-            async with streamable_http_client(self.mcp_url, http_client=client) as (
-                r,
-                w,
-                get_session_id,
+            async with (
+                streamable_http_client(self.mcp_url, http_client=client) as (r, w, get_session_id),
+                ClientSession(r, w) as session,
             ):
-                async with ClientSession(r, w) as session:
-                    await session.initialize()
-                    s1 = get_session_id()
+                await session.initialize()
+                s1 = get_session_id()
 
-            async with streamable_http_client(self.mcp_url, http_client=client) as (
-                r,
-                w,
-                get_session_id,
+            async with (
+                streamable_http_client(self.mcp_url, http_client=client) as (r, w, get_session_id),
+                ClientSession(r, w) as session,
             ):
-                async with ClientSession(r, w) as session:
-                    await session.initialize()
-                    s2 = get_session_id()
+                await session.initialize()
+                s2 = get_session_id()
 
         self.assertNotEqual(s1, s2)
-        await self.assertRequestLogged(n=2)
+        await self.assert_request_logged(n=2)
 
 
 class MCPTransportSecurityTest(MCPLiveServerTestCase):
     """Test MCP transport security (DNS rebinding protection)."""
 
-    custom_validation_init_payload = {
+    custom_validation_init_payload: ClassVar[dict] = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "initialize",
@@ -397,7 +394,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             self.assertIsNotNone(result)
             self.assertIsNotNone(result.serverInfo)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -429,7 +426,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             self.assertIn("error", response.json())
             self.assertIn("Invalid Host header", response.json()["error"]["message"])
 
-        await self.assertRequestLogged(n=0)
+        await self.assert_request_logged(n=0)
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -456,7 +453,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             self.assertIn("error", response.json())
             self.assertIn("Invalid Origin header", response.json()["error"]["message"])
 
-        await self.assertRequestLogged(0)
+        await self.assert_request_logged(0)
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -481,7 +478,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             self.assertIn("error", response.json())
             self.assertIn("Unsupported Content-Type", response.json()["error"]["message"])
 
-        await self.assertRequestLogged(n=0)
+        await self.assert_request_logged(n=0)
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -493,7 +490,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             self.assertIsNotNone(result)
             self.assertIsNotNone(result.serverInfo)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -517,7 +514,7 @@ class MCPTransportSecurityTest(MCPLiveServerTestCase):
             # Should succeed because localhost:* is in allowed hosts
             self.assertEqual(response.status_code, 200)
 
-        await self.assertRequestLogged(n=1)
+        await self.assert_request_logged(n=1)
 
 
 class MCPServerExclusionTest(MCPLiveServerTestCase):
@@ -532,7 +529,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
             self.assertIsNotNone(result)
             self.assertIsNotNone(result.serverInfo)
 
-        await self.assertRequestLogged()
+        await self.assert_request_logged()
 
     @async_to_sync
     @skip_on_cancel_scope_error
@@ -599,10 +596,10 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
     async def test_user_excluded_mcp_server(self):
         """Test that MCP server is blocked when excluded at user profile level."""
 
-        User = get_user_model()
+        user_model = get_user_model()
 
         # Get user and their profile
-        user = await sync_to_async(User.objects.get)(username="Me")
+        user = await sync_to_async(user_model.objects.get)(username="Me")
         profile = await sync_to_async(lambda: user.profile)()
 
         # Add exclusion to user profile
@@ -626,7 +623,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         """Test that exclusion lists merge correctly across hierarchy."""
         from management.models import Org, Token
 
-        User = get_user_model()
+        user_model = get_user_model()
 
         # Get the token to test exclusion list logic
         from gateway.tests.utils.base import GatewayIntegrationTestCase
@@ -639,7 +636,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         org = await sync_to_async(Org.objects.get)(name="E060")
         await sync_to_async(org.add_excluded_mcp_server)("test-server")
 
-        user = await sync_to_async(User.objects.get)(username="Me")
+        user = await sync_to_async(user_model.objects.get)(username="Me")
         profile = await sync_to_async(lambda: user.profile)()
 
         # Verify merge_mcp_server_exclusion_lists is True by default
@@ -685,4 +682,4 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
             )
             self.assertEqual(response.status_code, 404)
 
-        await self.assertRequestLogged(n=1)
+        await self.assert_request_logged(n=1)

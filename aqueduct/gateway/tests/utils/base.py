@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.conf import settings
@@ -34,8 +34,8 @@ if INTEGRATION_TEST_BACKEND not in ["vllm", "openai"]:
 
 ROOT = Path(__file__).parent.parent.parent.parent.parent
 
-ROUTER_CONFIG_PATH = str(ROOT / "example_router_config.yaml")
-with open(ROUTER_CONFIG_PATH) as f:
+ROUTER_CONFIG_PATH = ROOT / "example_router_config.yaml"
+with ROUTER_CONFIG_PATH.open() as f:
     ROUTER_CONFIG = f.read()
 
 User = get_user_model()
@@ -57,7 +57,7 @@ def get_mock_router(model: str = "test-model"):
 @override_settings(
     AUTHENTICATION_BACKENDS=["gateway.authentication.TokenAuthenticationBackend"],
     LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
-    API_MAX_RETRIES=1,  # for some reason, in a few tests the 1st request to the mock API fails (503)
+    API_MAX_RETRIES=1,  # sometimes 1st request to the mock API fails (503)
 )
 class GatewayIntegrationTestCase(TestCase):
     """
@@ -70,18 +70,21 @@ class GatewayIntegrationTestCase(TestCase):
     # Preview: k-...3abc
     AQUEDUCT_ACCESS_TOKEN = "sk-123abc"
 
-    fixtures = ["gateway_data.json"]
+    fixtures: ClassVar[list[str]] = ["gateway_data.json"]
     mock_server: MockAPIServer = None
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        if INTEGRATION_TEST_BACKEND == "openai" and not settings.TESTS_USE_MOCK_API:
+        if (
+            INTEGRATION_TEST_BACKEND == "openai"
+            and not settings.TESTS_USE_MOCK_API
+            and not os.environ.get("OPENAI_API_KEY")
+        ):
             # When running tests against the real OpenAI API, the API key has to be set
-            if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError(
-                    "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
-                )
+            raise RuntimeError(
+                "OPENAI_API_KEY environment variable has to be set for OpenAI integration."
+            )
 
         if settings.TESTS_USE_MOCK_API:
             # Mock all requests to the external OpenAI API
@@ -189,7 +192,7 @@ class GatewayBatchesTestCase(GatewayIntegrationTestCase):
 
 
 class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
-    fixtures = ["gateway_data.json"]
+    fixtures: ClassVar[list[str]] = ["gateway_data.json"]
     tts_model = "gpt-4o-mini-tts"
     stt_model = "whisper-1"
 
@@ -209,7 +212,7 @@ class GatewayTTSSTTestCase(GatewayIntegrationTestCase):
 
 @override_settings(TOS_ENABLED=True)
 class TOSGatewayTestCase(GatewayIntegrationTestCase):
-    fixtures = ["gateway_data.json"]
+    fixtures: ClassVar[list[str]] = ["gateway_data.json"]
 
     def accept_tos(self, user_id: int = 1):
         # Create an active Terms of Service

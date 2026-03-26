@@ -21,14 +21,15 @@ def token_from_request(request) -> str | None:
         token_key = auth_header.split(" ")[1]
         if not token_key:
             raise IndexError
+    except IndexError:
+        logger.warning("Authentication failed: Empty or badly formatted Bearer token in header.")
+        return None
+    else:
         logger.debug(
             "TokenAuthenticationBackend: Attempting to authenticate with token starting with %s",
             Token._generate_preview(token_key),
         )
         return token_key
-    except IndexError:
-        logger.warning("Authentication failed: Empty or badly formatted Bearer token in header.")
-        return None
 
 
 class TokenAuthenticationBackend(BaseBackend):
@@ -37,7 +38,7 @@ class TokenAuthenticationBackend(BaseBackend):
     using the aqueduct.management.models.Token model.
     """
 
-    def authenticate(self, request, **kwargs):
+    def authenticate(self, request, **kwargs) -> User | None:
         """
         Authenticates the request based on the 'Authorization: Bearer <token>' header.
 
@@ -68,8 +69,9 @@ class TokenAuthenticationBackend(BaseBackend):
         # Optional: Check for token expiry
         if token_instance.expires_at and token_instance.expires_at < timezone.now():
             logger.warning(
-                f"Authentication failed: Token {token_instance.name} ({token_instance.key_preview}) "
-                f"has expired."
+                "Authentication failed: Token %s (%s) has expired.",
+                token_instance.name,
+                token_instance.key_preview,
             )
             return None
 
@@ -77,22 +79,24 @@ class TokenAuthenticationBackend(BaseBackend):
         # Ensure the related user exists (should always be true due to ForeignKey constraints)
         if not token_instance.user:
             logger.error(
-                f"Critical: Valid token {token_instance.id} found but has no associated user."
+                "Critical: Valid token %s found but has no associated user.", token_instance.id
             )
             return None
 
         logger.info(
-            f"Authentication successful via token: {token_instance.name} "
-            f"({token_instance.key_preview}) for user {token_instance.user.email}"
+            "Authentication successful via token: %s (%s) for user %s",
+            token_instance.name,
+            token_instance.key_preview,
+            token_instance.user.email,
         )
         # Attach the token to the user object for potential use in views/middleware downstream
-        # Note: Modifying request.user directly isn't standard, attaching to request is better if needed
+        # Note: Modifying request.user directly isn't standard, attaching to request is better
         # For now, we just return the user as required by authenticate()
         # If the token object itself is needed later, consider attaching it to request
         # E.g. in middleware: request.auth_token = token_instance
         return token_instance.user
 
-    def get_user(self, user_id):
+    def get_user(self, user_id) -> User | None:
         """
         Retrieves a user instance given the user_id (primary key).
         Required by Django's authentication framework.

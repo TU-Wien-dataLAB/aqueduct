@@ -41,7 +41,7 @@ async def completions(
     request_log: Request,
     *args,
     **kwargs,
-):
+) -> JsonResponse | StreamingHttpResponse:
     router = get_router()
     completion: (
         TextCompletionResponse | TextCompletionStreamWrapper
@@ -51,11 +51,10 @@ async def completions(
             streaming_content=_openai_stream(stream=completion, request_log=request_log),
             headers={"Content-Type": "text/event-stream"},
         )
-    elif isinstance(completion, TextCompletionResponse):
+    if isinstance(completion, TextCompletionResponse):
         data = completion.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)
         return JsonResponse(data=data, status=200)
-    else:
-        raise NotImplementedError(
-            f"Completion for response type {type(completion)} is not implemented."
-        )
+    raise NotImplementedError(
+        f"Completion for response type {type(completion)} is not implemented."
+    )

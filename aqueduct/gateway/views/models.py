@@ -18,14 +18,14 @@ MODEL_CREATION_TIMESTAMP = int(timezone.now().timestamp())
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
-async def models(request: ASGIRequest, token: Token, *args, **kwargs):
+async def models(request: ASGIRequest, token: Token, *args, **kwargs) -> JsonResponse:
     router_config = get_router_config()
     model_list: list[dict] = router_config["model_list"]
     excluded_models = set(await sync_to_async(token.model_exclusion_list)())
 
     return JsonResponse(
-        data=dict(
-            data=[
+        data={
+            "data": [
                 {
                     "id": model["model_name"],
                     "object": "model",
@@ -35,6 +35,6 @@ async def models(request: ASGIRequest, token: Token, *args, **kwargs):
                 for model in model_list
                 if model["model_name"] not in excluded_models
             ],
-            object="list",
-        )
+            "object": "list",
+        }
     )

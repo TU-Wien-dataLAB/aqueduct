@@ -87,7 +87,7 @@ class SimpleTaskGroup:
         self._loop = loop
         self._tasks: list[asyncio.Task[Any]] = []
 
-    def start_soon(self, coro_func: Callable[..., Any], *args: Any) -> asyncio.Task[Any]:
+    def start_soon(self, coro_func: Callable[..., Any], *args: Any) -> asyncio.Task[Any]:  # noqa: ANN401
         """Start a coroutine as a task."""
         task = self._loop.create_task(coro_func(*args))
         self._tasks.append(task)
@@ -649,7 +649,7 @@ async def handle_post_request(
     if err_response:
         return err_response
 
-    assert session is not None
+    assert session is not None  # noqa: S101
 
     # Register operation for requests that expect responses
     operation_registered = False
@@ -715,8 +715,8 @@ async def mcp_server(
     json_rpc_message: JSONRPCMessage | None = None,
     session_id: str | None = None,
     is_initialize: bool = False,
-    *args: Any,
-    **kwargs: Any,
+    *args: Any,  # noqa: ANN401
+    **kwargs: Any,  # noqa: ANN401
 ) -> JsonResponse | StreamingHttpResponse:
     """
     Handles GET, POST and DELETE requests for /mcp-servers/{name}/mcp path.

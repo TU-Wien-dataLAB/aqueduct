@@ -28,7 +28,7 @@ from openai.types.chat import ChatCompletionStreamOptionsParam
 from openai.types.chat.chat_completion_content_part_param import FileFile
 from openai.types.responses import ResponseCreateParams, ToolParam
 from pydantic import TypeAdapter, ValidationError
-from tos.models import has_user_agreed_latest_tos
+from tos.models import has_user_agreed_latest_tos  # type: ignore[import-untyped]
 
 from gateway.authentication import token_from_request
 from gateway.config import get_files_api_client, get_mcp_config, get_router, resolve_model_alias
@@ -46,7 +46,7 @@ Decorator = Callable[[AsyncView], AsyncView]
 def token_authenticated(token_auth_only: bool) -> Decorator:
     def decorator(view_func: AsyncView) -> AsyncView:
         @wraps(view_func)
-        async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+        async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
             unauthorized_response = error_response("Authentication Required", status=401)
             # Authentication Check
             if not (await request.auser()).is_authenticated:
@@ -96,7 +96,7 @@ class FileSizeError(Exception):
     """Raised when file size limits are exceeded."""
 
 
-def _parse_multipart_body(request: ASGIRequest) -> dict:
+def _parse_multipart_body(request: ASGIRequest) -> dict[str, Any]:
     """
     Parse the body of a "multipart/form-data" POST request into a Python dict.
     Validate file sizes of the files attached to the request.
@@ -111,7 +111,7 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
     data = {}
     for key, value in request.POST.items():
         try:
-            data[key] = json.loads(value)
+            data[key] = json.loads(value)  # type: ignore[arg-type]
         except (TypeError, json.JSONDecodeError):
             if key == "timestamp_granularities[]":
                 # OpenAI SDK turns timestamp_granularities into timestamp_granularities[]
@@ -130,21 +130,21 @@ def _parse_multipart_body(request: ASGIRequest) -> dict:
     total_file_size_bytes = 0
 
     for key, file in request.FILES.items():
-        if file.size > max_file_bytes:
+        if file.size > max_file_bytes:  # type: ignore[union-attr,operator]
             log.error("File in request too large")
             raise FileSizeError(f"File '{key}' exceeds maximum size of {max_file_size_mb}MB")
 
-        total_file_size_bytes += file.size
+        total_file_size_bytes += file.size  # type: ignore[union-attr,operator]
         if total_file_size_bytes > max_total_size_bytes:
             log.error("Files in request too large")
             raise FileSizeError(f"Total file size exceeds maximum of {max_total_size_mb}MB")
 
-        data[key] = file.read()
+        data[key] = file.read()  # type: ignore[union-attr]
 
     return data
 
 
-def parse_body(model: TypeAdapter) -> Decorator:
+def parse_body(model: TypeAdapter[Any]) -> Decorator:
     """
     Decorator that parses and validates HTTP request bodies for async view functions.
 
@@ -164,7 +164,7 @@ def parse_body(model: TypeAdapter) -> Decorator:
 
     def decorator(view_func: AsyncView) -> AsyncView:
         @wraps(view_func)
-        async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+        async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
             if request.method != "POST":
                 return await view_func(request, *args, **kwargs)
 
@@ -217,8 +217,8 @@ def parse_body(model: TypeAdapter) -> Decorator:
             # Additionally, add the size information - for convenience.
             for key, file in request.FILES.items():
                 buffer: io.BytesIO = io.BytesIO(data[key])
-                buffer.name = file.name
-                buffer.size = file.size
+                buffer.name = file.name  # type: ignore[union-attr]
+                buffer.size = file.size  # type: ignore[union-attr,attr-defined]
                 data[key] = buffer
 
             kwargs["pydantic_model"] = data
@@ -232,8 +232,8 @@ def parse_body(model: TypeAdapter) -> Decorator:
 
 def ensure_usage(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
-        model: dict | None = kwargs.get("pydantic_model")
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
+        model: dict[str, Any] | None = kwargs.get("pydantic_model")
         if not model:
             return await view_func(request, *args, **kwargs)
         stream = model.get("stream", False)
@@ -250,7 +250,7 @@ def ensure_usage(view_func: AsyncView) -> AsyncView:
 
 def check_limits(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         token: Token | None = kwargs.get("token")
         if not token:
             log.error("check_limits decorator used without @token_authenticated decorator")
@@ -334,14 +334,14 @@ def check_limits(view_func: AsyncView) -> AsyncView:
 
 def log_request(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         is_initialize = kwargs.get("is_initialize", False)
 
         if request.path.startswith("/mcp-servers/") and not is_initialize:
             kwargs["request_log"] = None
             return await view_func(request, *args, **kwargs)
 
-        pydantic_model: dict | None = kwargs.get("pydantic_model")
+        pydantic_model: dict[str, Any] | None = kwargs.get("pydantic_model")
         token = kwargs.get("token")
         request_log = Request(
             token=token,
@@ -377,8 +377,8 @@ def resolve_alias(view_func: AsyncView) -> AsyncView:
     """Resolve model aliases to actual model names before processing."""
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
-        pydantic_model: dict | None = kwargs.get("pydantic_model")
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
+        pydantic_model: dict[str, Any] | None = kwargs.get("pydantic_model")
         if not pydantic_model:
             return await view_func(request, *args, **kwargs)
 
@@ -395,14 +395,14 @@ def resolve_alias(view_func: AsyncView) -> AsyncView:
 
 def check_model_availability(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         token: Token | None = kwargs.get("token")
         if not token:
             log.error(
                 "check_model_availability decorator used without @token_authenticated decorator"
             )
             return error_response("Internal server error", status=500)
-        body: dict | None = kwargs.get("pydantic_model")
+        body: dict[str, Any] | None = kwargs.get("pydantic_model")
         if not body:
             return await view_func(request, *args, **kwargs)
         model: str | None = body.get("model", None)
@@ -418,7 +418,7 @@ def check_model_availability(view_func: AsyncView) -> AsyncView:
 
 def check_mcp_server_availability(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         token: Token | None = kwargs.get("token")
         if not token:
             log.error(
@@ -498,9 +498,9 @@ def process_file_content(view_func: AsyncView) -> AsyncView:
     """Decorator to process file content in chat completions using Tika."""
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         token: Token | None = kwargs.get("token")
-        pydantic_model: dict | None = kwargs.get("pydantic_model")
+        pydantic_model: dict[str, Any] | None = kwargs.get("pydantic_model")
         if not pydantic_model:
             log.error("Invalid request - missing request body")
             return error_response("Invalid request: missing request body", status=400)
@@ -522,7 +522,7 @@ def process_file_content(view_func: AsyncView) -> AsyncView:
 
             for content_item in content:
                 if isinstance(content_item, dict) and content_item.get("type") == "file":
-                    file = FileFile(**content_item.get("file", {}))
+                    file = FileFile(**content_item.get("file", {}))  # type: ignore[typeddict-item]
                     try:
                         file_bytes = await file_to_bytes(token, file)
                     except FileObject.DoesNotExist:
@@ -608,43 +608,43 @@ def catch_router_exceptions(view_func: AsyncView) -> AsyncView:
         )
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         # https://docs.litellm.ai/docs/exception_mapping#litellm-exceptions
         # also except equivalent openai exceptions
         try:
             return await view_func(request, *args, **kwargs)
-        except (litellm.BadRequestError, openai.BadRequestError) as e:
+        except (litellm.BadRequestError, openai.BadRequestError) as e:  # type: ignore[attr-defined]
             log.exception("Bad request - %s", _r(e))
             return _exception_response(e, status=400)
-        except (litellm.AuthenticationError, openai.AuthenticationError) as e:
+        except (litellm.AuthenticationError, openai.AuthenticationError) as e:  # type: ignore[attr-defined]
             log.exception("Authentication error - %s", _r(e))
             return _exception_response(e, status=401)
         except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
             log.exception("Permission denied - %s", _r(e))
             return _exception_response(e, status=403)
-        except (litellm.NotFoundError, openai.NotFoundError) as e:
+        except (litellm.NotFoundError, openai.NotFoundError) as e:  # type: ignore[attr-defined]
             log.exception("Not found - %s", _r(e))
             return _exception_response(e, status=404)
-        except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
+        except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:  # type: ignore[attr-defined]
             log.exception("Unprocessable entity - %s", _r(e))
             return _exception_response(e, status=422)
-        except (litellm.RateLimitError, openai.RateLimitError) as e:
+        except (litellm.RateLimitError, openai.RateLimitError) as e:  # type: ignore[attr-defined]
             log.exception("Rate limit exceeded - %s", _r(e))
             return _exception_response(e, status=429)
-        except (litellm.Timeout, openai.APITimeoutError) as e:
+        except (litellm.Timeout, openai.APITimeoutError) as e:  # type: ignore[attr-defined]
             log.exception("Timeout - %s", _r(e))
             return _exception_response(e, status=504)
         except (
-            litellm.ServiceUnavailableError,
-            litellm.APIConnectionError,
+            litellm.ServiceUnavailableError,  # type: ignore[attr-defined]
+            litellm.APIConnectionError,  # type: ignore[attr-defined]
             openai.APIConnectionError,
         ) as e:
             log.exception("Service unavailable - %s", _r(e))
             return _exception_response(e, status=503)
-        except (litellm.InternalServerError, openai.InternalServerError) as e:
+        except (litellm.InternalServerError, openai.InternalServerError) as e:  # type: ignore[attr-defined]
             log.exception("Internal server error - %s", _r(e))
             return _exception_response(e, status=500)
-        except (litellm.APIError, openai.APIError) as e:
+        except (litellm.APIError, openai.APIError) as e:  # type: ignore[attr-defined]
             # APIError is raised e.g. when user sends extra kwargs in the request body,
             # so we return a 400 Bad request.
             log.exception("API error - %s", _r(e))
@@ -658,9 +658,12 @@ def catch_router_exceptions(view_func: AsyncView) -> AsyncView:
 
 def tos_accepted(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         if settings.TOS_ENABLED and settings.TOS_GATEWAY_VALIDATION:
-            token: Token = kwargs.get("token")
+            token: Token | None = kwargs.get("token")
+            if not token:
+                log.error("tos_accepted decorator used without @token_authenticated decorator")
+                return error_response("Internal server error", status=500)
             key_version = cache.get("django:tos:key_version")
             user_id = token.user.id
 
@@ -700,7 +703,7 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
     """
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         # Skip validation if DNS rebinding protection is disabled
         if not getattr(settings, "MCP_ENABLE_DNS_REBINDING_PROTECTION", True):
             return await view_func(request, *args, **kwargs)
@@ -745,7 +748,7 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
 
 def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         session_id = request.headers.get("Mcp-Session-Id")
         kwargs["session_id"] = session_id
 
@@ -779,7 +782,9 @@ def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
 
 def validate_response_id(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, response_id: str, *args, **kwargs) -> ViewResult:
+    async def wrapper(
+        request: ASGIRequest, response_id: str, *args: Any, **kwargs: Any
+    ) -> ViewResult:
         token = kwargs.get("token")
         if not token:
             log.error("validate_response_id decorator used without @token_authenticated decorator")
@@ -800,7 +805,7 @@ def validate_response_id(view_func: AsyncView) -> AsyncView:
 async def _validate_mcp_tool(
     request: ASGIRequest, token: Token, tool: ToolParam
 ) -> ViewResult | None:
-    server_name = tool.get("server_label")
+    server_name: str = tool.get("server_label")  # type: ignore[assignment]
     if await sync_to_async(token.mcp_server_excluded)(server_name):
         log.error("MCP server not found - %s", server_name)
         return error_response(f"MCP server not found - {server_name}", status=404)
@@ -824,12 +829,12 @@ async def _validate_mcp_tool(
             "The server_url of the tool does not match the Aqueduct MCP server url.", status=400
         )
 
-    tool["server_url"] = server_config["url"]
+    tool["server_url"] = server_config["url"]  # type: ignore[typeddict-unknown-key]
     return None
 
 
 async def _validate_file_search_tool(token: Token, tool: ToolParam) -> ViewResult | None:
-    vector_store_ids = tool.get("vector_store_ids", [])
+    vector_store_ids: list[str] = tool.get("vector_store_ids", [])  # type: ignore[assignment]
     if not vector_store_ids:
         return None
 
@@ -887,7 +892,7 @@ def check_tool_availability(view_func: AsyncView) -> AsyncView:
     """
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         token: Token | None = kwargs.get("token")
         pydantic_model: ResponseCreateParams | None = kwargs.get("pydantic_model")
         if not token or not pydantic_model:
@@ -912,7 +917,7 @@ def require_files_api_client(view_func: AsyncView) -> AsyncView:
     """
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         # Look up get_files_api_client from the module where view_func is defined,
         # so tests patching that module's reference will be respected.
         view_module = sys.modules.get(view_func.__module__)
@@ -944,7 +949,7 @@ def _lookup_relay_model_name(requested_model: str) -> str | None:
     if not deployment_model:
         return None
 
-    relay_model, _, _, _ = litellm.get_llm_provider(deployment_model)
+    relay_model, _, _, _ = litellm.get_llm_provider(deployment_model)  # type: ignore[attr-defined]
     return relay_model
 
 
@@ -1028,7 +1033,7 @@ def process_batch_file(view_func: AsyncView) -> AsyncView:
     """
 
     @wraps(view_func)
-    async def wrapper(request: ASGIRequest, *args, **kwargs) -> ViewResult:
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         if request.method != "POST":
             return await view_func(request, *args, **kwargs)
 

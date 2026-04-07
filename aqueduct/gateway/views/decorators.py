@@ -5,10 +5,11 @@ import logging
 import re
 import sys
 import time
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Callable, Coroutine, Iterable
 from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
+from typing import Any
 
 import httpx
 import litellm
@@ -38,7 +39,7 @@ from management.models import FileObject, Request, Token, VectorStore
 log = logging.getLogger("aqueduct")
 
 ViewResult = HttpResponse | StreamingHttpResponse
-AsyncView = Callable[..., Awaitable[ViewResult]]
+AsyncView = Callable[..., Coroutine[Any, Any, ViewResult]]
 Decorator = Callable[[AsyncView], AsyncView]
 
 

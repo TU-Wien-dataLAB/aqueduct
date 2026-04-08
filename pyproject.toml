@@ -117,7 +117,7 @@ select = [
     "UP",     # pyupgrade
     "W",      # pycodestyle warnings
 ]
-ignore = ["S603", "E731", "TRY003", "EM101", "EM102", "TRY401", "TRY301", "PLC0415", "E731", "SIM108"]
+ignore = ["S603", "E731", "TRY003", "EM101", "EM102", "TRY401", "TRY301", "PLC0415", "E731", "SIM108", "ANN401"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 16

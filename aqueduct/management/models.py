@@ -1,10 +1,11 @@
 # models.py
+import asyncio
 import dataclasses
 import hashlib
 import logging
 import secrets
 from collections.abc import Callable
-from typing import ClassVar, Literal, Optional
+from typing import Any, ClassVar, Literal, Optional, TypeVar, cast
 
 import openai.types
 from django.conf import settings
@@ -13,10 +14,13 @@ from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import models
 from django.db.models import BooleanField, JSONField
 from django.utils import timezone
+from openai import AsyncOpenAI
 
 from gateway.config import resolve_model_alias
 
 log = logging.getLogger("aqueduct")
+
+_T = TypeVar("_T")
 
 
 # ── Legacy ID generators ──────────────────────────────────────────────
@@ -61,14 +65,14 @@ class LimitSet:
         def _resolve(field_name: str) -> int | None:
             # Get value from the specific level first
             # Use getattr for safe access, defaulting to None if field absent
-            specific_value = (
+            specific_value: int | None = (
                 getattr(specific_limiter, field_name, None) if specific_limiter else None
             )
             if specific_value is not None:
-                # Return immediately if a specific limit is set
                 return specific_value
 
-            return getattr(org_limiter, field_name, None) if org_limiter else None
+            org_value: int | None = getattr(org_limiter, field_name, None) if org_limiter else None
+            return org_value
 
         return cls(
             requests_per_minute=_resolve("requests_per_minute"),
@@ -122,12 +126,12 @@ class ModelExclusionMixin(models.Model):
     class Meta:
         abstract = True  # Important: Makes this a mixin, no DB table created
 
-    def add_excluded_model(self, model_name: str):
+    def add_excluded_model(self, model_name: str) -> None:
         if model_name not in self.excluded_models:
             self.excluded_models.append(model_name)
             self.save(update_fields=["excluded_models"])
 
-    def remove_excluded_model(self, model_name: str):
+    def remove_excluded_model(self, model_name: str) -> None:
         if model_name in self.excluded_models:
             self.excluded_models.remove(model_name)
             self.save(update_fields=["excluded_models"])
@@ -155,12 +159,12 @@ class MCPServerExclusionMixin(models.Model):
     class Meta:
         abstract = True  # Important: Makes this a mixin, no DB table created
 
-    def add_excluded_mcp_server(self, server_name: str):
+    def add_excluded_mcp_server(self, server_name: str) -> None:
         if server_name not in self.excluded_mcp_servers:
             self.excluded_mcp_servers.append(server_name)
             self.save(update_fields=["excluded_mcp_servers"])
 
-    def remove_excluded_mcp_server(self, server_name: str):
+    def remove_excluded_mcp_server(self, server_name: str) -> None:
         if server_name in self.excluded_mcp_servers:
             self.excluded_mcp_servers.remove(server_name)
             self.save(update_fields=["excluded_mcp_servers"])
@@ -209,7 +213,7 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
         related_name="user_profiles",
     )
 
-    teams = models.ManyToManyField(
+    teams: "models.ManyToManyField[Team, UserProfile]" = models.ManyToManyField(
         Team, through="TeamMembership", related_name="member_profiles", blank=True
     )
 
@@ -228,7 +232,7 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
         raise ValidationError("User has no group")
 
     @group.setter
-    def group(self, group: Literal["admin", "org-admin", "user"]):
+    def group(self, group: Literal["admin", "org-admin", "user"]) -> None:
         if group not in ["admin", "org-admin", "user"]:
             raise ValueError(f"Group {group} does not exist!")
 
@@ -244,7 +248,7 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
                 f"The group '{group}' does not exist in the database."
             ) from None
 
-    def clean(self):
+    def clean(self) -> None:
         """
         Validation moved from the old User model.
         Ensures assigned teams belong to the user's profile organization.
@@ -345,7 +349,7 @@ class ServiceAccount(models.Model):
         # Handle case where team might not be set yet
         return f"{self.name} (Team: {self.team.name if self.team_id else 'N/A'})"
 
-    def clean(self):
+    def clean(self) -> None:
         """
         Validates that the associated team does not exceed the maximum
         number of service accounts allowed.
@@ -436,7 +440,7 @@ class Token(models.Model):
             return f"'{self.name}' ({self.service_account.name})"
         return f"'{self.name}'"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """
         Ensures key_hash and key_preview are set before the first save.
         """
@@ -456,7 +460,7 @@ class Token(models.Model):
     # unless null=True is added to the user field, which doesn't seem intended here.
 
     @staticmethod
-    def _generate_secret_key(prefix="sk-") -> str:
+    def _generate_secret_key(prefix: str = "sk-") -> str:
         """Generates a unique secret token key."""
         return prefix + secrets.token_urlsafe(nbytes=32)
 
@@ -495,7 +499,7 @@ class Token(models.Model):
         self.save(update_fields=["key_hash", "key_preview"])  # Save the changes
         return new_secret_key  # Return the original new key
 
-    def clean(self):
+    def clean(self) -> None:
         """
         Model-level validation. The user-specific token limit is checked in the form.
         """
@@ -504,21 +508,17 @@ class Token(models.Model):
         # (Handled by save() method)
         super().clean()
 
-    def _get_from_hierarchy(self, retrieval_function: Callable) -> list[str]:
+    def _get_from_hierarchy(self, retrieval_function: Callable[..., _T]) -> _T:
         token_instance = Token.objects.select_related(
-            "user__profile__org",  # Needed for User Tokens
-            "service_account__team__org",  # Needed for Service Account Tokens
-        ).get(pk=self.pk)  # Assumes the token instance exists
+            "user__profile__org", "service_account__team__org"
+        ).get(pk=self.pk)
 
-        # Determine the primary (specific) and fallback (org) limit sources
         if token_instance.service_account:
-            # Path for Service Account Tokens
-            team = token_instance.service_account.team  # Team holds specific SA limits
-            org = team.org  # Team's Org holds fallback limits
+            team = token_instance.service_account.team
+            org = team.org
             return retrieval_function(team, org)
-        # Path for standard User Tokens
-        profile = token_instance.user.profile  # UserProfile holds specific user limits
-        org = profile.org  # Profile's Org holds fallback limits
+        profile = token_instance.user.profile
+        org = profile.org
         return retrieval_function(profile, org)
 
     def get_limit(self) -> "LimitSet":
@@ -539,10 +539,10 @@ class Token(models.Model):
         org_exclusion: Optional["ModelExclusionMixin"],
     ) -> list[str]:
         exclusion_list: list[str] = specific_exclusion.excluded_models if specific_exclusion else []
-        if specific_exclusion.merge_exclusion_lists:
+        if specific_exclusion and specific_exclusion.merge_exclusion_lists:
             org_exclusion_list: list[str] = org_exclusion.excluded_models if org_exclusion else []
             exclusion_list = exclusion_list + org_exclusion_list
-            if org_exclusion.merge_exclusion_lists:
+            if org_exclusion and org_exclusion.merge_exclusion_lists:
                 settings_exclusion_list: list[str] = getattr(
                     settings, "AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST", []
                 )
@@ -630,7 +630,7 @@ class Usage:
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
 
-    def __add__(self, other) -> "Usage | NotImplemented":
+    def __add__(self, other: "Usage") -> "Usage | Any":
         if not isinstance(other, Usage):
             return NotImplemented
         return Usage(
@@ -638,7 +638,7 @@ class Usage:
             output_tokens=self.output_tokens + other.output_tokens,
         )
 
-    def __sub__(self, other) -> "Usage | NotImplemented":
+    def __sub__(self, other: "Usage") -> "Usage | Any":
         if not isinstance(other, Usage):
             return NotImplemented
         return Usage(
@@ -700,11 +700,11 @@ class Request(models.Model):
 
     class Meta:
         # Crucial for the rate limit query!
-        indexes: ClassVar[list] = [
+        indexes: ClassVar[list[models.Index]] = [
             models.Index(fields=["token", "timestamp"]),
             models.Index(fields=["model", "timestamp"]),
         ]
-        ordering: ClassVar[list] = ["-timestamp"]  # Optional: default ordering
+        ordering: ClassVar[list[str]] = ["-timestamp"]  # Optional: default ordering
 
     def __str__(self) -> str:
         return f"{self.id}"
@@ -715,7 +715,7 @@ class Request(models.Model):
         return Usage(input_tokens=self.input_tokens, output_tokens=self.output_tokens)
 
     @token_usage.setter
-    def token_usage(self, usage: Usage):
+    def token_usage(self, usage: Usage) -> None:
         """Set input_tokens and output_tokens from a Usage dataclass instance."""
         if not isinstance(usage, Usage):
             raise TypeError("token_usage must be a Usage dataclass instance")
@@ -739,7 +739,7 @@ class FileObject(models.Model):
         help_text="The Unix timestamp (in seconds) for when the file was created."
     )
     filename = models.CharField(max_length=255, help_text="The name of the file.")
-    PURPOSE_CHOICES: ClassVar[list] = [
+    PURPOSE_CHOICES: ClassVar[list[tuple[str, str]]] = [
         ("assistants", "assistants"),
         ("assistants_output", "assistants_output"),
         ("batch", "batch"),
@@ -786,13 +786,21 @@ class FileObject(models.Model):
             bytes=self.bytes,
             created_at=self.created_at,
             filename=self.filename,
-            purpose=self.purpose,
+            purpose=cast(
+                (
+                    "Literal['assistants', 'assistants_output', 'batch', 'batch_output',"
+                    " 'fine-tune', 'fine-tune-results', 'vision', 'user_data']"
+                ),
+                self.purpose,
+            ),
             expires_at=self.expires_at,
             object="file",
             status="processed",
         )
 
-    async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
+    async def adelete_upstream(
+        self, client: AsyncOpenAI | None = None, raise_on_error: bool = True
+    ) -> bool:
         """
         Delete the file from the upstream API.
 
@@ -820,7 +828,7 @@ class FileObject(models.Model):
             return True
 
     async def areload_from_upstream(
-        self, client=None, raise_on_error=True
+        self, client: AsyncOpenAI | None = None, raise_on_error: bool = True
     ) -> openai.types.FileObject | None:
         """
         Fetch current state from upstream and update local DB fields.
@@ -850,7 +858,9 @@ class FileObject(models.Model):
             await self.asave()
             return remote
 
-    def delete(self, using=None, keep_parents=False, delete_upstream=False):
+    def delete(  # type: ignore[override]
+        self, using: str | None = None, keep_parents: bool = False, delete_upstream: bool = False
+    ) -> None:
         """
         Override ORM delete - files are stored upstream, so we only delete the local DB record.
 
@@ -858,8 +868,6 @@ class FileObject(models.Model):
             delete_upstream: If True, also delete from upstream API before local delete.
         """
         if delete_upstream:
-            import asyncio
-
             asyncio.run(self.adelete_upstream())
         super().delete(using=using, keep_parents=keep_parents)
 
@@ -995,7 +1003,13 @@ class Batch(models.Model):
             endpoint=self.endpoint,
             input_file_id=self.input_file_id,
             object="batch",
-            status=self.status,
+            status=cast(
+                (
+                    "Literal['validating', 'failed', 'in_progress', 'finalizing', 'completed',"
+                    " 'expired', 'cancelling', 'cancelled']"
+                ),
+                self.status,
+            ),
             cancelled_at=self.cancelled_at,
             cancelling_at=self.cancelling_at,
             completed_at=self.completed_at,
@@ -1009,14 +1023,14 @@ class Batch(models.Model):
             metadata=self.metadata,
             output_file_id=self.output_file_id if self.output_file else None,
             request_counts=openai.types.BatchRequestCounts(
-                total=self.request_counts.get("total", 0),
-                completed=self.request_counts.get("completed", 0),
-                failed=self.request_counts.get("failed", 0),
+                total=self.request_counts.get("total", 0) if self.request_counts else 0,
+                completed=self.request_counts.get("completed", 0) if self.request_counts else 0,
+                failed=self.request_counts.get("failed", 0) if self.request_counts else 0,
             ),
         )
 
     async def areload_from_upstream(
-        self, client=None, raise_on_error=True
+        self, client: AsyncOpenAI | None = None, raise_on_error: bool = True
     ) -> openai.types.Batch | None:
         """
         Fetch current state from upstream and update local DB fields.
@@ -1054,7 +1068,7 @@ class Batch(models.Model):
             await self.asave()
             return remote
 
-    def delete(self, using=None, keep_parents=False):
+    def delete(self, using: str | None = None, keep_parents: bool = False) -> None:  # type: ignore[override]
         """
         Override delete - files are stored upstream, so we only delete the local DB record.
         """
@@ -1117,7 +1131,9 @@ class VectorStore(models.Model):
     def __str__(self) -> str:
         return self.id
 
-    async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
+    async def adelete_upstream(
+        self, client: AsyncOpenAI | None = None, raise_on_error: bool = True
+    ) -> bool:
         """
         Delete the vector store from the upstream API.
 
@@ -1145,7 +1161,7 @@ class VectorStore(models.Model):
             return True
 
     async def areload_from_upstream(
-        self, client=None, raise_on_error=True
+        self, client: AsyncOpenAI | None = None, raise_on_error: bool = True
     ) -> openai.types.VectorStore | None:
         """
         Fetch current state from upstream and update local DB fields.
@@ -1177,7 +1193,7 @@ class VectorStore(models.Model):
             await self.async_file_statuses(client)
             return remote
 
-    async def async_file_statuses(self, client=None) -> tuple[int, int]:
+    async def async_file_statuses(self, client: AsyncOpenAI | None = None) -> tuple[int, int]:
         """
         Sync all VectorStoreFile statuses from upstream by listing files.
         """
@@ -1217,7 +1233,9 @@ class VectorStore(models.Model):
 
         return success, failed
 
-    def delete(self, using=None, keep_parents=False, delete_upstream=False):
+    def delete(  # type: ignore[override]
+        self, using: str | None = None, keep_parents: bool = False, delete_upstream: bool = False
+    ) -> None:
         """
         Override ORM delete - vector stores are stored upstream,
         so we only delete the local DB record.
@@ -1226,8 +1244,6 @@ class VectorStore(models.Model):
             delete_upstream: If True, also delete from upstream API before local delete.
         """
         if delete_upstream:
-            import asyncio
-
             asyncio.run(self.adelete_upstream())
         super().delete(using=using, keep_parents=keep_parents)
 
@@ -1293,7 +1309,9 @@ class VectorStoreFile(models.Model):
     def __str__(self) -> str:
         return self.id
 
-    async def adelete_upstream(self, client=None, raise_on_error=True) -> bool:
+    async def adelete_upstream(
+        self, client: AsyncOpenAI | None = None, raise_on_error: bool = True
+    ) -> bool:
         """
         Delete the vector store file from the upstream API.
 
@@ -1332,7 +1350,7 @@ class VectorStoreFile(models.Model):
             return True
 
     async def areload_from_upstream(
-        self, client=None, raise_on_error=True
+        self, client: AsyncOpenAI | None = None, raise_on_error: bool = True
     ) -> Optional["openai.types.vector_stores.VectorStoreFile"]:
         """
         Fetch current state from upstream and update local DB fields.
@@ -1375,7 +1393,9 @@ class VectorStoreFile(models.Model):
             await self.asave()
             return remote
 
-    def delete(self, using=None, keep_parents=False, delete_upstream=False):
+    def delete(  # type: ignore[override]
+        self, using: str | None = None, keep_parents: bool = False, delete_upstream: bool = False
+    ) -> None:
         """
         Override ORM delete.
 
@@ -1433,7 +1453,7 @@ class VectorStoreFileBatch(models.Model):
         return self.id
 
     async def areload_from_upstream(
-        self, client=None, raise_on_error=True
+        self, client: AsyncOpenAI | None = None, raise_on_error: bool = True
     ) -> Optional["openai.types.vector_stores.VectorStoreFileBatch"]:
         """
         Fetch current state from upstream and update local DB fields.

@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 async def mark_orphaned_files(
     batch_obj: VectorStoreFileBatch, status: VectorStoreFileStatus, error_msg: str
-):
+) -> None:
     """Mark in-progress files in a batch as failed when the batch fails or is cancelled.
 
     Args:
@@ -44,13 +45,13 @@ async def mark_orphaned_files(
         status: The new status to set on orphaned files (typically "failed").
         error_msg: The error message to set on orphaned files.
     """
-    orphaned_files = await sync_to_async(list)(
+    orphaned_files: list[VectorStoreFile] = await sync_to_async(list)(  # type: ignore[call-arg]
         VectorStoreFile.objects.filter(batch=batch_obj, status=VectorStoreFileStatus.IN_PROGRESS)
     )
     if orphaned_files:
 
         @sync_to_async
-        def _bulk_update_orphans():
+        def _bulk_update_orphans() -> None:
             for vs_file in orphaned_files:
                 vs_file.status = status
                 vs_file.last_error = error_msg
@@ -71,8 +72,8 @@ async def vector_store_file_batches(
     token: Token,
     vector_store_id: str,
     pydantic_model: FileBatchCreateParams,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/file_batches - Create file batch
@@ -123,7 +124,7 @@ async def vector_store_file_batches(
         file_objs.append(file_obj)
 
     # Create batch on upstream
-    create_kwargs = {"vector_store_id": vs_obj.id}
+    create_kwargs: dict[str, Any] = {"vector_store_id": vs_obj.id}
     if files:
         # Pass full files dicts with attributes and chunking_strategy
         create_kwargs["files"] = files
@@ -196,7 +197,12 @@ async def vector_store_file_batches(
 @log_request
 @catch_router_exceptions
 async def vector_store_file_batch(
-    request: ASGIRequest, token: Token, vector_store_id: str, batch_id: str, *args, **kwargs
+    request: ASGIRequest,
+    token: Token,
+    vector_store_id: str,
+    batch_id: str,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/file_batches/{batch_id} - Retrieve batch
@@ -228,6 +234,9 @@ async def vector_store_file_batch(
     # Retrieve from upstream and sync status
     remote_batch = await batch_obj.areload_from_upstream(client)
 
+    if not remote_batch:
+        return error_response("File batch not found.", param="batch_id", status=404)
+
     # Handle orphaned VectorStoreFile records when batch fails or is cancelled
     if batch_obj.status in (
         VectorStoreFileBatchStatus.FAILED,
@@ -252,7 +261,12 @@ async def vector_store_file_batch(
 @log_request
 @catch_router_exceptions
 async def vector_store_file_batch_cancel(
-    request: ASGIRequest, token: Token, vector_store_id: str, batch_id: str, *args, **kwargs
+    request: ASGIRequest,
+    token: Token,
+    vector_store_id: str,
+    batch_id: str,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/file_batches/{batch_id}/cancel - Cancel batch
@@ -312,7 +326,12 @@ async def vector_store_file_batch_cancel(
 @log_request
 @catch_router_exceptions
 async def vector_store_file_batch_files(
-    request: ASGIRequest, token: Token, vector_store_id: str, batch_id: str, *args, **kwargs
+    request: ASGIRequest,
+    token: Token,
+    vector_store_id: str,
+    batch_id: str,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/file_batches/{batch_id}/files - List files in batch

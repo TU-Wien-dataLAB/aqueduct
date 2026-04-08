@@ -1,3 +1,5 @@
+from typing import Any
+
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
@@ -39,8 +41,8 @@ async def vector_stores(
     request: ASGIRequest,
     token: Token,
     pydantic_model: VectorStoreCreateParams | None = None,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     GET /v1/vector_stores - List vector stores
@@ -60,7 +62,7 @@ async def vector_stores(
         else:
             vector_stores_qs = VectorStore.objects.filter(token__user=token.user)
 
-        vector_stores_list = await sync_to_async(list)(
+        vector_stores_qs = (
             vector_stores_qs.order_by("-created_at")
             .select_related("token")
             .annotate(
@@ -71,6 +73,7 @@ async def vector_stores(
                 file_count_cancelled=Count("files", filter=Q(files__status="cancelled")),
             )
         )
+        vector_stores_list: list[VectorStore] = await sync_to_async(list)(vector_stores_qs)  # type: ignore[call-arg]
 
         return JsonResponse(
             {
@@ -80,17 +83,17 @@ async def vector_stores(
                         id=vs.id,
                         object="vector_store",
                         name=vs.name,
-                        status=vs.status,
+                        status=vs.status,  # type: ignore[arg-type]
                         usage_bytes=vs.usage_bytes,
                         created_at=vs.created_at,
                         metadata=vs.metadata,
                         expires_after=vs.expires_after,
                         file_counts=VectorStoreFileCounts(
-                            total=vs.file_count_total,
-                            completed=vs.file_count_completed,
-                            failed=vs.file_count_failed,
-                            in_progress=vs.file_count_in_progress,
-                            cancelled=vs.file_count_cancelled,
+                            total=getattr(vs, "file_count_total", 0),
+                            completed=getattr(vs, "file_count_completed", 0),
+                            failed=getattr(vs, "file_count_failed", 0),
+                            in_progress=getattr(vs, "file_count_in_progress", 0),
+                            cancelled=getattr(vs, "file_count_cancelled", 0),
                         ),
                         last_active_at=vs.last_active_at,
                     ).model_dump(mode="json")
@@ -102,8 +105,9 @@ async def vector_stores(
         )
 
     # POST /v1/vector_stores - Create vector store
-    params = pydantic_model if pydantic_model else {}
-    name = params.get("name")
+    if not pydantic_model:
+        return error_response("Missing required parameter: name", param="name", status=400)
+    name = pydantic_model.get("name")
 
     if not name:
         return error_response("Missing required parameter: name", param="name", status=400)
@@ -126,13 +130,13 @@ async def vector_stores(
         return error_response(f"Vector store limit reached ({limit})", status=403)
 
     # Create on upstream
-    create_kwargs = {"name": name}
-    if params.get("expires_after"):
-        create_kwargs["expires_after"] = params["expires_after"]
-    if params.get("chunking_strategy"):
-        create_kwargs["chunking_strategy"] = params["chunking_strategy"]
-    if params.get("metadata"):
-        create_kwargs["metadata"] = params["metadata"]
+    create_kwargs: dict[str, Any] = {"name": name}
+    if pydantic_model.get("expires_after"):
+        create_kwargs["expires_after"] = pydantic_model["expires_after"]
+    if pydantic_model.get("chunking_strategy"):
+        create_kwargs["chunking_strategy"] = pydantic_model["chunking_strategy"]
+    if pydantic_model.get("metadata"):
+        create_kwargs["metadata"] = pydantic_model["metadata"]
 
     remote_vs = await client.vector_stores.create(**create_kwargs)
 
@@ -145,10 +149,10 @@ async def vector_stores(
         status=remote_vs.status or "completed",
         usage_bytes=getattr(remote_vs, "usage_bytes", 0),
         created_at=int(now.timestamp()),
-        expires_after=params.get("expires_after"),
-        chunking_strategy=params.get("chunking_strategy"),
-        metadata=params.get("metadata"),
-        upstream_url=settings.AQUEDUCT_FILES_API_URL,
+        expires_after=pydantic_model.get("expires_after"),
+        chunking_strategy=pydantic_model.get("chunking_strategy"),
+        metadata=pydantic_model.get("metadata"),
+        upstream_url=settings.AQUEDUCT_FILES_API_URL or "",
     )
     await sync_to_async(vs_obj.save)()
 
@@ -172,8 +176,8 @@ async def vector_store(
     vector_store_id: str,
     pydantic_model: VectorStoreUpdateParams | None = None,
     client: AsyncOpenAI | None = None,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id} - Retrieve vector store
@@ -195,6 +199,9 @@ async def vector_store(
         # Retrieve from upstream and sync status
         remote_vs = await vs_obj.areload_from_upstream(client)
 
+        if not remote_vs:
+            return error_response("Vector store not found.", param="vector_store_id", status=404)
+
         # Return upstream response directly (ID already matches)
         response_data = remote_vs.model_dump(mode="json")
 
@@ -202,12 +209,20 @@ async def vector_store(
 
     if request.method == "POST":
         # Modify vector store
-        params = pydantic_model if pydantic_model else {}
+        if not pydantic_model:
+            return error_response("No fields to update", status=400)
 
-        updatable_fields = ("name", "expires_after", "metadata")
-        modify_kwargs = {k: params[k] for k in updatable_fields if params.get(k)}
+        modify_kwargs: dict[str, Any] = {}
+        if pydantic_model.get("name"):
+            modify_kwargs["name"] = pydantic_model["name"]
+        if pydantic_model.get("expires_after"):
+            modify_kwargs["expires_after"] = pydantic_model["expires_after"]
+        if pydantic_model.get("metadata"):
+            modify_kwargs["metadata"] = pydantic_model["metadata"]
 
         if modify_kwargs:
+            if not client:
+                return error_response("Vector Store API not configured", status=503)
             remote_vs = await client.vector_stores.update(vs_obj.id, **modify_kwargs)
 
             # Update local record
@@ -224,6 +239,8 @@ async def vector_store(
 
         # No changes requested, return current state
         remote_vs = await vs_obj.areload_from_upstream(client)
+        if not remote_vs:
+            return error_response("Vector store not found.", param="vector_store_id", status=404)
         response_data = remote_vs.model_dump(mode="json")
         return JsonResponse(response_data, status=200)
 
@@ -254,8 +271,8 @@ async def vector_store_search(
     token: Token,
     vector_store_id: str,
     pydantic_model: VectorStoreSearchParams,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/search - Search vector store

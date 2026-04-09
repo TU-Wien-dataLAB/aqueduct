@@ -1,6 +1,7 @@
 import io
 import json
-from typing import Literal, Optional
+from datetime import timedelta
+from typing import Any, Literal, Optional, cast
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -39,7 +40,7 @@ def calculate_expires_at(remote_expires_at: int | None) -> int:
     """Calculate local expiry timestamp, using earlier of local or upstream expiry."""
     now = timezone.now()
     expiry_days = settings.AQUEDUCT_FILES_API_EXPIRY_DAYS
-    local_expires_at = int((now + timezone.timedelta(days=expiry_days)).timestamp())
+    local_expires_at = int((now + timedelta(days=expiry_days)).timestamp())
 
     if remote_expires_at and remote_expires_at < local_expires_at:
         return remote_expires_at
@@ -140,8 +141,8 @@ async def files(
     pydantic_model: OpenAIFileCreateParams | None = None,
     file_content: bytes | None = None,
     file_preview: str | None = None,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     try:
         client = get_files_api_client()
@@ -149,34 +150,50 @@ async def files(
         return error_response("Files API not configured", status=503)
 
     if request.method == "GET":
+        file_objects: list[FileObject]
         if token.service_account:
-            file_objects = await sync_to_async(list)(
-                FileObject.objects.filter(token__service_account__team=token.service_account.team)
-                .order_by("-created_at")
-                .select_related("token")
+            file_objects = cast(
+                "list[FileObject]",
+                await sync_to_async(list)(  # type: ignore[call-arg]
+                    FileObject.objects.filter(
+                        token__service_account__team=token.service_account.team
+                    )
+                    .order_by("-created_at")
+                    .select_related("token")
+                ),
             )
         else:
-            file_objects = await sync_to_async(list)(
-                FileObject.objects.filter(token__user=token.user)
-                .order_by("-created_at")
-                .select_related("token")
+            file_objects = cast(
+                "list[FileObject]",
+                await sync_to_async(list)(  # type: ignore[call-arg]
+                    FileObject.objects.filter(token__user=token.user)
+                    .order_by("-created_at")
+                    .select_related("token")
+                ),
             )
 
+        serialized_files: list[dict[str, Any]] = [
+            file.model.model_dump(exclude_none=True, exclude_unset=True) for file in file_objects
+        ]
         return JsonResponse(
-            {
-                "object": "list",
-                "data": [
-                    f.model.model_dump(exclude_none=True, exclude_unset=True) for f in file_objects
-                ],
-                "has_more": False,
-            },
-            status=200,
+            {"object": "list", "data": serialized_files, "has_more": False}, status=200
         )
 
     # POST /files
+    if pydantic_model is None:
+        return error_response("Invalid request body", status=400)
+
     uploaded = pydantic_model["file"]
     purpose = pydantic_model["purpose"]
-    filename = uploaded.name
+
+    if file_content is None:
+        return error_response("No file content provided", status=400)
+
+    if not hasattr(uploaded, "name"):
+        return error_response("Invalid file upload", status=400)
+    filename = getattr(uploaded, "name", None)
+    if not isinstance(filename, str):
+        return error_response("Invalid file upload", status=400)
 
     # Validate file extension for batch files
     if purpose == "batch" and not filename.endswith(".jsonl"):
@@ -230,8 +247,8 @@ async def files(
         created_at=int(timezone.now().timestamp()),
         purpose=purpose,
         expires_at=local_expires_at,
-        preview=file_preview,
-        upstream_url=settings.AQUEDUCT_FILES_API_URL,
+        preview=file_preview or "",
+        upstream_url=settings.AQUEDUCT_FILES_API_URL or "",
     )
     await sync_to_async(file_obj.save)()
 
@@ -246,7 +263,9 @@ async def files(
 @token_authenticated(token_auth_only=True)
 @log_request
 @catch_router_exceptions
-async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs) -> JsonResponse:
+async def file(
+    request: ASGIRequest, token: Token, file_id: str, *args: Any, **kwargs: Any
+) -> JsonResponse:
     """
     Retrieve or delete a specific file.
 
@@ -272,6 +291,9 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
         # Fetch current status from upstream
         remote_file = await file_obj.areload_from_upstream(client)
 
+        if remote_file is None:
+            return error_response("File not found upstream.", param="file_id", status=404)
+
         # Return response with upstream ID (same as file_obj.id)
         response_data = remote_file.model_dump()
         return JsonResponse(response_data, status=200)
@@ -292,7 +314,7 @@ async def file(request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
 @log_request
 @catch_router_exceptions
 async def file_content(
-    request: ASGIRequest, token: Token, file_id: str, *args, **kwargs
+    request: ASGIRequest, token: Token, file_id: str, *args: Any, **kwargs: Any
 ) -> HttpResponse | JsonResponse:
     """
     Retrieve the content of a specific file.

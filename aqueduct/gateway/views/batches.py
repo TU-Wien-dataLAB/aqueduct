@@ -1,3 +1,5 @@
+from typing import Any
+
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
@@ -33,8 +35,8 @@ async def batches(
     request: ASGIRequest,
     token: Token,
     pydantic_model: BatchCreateParams | None = None,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     GET /batches - list user's batches from local DB
@@ -46,7 +48,7 @@ async def batches(
         else:
             batch_qs = Batch.objects.filter(token__user=token.user)
 
-        batch_objects = await sync_to_async(list)(
+        batch_objects: list[Batch] = await sync_to_async(list)(  # type: ignore[call-arg]
             batch_qs.order_by("-created_at").select_related("input_file")
         )
 
@@ -60,6 +62,9 @@ async def batches(
         )
 
     # POST /batches
+
+    if pydantic_model is None:
+        return error_response("Invalid request body", status=400)
 
     # Check batch limit before creating batch (for upstream quota management)
     max_batches = settings.MAX_USER_BATCHES
@@ -148,7 +153,9 @@ async def batches(
 @token_authenticated(token_auth_only=True)
 @log_request
 @catch_router_exceptions
-async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs) -> JsonResponse:
+async def batch(
+    request: ASGIRequest, token: Token, batch_id: str, *args: Any, **kwargs: Any
+) -> JsonResponse:
     """
     GET /batches/{batch_id} - retrieve a batch from upstream
 
@@ -176,6 +183,9 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
 
     remote_batch = await batch_obj.areload_from_upstream(client)
 
+    if remote_batch is None:
+        return error_response("Batch not found.", param="batch_id", status=404)
+
     # Create local FileObject records for output/error files if missing
     # (inherit ownership from input_file token)
     output_file_obj = await sync_batch_file_if_needed(
@@ -202,7 +212,7 @@ async def batch(request: ASGIRequest, token: Token, batch_id: str, *args, **kwar
 @log_request
 @catch_router_exceptions
 async def batch_cancel(
-    request: ASGIRequest, token: Token, batch_id: str, *args, **kwargs
+    request: ASGIRequest, token: Token, batch_id: str, *args: Any, **kwargs: Any
 ) -> JsonResponse:
     """
     POST /batches/{batch_id}/cancel - cancel a batch on upstream

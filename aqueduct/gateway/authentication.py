@@ -2,6 +2,8 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend
+from django.contrib.auth.models import AbstractBaseUser
+from django.http import HttpRequest
 from django.utils import timezone
 
 from management.models import Token
@@ -10,7 +12,7 @@ logger = logging.getLogger("aqueduct")
 User = get_user_model()
 
 
-def token_from_request(request) -> str | None:
+def token_from_request(request: HttpRequest) -> str | None:
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         # No valid header, authentication cannot proceed with this backend.
@@ -38,7 +40,9 @@ class TokenAuthenticationBackend(BaseBackend):
     using the aqueduct.management.models.Token model.
     """
 
-    def authenticate(self, request, **kwargs) -> User | None:
+    def authenticate(  # type: ignore[override]
+        self, request: HttpRequest | None, **kwargs: object
+    ) -> AbstractBaseUser | None:
         """
         Authenticates the request based on the 'Authorization: Bearer <token>' header.
 
@@ -51,6 +55,8 @@ class TokenAuthenticationBackend(BaseBackend):
             None otherwise.
         """
         logger.debug("TokenAuthenticationBackend: authenticate method called.")
+        if request is None:
+            return None
         token_key = token_from_request(request)
         if not token_key:
             return None
@@ -96,7 +102,7 @@ class TokenAuthenticationBackend(BaseBackend):
         # E.g. in middleware: request.auth_token = token_instance
         return token_instance.user
 
-    def get_user(self, user_id) -> User | None:
+    def get_user(self, user_id: int) -> AbstractBaseUser | None:  # type: ignore[override]
         """
         Retrieves a user instance given the user_id (primary key).
         Required by Django's authentication framework.

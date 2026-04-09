@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import openai
 from django.core.handlers.asgi import ASGIRequest
@@ -42,11 +42,11 @@ async def embeddings(
     request: ASGIRequest,
     pydantic_model: openai.types.EmbeddingCreateParams,
     request_log: Request,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     router = get_router()
-    embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
+    embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)  # type: ignore[arg-type]
     data = embedding.model_dump(exclude_none=True, exclude_unset=True)
     request_log.token_usage = _get_token_usage(data)
     return JsonResponse(data=data, status=200)

@@ -1,3 +1,5 @@
+from typing import Any
+
 import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import StreamingHttpResponse
@@ -7,6 +9,7 @@ from openai import HttpxBinaryResponseContent
 from pydantic import TypeAdapter
 
 from gateway.config import get_router
+from management.models import Request
 
 from .decorators import (
     catch_router_exceptions,
@@ -33,7 +36,11 @@ from .decorators import (
 @check_model_availability
 @catch_router_exceptions
 async def speech(
-    request: ASGIRequest, pydantic_model: openai.types.audio.SpeechCreateParams, *args, **kwargs
+    request: ASGIRequest,
+    pydantic_model: openai.types.audio.SpeechCreateParams,
+    request_log: Request,
+    *args: Any,
+    **kwargs: Any,
 ) -> StreamingHttpResponse:
     router = get_router()
 

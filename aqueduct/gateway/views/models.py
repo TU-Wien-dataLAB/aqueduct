@@ -1,3 +1,5 @@
+from typing import Any
+
 from asgiref.sync import sync_to_async
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
@@ -6,7 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
 from gateway.config import get_router_config
-from management.models import Token
+from management.models import Request, Token
 
 from .decorators import log_request, token_authenticated, tos_accepted
 
@@ -18,9 +20,11 @@ MODEL_CREATION_TIMESTAMP = int(timezone.now().timestamp())
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @log_request
-async def models(request: ASGIRequest, token: Token, *args, **kwargs) -> JsonResponse:
+async def models(
+    request: ASGIRequest, token: Token, request_log: Request, *args: Any, **kwargs: Any
+) -> JsonResponse:
     router_config = get_router_config()
-    model_list: list[dict] = router_config["model_list"]
+    model_list: list[dict[str, Any]] = router_config["model_list"]
     excluded_models = set(await sync_to_async(token.model_exclusion_list)())
 
     return JsonResponse(

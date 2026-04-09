@@ -1,3 +1,5 @@
+from typing import Any
+
 import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
@@ -41,8 +43,8 @@ async def chat_completions(
     request: ASGIRequest,
     pydantic_model: openai.types.chat.CompletionCreateParams,
     request_log: Request,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse | StreamingHttpResponse:
     router = get_router()
     chat_completion: CustomStreamWrapper | ModelResponse = await router.acompletion(

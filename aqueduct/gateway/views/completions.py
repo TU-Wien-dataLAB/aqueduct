@@ -1,9 +1,11 @@
+from typing import Any
+
 import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from litellm import TextCompletionStreamWrapper
+from litellm import TextCompletionStreamWrapper  # type: ignore[attr-defined]
 from litellm.types.utils import TextCompletionResponse
 from pydantic import TypeAdapter
 
@@ -39,8 +41,8 @@ async def completions(
     request: ASGIRequest,
     pydantic_model: openai.types.CompletionCreateParams,
     request_log: Request,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse | StreamingHttpResponse:
     router = get_router()
     completion: (

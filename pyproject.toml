@@ -63,14 +63,13 @@ select = [
     "ANN401", # Dynamically typed expressions (Any) are disallowed
     "ASYNC",  # flake8-async async/await best practices
     "B",      # flake8-bugbear
-    "B904",   # raise-without-from-inside-except
     "C4",     # flake8-comprehensions
     "C90",    # mccabe complexity
     "DJ",     # Django-specific patterns
     "DTZ",    # flake8-datetimez
     "E",      # pycodestyle errors
     "EM",     # flake8-errmsg
-    "ERA",    # flake8-eraduate commented-out code
+    "ERA",    # flake8-eradicate commented-out code
     "F",      # Pyflakes
     "FURB129", # Use list.extend() instead of for-loop with append
     "FURB166", # Use int.from_bytes() instead of manual conversion
@@ -79,39 +78,32 @@ select = [
     "FURB171", # Use str.startswith() with tuple
     "FURB177", # Use Path.cwd() instead of os.getcwd()
     "FURB181", # Use re.compile() for repeated patterns
-    "G",      # flake8-logging-format
-    "I",      # isort
-    "ICN",    # flake8-import-conventions - import conventions
-    "INP",    # flake8-no-pep420 - implicit namespace packages
-    "LOG",    # flake8-logging - logging best practices
-    "N",      # pep8-naming - naming conventions
+    "G",       # flake8-logging-format
+    "I",       # isort
+    "ICN",     # flake8-import-conventions - import conventions
+    "INP",     # flake8-no-pep420 - implicit namespace packages
+    "LOG",     # flake8-logging - logging best practices
+    "N",       # pep8-naming - naming conventions
     "PERF101", # Do not cast an iterable to list before iterating over it
     "PERF102", # Incorrect dict iterator
     "PERF203", # try-except within a loop incurs performance overhead
     "PERF401", # Manual list comprehension
     "PERF402", # Use list or list.copy to create a copy of a list
     "PERF403", # Use a dictionary comprehension instead of {modifier} for-loop
-    "PGH003", # Use specific rule codes when ignoring type issues
-    "PIE",    # flake8-pie miscellaneous lints
-    "PLE",    # Pylint Error - error detection
+    "PGH003",  # Use specific rule codes when ignoring type issues
+    "PIE",     # flake8-pie miscellaneous lints
+    "PLC",    # Pylint Convention
+    "PLE",     # Pylint Error - error detection
     "PLR0402", # Use `from` instead of `import ... as ...`
     "PLR1714", # Repeated equality comparisons -> use `in`
     "PLR2004", # Avoid magic values in comparisons
     "PLR5501", # Use `elif` instead of `else` then `if`
-    "PLC",
-    "PLW",    # pylint ruleset
+    "PLW",    # Pylint Warning
     "PTH",    # flake8-use-pathlib
     "RET",    # flake8-return simplifications
     "RSE",    # flake8-raise - raise statement improvements
     "RUF",    # Ruff-specific rules
-    "RUF005", # Collection literal concatenation
-    "RUF013", # Implicit Optional in type annotations
-    "RUF015", # Unnecessary list conversion before indexing
-    "RUF019", # Unkeyed membership checks
-    "RUF100", # Unused noqa directive
     "S",      # flake8-bandit security checks
-    "S110",   # try-except-pass detected
-    "S112",   # try-except-continue detected
     "SIM",    # flake8-simplify
     "SLOT",   # flake8-slots - __slots__ optimization
     "T10",    # flake8-debugger - debugger detection
@@ -123,17 +115,17 @@ select = [
     "W",      # pycodestyle warnings
 ]
 ignore = [
-    "ANN401",
-    "E731",
-    "EM101",
-    "EM102",
-    "PLC0415",
-    "S101",
-    "S603",
-    "SIM108",
-    "TRY003",
-    "TRY301",
-    "TRY401",
+    "ANN401",  # function arguments should not be annotated with Any
+    "E731",     # do not assign a lambda expression, use a def
+    "EM101",    # exception must not match a string literal
+    "EM102",    # exception must not match an f-string literal
+    "PLC0415",  # import should be at the top-level of a file
+    "S101",     # no `assert` statements in code
+    "S603",     # subprocess call - check for execution of untrusted input
+    "SIM108",   # use ternary operator instead of if-else-block
+    "TRY003",   # avoid specifying long messages outside the exception class
+    "TRY301",   # abstract raise to an inner function
+    "TRY401",   # redundant exception in try-except block
 ]
 
 [tool.ruff.lint.mccabe]

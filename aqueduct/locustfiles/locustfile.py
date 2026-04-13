@@ -1,3 +1,4 @@
+# ruff: noqa: ERA001  # TODO: fix this later
 import logging
 from http import HTTPStatus
 
@@ -8,10 +9,13 @@ log = logging.getLogger(__name__)
 
 
 class GatewayUser(HttpUser):
-    wait_time = between(1, 3)
-    headers = {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
-    multipart_headers = {"Authorization": "Bearer sk-123abc"}
-    host = "http://localhost:8000/"
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.wait_time = between(1, 3)
+        self.headers = {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
+        self.multipart_headers = {"Authorization": "Bearer sk-123abc"}
+        self.host = "http://localhost:8000/"
 
     def on_start(self):
         """Runs once per user when they start - creates test resources"""
@@ -33,9 +37,11 @@ class GatewayUser(HttpUser):
             )
             self._test_file_id = "file-123456789"  # fallback
 
-        # TODO: create a test batch? Otherwise batch `get`/`cancel` tasks fail if they run before batch create task.
+        # TODO: create a test batch? Otherwise batch `get`/`cancel` tasks fail
+        #  if they run before batch create task.
         # TODO: same for responses (get/delete need an existing one);
-        #  seems like sometimes getting resp. from cache fails nonetheless (probably delete fails if it runs twice)
+        #  seems like sometimes getting resp. from cache fails nonetheless
+        #  (probably delete fails if it runs twice)
         # TODO: same for vector stores
         # Initialize IDs with fallback values
         self.batch_id = "batch_123456789"
@@ -136,7 +142,6 @@ class GatewayUser(HttpUser):
         )
         if resp.status_code == HTTPStatus.OK:
             self.response_id = resp.json()["id"]
-            print()
 
     @task
     def get_response(self):

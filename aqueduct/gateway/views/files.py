@@ -1,7 +1,7 @@
 import io
 import json
 from datetime import timedelta
-from typing import Any, Literal, Optional, cast
+from typing import Any, Literal, Optional
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -150,30 +150,21 @@ async def files(
         return error_response("Files API not configured", status=503)
 
     if request.method == "GET":
-        file_objects: list[FileObject]
         if token.service_account:
-            file_objects = cast(
-                "list[FileObject]",
-                await sync_to_async(list)(  # type: ignore[call-arg]
-                    FileObject.objects.filter(
-                        token__service_account__team=token.service_account.team
-                    )
-                    .order_by("-created_at")
-                    .select_related("token")
-                ),
+            qs = (
+                FileObject.objects.filter(token__service_account__team=token.service_account.team)
+                .order_by("-created_at")
+                .select_related("token")
             )
         else:
-            file_objects = cast(
-                "list[FileObject]",
-                await sync_to_async(list)(  # type: ignore[call-arg]
-                    FileObject.objects.filter(token__user=token.user)
-                    .order_by("-created_at")
-                    .select_related("token")
-                ),
+            qs = (
+                FileObject.objects.filter(token__user=token.user)
+                .order_by("-created_at")
+                .select_related("token")
             )
 
-        serialized_files: list[dict[str, Any]] = [
-            file.model.model_dump(exclude_none=True, exclude_unset=True) for file in file_objects
+        serialized_files = [
+            file.model.model_dump(exclude_none=True, exclude_unset=True) async for file in qs
         ]
         return JsonResponse(
             {"object": "list", "data": serialized_files, "has_more": False}, status=200

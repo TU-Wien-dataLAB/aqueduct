@@ -48,17 +48,13 @@ async def batches(
         else:
             batch_qs = Batch.objects.filter(token__user=token.user)
 
-        batch_objects: list[Batch] = await sync_to_async(list)(  # type: ignore[call-arg]
-            batch_qs.order_by("-created_at").select_related("input_file")
-        )
+        batch_objects = [
+            b.model.model_dump()
+            async for b in batch_qs.order_by("-created_at").select_related("input_file")
+        ]
 
         return JsonResponse(
-            {
-                "object": "list",
-                "data": [b.model.model_dump() for b in batch_objects],
-                "has_more": False,
-            },
-            status=200,
+            {"object": "list", "data": batch_objects, "has_more": False}, status=200
         )
 
     # POST /batches

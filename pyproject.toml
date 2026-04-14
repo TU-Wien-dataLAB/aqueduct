@@ -30,6 +30,7 @@ vllm = [
 
 [dependency-groups]
 dev = [
+    "celery-types>=0.26.0",
     "channels[daphne]>=4.3.1",
     "django-stubs[compatible-mypy]==5.2.9",
     "fastapi>=0.115.12",
@@ -117,7 +118,19 @@ select = [
     "UP",     # pyupgrade
     "W",      # pycodestyle warnings
 ]
-ignore = ["S603", "E731", "TRY003", "EM101", "EM102", "TRY401", "TRY301", "PLC0415", "E731", "SIM108", "ANN401"]
+ignore = [
+    "ANN401",
+    "E731",
+    "EM101",
+    "EM102",
+    "PLC0415",
+    "S101",
+    "S603",
+    "SIM108",
+    "TRY003",
+    "TRY301",
+    "TRY401",
+]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 16
@@ -128,6 +141,7 @@ skip-magic-trailing-comma = true
 
 [tool.ruff.lint.isort]
 known-first-party = ["aqueduct", "gateway", "management", "mock_api"]
+split-on-trailing-comma = false
 
 [tool.ruff.lint.flake8-annotations]
 mypy-init-return = true
@@ -158,13 +172,16 @@ show_error_codes = true
 
 [[tool.mypy.overrides]]
 module = [
+    "litellm",
     "litellm.*",
     "mcp.*",
-    "celery.*",
     "mozilla_django_oidc.*",
-    "openai.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["litellm", "litellm.*"]
+follow_imports = "skip"
 
 [tool.django-stubs]
 django_settings_module = "aqueduct.settings"

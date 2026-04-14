@@ -84,7 +84,7 @@ class LimitSet:
 class LimitMixin(models.Model):
     """
     An abstract base model providing common rate limit fields.
-    Set fields to None to indicate no specific limit at this level (use fallback).
+    Set fields to `None` to indicate no specific limit at this level (use fallback).
     """
 
     requests_per_minute = models.PositiveIntegerField(
@@ -858,9 +858,9 @@ class FileObject(models.Model):
             await self.asave()
             return remote
 
-    def delete(  # type: ignore[override]
+    def delete(
         self, using: str | None = None, keep_parents: bool = False, delete_upstream: bool = False
-    ) -> None:
+    ) -> tuple[int, dict[str, int]]:
         """
         Override ORM delete - files are stored upstream, so we only delete the local DB record.
 
@@ -869,7 +869,7 @@ class FileObject(models.Model):
         """
         if delete_upstream:
             asyncio.run(self.adelete_upstream())
-        super().delete(using=using, keep_parents=keep_parents)
+        return super().delete(using=using, keep_parents=keep_parents)
 
 
 def default_request_counts() -> dict[str, int]:
@@ -1068,12 +1068,6 @@ class Batch(models.Model):
             await self.asave()
             return remote
 
-    def delete(self, using: str | None = None, keep_parents: bool = False) -> None:  # type: ignore[override]
-        """
-        Override delete - files are stored upstream, so we only delete the local DB record.
-        """
-        super().delete(using=using, keep_parents=keep_parents)
-
 
 class VectorStoreStatus(models.TextChoices):
     """Vector store status choices matching OpenAI's API."""
@@ -1233,9 +1227,9 @@ class VectorStore(models.Model):
 
         return success, failed
 
-    def delete(  # type: ignore[override]
+    def delete(
         self, using: str | None = None, keep_parents: bool = False, delete_upstream: bool = False
-    ) -> None:
+    ) -> tuple[int, dict[str, int]]:
         """
         Override ORM delete - vector stores are stored upstream,
         so we only delete the local DB record.
@@ -1245,7 +1239,7 @@ class VectorStore(models.Model):
         """
         if delete_upstream:
             asyncio.run(self.adelete_upstream())
-        super().delete(using=using, keep_parents=keep_parents)
+        return super().delete(using=using, keep_parents=keep_parents)
 
 
 class VectorStoreFileStatus(models.TextChoices):
@@ -1393,9 +1387,9 @@ class VectorStoreFile(models.Model):
             await self.asave()
             return remote
 
-    def delete(  # type: ignore[override]
+    def delete(
         self, using: str | None = None, keep_parents: bool = False, delete_upstream: bool = False
-    ) -> None:
+    ) -> tuple[int, dict[str, int]]:
         """
         Override ORM delete.
 
@@ -1403,10 +1397,8 @@ class VectorStoreFile(models.Model):
             delete_upstream: If True, also delete from upstream API before local delete.
         """
         if delete_upstream:
-            import asyncio
-
             asyncio.run(self.adelete_upstream())
-        super().delete(using=using, keep_parents=keep_parents)
+        return super().delete(using=using, keep_parents=keep_parents)
 
 
 class VectorStoreFileBatchStatus(models.TextChoices):

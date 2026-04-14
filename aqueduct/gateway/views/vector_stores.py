@@ -73,7 +73,6 @@ async def vector_stores(
                 file_count_cancelled=Count("files", filter=Q(files__status="cancelled")),
             )
         )
-        vector_stores_list: list[VectorStore] = await sync_to_async(list)(vector_stores_qs)  # type: ignore[call-arg]
 
         return JsonResponse(
             {
@@ -97,7 +96,7 @@ async def vector_stores(
                         ),
                         last_active_at=vs.last_active_at,
                     ).model_dump(mode="json")
-                    for vs in vector_stores_list
+                    async for vs in vector_stores_qs
                 ],
                 "has_more": False,
             },

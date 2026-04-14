@@ -18,6 +18,7 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib import auth
 from django.core.cache import cache
+from django.core.files.uploadedfile import UploadedFile
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Sum
 from django.http import HttpResponse, StreamingHttpResponse
@@ -130,16 +131,17 @@ def _parse_multipart_body(request: ASGIRequest) -> dict[str, Any]:
     total_file_size_bytes = 0
 
     for key, file in request.FILES.items():
-        if file.size > max_file_bytes:  # type: ignore[union-attr,operator]
+        assert isinstance(file, UploadedFile) and isinstance(file.size, int)
+        if file.size > max_file_bytes:
             log.error("File in request too large")
             raise FileSizeError(f"File '{key}' exceeds maximum size of {max_file_size_mb}MB")
 
-        total_file_size_bytes += file.size  # type: ignore[union-attr,operator]
+        total_file_size_bytes += file.size
         if total_file_size_bytes > max_total_size_bytes:
             log.error("Files in request too large")
             raise FileSizeError(f"Total file size exceeds maximum of {max_total_size_mb}MB")
 
-        data[key] = file.read()  # type: ignore[union-attr]
+        data[key] = file.read()
 
     return data
 
@@ -216,9 +218,10 @@ def parse_body(model: TypeAdapter[Any]) -> Decorator:
             # This only works if the field is also typed as bytes.
             # Additionally, add the size information - for convenience.
             for key, file in request.FILES.items():
+                assert isinstance(file, UploadedFile) and isinstance(file.size, int)
                 buffer: io.BytesIO = io.BytesIO(data[key])
-                buffer.name = file.name  # type: ignore[union-attr]
-                buffer.size = file.size  # type: ignore[union-attr,attr-defined]
+                buffer.name = file.name
+                buffer.size = file.size  # type: ignore[attr-defined]
                 data[key] = buffer
 
             kwargs["pydantic_model"] = data
@@ -613,38 +616,38 @@ def catch_router_exceptions(view_func: AsyncView) -> AsyncView:
         # also except equivalent openai exceptions
         try:
             return await view_func(request, *args, **kwargs)
-        except (litellm.BadRequestError, openai.BadRequestError) as e:  # type: ignore[attr-defined]
+        except (litellm.BadRequestError, openai.BadRequestError) as e:
             log.exception("Bad request - %s", _r(e))
             return _exception_response(e, status=400)
-        except (litellm.AuthenticationError, openai.AuthenticationError) as e:  # type: ignore[attr-defined]
+        except (litellm.AuthenticationError, openai.AuthenticationError) as e:
             log.exception("Authentication error - %s", _r(e))
             return _exception_response(e, status=401)
         except (litellm.exceptions.PermissionDeniedError, openai.PermissionDeniedError) as e:
             log.exception("Permission denied - %s", _r(e))
             return _exception_response(e, status=403)
-        except (litellm.NotFoundError, openai.NotFoundError) as e:  # type: ignore[attr-defined]
+        except (litellm.NotFoundError, openai.NotFoundError) as e:
             log.exception("Not found - %s", _r(e))
             return _exception_response(e, status=404)
-        except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:  # type: ignore[attr-defined]
+        except (litellm.UnprocessableEntityError, openai.UnprocessableEntityError) as e:
             log.exception("Unprocessable entity - %s", _r(e))
             return _exception_response(e, status=422)
-        except (litellm.RateLimitError, openai.RateLimitError) as e:  # type: ignore[attr-defined]
+        except (litellm.RateLimitError, openai.RateLimitError) as e:
             log.exception("Rate limit exceeded - %s", _r(e))
             return _exception_response(e, status=429)
-        except (litellm.Timeout, openai.APITimeoutError) as e:  # type: ignore[attr-defined]
+        except (litellm.Timeout, openai.APITimeoutError) as e:
             log.exception("Timeout - %s", _r(e))
             return _exception_response(e, status=504)
         except (
-            litellm.ServiceUnavailableError,  # type: ignore[attr-defined]
-            litellm.APIConnectionError,  # type: ignore[attr-defined]
+            litellm.ServiceUnavailableError,
+            litellm.APIConnectionError,
             openai.APIConnectionError,
         ) as e:
             log.exception("Service unavailable - %s", _r(e))
             return _exception_response(e, status=503)
-        except (litellm.InternalServerError, openai.InternalServerError) as e:  # type: ignore[attr-defined]
+        except (litellm.InternalServerError, openai.InternalServerError) as e:
             log.exception("Internal server error - %s", _r(e))
             return _exception_response(e, status=500)
-        except (litellm.APIError, openai.APIError) as e:  # type: ignore[attr-defined]
+        except (litellm.APIError, openai.APIError) as e:
             # APIError is raised e.g. when user sends extra kwargs in the request body,
             # so we return a 400 Bad request.
             log.exception("API error - %s", _r(e))
@@ -805,6 +808,7 @@ def validate_response_id(view_func: AsyncView) -> AsyncView:
 async def _validate_mcp_tool(
     request: ASGIRequest, token: Token, tool: ToolParam
 ) -> ViewResult | None:
+    # Note: mypy doesn't recognise the types of `ToolParam` attributes correctly
     server_name: str = tool.get("server_label")  # type: ignore[assignment]
     if await sync_to_async(token.mcp_server_excluded)(server_name):
         log.error("MCP server not found - %s", server_name)
@@ -834,6 +838,7 @@ async def _validate_mcp_tool(
 
 
 async def _validate_file_search_tool(token: Token, tool: ToolParam) -> ViewResult | None:
+    # Note: mypy doesn't recognise the types of `ToolParam` attributes correctly
     vector_store_ids: list[str] = tool.get("vector_store_ids", [])  # type: ignore[assignment]
     if not vector_store_ids:
         return None
@@ -949,7 +954,8 @@ def _lookup_relay_model_name(requested_model: str) -> str | None:
     if not deployment_model:
         return None
 
-    relay_model, _, _, _ = litellm.get_llm_provider(deployment_model)  # type: ignore[attr-defined]
+    relay_model: str
+    relay_model, _, _, _ = litellm.get_llm_provider(deployment_model)
     return relay_model
 
 

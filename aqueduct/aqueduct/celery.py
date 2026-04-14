@@ -24,7 +24,7 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
 
-@app.task(bind=True, ignore_result=True)  # type: ignore[untyped-decorator]
+@app.task(bind=True, ignore_result=True)
 def delete_old_requests(self: object) -> None:
     """
     Deletes Request objects older than REQUEST_RETENTION_DAYS.
@@ -39,7 +39,7 @@ def delete_old_requests(self: object) -> None:
     logger.info("Deleted %s requests older than %s days (before %s)", count, retention_days, cutoff)
 
 
-@app.task(bind=True, ignore_result=True)  # type: ignore[untyped-decorator]
+@app.task(bind=True, ignore_result=True)
 def delete_silk_models(self: object) -> None:
     """
     Clears Silk's profiling logs.
@@ -54,7 +54,7 @@ def delete_silk_models(self: object) -> None:
     logger.info("Cleared Silk profiling logs.")
 
 
-@app.task(bind=True, ignore_result=True)  # type: ignore[untyped-decorator]
+@app.task(bind=True, ignore_result=True)
 def delete_expired_files_and_batches(self: object) -> None:
     """
     Deletes expired FileObject and Batch records.

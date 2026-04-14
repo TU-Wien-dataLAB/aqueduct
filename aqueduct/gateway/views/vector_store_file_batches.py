@@ -45,9 +45,12 @@ async def mark_orphaned_files(
         status: The new status to set on orphaned files (typically "failed").
         error_msg: The error message to set on orphaned files.
     """
-    orphaned_files: list[VectorStoreFile] = await sync_to_async(list)(  # type: ignore[call-arg]
-        VectorStoreFile.objects.filter(batch=batch_obj, status=VectorStoreFileStatus.IN_PROGRESS)
-    )
+    orphaned_files: list[VectorStoreFile] = [
+        f
+        async for f in VectorStoreFile.objects.filter(
+            batch=batch_obj, status=VectorStoreFileStatus.IN_PROGRESS
+        )
+    ]
     if orphaned_files:
 
         @sync_to_async

@@ -1,3 +1,5 @@
+from typing import Any
+
 import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
@@ -21,6 +23,7 @@ from .decorators import (
     tos_accepted,
     validate_response_id,
 )
+from .errors import error_response
 from .utils import (
     ResponseRegistrationWrapper,
     _get_token_usage,
@@ -44,7 +47,12 @@ from .utils import (
 @check_tool_availability
 @catch_router_exceptions
 async def create_response(
-    request: ASGIRequest, pydantic_model: dict, request_log: Request, token: Token, *args, **kwargs
+    request: ASGIRequest,
+    pydantic_model: dict[str, Any],
+    request_log: Request,
+    token: Token,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse | StreamingHttpResponse:
     """Handler for POST /v1/responses - Creates a new response via OpenAI's responses API
 
@@ -52,10 +60,12 @@ async def create_response(
     and non-streaming responses."""
 
     model = pydantic_model.get("model")
-    client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
+    if not isinstance(model, str):
+        return error_response("Missing required parameter: model", param="model", status=400)
+    client, model_relay = oai_client_from_body(model, request)
     pydantic_model["model"] = model_relay
 
-    resp: Response | AsyncStream = await client.responses.create(**pydantic_model)
+    resp: Response | AsyncStream[Response] = await client.responses.create(**pydantic_model)
 
     if isinstance(resp, AsyncStream):
         return StreamingHttpResponse(
@@ -82,26 +92,28 @@ async def create_response(
 @validate_response_id
 @catch_router_exceptions
 async def response(
-    request: ASGIRequest, response_id: str, token: Token, *args, **kwargs
-) -> JsonResponse | None:
+    request: ASGIRequest, response_id: str, token: Token, *args: Any, **kwargs: Any
+) -> JsonResponse:
     """Combined handler for GET and DELETE /v1/responses/{response_id}"""
     response = get_response_from_cache(response_id)
-    model = response["model"]
+    if response is None:
+        return JsonResponse({"error": "Response not found"}, status=404)
+    model: str = response["model"]
     client, _model_relay = oai_client_from_body(model, request)
 
     if request.method == "GET":
-        resp = await client.responses.retrieve(response_id=response_id)
-        data = resp.model_dump(exclude_none=True, exclude_unset=True)
+        get_resp = await client.responses.retrieve(response_id=response_id)
+        data = get_resp.model_dump(exclude_none=True, exclude_unset=True)
         return JsonResponse(data=data, status=200)
     if request.method == "DELETE":
-        resp = await client.responses.delete(response_id=response_id)
+        delete_result = await client.responses.delete(response_id=response_id)  # type: ignore[func-returns-value]
         delete_response_from_cache(response_id=response_id)
-        if resp is None:
+        if delete_result is None:
             # BUG in openai python sdk: https://github.com/openai/openai-openapi/issues/490
             return JsonResponse({"deleted": True}, status=200)
-        data = resp.model_dump(exclude_none=True, exclude_unset=True)
+        data = delete_result.model_dump(exclude_none=True, exclude_unset=True)
         return JsonResponse(data=data, status=200)
-    return None
+    raise AssertionError("Unreachable")
 
 
 @csrf_exempt
@@ -112,11 +124,13 @@ async def response(
 @validate_response_id
 @catch_router_exceptions
 async def get_response_input_items(
-    request: ASGIRequest, response_id: str, token: Token, *args, **kwargs
+    request: ASGIRequest, response_id: str, token: Token, *args: Any, **kwargs: Any
 ) -> JsonResponse:
     """Handler for GET /v1/responses/{response_id}/input_items"""
     response = get_response_from_cache(response_id)
-    model = response["model"]
+    if response is None:
+        return JsonResponse({"error": "Response not found"}, status=404)
+    model: str = response["model"]
     client, _model_relay = oai_client_from_body(model, request)
     resp = await client.responses.input_items.list(response_id=response_id)
     data = resp.model_dump(exclude_none=True, exclude_unset=True)

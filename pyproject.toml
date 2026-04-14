@@ -30,8 +30,11 @@ vllm = [
 
 [dependency-groups]
 dev = [
+    "celery-types>=0.26.0",
     "channels[daphne]>=4.3.1",
+    "django-stubs[compatible-mypy]==5.2.9",
     "fastapi>=0.115.12",
+    "mypy==1.19.1",
     "pre-commit>=4.2.0",
     "ruff>=0.15.5",
     "tbump>=6.11.0",
@@ -115,7 +118,19 @@ select = [
     "UP",     # pyupgrade
     "W",      # pycodestyle warnings
 ]
-ignore = ["S603", "E731", "TRY003", "EM101", "EM102", "TRY401", "TRY301", "PLC0415", "E731", "SIM108"]
+ignore = [
+    "ANN401",
+    "E731",
+    "EM101",
+    "EM102",
+    "PLC0415",
+    "S101",
+    "S603",
+    "SIM108",
+    "TRY003",
+    "TRY301",
+    "TRY401",
+]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 16
@@ -126,6 +141,7 @@ skip-magic-trailing-comma = true
 
 [tool.ruff.lint.isort]
 known-first-party = ["aqueduct", "gateway", "management", "mock_api"]
+split-on-trailing-comma = false
 
 [tool.ruff.lint.flake8-annotations]
 mypy-init-return = true
@@ -136,5 +152,36 @@ suppress-none-returning = true
 "__init__.py" = ["F401"]
 # TODO: remove DJ001 on next db migration and add it there
 "**/management/models.py" = ["DJ001"]
+# Decorator wrappers legitimately need *args: Any, **kwargs: Any
+"**/gateway/views/decorators.py" = ["ANN401"]
 # Too much noise for tests
 "**/tests/**/*.py" = ["S", "ANN"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["mypy_django_plugin.main"]
+files = ["gateway"]
+exclude = [
+    "tests",
+    "migrations",
+]
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+    "litellm",
+    "litellm.*",
+    "mcp.*",
+    "mozilla_django_oidc.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["litellm", "litellm.*"]
+follow_imports = "skip"
+
+[tool.django-stubs]
+django_settings_module = "aqueduct.settings"

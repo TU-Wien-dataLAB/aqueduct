@@ -1,8 +1,5 @@
 from contextlib import suppress
-from typing import TYPE_CHECKING, TypedDict
-
-if TYPE_CHECKING:
-    from openai.types.vector_stores.vector_store_file import VectorStoreFile
+from typing import Any, TypedDict
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -13,6 +10,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from openai.types.vector_stores.file_create_params import FileCreateParams
+from openai.types.vector_stores.vector_store_file import VectorStoreFile as OpenAIVectorStoreFile
 from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
@@ -35,12 +33,12 @@ class FileUpdateBody(TypedDict, total=False):
     which we add in the view.
     """
 
-    attributes: dict
+    attributes: dict[str, Any]
 
 
 @sync_to_async
 def _create_local_file_with_recheck(
-    vs_obj: VectorStore, file_obj: FileObject, max_files: int, remote_vs_file: "VectorStoreFile"
+    vs_obj: VectorStore, file_obj: FileObject, max_files: int, remote_vs_file: OpenAIVectorStoreFile
 ) -> tuple[VectorStoreFile | None, str]:
     with transaction.atomic():
         try:
@@ -77,8 +75,8 @@ async def vector_store_files(
     token: Token,
     vector_store_id: str,
     pydantic_model: FileCreateParams | None = None,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files - List files in vector store
@@ -116,8 +114,9 @@ async def vector_store_files(
         )
 
     # POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
-    params = pydantic_model if pydantic_model else {}
-    file_id = params.get("file_id")
+    if not pydantic_model:
+        return error_response("Missing required parameter: file_id", param="file_id", status=400)
+    file_id = pydantic_model.get("file_id")
     if not file_id:
         return error_response("Missing required parameter: file_id", param="file_id", status=400)
 
@@ -136,11 +135,11 @@ async def vector_store_files(
 
     # Create upstream file first, then atomically check the limit and insert locally.
     # If a concurrent request filled the last slot, we clean up the upstream file.
-    create_kwargs = {"vector_store_id": vs_obj.id, "file_id": file_obj.id}
-    if params.get("chunking_strategy"):
-        create_kwargs["chunking_strategy"] = params["chunking_strategy"]
-    if params.get("attributes"):
-        create_kwargs["attributes"] = params["attributes"]
+    create_kwargs: dict[str, Any] = {"vector_store_id": vs_obj.id, "file_id": file_obj.id}
+    if pydantic_model.get("chunking_strategy"):
+        create_kwargs["chunking_strategy"] = pydantic_model["chunking_strategy"]
+    if pydantic_model.get("attributes"):
+        create_kwargs["attributes"] = pydantic_model["attributes"]
     remote_vs_file = await client.vector_stores.files.create(**create_kwargs)
 
     # Atomically check the file limit and create the local record.
@@ -181,8 +180,8 @@ async def vector_store_file(
     vector_store_id: str,
     file_id: str,
     pydantic_model: FileUpdateBody | None = None,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id} - Retrieve file
@@ -217,6 +216,9 @@ async def vector_store_file(
         # Retrieve from upstream and sync status
         remote_vs_file = await vs_file_obj.areload_from_upstream(client)
 
+        if not remote_vs_file:
+            return error_response("Vector store file not found.", param="file_id", status=404)
+
         # Return upstream response directly (IDs already match)
         response_data = remote_vs_file.model_dump(mode="json")
 
@@ -224,16 +226,14 @@ async def vector_store_file(
 
     if request.method == "POST":
         # Update file attributes
-        params = pydantic_model if pydantic_model else {}
-
-        update_kwargs = {"vector_store_id": vs_obj.id, "file_id": vs_file_obj.id}
-        if params.get("attributes"):
-            update_kwargs["attributes"] = params["attributes"]
-
-        if not params.get("attributes"):
+        if not pydantic_model or not pydantic_model.get("attributes"):
             return error_response(
                 "Missing required parameter: attributes", param="attributes", status=400
             )
+
+        update_kwargs: dict[str, Any] = {"vector_store_id": vs_obj.id, "file_id": vs_file_obj.id}
+        if pydantic_model.get("attributes"):
+            update_kwargs["attributes"] = pydantic_model["attributes"]
 
         remote_vs_file = await client.vector_stores.files.update(**update_kwargs)
 
@@ -260,7 +260,12 @@ async def vector_store_file(
 @log_request
 @catch_router_exceptions
 async def vector_store_file_content(
-    request: ASGIRequest, token: Token, vector_store_id: str, file_id: str, *args, **kwargs
+    request: ASGIRequest,
+    token: Token,
+    vector_store_id: str,
+    file_id: str,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id}/content - Get file content

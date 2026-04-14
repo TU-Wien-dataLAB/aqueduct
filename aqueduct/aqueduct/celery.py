@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from datetime import timedelta
 
 from celery import Celery
 from django.conf import settings
@@ -24,14 +25,14 @@ app.autodiscover_tasks()
 
 
 @app.task(bind=True, ignore_result=True)
-def delete_old_requests(self):
+def delete_old_requests(self: object) -> None:
     """
     Deletes Request objects older than REQUEST_RETENTION_DAYS.
     """
     from management.models import Request  # Import here to avoid issues at startup
 
     retention_days = getattr(settings, "REQUEST_RETENTION_DAYS", 30)
-    cutoff = timezone.now() - timezone.timedelta(days=retention_days)
+    cutoff = timezone.now() - timedelta(days=retention_days)
     old_requests = Request.objects.filter(timestamp__lt=cutoff)
     count = old_requests.count()
     old_requests.delete()
@@ -39,12 +40,12 @@ def delete_old_requests(self):
 
 
 @app.task(bind=True, ignore_result=True)
-def delete_silk_models(self):
+def delete_silk_models(self: object) -> None:
     """
     Clears Silk's profiling logs.
     """
-    import silk.models
-    from silk.utils.data_deletion import delete_model
+    import silk.models  # type: ignore[import-untyped]
+    from silk.utils.data_deletion import delete_model  # type: ignore[import-untyped]
 
     delete_model(silk.models.Profile)
     delete_model(silk.models.SQLQuery)
@@ -54,7 +55,7 @@ def delete_silk_models(self):
 
 
 @app.task(bind=True, ignore_result=True)
-def delete_expired_files_and_batches(self):
+def delete_expired_files_and_batches(self: object) -> None:
     """
     Deletes expired FileObject and Batch records.
 

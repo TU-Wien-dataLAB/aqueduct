@@ -1,3 +1,5 @@
+from typing import Any
+
 import openai
 from django.core.handlers.asgi import ASGIRequest
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
@@ -23,7 +25,7 @@ from .decorators import (
 from .utils import _get_token_usage, _openai_stream, oai_client_from_body
 
 
-class TranscriptionCreateParams(RootModel):
+class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
     root: OpenAITranscriptionCreateParams
     # IO[bytes] requires arbitrary_types_allowed for model settings
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -43,8 +45,8 @@ async def transcriptions(
     request: ASGIRequest,
     pydantic_model: OpenAITranscriptionCreateParams,
     request_log: Request,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse | HttpResponse | StreamingHttpResponse:
     client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay

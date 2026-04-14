@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
@@ -34,7 +35,11 @@ log = logging.getLogger("aqueduct")
 @check_model_availability
 @catch_router_exceptions
 async def image_generation(
-    request: ASGIRequest, pydantic_model: ImageGenerateParams, request_log: Request, *args, **kwargs
+    request: ASGIRequest,
+    pydantic_model: ImageGenerateParams,
+    request_log: Request,
+    *args: Any,
+    **kwargs: Any,
 ) -> JsonResponse:
     if pydantic_model.get("stream"):
         # LiteLLM cannot parse a Stream response, so we don't support streaming for now
@@ -53,7 +58,8 @@ async def image_generation(
         )
     pydantic_model["response_format"] = response_format
 
-    client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
+    model_name: str = pydantic_model.get("model") or ""
+    client, model_relay = oai_client_from_body(model_name, request)
     pydantic_model["model"] = model_relay
 
     try:

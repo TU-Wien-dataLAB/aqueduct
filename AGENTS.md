@@ -13,6 +13,7 @@
 - **Run tests**: `cd aqueduct && uv run python manage.py test` or `cd aqueduct && uv run python manage.py test <app_name>.tests.<TestClass>` (run full suite before finishing major/cross-cutting work)
 - **Run single test**: `cd aqueduct && uv run python manage.py test <app_name>.tests.<TestClass>.test_method` (prefer targeted tests during active development)
 - **Lint**: `uv run pre-commit run --all-files`
+- **Type check**: `cd aqueduct && uv run mypy`
 - **Format**: No auto-formatting configured, follow existing style
 - **Migrations**: `cd aqueduct && uv run python manage.py makemigrations` then `cd aqueduct && uv run python manage.py migrate`
 

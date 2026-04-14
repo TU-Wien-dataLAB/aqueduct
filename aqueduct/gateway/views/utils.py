@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
 from typing import Any
 
@@ -21,7 +21,7 @@ from management.models import Request, Usage
 log = logging.getLogger("aqueduct")
 
 
-def _get_token_usage(content: bytes | dict) -> Usage:
+def _get_token_usage(content: bytes | dict[str, Any]) -> Usage:
     """Retrieves token usage information from the response content.
 
     Note that if the response data does not match the expected format, or does
@@ -54,11 +54,12 @@ def _get_token_usage(content: bytes | dict) -> Usage:
 
 
 def _openai_stream(
-    stream: CustomStreamWrapper | TextCompletionStreamWrapper | AsyncStream, request_log: Request
-) -> AsyncGenerator[str, Any]:
+    stream: CustomStreamWrapper | TextCompletionStreamWrapper | AsyncStream[Any],
+    request_log: Request,
+) -> AsyncGenerator[str, None]:
     start_time = time.monotonic()
 
-    async def _stream():
+    async def _stream() -> AsyncGenerator[str, None]:
         token_usage = Usage(0, 0)
         async for chunk in stream:
             chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
@@ -85,7 +86,7 @@ def _openai_stream(
 
 
 @contextmanager
-def cache_lock(lock_id, ttl: int):
+def cache_lock(lock_id: str, ttl: int) -> Generator[bool, None, None]:
     """
     Acquire a cache-based lock with key `lock_id`, and expiration `ttl` seconds.
     Yields True if the lock was acquired (cache.add succeeded), False otherwise.
@@ -135,7 +136,18 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
         ) from None
 
     router = get_router()
-    deployment: litellm.Deployment = router.get_deployment(model_id=model)
+    deployment: litellm.Deployment | None = router.get_deployment(model_id=model)
+
+    if deployment is None:
+        log.exception("Model '%s' not found in router deployments", model)
+        raise openai.NotFoundError(
+            message=f"Model '{model}' not found!",
+            response=httpx.Response(
+                request=httpx.Request(method=request.method, url=request.build_absolute_uri()),
+                status_code=404,
+            ),
+            body=None,
+        ) from None
 
     model_relay, _provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
     return client, model_relay
@@ -144,7 +156,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
 class ResponseRegistrationWrapper:
     """Wraps streaming content to register response on first chunk."""
 
-    def __init__(self, streaming_content, model: str, email: str):
+    def __init__(self, streaming_content: AsyncGenerator[str, None], model: str, email: str):
         self.streaming_content = streaming_content
         self.model_name = model
         self.user_email = email
@@ -154,41 +166,32 @@ class ResponseRegistrationWrapper:
         return self
 
     async def __anext__(self) -> str:
-        try:
-            # Iterate through the streaming content
-            if hasattr(self.streaming_content, "__anext__"):
-                chunk = await self.streaming_content.__anext__()
-            else:
-                # Handle iterator-like objects
-                chunk = next(self.streaming_content)
-        except StopAsyncIteration:
-            raise
-        except StopIteration:
-            raise StopAsyncIteration from None
-        else:
-            if not self._registered and chunk:
-                response_id = self.extract_response_id_from_chunk(chunk)
-                if response_id:
-                    register_response_in_cache(response_id, self.model_name, self.user_email)
-                    self._registered = True
-            return chunk
+        chunk: str = await self.streaming_content.__anext__()
+        if not self._registered and chunk:
+            response_id = self.extract_response_id_from_chunk(chunk)
+            if response_id:
+                register_response_in_cache(response_id, self.model_name, self.user_email)
+                self._registered = True
+        return chunk
 
     @staticmethod
-    def extract_response_id_from_chunk(chunk: bytes) -> str | None:
+    def extract_response_id_from_chunk(chunk: str) -> str | None:
         """Extract response ID from SSE chunk containing 'response.created' event."""
         try:
-            chunk_str = chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)
             # Parse SSE format: "data: {json}"
-            for line in chunk_str.split("\n"):
+            for line in chunk.split("\n"):
                 if line.startswith("data: ") and "response.created" in line:
-                    json_data = json.loads(line.removeprefix("data: "))
+                    json_data: dict[str, Any] = json.loads(line.removeprefix("data: "))
                     if json_data.get("type") == "response.created":
-                        return json_data.get("response", {}).get("id")
-        except (json.JSONDecodeError, UnicodeDecodeError):
+                        response_data: dict[str, Any] = json_data.get("response", {})
+                        response_id: str | None = response_data.get("id")
+                        return response_id
+        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
             return None
+        return None
 
 
-def register_response_in_cache(response_id: str | None, model: str, email: str):
+def register_response_in_cache(response_id: str | None, model: str, email: str) -> None:
     """Registers a response in the cache for later retrieval."""
     if not response_id:
         log.warning("Missing response data: id=%s, model=%s", response_id, model)
@@ -202,14 +205,15 @@ def register_response_in_cache(response_id: str | None, model: str, email: str):
     log.debug("Registered response %s for user %s with model %s", response_id, email, model)
 
 
-def get_response_from_cache(response_id: str) -> dict | None:
+def get_response_from_cache(response_id: str) -> dict[str, Any] | None:
     """Retrieves a response from the cache."""
     cache_key = f"response:{response_id}"
     response_cache = caches["default"]
-    return response_cache.get(cache_key)
+    result: dict[str, Any] | None = response_cache.get(cache_key)
+    return result
 
 
-def delete_response_from_cache(response_id: str):
+def delete_response_from_cache(response_id: str) -> None:
     """Deletes a response from the cache."""
     cache_key = f"response:{response_id}"
     response_cache = caches["default"]

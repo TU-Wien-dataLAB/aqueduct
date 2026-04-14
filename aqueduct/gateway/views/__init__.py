@@ -16,3 +16,32 @@ from .vector_store_file_batches import (
 )
 from .vector_store_files import vector_store_file, vector_store_file_content, vector_store_files
 from .vector_stores import vector_store, vector_store_search, vector_stores
+
+__all__ = [
+    "batch",
+    "batch_cancel",
+    "batches",
+    "chat_completions",
+    "completions",
+    "create_response",
+    "embeddings",
+    "file",
+    "file_content",
+    "files",
+    "get_response_input_items",
+    "image_generation",
+    "models",
+    "response",
+    "speech",
+    "transcriptions",
+    "vector_store",
+    "vector_store_file",
+    "vector_store_file_batch",
+    "vector_store_file_batch_cancel",
+    "vector_store_file_batch_files",
+    "vector_store_file_batches",
+    "vector_store_file_content",
+    "vector_store_files",
+    "vector_store_search",
+    "vector_stores",
+]

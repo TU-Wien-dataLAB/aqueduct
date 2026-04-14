@@ -1,8 +1,9 @@
 import json
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 import openai
 import yaml
@@ -34,9 +35,9 @@ def get_files_api_client() -> openai.AsyncClient:
     )
 
 
-def _validate_router_config(config: dict):
+def _validate_router_config(config: dict[str, Any]) -> None:
     # Validate alias uniqueness
-    alias_to_model = {}
+    alias_to_model: dict[str, str] = {}
     model_list = config.get("model_list", [])
     for model in model_list:
         model_name = model.get("model_name")
@@ -51,18 +52,23 @@ def _validate_router_config(config: dict):
 
 
 @lru_cache(maxsize=1)
-def get_router_config() -> dict:
+def get_router_config() -> dict[str, Any]:
     path = settings.LITELLM_ROUTER_CONFIG_FILE_PATH
+    if path is None:
+        raise RuntimeError("LITELLM_ROUTER_CONFIG_FILE_PATH must be configured")
     try:
         log.info("Loading router config from %s", path)
         with Path(path).open() as f:
             data = yaml.safe_load(f)
-    except (FileNotFoundError, TypeError):
+    except FileNotFoundError:
         raise RuntimeError(f"Unable to load router config from {path}") from None
+
+    if data is None:
+        raise RuntimeError(f"Unable to load router config from {path}")
 
     _validate_router_config(data)
 
-    return data
+    return cast("dict[str, Any]", data)
 
 
 @lru_cache(maxsize=1)
@@ -81,10 +87,15 @@ def get_openai_client(model: str) -> openai.AsyncClient:
         raise ValueError(f"Deployment for model '{model}' not found!")
     litellm_params = deployment.litellm_params
 
+    timeout = litellm_params.timeout
+    if isinstance(timeout, str):
+        # litellm passes env vars as "os.environ/VAR_NAME" strings
+        timeout = float(os.environ[timeout.removeprefix("os.environ/")])
+
     return openai.AsyncClient(
         api_key=litellm_params.api_key,
         base_url=litellm_params.api_base,
-        timeout=litellm_params.timeout,
+        timeout=timeout,
         max_retries=settings.API_MAX_RETRIES,
     )
 
@@ -113,11 +124,11 @@ def resolve_model_alias(model_or_alias: str) -> str:
 
     # Build alias - model mapping
     for model in model_list:
-        model_name = model.get("model_name")
+        model_name = cast("str", model.get("model_name"))
         if model_name == model_or_alias:
             return model_name
 
-        aliases = model.get("model_info", {}).get("aliases", [])
+        aliases = cast("list[str]", model.get("model_info", {}).get("aliases", []))
         if model_or_alias in aliases:
             return model_name
 
@@ -131,6 +142,6 @@ def get_mcp_config() -> dict[str, MCPServerConfig]:
     try:
         with Path(path).open() as f:
             data = json.load(f)["mcpServers"]
-            return {server: MCPServerConfig(**config) for server, config in data.items()}
+            return {server: cast("MCPServerConfig", config) for server, config in data.items()}
     except (FileNotFoundError, TypeError, json.JSONDecodeError, KeyError):
         raise RuntimeError(f"Unable to load MCP config from {path}") from None

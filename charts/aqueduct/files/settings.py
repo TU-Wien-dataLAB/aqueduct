@@ -290,7 +290,7 @@ DATABASES = {"default": {"ENGINE": DATABASE_ENGINE}}
 if DATABASE_ENGINE == "django.db.backends.sqlite3":
     DATABASES["default"]["NAME"] = str(BASE_DIR / "db.sqlite3")
     if TESTING:
-        DATABASES["default"]["TEST"] = {"NAME": str(BASE_DIR / "db_test.sqlite3")}
+        DATABASES["default"]["TEST"] = {"NAME": str(BASE_DIR / "db_test.sqlite3")}  # type: ignore[assignment]
 elif DATABASE_ENGINE == "django.db.backends.postgresql":
     DATABASES["default"].update(
         {

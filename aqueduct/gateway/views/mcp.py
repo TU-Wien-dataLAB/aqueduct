@@ -494,9 +494,10 @@ def parse_session_message(
     session_id: str,
     json: bool = False,
 ) -> dict[str, Any] | str:
+    jsonrpc_message: JSONRPCError | JSONRPCMessage
     if isinstance(received_message, Exception):
         log.error("Session %s returned exception: %s", session_id, received_message)
-        jsonrpc_message: JSONRPCError | JSONRPCMessage = JSONRPCError(
+        jsonrpc_message = JSONRPCError(
             jsonrpc="2.0",
             id=reqeust_id,
             error=ErrorData(code=CONNECTION_CLOSED, message=str(received_message)),
@@ -504,9 +505,12 @@ def parse_session_message(
     else:
         jsonrpc_message = received_message.message
 
+    msg: dict[str, Any] | str
     if json:
-        return jsonrpc_message.model_dump_json(exclude_none=True)
-    return jsonrpc_message.model_dump(exclude_none=True)
+        msg = jsonrpc_message.model_dump_json(exclude_none=True)
+    else:
+        msg = jsonrpc_message.model_dump(exclude_none=True)
+    return msg
 
 
 def _validate_session(
@@ -649,7 +653,7 @@ async def handle_post_request(
     if err_response:
         return err_response
 
-    assert session is not None  # noqa: S101
+    assert session is not None
 
     # Register operation for requests that expect responses
     operation_registered = False

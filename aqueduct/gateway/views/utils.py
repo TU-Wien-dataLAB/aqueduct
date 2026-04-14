@@ -11,7 +11,7 @@ import openai
 from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
-from litellm import TextCompletionStreamWrapper  # type: ignore[attr-defined]
+from litellm import TextCompletionStreamWrapper
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from openai import AsyncStream
 
@@ -149,7 +149,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
             body=None,
         ) from None
 
-    model_relay, _provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)  # type: ignore[attr-defined]
+    model_relay, _provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
     return client, model_relay
 
 

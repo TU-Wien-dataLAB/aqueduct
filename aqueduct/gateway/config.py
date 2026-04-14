@@ -8,7 +8,7 @@ from typing import Any, Literal, NotRequired, TypedDict, cast
 import openai
 import yaml
 from django.conf import settings
-from litellm import Router  # type: ignore[attr-defined]
+from litellm import Router
 
 log = logging.getLogger("aqueduct")
 

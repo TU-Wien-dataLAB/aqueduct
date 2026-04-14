@@ -5,7 +5,7 @@ from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from litellm import BadRequestError  # type: ignore[attr-defined]
+from litellm import BadRequestError
 from openai.types import ImageGenerateParams, ImagesResponse
 from pydantic import ConfigDict, TypeAdapter
 

@@ -15,6 +15,7 @@ spec:
         checksum/settings: {{ include (print $.Template.BasePath "/configmap-settings.yaml") . | toString | sha256sum }}
       labels:
         app: {{ .Release.Name }}
+        component: web
     spec:
       securityContext:
         runAsUser: {{ .Values.securityContext.runAsUser }}

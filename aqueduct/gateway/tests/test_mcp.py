@@ -538,7 +538,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         # Get org and add exclusion
         from management.models import Org
 
-        org = await sync_to_async(Org.objects.get)(name="E060")
+        org = await Org.objects.aget(name="E060")
         await sync_to_async(org.add_excluded_mcp_server)("test-server")
 
         # Try to access the MCP server - should get 404
@@ -560,22 +560,22 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         # Get team and add exclusion
         from management.models import ServiceAccount, Team, Token
 
-        team = await sync_to_async(Team.objects.get)(name="Whale")
+        team = await Team.objects.aget(name="Whale")
         await sync_to_async(team.add_excluded_mcp_server)("test-server")
 
         # Create a service account for the team
-        service_account = await sync_to_async(ServiceAccount.objects.create)(
+        service_account = await ServiceAccount.objects.acreate(
             team=team, name="Test Service Account"
         )
 
         # Create a token for the service account
         from gateway.tests.utils.base import GatewayIntegrationTestCase
 
-        token = await sync_to_async(Token.objects.get)(
+        token = await Token.objects.aget(
             key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
         )
         token.service_account = service_account
-        await sync_to_async(token.save)()
+        await token.asave()
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -587,8 +587,8 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
         # Clean up
         token.service_account = None
-        await sync_to_async(token.save)()
-        await sync_to_async(service_account.delete)()
+        await token.asave()
+        await service_account.adelete()
         await sync_to_async(team.remove_excluded_mcp_server)("test-server")
 
     @async_to_sync
@@ -599,8 +599,8 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         user_model = get_user_model()
 
         # Get user and their profile
-        user = await sync_to_async(user_model.objects.get)(username="Me")
-        profile = await sync_to_async(lambda: user.profile)()
+        user = await user_model.objects.select_related("profile").aget(username="Me")
+        profile = user.profile
 
         # Add exclusion to user profile
         await sync_to_async(profile.add_excluded_mcp_server)("test-server")
@@ -633,10 +633,10 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
         )
 
         # Setup: Org excludes test-server, user has merge enabled (default)
-        org = await sync_to_async(Org.objects.get)(name="E060")
+        org = await Org.objects.aget(name="E060")
         await sync_to_async(org.add_excluded_mcp_server)("test-server")
 
-        user = await sync_to_async(user_model.objects.get)(username="Me")
+        user = await user_model.objects.aget(username="Me")
         profile = await sync_to_async(lambda: user.profile)()
 
         # Verify merge_mcp_server_exclusion_lists is True by default
@@ -653,7 +653,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
         # Now disable merging at user level
         profile.merge_mcp_server_exclusion_lists = False
-        await sync_to_async(profile.save)()
+        await profile.asave()
 
         # Check that test-server is NOT in exclusion list (merge disabled, user has no exclusions)
         exclusion_list = await sync_to_async(token.mcp_server_exclusion_list)()
@@ -665,7 +665,7 @@ class MCPServerExclusionTest(MCPLiveServerTestCase):
 
         # Clean up
         profile.merge_mcp_server_exclusion_lists = True
-        await sync_to_async(profile.save)()
+        await profile.asave()
         await sync_to_async(org.remove_excluded_mcp_server)("test-server")
 
     @async_to_sync

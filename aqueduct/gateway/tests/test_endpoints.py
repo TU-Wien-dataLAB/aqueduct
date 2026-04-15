@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import ClassVar
 from unittest.mock import patch
 
-from asgiref.sync import async_to_sync, sync_to_async
+from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TransactionTestCase, override_settings
@@ -665,7 +665,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertTrue(full_content, "Streamed content should not be empty.")
 
         # Check that the database contains one request and endpoint matches
-        requests = await sync_to_async(lambda: list(Request.objects.all()))()
+        requests = [r async for r in Request.objects.all()]
         self.assertEqual(
             len(requests), 1, "There should be exactly one request after streaming chat completion."
         )
@@ -693,7 +693,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         - Request should appear in usage dashboard
         """
         # Clear existing requests
-        await sync_to_async(Request.objects.all().delete)()
+        await Request.objects.all().adelete()
 
         response = await self._send_chat_completion_streaming(self.MESSAGES)
 
@@ -705,7 +705,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         )
 
         # THIS IS THE CRITICAL CHECK: Verify streaming timeout request was logged
-        requests = await sync_to_async(lambda: list(Request.objects.all()))()
+        requests = [r async for r in Request.objects.all()]
         self.assertGreater(
             len(requests),
             0,
@@ -997,7 +997,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIsInstance(result["greeting"], str)
         self.assertIsInstance(result["count"], int)
 
-        requests = await sync_to_async(lambda: list(Request.objects.all()))()
+        requests = [r async for r in Request.objects.all()]
         self.assertEqual(
             len(requests),
             1,

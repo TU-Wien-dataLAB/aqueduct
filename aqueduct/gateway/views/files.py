@@ -3,7 +3,6 @@ import json
 from datetime import timedelta
 from typing import Any, Literal, Optional
 
-from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Sum
@@ -105,7 +104,7 @@ async def sync_batch_file_if_needed(
     # (e.g., two GET /batches/{id} requests polling the same completed batch).
     local_expires_at = calculate_expires_at(remote_file.expires_at)
 
-    file_obj, _ = await sync_to_async(FileObject.objects.get_or_create)(
+    file_obj, _ = await FileObject.objects.aget_or_create(
         id=remote_file.id,
         token=token,
         defaults={
@@ -122,7 +121,7 @@ async def sync_batch_file_if_needed(
     # Update batch record with linked file if batch_obj provided
     if batch_obj:
         setattr(batch_obj, field_name, file_obj)
-        await sync_to_async(batch_obj.save)(update_fields=[field_name])
+        await batch_obj.asave(update_fields=[field_name])
 
     return file_obj
 
@@ -241,7 +240,7 @@ async def files(
         preview=file_preview or "",
         upstream_url=settings.AQUEDUCT_FILES_API_URL or "",
     )
-    await sync_to_async(file_obj.save)()
+    await file_obj.asave()
 
     # Return response with upstream ID
     response_data = file_obj.model.model_dump(exclude_none=True, exclude_unset=True)
@@ -292,7 +291,7 @@ async def file(
     await file_obj.adelete_upstream(client)
 
     # Delete local record
-    await sync_to_async(file_obj.delete)()
+    await file_obj.adelete()
 
     # Return response with upstream ID
     response_data = {"id": file_id, "object": "file", "deleted": True}

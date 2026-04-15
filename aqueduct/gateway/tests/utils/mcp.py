@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import ClassVar
 
 import httpx
-from asgiref.sync import sync_to_async
 from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
 from django.test import override_settings
@@ -23,6 +22,7 @@ from gateway.tests.utils.test_runner import (
     get_shared_mcp_server_process,
     set_shared_mcp_server,
 )
+from management.models import Request
 from mock_api.helpers import get_available_port
 
 logger = logging.getLogger(__name__)
@@ -142,11 +142,9 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             yield session
 
     async def assert_request_logged(self, n: int = 1):
-        from management.models import Request
-
         # Check that (only) initialize request was logged
 
-        mcp_requests = await sync_to_async(Request.objects.count)()
+        mcp_requests = await Request.objects.acount()
         self.assertEqual(mcp_requests, n, f"There should be exactly {n} logged MCP request.")
 
     @classmethod

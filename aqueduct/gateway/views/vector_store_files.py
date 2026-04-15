@@ -245,7 +245,7 @@ async def vector_store_file(
     await vs_file_obj.adelete_upstream(client)
 
     # Delete local record
-    await sync_to_async(vs_file_obj.delete)()
+    await vs_file_obj.adelete()
 
     # Return response with upstream ID
     response_data = {"id": file_id, "object": "vector_store.file.deleted", "deleted": True}

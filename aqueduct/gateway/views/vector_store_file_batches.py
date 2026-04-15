@@ -158,7 +158,7 @@ async def vector_store_file_batches(
         ),
         created_at=int(now.timestamp()),
     )
-    await sync_to_async(batch_obj.save)()
+    await batch_obj.asave()
 
     # Create VectorStoreFile records for each file in the batch
     # Use transaction and check file limit
@@ -307,7 +307,7 @@ async def vector_store_file_batch_cancel(
     batch_obj.status = remote_batch.status or VectorStoreFileBatchStatus.CANCELLED
     if hasattr(remote_batch, "file_counts") and remote_batch.file_counts:
         batch_obj.file_counts = remote_batch.file_counts.model_dump(mode="json")
-    await sync_to_async(batch_obj.save)()
+    await batch_obj.asave()
 
     # Handle orphaned VectorStoreFile records when batch is cancelled
     await mark_orphaned_files(

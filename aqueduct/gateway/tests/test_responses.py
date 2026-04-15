@@ -536,6 +536,44 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         data = json.loads(result.content)
         self.assertIn("MCP server not found", data["error"]["message"])
 
+    @patch("gateway.views.decorators.get_mcp_config")
+    async def test_check_tool_availability_mcp_server_url_match(self, mock_get_mcp_config):
+        """
+        Test check_tool_availability decorator with server_label different from config key.
+        Should successfully match by URL and rewrite to internal URL.
+        """
+        mock_view_func = AsyncMock()
+        mock_view_func.return_value = JsonResponse({"result": "success"})
+
+        mock_get_mcp_config.return_value = {
+            "brave": {"url": "http://mcp-server:8080"},
+            "other_server": {"url": "http://other:9000"},
+        }
+
+        request = AsyncMock()
+        request.build_absolute_uri = MagicMock(side_effect=lambda path: f"http://testserver{path}")
+        response_id = "test_response_id"
+
+        token = MagicMock()
+        token.service_account = None
+        token.user = MagicMock()
+        tool = {
+            "type": "mcp",
+            "server_label": "websearch",
+            "server_url": "http://testserver/mcp-servers/brave/mcp",
+        }
+        pydantic_model = {"tools": [tool]}
+
+        kwargs = {"token": token, "pydantic_model": pydantic_model}
+
+        with patch.object(token, "mcp_server_excluded", return_value=False):
+            decorated_func = check_tool_availability(mock_view_func)
+            result = await decorated_func(request, response_id, **kwargs)
+
+        self.assertEqual(tool["server_url"], "http://mcp-server:8080")
+        mock_view_func.assert_called_once_with(request, response_id, **kwargs)
+        self.assertEqual(result.status_code, 200)
+
     @override_settings(RESPONSES_API_ALLOWED_NATIVE_TOOLS=["allowed_tool"])
     async def test_check_tool_availability_invalid_tool_type(self):
         """

@@ -274,6 +274,7 @@ class TeamAdmin(admin.ModelAdmin):
     list_display: ClassVar[tuple] = (
         "name",
         "org_link",
+        "managed_by_oauth",
         "requests_per_minute",
         "input_tokens_per_minute",
         "output_tokens_per_minute",
@@ -281,14 +282,66 @@ class TeamAdmin(admin.ModelAdmin):
     list_select_related: ClassVar[list] = ["org"]
     search_fields: ClassVar[tuple] = ("name",)
     inlines: ClassVar[list] = [TeamMembershipInline]
-    list_filter: ClassVar[list] = ["org__name"]
+    list_filter: ClassVar[list] = ["org__name", "oauth_group_name"]
     form = TeamAdminForm
+    readonly_fields: ClassVar[tuple] = ("oauth_group_name", "managed_by_oauth_display")
+
+    fieldsets: ClassVar[tuple] = (
+        (None, {"fields": ("name", "description", "org")}),
+        (
+            "Rate Limits",
+            {
+                "fields": (
+                    "requests_per_minute",
+                    "input_tokens_per_minute",
+                    "output_tokens_per_minute",
+                )
+            },
+        ),
+        (
+            "Exclusions",
+            {
+                "fields": (
+                    "excluded_models",
+                    "merge_exclusion_lists",
+                    "excluded_mcp_servers",
+                    "merge_mcp_server_exclusion_lists",
+                )
+            },
+        ),
+        (
+            "OAuth Management",
+            {"fields": ("oauth_group_name", "managed_by_oauth_display"), "classes": ("collapse",)},
+        ),
+    )
 
     def org_link(self, obj) -> str:
         link = reverse("admin:management_org_change", args=[obj.org.id])
         return format_html('<a href="{}">{}</a>', link, obj.org.name)
 
     org_link.short_description = "Org"
+
+    def managed_by_oauth(self, obj) -> str:
+        return "Yes" if obj.managed_by_oauth else "No"
+
+    managed_by_oauth.short_description = "OAuth Managed"
+    managed_by_oauth.admin_order_field = "oauth_group_name"
+
+    def managed_by_oauth_display(self, obj) -> str:
+        return "Yes" if obj.managed_by_oauth else "No"
+
+    managed_by_oauth_display.short_description = "Managed by OAuth"
+
+    def get_readonly_fields(self, request, obj=None) -> tuple:
+        readonly = list(self.readonly_fields)
+        if obj and obj.managed_by_oauth:
+            readonly.append("name")
+        return tuple(readonly)
+
+    def get_inline_instances(self, request, obj=None) -> list:
+        if obj and obj.managed_by_oauth:
+            return []
+        return super().get_inline_instances(request, obj)
 
 
 class OrgAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):

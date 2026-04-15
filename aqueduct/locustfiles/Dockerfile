@@ -37,4 +37,4 @@ WORKDIR /app/aqueduct
 # `EXPOSE` is not necessary, but let's keep it for documentation's sake
 EXPOSE 45999
 
-CMD ["python", "-m", "gateway.tests.utils.mock_server", "--port", "45999"]
+CMD ["python", "-m", "mock_api.mock_server", "--port", "45999"]

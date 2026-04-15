@@ -1,6 +1,7 @@
 # ruff: noqa: ERA001  # TODO: fix this later
 import logging
 from http import HTTPStatus
+from typing import ClassVar
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from locust import HttpUser, between, task
@@ -9,17 +10,18 @@ log = logging.getLogger(__name__)
 
 
 class GatewayUser(HttpUser):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.wait_time = between(1, 3)
-        self.headers = {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
-        self.multipart_headers = {"Authorization": "Bearer sk-123abc"}
-        self.host = "http://localhost:8000/"
+    wait_time = between(1, 3)
+    headers: ClassVar[dict[str, str]] = {
+        "Authorization": "Bearer sk-123abc",
+        "Content-Type": "application/json",
+    }
+    multipart_headers: ClassVar[dict[str, str]] = {"Authorization": "Bearer sk-123abc"}
+    host = "http://localhost:8000/"
 
     def on_start(self):
         """Runs once per user when they start - creates test resources"""
-        # Create a test file for transcriptions/batches...?
+
+        # Create a test file for files and batches endpoints
         f = SimpleUploadedFile("test.txt", b"test file content", content_type="application/json")
         response = self.client.post(
             "files",
@@ -37,15 +39,28 @@ class GatewayUser(HttpUser):
             )
             self._test_file_id = "file-123456789"  # fallback
 
+        # Create a vector store for "retrieve" and "search" vector store requests
+        response = self.client.post(
+            "vector_stores", json={"name": "test-vector-store"}, headers=self.headers
+        )
+        if response.status_code == HTTPStatus.OK:
+            self._vector_store_id = response.json()["id"]
+        else:
+            log.warning(
+                "Creation of test vector store on start failed with code %s: %s",
+                response.status_code,
+                response.json(),
+            )
+            self._vector_store_id = "vs-mock-123"  # fallback
+
         # TODO: create a test batch? Otherwise batch `get`/`cancel` tasks fail
         #  if they run before batch create task.
         # TODO: same for responses (get/delete need an existing one);
         #  seems like sometimes getting resp. from cache fails nonetheless
         #  (probably delete fails if it runs twice)
-        # TODO: same for vector stores
+        # TODO: same for vector store files
         # Initialize IDs with fallback values
         self.batch_id = "batch_123456789"
-        self.vector_store_id = "vs-mock-123"
         self.vector_store_file_id = "vsf-mock-123"
         self.response_id = "resp_12345abc"
         self.file_batch_id = "vsb-mock-123"
@@ -148,8 +163,8 @@ class GatewayUser(HttpUser):
         _ = self.client.get(f"responses/{self.response_id}", headers=self.headers)
 
     @task
-    def delete_response(self):
-        _ = self.client.delete(f"responses/{self.response_id}", headers=self.headers)
+    # def delete_response(self):
+    #     _ = self.client.delete(f"responses/{self.response_id}", headers=self.headers)
 
     @task
     def get_response_input_items(self):
@@ -166,28 +181,28 @@ class GatewayUser(HttpUser):
             "vector_stores", json={"name": "test-vector-store"}, headers=self.headers
         )
         if response.status_code == HTTPStatus.OK:
-            self.vector_store_id = response.json()["id"]
+            self._vector_store_id = response.json()["id"]
 
     @task
     def get_vector_store(self):
-        _ = self.client.get(f"vector_stores/{self.vector_store_id}", headers=self.headers)
+        _ = self.client.get(f"vector_stores/{self._vector_store_id}", headers=self.headers)
 
     @task
     def update_vector_store(self):
         _ = self.client.post(
-            f"vector_stores/{self.vector_store_id}",
+            f"vector_stores/{self._vector_store_id}",
             json={"name": "updated-vector-store"},
             headers=self.headers,
         )
 
-    @task
-    def delete_vector_store(self):
-        _ = self.client.delete(f"vector_stores/{self.vector_store_id}", headers=self.headers)
+    # @task
+    # def delete_vector_store(self):
+    #     _ = self.client.delete(f"vector_stores/{self._vector_store_id}", headers=self.headers)
 
     @task
     def search_vector_store(self):
         _ = self.client.post(
-            f"vector_stores/{self.vector_store_id}/search",
+            f"vector_stores/{self._vector_store_id}/search",
             json={"query": "test query"},
             headers=self.headers,
         )
@@ -196,14 +211,14 @@ class GatewayUser(HttpUser):
     # @task
     # def list_vector_store_files(self):
     #     _ = self.client.get(
-    #         f"vector_stores/{self.vector_store_id}/files",
+    #         f"vector_stores/{self._vector_store_id}/files",
     #         headers=self.headers,
     #     )
     #
     # @task
     # def add_file_to_vector_store(self):
     #     response = self.client.post(
-    #         f"vector_stores/{self.vector_store_id}/files",
+    #         f"vector_stores/{self._vector_store_id}/files",
     #         json={
     #             "file_id": self._test_file_id,
     #         },
@@ -215,14 +230,14 @@ class GatewayUser(HttpUser):
     # @task
     # def get_vector_store_file(self):
     #     _ = self.client.get(
-    #         f"vector_stores/{self.vector_store_id}/files/{self.vector_store_file_id}",
+    #         f"vector_stores/{self._vector_store_id}/files/{self.vector_store_file_id}",
     #         headers=self.headers,
     #     )
     #
     # @task
     # def update_vector_store_file(self):
     #     _ = self.client.post(
-    #         f"vector_stores/{self.vector_store_id}/files/{self.vector_store_file_id}",
+    #         f"vector_stores/{self._vector_store_id}/files/{self.vector_store_file_id}",
     #         json={
     #             "attributes": {"key": "value"},
     #         },
@@ -232,14 +247,14 @@ class GatewayUser(HttpUser):
     # @task
     # def delete_vector_store_file(self):
     #     _ = self.client.delete(
-    #         f"vector_stores/{self.vector_store_id}/files/{self.vector_store_file_id}",
+    #         f"vector_stores/{self._vector_store_id}/files/{self.vector_store_file_id}",
     #         headers=self.headers,
     #     )
     #
     # @task
     # def get_vector_store_file_content(self):
     #     _ = self.client.get(
-    #         f"vector_stores/{self.vector_store_id}/files/{self.vector_store_file_id}/content",
+    #         f"vector_stores/{self._vector_store_id}/files/{self.vector_store_file_id}/content",
     #         headers=self.headers,
     #     )
     #
@@ -247,7 +262,7 @@ class GatewayUser(HttpUser):
     # @task
     # def create_vector_store_file_batch(self):
     #     response = self.client.post(
-    #         f"vector_stores/{self.vector_store_id}/file_batches",
+    #         f"vector_stores/{self._vector_store_id}/file_batches",
     #         json={
     #             "file_ids": [self._test_file_id],
     #         },
@@ -259,20 +274,20 @@ class GatewayUser(HttpUser):
     # @task
     # def get_vector_store_file_batch(self):
     #     _ = self.client.get(
-    #         f"vector_stores/{self.vector_store_id}/file_batches/{self.file_batch_id}",
+    #         f"vector_stores/{self._vector_store_id}/file_batches/{self.file_batch_id}",
     #         headers=self.headers,
     #     )
     #
     # @task
     # def cancel_vector_store_file_batch(self):
     #     _ = self.client.post(
-    #         f"vector_stores/{self.vector_store_id}/file_batches/{self.file_batch_id}/cancel",
+    #         f"vector_stores/{self._vector_store_id}/file_batches/{self.file_batch_id}/cancel",
     #         headers=self.headers,
     #     )
     #
     # @task
     # def list_vector_store_file_batch_files(self):
     #     _ = self.client.get(
-    #         f"vector_stores/{self.vector_store_id}/file_batches/{self.file_batch_id}/files",
+    #         f"vector_stores/{self._vector_store_id}/file_batches/{self.file_batch_id}/files",
     #         headers=self.headers,
     #     )

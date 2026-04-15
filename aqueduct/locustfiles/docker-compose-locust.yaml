@@ -5,7 +5,7 @@ services:
       context: ../..
       dockerfile: ./aqueduct/locustfiles/Dockerfile
     container_name: mock_api
-    command: python -m mock_api.mock_server --port 45999 --delays --log-level debug
+    command: python -m mock_api.mock_server --host 0.0.0.0 --port 45999 --delays --log-level debug
     volumes:
       - ./locust_router_config.yaml:/app/aqueduct/locust_router_config.yaml
     ports:
@@ -38,7 +38,11 @@ services:
             python manage.py loaddata locustfiles/locust_fixture.json &&
             python manage.py runserver 0.0.0.0:8000"
 #    command: |
-#      sh -c "python manage.py collectstatic --no-input && python manage.py loaddata locust_fixture.json && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
+#      sh -c "python manage.py collectstatic --no-input &&
+#             python manage.py loaddata locustfiles/locust_fixture.json
+#             && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
+#    volumes:
+#      - ../../aqueduct/:/app/aqueduct/
     ports:
       - "8000:8000"
     env_file:

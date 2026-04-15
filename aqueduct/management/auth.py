@@ -94,12 +94,21 @@ class OIDCBackend(OIDCAuthenticationBackend):
             teams_to_add = target_teams - existing_memberships
             teams_to_remove = existing_memberships - target_teams
 
+            enable_creation = getattr(settings, "ENABLE_OAUTH_GROUP_CREATION", True)
+
             for team_name in teams_to_add:
-                team, created = Team.objects.get_or_create(name=team_name, org=org)
-                if created:
-                    log.info("Created team '%s' for org '%s'", team_name, org.name)
-                else:
+                try:
+                    team = Team.objects.get(name=team_name, org=org)
                     log.info("Reused existing team '%s' for org '%s'", team_name, org.name)
+                except Team.DoesNotExist:
+                    if not enable_creation:
+                        log.info(
+                            "Skipping team creation for '%s' (ENABLE_OAUTH_GROUP_CREATION=False)",
+                            team_name,
+                        )
+                        continue
+                    team = Team.objects.create(name=team_name, org=org, oauth_group_name=team_name)
+                    log.info("Created team '%s' for org '%s'", team_name, org.name)
 
                 TeamMembership.objects.get_or_create(user_profile=profile, team=team)
                 log.info("Added user '%s' to team '%s' (%s)", user.email, team_name, org.name)

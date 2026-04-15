@@ -62,9 +62,16 @@ class OAuthTeamCreationTestCase(TestCase):
         memberships = TeamMembership.objects.filter(user_profile=profile)
         self.assertEqual(memberships.count(), 2)
 
+        team1 = Team.objects.get(name="E123", org=self.org)
+        team2 = Team.objects.get(name="E456", org=self.org)
+        self.assertEqual(team1.oauth_group_name, "E123")
+        self.assertEqual(team2.oauth_group_name, "E456")
+        self.assertTrue(team1.managed_by_oauth)
+        self.assertTrue(team2.managed_by_oauth)
+
     def test_team_reuse_existing(self):
         """Test that existing teams are reused, not duplicated."""
-        team = Team.objects.create(name="E123", org=self.org)
+        team = Team.objects.create(name="E123", org=self.org, oauth_group_name="")
 
         claims = {"email": "test@example.com", "groups": ["E123-Students"]}
 
@@ -77,6 +84,8 @@ class OAuthTeamCreationTestCase(TestCase):
         self.assertEqual(Team.objects.count(), 1)
         self.assertEqual(TeamMembership.objects.count(), 1)
         self.assertEqual(TeamMembership.objects.first().team, team)
+        self.assertEqual(team.oauth_group_name, "")
+        self.assertFalse(team.managed_by_oauth)
 
     def test_no_teams_when_feature_disabled(self):
         """Test that no teams are created when feature is disabled."""
@@ -150,6 +159,11 @@ class OAuthTeamMembershipTestCase(TestCase):
 
         team_names = {m.team.name for m in memberships}
         self.assertEqual(team_names, {"E123", "E456"})
+
+        team1 = Team.objects.get(name="E123", org=self.org)
+        team2 = Team.objects.get(name="E456", org=self.org)
+        self.assertEqual(team1.oauth_group_name, "E123")
+        self.assertEqual(team2.oauth_group_name, "E456")
 
     def test_user_removed_from_teams_when_group_removed(self):
         """Test that user is removed from teams when groups are removed."""
@@ -246,6 +260,8 @@ class OAuthTeamEdgeCasesTestCase(TestCase):
         team2 = Team.objects.get(name="E123", org=self.other_org)
 
         self.assertNotEqual(team1.id, team2.id)
+        self.assertEqual(team1.oauth_group_name, "E123")
+        self.assertEqual(team2.oauth_group_name, "E123")
 
     def test_special_characters_in_group_names(self):
         """Test handling of special characters in group names."""
@@ -365,6 +381,22 @@ class OAuthTeamSettingsTestCase(TestCase):
             self.assertEqual(Team.objects.count(), 0)
             self.assertEqual(TeamMembership.objects.count(), 0)
 
+    def test_manual_team_not_affected_by_oauth_sync(self):
+        """Test that manually created teams without oauth_group_name are not affected."""
+        manual_team = Team.objects.create(name="ManualTeam", org=self.org, oauth_group_name="")
+
+        claims = {"email": "test@example.com", "groups": ["E123-Students"]}
+
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
+
+        self.backend._sync_teams(user, profile, claims["groups"])
+
+        manual_team.refresh_from_db()
+        self.assertEqual(manual_team.oauth_group_name, "")
+        self.assertFalse(manual_team.managed_by_oauth)
+
 
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
@@ -401,9 +433,9 @@ class OAuthTeamIntegrationTestCase(TestCase):
                 profile = UserProfile.objects.get(user=user)
                 memberships = TeamMembership.objects.filter(user_profile=profile)
 
-                self.assertEqual(memberships.count(), 2)
-                team_names = {m.team.name for m in memberships}
-                self.assertEqual(team_names, {"E123", "E456"})
+        self.assertEqual(memberships.count(), 2)
+        team_names = {m.team.name for m in memberships}
+        self.assertEqual(team_names, {"E123", "E456"})
 
     def test_update_user_syncs_teams(self):
         """Test that update_user syncs teams from OAuth groups."""

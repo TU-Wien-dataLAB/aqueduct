@@ -125,6 +125,24 @@ OIDC_DEFAULT_GROUPS = ["default"]
 ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
 ADMIN_GROUP = "default"  # all users are admins
 
+# OAuth Group Management Settings
+# Controls automatic team creation and membership management from OAuth groups
+
+ENABLE_OAUTH_GROUP_MANAGEMENT = False  # Master switch for OAuth group-based team management
+ENABLE_OAUTH_GROUP_CREATION = True  # Automatically create teams from OAuth groups
+
+
+def default_oauth_team_names_from_groups(groups: list[str]) -> list[str]:
+    """
+    Default function to extract team names from OAuth groups.
+    Returns empty list (no teams) by default.
+    Override this function to implement custom filtering/transformation logic.
+    """
+    return []
+
+
+OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION = default_oauth_team_names_from_groups
+
 EXTRA_NAV_LINKS = {
     "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",
     "Documentation": "https://tu-wien-datalab.github.io/aqueduct/",

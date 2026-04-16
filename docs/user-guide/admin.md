@@ -31,6 +31,38 @@ To grant a user admin privileges, you must assign them to the `admin` group and 
 
 **Team admins** are managed differently: they are assigned through a many-to-many relationship between users and teams, which is handled in the Aqueduct UI. For more information, see the [Teams page](teams.md#team-detail-view).
 
+## OAuth Team Management
+
+OAuth team management automatically syncs user team memberships based on OAuth groups at login. When enabled, users are added to teams corresponding to their OAuth groups, and teams can be created automatically.
+
+### Configuration
+
+| Setting | Purpose |
+|---------|---------|
+| `ENABLE_OAUTH_GROUP_MANAGEMENT` | Master switch - when `False`, no team sync happens on login |
+| `ENABLE_OAUTH_GROUP_CREATION` | When `True`, teams are auto-created from OAuth groups; when `False`, users only join existing teams |
+| `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` | Custom logic to filter groups and transform names |
+
+### How It Works
+
+1. User logs in via OAuth
+2. OAuth groups are extracted from claims
+3. `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` filters and transforms group names
+4. Teams are created (if `ENABLE_OAUTH_GROUP_CREATION=True`) or reused
+5. User is added to teams via `TeamMembership`
+6. User is removed from teams no longer in their OAuth groups
+
+### Admin Panel
+
+The Teams admin view shows OAuth management status:
+
+- **"OAuth Managed" column** - Shows "Yes" for OAuth-managed teams
+- **Filter** - Filter by `oauth_group_name` to show only OAuth-managed teams
+- **Read-only fields** - Team name and OAuth group name are read-only for OAuth-managed teams
+- **Member management** - Inline member editing is disabled for OAuth-managed teams (sync happens at login)
+
+Rate limits, descriptions, and exclusions remain editable for OAuth-managed teams.
+
 ## Managing Organizations
 
 As an admin, you can assign yourself or other users to different organizations within the admin panel. This is useful if you need to administer multiple organizations. Organization assignments are managed within the user model in the admin interface, where the organization is presented as part or the user profile.

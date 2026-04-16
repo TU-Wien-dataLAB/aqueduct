@@ -21,8 +21,6 @@ class GatewayUser(HttpUser):
     def on_start(self):
         """Runs once per user when they start - creates test resources"""
 
-        self.counter = 0
-
         # Add an initial response to the cache
         resp_resp = self.client.post(
             "responses",
@@ -45,24 +43,7 @@ class GatewayUser(HttpUser):
         self._vector_store_id = "vs-mock-123"
         self._vector_store_file_id = "vsf-mock-123"
         self._file_batch_id = "vsb-mock-123"
-
-        # file = SimpleUploadedFile("test.txt", b'test user data file\n', content_type="test/plain")
-        # file_resp = self.client.post(
-        #     "files",
-        #     files={"file": ("test.txt", file, "test/plain")},
-        #     data={"purpose": "user_data"},
-        #     headers=self.multipart_headers,
-        # )
-        # if file_resp.status_code == HTTPStatus.OK:
-        #     self._test_file_id = file_resp.json()["id"]
-        # else:
-        #     log.warning(
-        #         "Creation of test file on start failed with code %s: %s",
-        #         file_resp.status_code,
-        #         file_resp.json(),
-        #     )
-        #     self._test_file_id = "file-mock-123"  # fallback
-        self._test_file_id = "file-mock-123"  # fallback
+        self._test_file_id = "file-mock-123"
 
     @task
     def chat_completions(self):
@@ -118,6 +99,40 @@ class GatewayUser(HttpUser):
             data={"model": "transcribe"},
             headers=self.multipart_headers,
         )
+
+    # Files API tasks
+    @task
+    def list_files(self):
+        _ = self.client.get("files", headers=self.headers)
+
+    @task
+    def create_file(self):
+        file = SimpleUploadedFile(
+            "test.jsonl",
+            b'{"custom_id": "test-1", "method": "POST", "url": "/chat/completions", '
+            b'"body": {"model": "main", "messages": [{"role": "user", "content": "Hello"}]}}\n',
+            content_type="application/jsonl",
+        )
+        resp = self.client.post(
+            "files",
+            files={"file": ("test.jsonl", file, "application/jsonl")},
+            data={"purpose": "batch"},
+            headers=self.multipart_headers,
+        )
+        if resp.status_code == HTTPStatus.OK:
+            self._test_file_id = resp.json()["id"]
+
+    @task
+    def get_file_content(self):
+        _ = self.client.get(f"files/{self._test_file_id}/content", headers=self.headers)
+
+    # @task
+    # def delete_file(self):
+    #     _ = self.client.delete(f"files/{self._test_file_id}", headers=self.headers)
+
+    @task
+    def get_file(self):
+        _ = self.client.get(f"files/{self._test_file_id}", headers=self.headers)
 
     # Batch API tasks
     @task
@@ -251,15 +266,30 @@ class GatewayUser(HttpUser):
         )
 
     # Vector Store File Batches tasks
-    @task
-    def create_vector_store_file_batch(self):
-        response = self.client.post(
-            f"vector_stores/{self._vector_store_id}/file_batches",
-            json={"file_ids": [self._test_file_id]},
-            headers=self.headers,
-        )
-        if response.status_code == HTTPStatus.OK:
-            self._file_batch_id = response.json()["id"]
+
+    # @task
+    # def create_vector_store_file_batch(self):
+    #     new_file_id = f"file-{self.counter:09}"
+    #     self.counter =+ 1
+    #     file = SimpleUploadedFile(
+    #         "test.txt",
+    #         b'test user data file\n',
+    #         content_type="test/plain",
+    #     )
+    #     file_resp = self.client.post(
+    #         "files",
+    #         files={"file": ("test.txt", file, "test/plain")},
+    #         data={"purpose": "user_data"},
+    #         headers=self.multipart_headers,
+    #     )
+    #     # new_file_id = file_resp.json()["id"]
+    #     response = self.client.post(
+    #         f"vector_stores/{self._vector_store_id}/file_batches",
+    #         json={"file_ids": [new_file_id]},
+    #         headers=self.headers,
+    #     )
+    #     if response.status_code == HTTPStatus.OK:
+    #         self._file_batch_id = response.json()["id"]
 
     @task
     def get_vector_store_file_batch(self):

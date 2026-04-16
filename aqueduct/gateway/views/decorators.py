@@ -32,7 +32,13 @@ from pydantic import TypeAdapter, ValidationError
 from tos.models import has_user_agreed_latest_tos  # type: ignore[import-untyped]
 
 from gateway.authentication import token_from_request
-from gateway.config import get_files_api_client, get_mcp_config, get_router, resolve_model_alias
+from gateway.config import (
+    MCPServerConfig,
+    get_files_api_client,
+    get_mcp_config,
+    get_router,
+    resolve_model_alias,
+)
 from gateway.views.errors import error_response
 from gateway.views.utils import get_response_from_cache, in_wildcard
 from management.models import FileObject, Request, Token, VectorStore
@@ -814,24 +820,28 @@ async def _validate_mcp_tool(
         log.error("MCP server not found - %s", server_name)
         return error_response(f"MCP server not found - {server_name}", status=404)
 
-    try:
-        mcp_config = get_mcp_config()
-        server_config = mcp_config[server_name]
-    except KeyError:
-        # the user wants to access an externally managed MCP server
+    server_url = tool.get("server_url")
+    if not server_url:
         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
             log.exception("MCP server not found - %s", server_name)
             return error_response(f"MCP server not found - {server_name}", status=404)
         return None
 
-    expected_url = request.build_absolute_uri(
-        reverse("gateway:mcp_server", kwargs={"name": server_name})
-    )
-    if tool.get("server_url") != expected_url:
-        log.error("The server_url of the tool does not match the Aqueduct MCP server url.")
-        return error_response(
-            "The server_url of the tool does not match the Aqueduct MCP server url.", status=400
+    mcp_config = get_mcp_config()
+    server_config: MCPServerConfig | None = None
+    for config_name, config in mcp_config.items():
+        expected = request.build_absolute_uri(
+            reverse("gateway:mcp_server", kwargs={"name": config_name})
         )
+        if server_url == expected:
+            server_config = config
+            break
+
+    if not server_config:
+        if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
+            log.exception("MCP server not found - %s", server_name)
+            return error_response(f"MCP server not found - {server_name}", status=404)
+        return None
 
     tool["server_url"] = server_config["url"]  # type: ignore[typeddict-unknown-key]
     return None

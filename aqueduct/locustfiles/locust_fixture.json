@@ -120,5 +120,119 @@
       "created_at": "2025-04-17T09:52:32.153Z",
       "expires_at": null
     }
+  },
+  {
+    "model": "management.fileobject",
+    "pk": "file-mock-123",
+    "fields": {
+      "bytes": 17,
+      "created_at": 1776259627,
+      "filename": "test.txt",
+      "purpose": "user_data",
+      "expires_at": 1776856267,
+      "token": 1,
+      "preview": "",
+      "upstream_url": "http://mock_api:45999"
+    }
+  },
+  {
+    "model": "management.fileobject",
+    "pk": "file-mock-456",
+    "fields": {
+      "bytes": 17,
+      "created_at": 1776259627,
+      "filename": "test.txt",
+      "purpose": "user_data",
+      "expires_at": 1776856267,
+      "token": 1,
+      "preview": "",
+      "upstream_url": "http://mock_api:45999"
+    }
+  },
+  {
+    "model": "management.batch",
+    "pk": "batch_123456789",
+    "fields": {
+      "completion_window": "24h",
+      "created_at": 1776259631,
+      "endpoint": "/v1/chat/completions",
+      "input_file": "file-mock-123",
+      "output_file": null,
+      "error_file": null,
+      "status": "validating",
+      "cancelled_at": null,
+      "cancelling_at": null,
+      "completed_at": null,
+      "expired_at": null,
+      "expires_at": 1773058900,
+      "failed_at": null,
+      "finalizing_at": null,
+      "in_progress_at": null,
+      "metadata": null,
+      "request_counts": {
+        "total": 0,
+        "failed": 0,
+        "completed": 0
+      },
+      "token": 1
+    }
+  },
+  {
+    "model": "management.vectorstore",
+    "pk": "vs-mock-123",
+    "fields": {
+      "token": 1,
+      "name": "updated-vector-store",
+      "expires_after": null,
+      "chunking_strategy": null,
+      "metadata": null,
+      "status": "completed",
+      "usage_bytes": 0,
+      "created_at": 1776259628,
+      "last_active_at": 1776259633,
+      "upstream_url": "http://mock_api:45999"
+    }
+  },
+  {
+    "model": "management.vectorstorefile",
+    "pk": "vsf-mock-123",
+    "fields": {
+      "vector_store": "vs-mock-123",
+      "file_obj": "file-mock-123",
+      "batch": "vsb-mock-123",
+      "status": "in_progress",
+      "last_error": "",
+      "created_at": 1776259621,
+      "usage_bytes": 0
+    }
+  },
+  {
+    "model": "management.vectorstorefile",
+    "pk": "vsf-mock-456",
+    "fields": {
+      "vector_store": "vs-mock-123",
+      "file_obj": "file-mock-456",
+      "batch": null,
+      "status": "completed",
+      "last_error": null,
+      "created_at": 1776259633,
+      "usage_bytes": 0
+    }
+  },
+  {
+    "model": "management.vectorstorefilebatch",
+    "pk": "vsb-mock-123",
+    "fields": {
+      "vector_store": "vs-mock-123",
+      "file_counts": {
+        "total": 2,
+        "failed": 0,
+        "cancelled": 0,
+        "completed": 0,
+        "in_progress": 2
+      },
+      "status": "in_progress",
+      "created_at": 1776259629
+    }
   }
 ]

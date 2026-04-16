@@ -21,45 +21,9 @@ class GatewayUser(HttpUser):
     def on_start(self):
         """Runs once per user when they start - creates test resources"""
 
-        # Create a test file for files, batches, and vector store endpoints
-        f = SimpleUploadedFile("test.txt", b"test file content", content_type="application/json")
-        file_resp = self.client.post(
-            "files",
-            files={"file": ("test.txt", f, "application/json")},
-            data={"purpose": "user_data"},
-            headers=self.multipart_headers,
-        )
-        if file_resp.status_code == HTTPStatus.OK:
-            self._test_file_id = file_resp.json()["id"]
-        else:
-            log.warning(
-                "Creation of test file on start failed with code %s: %s",
-                file_resp.status_code,
-                file_resp.json(),
-            )
-            self._test_file_id = "file-123456789"  # fallback
+        self.counter = 0
 
-        # Create a test batch for "retrieve" batch requests
-        batch_resp = self.client.post(
-            "batches",
-            json={
-                "input_file_id": self._test_file_id,
-                "endpoint": "/v1/chat/completions",
-                "completion_window": "24h",
-            },
-            headers=self.headers,
-        )
-        if batch_resp.status_code == HTTPStatus.OK:
-            self._batch_id = batch_resp.json()["id"]
-        else:
-            log.warning(
-                "Creation of test batch on start failed with code %s: %s",
-                batch_resp.status_code,
-                batch_resp.json(),
-            )
-            self._batch_id = "batch_123456789"  # fallback
-
-        # Create an initial response
+        # Add an initial response to the cache
         resp_resp = self.client.post(
             "responses",
             json={"model": "main", "input": "Hello, how are you?"},
@@ -75,51 +39,30 @@ class GatewayUser(HttpUser):
             )
             self._response_id = "resp_12345abc"  # fallback
 
-        # Create a vector store for "retrieve" and "search" vector store requests
-        vs_resp = self.client.post(
-            "vector_stores", json={"name": "test-vector-store"}, headers=self.headers
-        )
-        if vs_resp.status_code == HTTPStatus.OK:
-            self._vector_store_id = vs_resp.json()["id"]
-        else:
-            log.warning(
-                "Creation of test vector store on start failed with code %s: %s",
-                vs_resp.status_code,
-                vs_resp.json(),
-            )
-            self._vector_store_id = "vs-mock-123"  # fallback
+        # Note: initial objects are loaded from locust_fixture.json.
+        # self._test_file_id = "file-mock-123"
+        self._batch_id = "batch_123456789"
+        self._vector_store_id = "vs-mock-123"
+        self._vector_store_file_id = "vsf-mock-123"
+        self._file_batch_id = "vsb-mock-123"
 
-        # Create an initial VS file
-        vsf_resp = self.client.post(
-            f"vector_stores/{self._vector_store_id}/files",
-            json={"file_id": self._test_file_id},
-            headers=self.headers,
-        )
-        if vsf_resp.status_code == HTTPStatus.OK:
-            self._vector_store_file_id = vsf_resp.json()["id"]
-        else:
-            log.warning(
-                "Creation of test vector store file on start failed with code %s: %s",
-                vsf_resp.status_code,
-                vsf_resp.json(),
-            )
-            self._vector_store_file_id = "vsf-mock-123"  # fallback
-
-        # Create an initial VS file batch
-        response = self.client.post(
-            f"vector_stores/{self._vector_store_id}/file_batches",
-            json={"file_ids": [self._test_file_id]},
-            headers=self.headers,
-        )
-        if response.status_code == HTTPStatus.OK:
-            self._file_batch_id = response.json()["id"]
-        else:
-            log.warning(
-                "Creation of test vector store file batch on start failed with code %s: %s",
-                response.status_code,
-                response.json(),
-            )
-            self._file_batch_id = "vsb-mock-123"  # fallback
+        # file = SimpleUploadedFile("test.txt", b'test user data file\n', content_type="test/plain")
+        # file_resp = self.client.post(
+        #     "files",
+        #     files={"file": ("test.txt", file, "test/plain")},
+        #     data={"purpose": "user_data"},
+        #     headers=self.multipart_headers,
+        # )
+        # if file_resp.status_code == HTTPStatus.OK:
+        #     self._test_file_id = file_resp.json()["id"]
+        # else:
+        #     log.warning(
+        #         "Creation of test file on start failed with code %s: %s",
+        #         file_resp.status_code,
+        #         file_resp.json(),
+        #     )
+        #     self._test_file_id = "file-mock-123"  # fallback
+        self._test_file_id = "file-mock-123"  # fallback
 
     @task
     def chat_completions(self):

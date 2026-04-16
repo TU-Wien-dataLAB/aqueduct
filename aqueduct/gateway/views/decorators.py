@@ -814,6 +814,7 @@ def validate_response_id(view_func: AsyncView) -> AsyncView:
 async def _validate_mcp_tool(
     request: ASGIRequest, token: Token, tool: ToolParam
 ) -> ViewResult | None:
+    # Note: mypy doesn't recognise the types of `ToolParam` attributes correctly
     server_name: str = tool.get("server_label")  # type: ignore[assignment]
     if await sync_to_async(token.mcp_server_excluded)(server_name):
         log.error("MCP server not found - %s", server_name)

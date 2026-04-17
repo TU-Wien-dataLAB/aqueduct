@@ -42,25 +42,38 @@ class OIDCBackend(OIDCAuthenticationBackend):
         org, _created = Org.objects.get_or_create(name=org_name)
         return org
 
-    def _get_teams_from_groups(self, groups: list[str]) -> list[str]:
+    def _get_teams_from_groups(self, groups: list[str]) -> list[tuple[str, str]]:
         """
-        Get list of team names to create/join from OAuth groups.
-        Calls OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION setting.
+        Get list of (team_name, original_group_name) tuples to create/join from OAuth groups.
+        Calls OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION setting for each group.
         Returns empty list on error or if feature is disabled.
+
+        Returns:
+            List of tuples: [(transformed_team_name, original_oauth_group_name), ...]
         """
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             return []
 
-        func = getattr(settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", lambda groups: [])
+        func = getattr(
+            settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", lambda group, groups=None: None
+        )
         try:
-            team_names = func(groups)
-            if not isinstance(team_names, list):
-                log.error("OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION must return a list")
-                return []
-            return [name.strip() for name in team_names if name and isinstance(name, str)]
+            team_mappings = []
+            if not groups:
+                return team_mappings
+            for group in groups:
+                result = func(group, groups)
+                if not isinstance(result, tuple) or len(result) != 2:  # noqa: PLR2004
+                    continue
+                team_name, original_name = result
+                if not (team_name and isinstance(team_name, str) and original_name):
+                    continue
+                team_mappings.append((team_name.strip(), original_name.strip()))
         except Exception as e:
             log.exception("Error calling OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION: %s", e)
             return []
+        else:
+            return team_mappings
 
     def _sync_teams(self, user: User, profile: UserProfile, groups: list[str]) -> None:
         """
@@ -76,8 +89,8 @@ class OIDCBackend(OIDCAuthenticationBackend):
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             return
 
-        team_names = self._get_teams_from_groups(groups)
-        if not team_names:
+        team_mappings = self._get_teams_from_groups(groups)
+        if not team_mappings:
             return
 
         org = profile.org
@@ -89,14 +102,18 @@ class OIDCBackend(OIDCAuthenticationBackend):
                 )
             )
 
-            target_teams = set(team_names)
+            target_team_names = {team_name for team_name, _ in team_mappings}
+            team_name_to_original = dict(team_mappings)
 
-            teams_to_add = target_teams - existing_memberships
-            teams_to_remove = existing_memberships - target_teams
+            teams_to_add = [
+                (name, team_name_to_original[name])
+                for name in target_team_names - existing_memberships
+            ]
+            teams_to_remove = existing_memberships - target_team_names
 
             enable_creation = getattr(settings, "ENABLE_OAUTH_GROUP_CREATION", True)
 
-            for team_name in teams_to_add:
+            for team_name, original_group_name in teams_to_add:
                 try:
                     team = Team.objects.get(name=team_name, org=org)
                     log.info("Reused existing team '%s' for org '%s'", team_name, org.name)
@@ -107,7 +124,9 @@ class OIDCBackend(OIDCAuthenticationBackend):
                             team_name,
                         )
                         continue
-                    team = Team.objects.create(name=team_name, org=org, oauth_group_name=team_name)
+                    team = Team.objects.create(
+                        name=team_name, org=org, oauth_group_name=original_group_name
+                    )
                     log.info("Created team '%s' for org '%s'", team_name, org.name)
 
                 TeamMembership.objects.get_or_create(user_profile=profile, team=team)

@@ -132,13 +132,27 @@ ENABLE_OAUTH_GROUP_MANAGEMENT = False  # Master switch for OAuth group-based tea
 ENABLE_OAUTH_GROUP_CREATION = True  # Automatically create teams from OAuth groups
 
 
-def default_oauth_team_names_from_groups(groups: list[str]) -> list[str]:
+def default_oauth_team_names_from_groups(
+    group: str, groups: list[str] | None = None
+) -> tuple[str, str] | None:
     """
-    Default function to extract team names from OAuth groups.
-    Returns empty list (no teams) by default.
-    Override this function to implement custom filtering/transformation logic.
+    Default function to transform a single OAuth group name to a team name.
+
+    Args:
+        group: The specific OAuth group name to transform
+        groups: Full list of user's groups for context (optional)
+
+    Returns:
+        Tuple of (transformed_team_name, original_group_name) or None to skip this group
+
+    Example:
+        def my_transform(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
+            if group.startswith("E"):
+                team_name = group.split("-")[0]
+                return (team_name, group)
+            return None
     """
-    return []
+    return None
 
 
 OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION = default_oauth_team_names_from_groups

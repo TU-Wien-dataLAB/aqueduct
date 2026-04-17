@@ -41,16 +41,52 @@ OAuth team management automatically syncs user team memberships based on OAuth g
 |---------|---------|
 | `ENABLE_OAUTH_GROUP_MANAGEMENT` | Master switch - when `False`, no team sync happens on login |
 | `ENABLE_OAUTH_GROUP_CREATION` | When `True`, teams are auto-created from OAuth groups; when `False`, users only join existing teams |
-| `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` | Custom logic to filter groups and transform names |
+| `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` | Custom logic to transform individual group names |
+
+### Function Signature
+
+The `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` should be a callable with this signature:
+
+```python
+def transform_group_name(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
+    """
+    Transform a single OAuth group name to a team name.
+    
+    Args:
+        group: The specific OAuth group name to transform
+        groups: Full list of user's groups for context (optional)
+    
+    Returns:
+        Tuple of (transformed_team_name, original_group_name) or None to skip this group
+    """
+```
+
+**Example implementation:**
+
+```python
+def my_transform(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
+    """Transform groups starting with 'E' to team names."""
+    if group.startswith("E"):
+        # Strip suffix after dash: "E123-Students" -> "E123"
+        team_name = group.split("-")[0]
+        return (team_name, group)
+    return None  # Skip this group
+```
+
+The function is called once for each OAuth group, allowing you to:
+- Filter which groups become teams (return `None` to skip)
+- Transform group names (e.g., remove suffixes, add prefixes)
+- Access the full groups list for context-aware logic
 
 ### How It Works
 
 1. User logs in via OAuth
 2. OAuth groups are extracted from claims
-3. `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` filters and transforms group names
-4. Teams are created (if `ENABLE_OAUTH_GROUP_CREATION=True`) or reused
-5. User is added to teams via `TeamMembership`
-6. User is removed from teams no longer in their OAuth groups
+3. For each group, `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` is called with the group name and full groups list
+4. Groups that return a tuple create teams; groups that return `None` are skipped
+5. Teams are created (if `ENABLE_OAUTH_GROUP_CREATION=True`) or reused
+6. User is added to teams via `TeamMembership`
+7. User is removed from teams no longer in their OAuth groups
 
 ### Admin Panel
 
@@ -58,10 +94,30 @@ The Teams admin view shows OAuth management status:
 
 - **"OAuth Managed" column** - Shows "Yes" for OAuth-managed teams
 - **Filter** - Filter by `oauth_group_name` to show only OAuth-managed teams
-- **Read-only fields** - Team name and OAuth group name are read-only for OAuth-managed teams
+- **Read-only fields** - Team name, organization, and OAuth group name are read-only for OAuth-managed teams
 - **Member management** - Inline member editing is disabled for OAuth-managed teams (sync happens at login)
+- **Help text** - OAuth-managed teams display a notice explaining how to update team names via the sync command
 
 Rate limits, descriptions, and exclusions remain editable for OAuth-managed teams.
+
+### Syncing Team Names
+
+When you change the `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` logic, you can update existing team names using the admin action:
+
+1. Navigate to **Admin → Management → Teams**
+2. Select the teams you want to sync (or select all)
+3. From the **Action** dropdown, select **"Sync OAuth team names"**
+4. Click **Go**
+
+The action will:
+1. Read the stored `oauth_group_name` for each selected OAuth-managed team
+2. Re-apply the current `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` mapping
+3. Update team names based on the mapping result
+4. Skip teams with name collisions or unchanged names
+5. Never affect manually created teams (those with empty `oauth_group_name`)
+6. Show a warning if any teams would be deleted (deletion requires using the command-line)
+
+> **Note:** Team deletion is not performed via the admin action for safety. If the mapping returns `None` (indicating a team should be deleted), you'll see a warning message. To delete teams, use the command-line or delete them manually in the admin.
 
 ## Managing Organizations
 

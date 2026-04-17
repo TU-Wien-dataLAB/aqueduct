@@ -12,18 +12,19 @@ from management.models import Org, Team, TeamMembership, UserProfile
 User = get_user_model()
 
 
-def sample_team_names_from_groups(groups: list[str]) -> list[str]:
+def sample_team_names_from_groups(
+    group: str, groups: list[str] | None = None
+) -> tuple[str, str] | None:
     """
     Sample implementation that filters groups starting with 'E'
     and extracts team names (removes suffix after dash).
-    Example: ['E123-Students', 'E456-Staff'] -> ['E123', 'E456']
+    Returns tuple of (team_name, original_group_name) or None to skip.
+    Example: 'E123-Students' -> ('E123', 'E123-Students')
     """
-    team_names = []
-    for group in groups:
-        if group.startswith("E"):
-            team_name = group.split("-")[0]
-            team_names.append(team_name)
-    return team_names
+    if group.startswith("E"):
+        team_name = group.split("-", maxsplit=1)[0]
+        return (team_name, group)
+    return None
 
 
 @override_settings(
@@ -64,8 +65,8 @@ class OAuthTeamCreationTestCase(TestCase):
 
         team1 = Team.objects.get(name="E123", org=self.org)
         team2 = Team.objects.get(name="E456", org=self.org)
-        self.assertEqual(team1.oauth_group_name, "E123")
-        self.assertEqual(team2.oauth_group_name, "E456")
+        self.assertEqual(team1.oauth_group_name, "E123-Students")
+        self.assertEqual(team2.oauth_group_name, "E456-Staff")
         self.assertTrue(team1.managed_by_oauth)
         self.assertTrue(team2.managed_by_oauth)
 
@@ -162,8 +163,8 @@ class OAuthTeamMembershipTestCase(TestCase):
 
         team1 = Team.objects.get(name="E123", org=self.org)
         team2 = Team.objects.get(name="E456", org=self.org)
-        self.assertEqual(team1.oauth_group_name, "E123")
-        self.assertEqual(team2.oauth_group_name, "E456")
+        self.assertEqual(team1.oauth_group_name, "E123-Students")
+        self.assertEqual(team2.oauth_group_name, "E456-Staff")
 
     def test_user_removed_from_teams_when_group_removed(self):
         """Test that user is removed from teams when groups are removed."""
@@ -260,8 +261,8 @@ class OAuthTeamEdgeCasesTestCase(TestCase):
         team2 = Team.objects.get(name="E123", org=self.other_org)
 
         self.assertNotEqual(team1.id, team2.id)
-        self.assertEqual(team1.oauth_group_name, "E123")
-        self.assertEqual(team2.oauth_group_name, "E123")
+        self.assertEqual(team1.oauth_group_name, "E123-Students")
+        self.assertEqual(team2.oauth_group_name, "E123-Students")
 
     def test_special_characters_in_group_names(self):
         """Test handling of special characters in group names."""
@@ -324,19 +325,23 @@ class OAuthTeamSettingsTestCase(TestCase):
         self.org = Org.objects.create(name="test-org")
         self.user_group, _ = Group.objects.get_or_create(name="user")
 
-    def test_default_function_returns_empty_list(self):
-        """Test that default function returns empty list."""
+    def test_default_function_returns_none(self):
+        """Test that default function returns None (no teams)."""
         from django.conf import settings
 
-        func = getattr(settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", lambda groups: [])
-        result = func(["E123-Students", "E456-Staff"])
-        self.assertEqual(result, [])
+        func = getattr(
+            settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", lambda group, groups=None: None
+        )
+        result = func("E123-Students", ["E123-Students", "E456-Staff"])
+        self.assertIsNone(result)
 
     def test_custom_filter_function(self):
         """Test custom filter function."""
 
-        def custom_filter(groups: list[str]) -> list[str]:
-            return [g for g in groups if g in {"E123", "E456"}]
+        def custom_filter(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
+            if group in {"E123", "E456"}:
+                return (group, group)
+            return None
 
         with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=custom_filter):
             backend = OIDCBackend()

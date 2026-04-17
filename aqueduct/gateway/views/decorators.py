@@ -110,7 +110,7 @@ def _parse_multipart_body(request: ASGIRequest) -> dict[str, Any]:
 
     Raises:
         `FileSizeError`: if any file exceeds the `AQUEDUCT_FILES_API_MAX_FILE_SIZE_MB`
-          setting, or if the total size of the files exceeds 32 MB.
+          setting, or if the total size of the files exceeds `AQUEDUCT_FILES_API_MAX_TOTAL_SIZE_MB`.
 
     Returns:
         dict with request's body items and files.

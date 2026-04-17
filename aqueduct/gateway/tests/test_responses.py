@@ -54,7 +54,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertIn("output", response_json)
         self.assertIsInstance(response_json["output"], list)
 
-        requests = await sync_to_async(list)(Request.objects.all())
+        requests = [r async for r in Request.objects.all()]
         self.assertEqual(
             len(requests), 1, "There should be exactly one request after response creation."
         )
@@ -182,7 +182,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertIn("Hello", full_content, "Streaming response should contain greeting.")
 
         # Check that the database contains one request and endpoint matches
-        requests = await sync_to_async(lambda: list(Request.objects.all()))()
+        requests = [r async for r in Request.objects.all()]
         self.assertEqual(
             len(requests),
             1,
@@ -645,18 +645,12 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         token.service_account = None
         token.user = MagicMock()
 
-        mock_vs1 = MagicMock()
-        mock_vs1.id = "vs_remote_abc"
-
-        mock_vs2 = MagicMock()
-        mock_vs2.id = "vs_remote_def"
-
         tool = {"type": "file_search", "vector_store_ids": ["vs_remote_abc", "vs_remote_def"]}
         pydantic_model = {"tools": [tool]}
         kwargs = {"token": token, "pydantic_model": pydantic_model}
 
         mock_queryset = MagicMock()
-        mock_queryset.count = MagicMock(return_value=2)
+        mock_queryset.acount = AsyncMock(return_value=2)
         mock_vector_store_class.objects.filter.return_value = mock_queryset
 
         decorated_func = check_tool_availability(mock_view_func)
@@ -693,15 +687,12 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         token.service_account = mock_service_account
         token.user = MagicMock()
 
-        mock_vs = MagicMock()
-        mock_vs.id = "vs_remote_abc"
-
         tool = {"type": "file_search", "vector_store_ids": ["vs_remote_abc"]}
         pydantic_model = {"tools": [tool]}
         kwargs = {"token": token, "pydantic_model": pydantic_model}
 
         mock_queryset = MagicMock()
-        mock_queryset.count = MagicMock(return_value=1)
+        mock_queryset.acount = AsyncMock(return_value=1)
         mock_vector_store_class.objects.filter.return_value = mock_queryset
 
         decorated_func = check_tool_availability(mock_view_func)
@@ -735,7 +726,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         kwargs = {"token": token, "pydantic_model": pydantic_model}
 
         mock_queryset = MagicMock()
-        mock_queryset.count = MagicMock(return_value=0)
+        mock_queryset.acount = AsyncMock(return_value=0)
         mock_vector_store_class.objects.filter.return_value = mock_queryset
 
         decorated_func = check_tool_availability(mock_view_func)

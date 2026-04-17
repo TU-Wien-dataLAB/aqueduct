@@ -1,6 +1,5 @@
 from typing import Any
 
-from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Q
@@ -114,16 +113,12 @@ async def vector_stores(
     # Check user/team limits before creating
     if token.service_account:
         limit = settings.MAX_TEAM_VECTOR_STORES
-        active_count = await sync_to_async(
-            VectorStore.objects.filter(
-                token__service_account__team=token.service_account.team
-            ).count
-        )()
+        active_count = await VectorStore.objects.filter(
+            token__service_account__team=token.service_account.team
+        ).acount()
     else:
         limit = settings.MAX_USER_VECTOR_STORES
-        active_count = await sync_to_async(
-            VectorStore.objects.filter(token__user=token.user).count
-        )()
+        active_count = await VectorStore.objects.filter(token__user=token.user).acount()
 
     if active_count >= limit:
         return error_response(f"Vector store limit reached ({limit})", status=403)
@@ -153,7 +148,7 @@ async def vector_stores(
         metadata=pydantic_model.get("metadata"),
         upstream_url=settings.AQUEDUCT_FILES_API_URL or "",
     )
-    await sync_to_async(vs_obj.save)()
+    await vs_obj.asave()
 
     # Return upstream response directly (ID already matches)
     response_data = remote_vs.model_dump(mode="json")
@@ -229,7 +224,7 @@ async def vector_store(
                 setattr(vs_obj, field, value)
             vs_obj.status = remote_vs.status
             vs_obj.usage_bytes = remote_vs.usage_bytes
-            await sync_to_async(vs_obj.save)()
+            await vs_obj.asave()
 
             # Return upstream response directly (ID already matches)
             response_data = remote_vs.model_dump(mode="json")
@@ -249,7 +244,7 @@ async def vector_store(
     deleted_id = vs_obj.id
 
     # Delete local record
-    await sync_to_async(vs_obj.delete)()
+    await vs_obj.adelete()
 
     # Return with upstream ID
     return JsonResponse(

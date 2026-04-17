@@ -1,6 +1,5 @@
 from typing import Any
 
-from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse
@@ -65,28 +64,16 @@ async def batches(
     # Check batch limit before creating batch (for upstream quota management)
     max_batches = settings.MAX_USER_BATCHES
     if token.service_account:
-        active_count = await sync_to_async(
-            Batch.objects.filter(
-                token__service_account__team=token.service_account.team,
-                status__in=[
-                    BatchStatus.VALIDATING,
-                    BatchStatus.IN_PROGRESS,
-                    BatchStatus.CANCELLING,
-                ],
-            ).count
-        )()
+        active_count = await Batch.objects.filter(
+            token__service_account__team=token.service_account.team,
+            status__in=[BatchStatus.VALIDATING, BatchStatus.IN_PROGRESS, BatchStatus.CANCELLING],
+        ).acount()
         limit = settings.MAX_TEAM_BATCHES
     else:
-        active_count = await sync_to_async(
-            Batch.objects.filter(
-                token__user=token.user,
-                status__in=[
-                    BatchStatus.VALIDATING,
-                    BatchStatus.IN_PROGRESS,
-                    BatchStatus.CANCELLING,
-                ],
-            ).count
-        )()
+        active_count = await Batch.objects.filter(
+            token__user=token.user,
+            status__in=[BatchStatus.VALIDATING, BatchStatus.IN_PROGRESS, BatchStatus.CANCELLING],
+        ).acount()
         limit = max_batches
 
     if active_count >= limit:
@@ -135,7 +122,7 @@ async def batches(
         if remote_batch.request_counts
         else {},
     )
-    await sync_to_async(batch_obj.save)()
+    await batch_obj.asave()
 
     # Return upstream response directly (IDs already match)
     response_data = remote_batch.model_dump()
@@ -241,7 +228,7 @@ async def batch_cancel(
         batch_obj.cancelling_at = remote_batch.cancelling_at
     if remote_batch.cancelled_at:
         batch_obj.cancelled_at = remote_batch.cancelled_at
-    await sync_to_async(batch_obj.save)()
+    await batch_obj.asave()
 
     # Build response from upstream data, ensuring file IDs match our local records
     response_data = remote_batch.model_dump()

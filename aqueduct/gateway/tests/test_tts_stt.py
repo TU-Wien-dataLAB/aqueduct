@@ -2,7 +2,6 @@ import io
 import json
 from pathlib import Path
 
-from asgiref.sync import sync_to_async
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
@@ -46,7 +45,7 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         self.assertGreater(len(audio_data), 0, "Should receive audio data")
 
         # Check that the database contains one request
-        requests = await sync_to_async(list)(Request.objects.all())
+        requests = [r async for r in Request.objects.all()]
         self.assertEqual(
             len(requests), 1, "There should be exactly one request after speech generation."
         )
@@ -410,7 +409,7 @@ class TTSSTTLifecycleTest(GatewayTTSSTTestCase):
         self.assertGreater(len(audio_data), 0, "TTS should generate audio data")
 
         # Check TTS request was logged
-        tts_requests = await sync_to_async(list)(Request.objects.filter(path__contains="speech"))
+        tts_requests = [r async for r in Request.objects.filter(path__contains="speech")]
         self.assertEqual(len(tts_requests), 1, "There should be exactly one TTS request.")
         tts_request = tts_requests[0]
         self.assertIsNotNone(tts_request.token_usage)
@@ -434,15 +433,13 @@ class TTSSTTLifecycleTest(GatewayTTSSTTestCase):
         self.assertGreater(len(transcribed_text), 0, "Transcribed text should not be empty")
 
         # Check STT request was logged
-        stt_requests = await sync_to_async(list)(
-            Request.objects.filter(path__contains="transcriptions")
-        )
+        stt_requests = [r async for r in Request.objects.filter(path__contains="transcriptions")]
         self.assertEqual(len(stt_requests), 1, "There should be exactly one STT request.")
         stt_request = stt_requests[0]
         self.assertIsNotNone(stt_request.token_usage)
 
         # Verify the complete lifecycle: total requests should be 2 (TTS + STT)
-        total_requests = await sync_to_async(list)(Request.objects.all())
+        total_requests = [r async for r in Request.objects.all()]
         self.assertEqual(
             len(total_requests), 2, "There should be exactly two requests in the lifecycle."
         )
@@ -538,12 +535,10 @@ class TTSSTTLifecycleTest(GatewayTTSSTTestCase):
                 )
 
                 # Verify requests were logged
-                tts_requests = await sync_to_async(list)(
-                    Request.objects.filter(path__contains="speech")
-                )
-                stt_requests = await sync_to_async(list)(
-                    Request.objects.filter(path__contains="transcriptions")
-                )
+                tts_requests = [r async for r in Request.objects.filter(path__contains="speech")]
+                stt_requests = [
+                    r async for r in Request.objects.filter(path__contains="transcriptions")
+                ]
                 self.assertEqual(
                     len(tts_requests), 1, f"There should be one TTS request for voice {voice}"
                 )

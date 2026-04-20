@@ -13,6 +13,7 @@ from mock_api.mock_configs import (
     MockConfig,
     MockPlainTextConfig,
     MockStreamingConfig,
+    PathIds,
     default_delete_configs,
     default_get_configs,
     default_post_configs,
@@ -46,10 +47,6 @@ logger = logging.getLogger("fastapi")
 
 
 delays_enabled = os.getenv("MOCK_API_DELAYS", "false").lower() == "true"
-
-
-class MockException(HTTPException):
-    """Raised to simulate an exception while calling the external API."""
 
 
 app = FastAPI(debug=True)
@@ -101,6 +98,7 @@ async def mock_endpoint(path: str, request: Request) -> Response:
     before returning a response.
     """
     path = path.strip("/").removeprefix("v1/")
+    ids: tuple[str, ...] = ()
 
     try:
         if path in special_configs:
@@ -120,7 +118,7 @@ async def mock_endpoint(path: str, request: Request) -> Response:
                 config_dict = default_delete_configs
             else:
                 raise ValueError(f"No mocks configured for request method {request.method}")
-            config = _find_config_for_path(path, config_dict)
+            config, ids = _find_config_for_path(path, config_dict)
     except KeyError as err:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND, detail=f"No mock configured for this endpoint: {path}"
@@ -133,16 +131,22 @@ async def mock_endpoint(path: str, request: Request) -> Response:
         logger.debug("Adding %.2fs delay to request", delay)
         await asyncio.sleep(delay)
 
+    # `config.response_data` may be a function, adjusting the response based on the request path
+    if callable(config.response_data):
+        response_data = config.response_data(ids)
+    else:
+        response_data = config.response_data
+
     if isinstance(config, MockStreamingConfig):
         return StreamingResponse(
-            content=config.response_data, status_code=config.status_code, headers=config.headers
+            content=response_data, status_code=config.status_code, headers=config.headers
         )
     if isinstance(config, MockPlainTextConfig):
         return PlainTextResponse(
-            content=config.response_data, status_code=config.status_code, headers=config.headers
+            content=response_data, status_code=config.status_code, headers=config.headers
         )
     return JSONResponse(
-        content=config.response_data, status_code=config.status_code, headers=config.headers
+        content=response_data, status_code=config.status_code, headers=config.headers
     )
 
 
@@ -155,38 +159,47 @@ async def _should_stream(request: Request) -> bool:
     return should_stream
 
 
-def _find_config_for_path(path: str, config_dict: dict[str, MockConfig]) -> MockConfig:
+def _find_config_for_path(
+    path: str, config_dict: dict[str, MockConfig]
+) -> tuple[MockConfig, PathIds]:
     """Find the matching config template and its value for a given path."""
     # Try exact match first (for paths without IDs)
     if path in config_dict:
-        return config_dict[path]
+        return config_dict[path], ()
 
     # Try template matching
     for template, config in config_dict.items():
-        if _path_matches_template(path, template):
-            return config
+        ids = _path_matches_template_and_extract_ids(path, template)
+        if ids is not None:
+            return config, ids
 
     raise KeyError(f"No config found for path: {path}")
 
 
-def _path_matches_template(path: str, template: str) -> bool:
+def _path_matches_template_and_extract_ids(path: str, template: str) -> PathIds | None:
     """
     Check if a path matches a template where the string "id" is a wildcard.
+    Returns extracted IDs if match succeeds, None otherwise.
 
     Examples:
         "batches/batch-abc123/cancel" matches "batches/id/cancel"
-        "vector_stores/vs-mock-123/files" matches "vector_stores/id/files"
+          -> ("batch-abc123",)
+        "vector_stores/vs_123/files/file_456" matches "vector_stores/id/files/id"
+          ->  ("vs_123", "file_456")
+        "chat/completions" matches "chat/completions"
+          -> ()  # empty tuple
     """
     path_segments = path.split("/")
     template_segments = template.split("/")
 
     if len(path_segments) != len(template_segments):
-        return False
+        return None
 
+    ids = []
     for path_seg, template_seg in zip(path_segments, template_segments, strict=True):
         if template_seg == "id":
-            continue  # 'id' matches anything
-        if path_seg != template_seg:
-            return False
+            ids.append(path_seg)
+        elif path_seg != template_seg:
+            return None
 
-    return True
+    return tuple(ids)

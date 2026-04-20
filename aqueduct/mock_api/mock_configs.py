@@ -1,4 +1,6 @@
 import json
+import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -54,10 +56,13 @@ from openai.types.vector_stores import FileContentResponse, VectorStoreFile, Vec
 from openai.types.vector_stores.vector_store_file_batch import FileCounts as FileCountsBatch
 from pydantic import BaseModel
 
+PathIds = tuple[str, ...]  # e.g. ("vs_123", "file_456")
+ResponseData = dict[str, Any] | list[dict[str, Any]]
+
 
 class MockConfig(BaseModel):
     status_code: int = 200
-    response_data: dict[str, Any] | None = {}
+    response_data: ResponseData | Callable[[PathIds], ResponseData] | None = {}
     headers: dict[str, str] = {"Content-Type": "application/json"}
 
 
@@ -89,6 +94,251 @@ _response_basic_data = {
     "tools": [],
 }
 
+
+def _unique_id(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4()}"
+
+
+def batch_detail_response(ids: PathIds) -> dict[str, Any]:
+    """Return Batch with the ID from the URL (retrieve) or a newly generated one (create)."""
+    batch_id = ids[0] if ids else _unique_id("batch")
+    return Batch(
+        id=batch_id,
+        cancelled_at=None,
+        cancelling_at=None,
+        completed_at=None,
+        completion_window="24h",
+        created_at=1694268190,
+        endpoint="/v1/chat/completions",
+        error_file_id=None,
+        errors=None,
+        expires_at=1773058900,
+        failed_at=None,
+        finalizing_at=None,
+        in_progress_at=None,
+        input_file_id="file-123456789",
+        metadata={"custom_id": "my-batch"},
+        object="batch",
+        request_counts=BatchRequestCounts(completed=0, failed=0, total=0),
+        status="validating",
+    ).model_dump()
+
+
+def batch_cancel_response(ids: PathIds) -> dict[str, Any]:
+    """Return Batch with the ID from the URL."""
+    batch_id = ids[0] if ids else "batch_123456789"
+    return Batch(
+        cancelled_at=1773058900,
+        cancelling_at=1773058900,
+        completed_at=None,
+        completion_window="24h",
+        created_at=1694268190,
+        endpoint="/v1/chat/completions",
+        error_file_id=None,
+        errors=None,
+        failed_at=None,
+        finalizing_at=None,
+        id=batch_id,
+        in_progress_at=None,
+        input_file_id="file-123456789",
+        metadata={"custom_id": "my-batch"},
+        object="batch",
+        request_counts=BatchRequestCounts(completed=0, failed=0, total=0),
+        status="cancelled",
+    ).model_dump()
+
+
+def file_detail_response(ids: PathIds) -> dict[str, Any]:
+    """Return FileObject with the ID from the URL (retrieve) or a newly generated one (create)."""
+    file_id = ids[0] if ids else _unique_id("file")
+    return FileObject(
+        id=file_id,
+        filename="test.jsonl",
+        bytes=100,
+        purpose="batch",
+        created_at=int(datetime.now(tz=UTC).timestamp()),
+        expires_at=int((datetime.now(tz=UTC) + timedelta(days=7)).timestamp()),
+        status="processed",
+        status_details=None,
+        object="file",
+    ).model_dump()
+
+
+def responses_detail_response(ids: PathIds) -> dict[str, Any]:
+    """Return Response with the ID from the URL (retrieve) or a newly generated one (create)."""
+    response_id = ids[0] if ids else _unique_id("resp")
+    return Response(
+        **_response_basic_data,
+        created_at=1769125418,
+        id=response_id,
+        output=[
+            ResponseOutputMessage(
+                content=[
+                    ResponseOutputText(
+                        annotations=[], text="Hello, how are you?", type="output_text"
+                    )
+                ],
+                id="msg_12345abc",
+                role="assistant",
+                status="completed",
+                type="message",
+            )
+        ],
+        status="completed",
+        usage=ResponseUsage(
+            input_tokens=13,
+            input_tokens_details=InputTokensDetails(cached_tokens=0),
+            output_tokens=21,
+            output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+            total_tokens=34,
+        ),
+    ).model_dump()
+
+
+def vector_store_detail_response(ids: PathIds) -> dict[str, Any]:
+    """Return VectorStore with the ID from the URL (retrieve) or a newly generated one (create)."""
+    vs_id = ids[0] if ids else _unique_id("vs")
+    return VectorStore(
+        id=vs_id,
+        name="Test Store",
+        status="completed",
+        usage_bytes=0,
+        created_at=1741476542,
+        expires_after=None,
+        metadata=None,
+        object="vector_store",
+        file_counts=FileCounts(total=0, completed=0, failed=0, in_progress=0, cancelled=0),
+        last_active_at=None,
+        expires_at=None,
+    ).model_dump()
+
+
+def vector_store_update_response(ids: PathIds) -> dict[str, Any]:
+    """Return VectorStore with the ID from the URL."""
+    vs_id = ids[0] if ids else "vs-mock-123"
+    return VectorStore(
+        id=vs_id,
+        name="Updated Name",
+        status="completed",
+        usage_bytes=0,
+        created_at=1741476542,
+        expires_after=None,
+        metadata=None,
+        object="vector_store",
+        file_counts=FileCounts(total=0, completed=0, failed=0, in_progress=0, cancelled=0),
+        last_active_at=None,
+        expires_at=None,
+    ).model_dump()
+
+
+def vector_store_file_batch_detail_response(ids: PathIds) -> dict[str, Any]:
+    """Return VectorStoreFileBatch with the vector store's ID from the URL (retrieve)
+    or a newly generated one (create)."""
+    vs_id = ids[0] if ids else "vs-mock-123"
+    vsb_id = ids[1] if len(ids) > 1 else _unique_id("vsb")
+    return VectorStoreFileBatch(
+        id=vsb_id,
+        status="in_progress",
+        created_at=1741476542,
+        file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=2, cancelled=0),
+        object="vector_store.files_batch",
+        vector_store_id=vs_id,
+    ).model_dump()
+
+
+def vector_store_file_batch_cancel_response(ids: PathIds) -> dict[str, Any]:
+    """Return VectorStoreFileBatch with the IDs from the URL."""
+    vs_id = ids[0] if ids else "vs-mock-123"
+    vsb_id = ids[1] if len(ids) > 1 else "vsb-mock-123"
+    return VectorStoreFileBatch(
+        id=vs_id,
+        status="cancelled",
+        created_at=1741476542,
+        file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=0, cancelled=2),
+        object="vector_store.files_batch",
+        vector_store_id=vsb_id,
+    ).model_dump()
+
+
+def vector_store_file_batch_files_list_response(ids: PathIds) -> dict[str, Any]:
+    """Return a list of VectorStoreFiles in a batch with ID from the URL."""
+    vs_id = ids[0] if ids else "vs-mock-123"
+    return AsyncCursorPage[VectorStoreFile](
+        data=[
+            VectorStoreFile(
+                id="file-mock-1",
+                status="completed",
+                usage_bytes=100,
+                created_at=1741476542,
+                last_error=None,
+                object="vector_store.file",
+                vector_store_id=vs_id,
+            ).model_dump(),
+            VectorStoreFile(
+                id="file-mock-2",
+                status="completed",
+                usage_bytes=200,
+                created_at=1741476542,
+                last_error=None,
+                object="vector_store.file",
+                vector_store_id=vs_id,
+            ).model_dump(),
+        ],
+        has_more=False,
+    ).model_dump()
+
+
+def vector_store_file_detail_response(ids: PathIds) -> dict[str, Any]:
+    """Return a VectorStoreFile with the IDs from the URL (retrieve)
+    or with a newly generated file ID (create)."""
+    vs_id = ids[0] if ids else "vs-mock-123"
+    vsf_id = ids[1] if len(ids) > 1 else _unique_id("vsf")
+    return VectorStoreFile(
+        id=vsf_id,
+        status="completed",
+        usage_bytes=0,
+        created_at=1741476542,
+        object="vector_store.file",
+        vector_store_id=vs_id,
+    ).model_dump()
+
+
+def vector_store_file_list_response(ids: PathIds) -> dict[str, Any]:
+    """Return a list of VectorStoreFiles with the VectorStore ID from the URL."""
+    vs_id = ids[0] if ids else "vs-mock-123"
+    return AsyncCursorPage[VectorStoreFile](
+        data=[
+            VectorStoreFile(
+                id="vsf-mock-123",
+                status="completed",
+                usage_bytes=100,
+                created_at=1741476542,
+                last_error=None,
+                object="vector_store.file",
+                vector_store_id=vs_id,
+            ).model_dump()
+        ],
+        has_more=False,
+    ).model_dump()
+
+
+def vector_store_file_update_response(ids: PathIds) -> dict[str, Any]:
+    """Return a VectorStoreFile with the IDs from the URL."""
+    vs_id = ids[0] if ids else "vs-mock-123"
+    vsf_id = ids[1] if len(ids) > 1 else "vsf-mock-123"
+    return VectorStoreFile(
+        id=vsf_id,
+        status="completed",
+        usage_bytes=0,
+        created_at=1741476542,
+        object="vector_store.file",
+        vector_store_id=vs_id,
+        attributes={"key": "value"},
+    ).model_dump()
+
+
+# =============== POST-request responses ===============
+
 default_post_configs = {
     # Note: audio/speech is streaming by default - it cannot be sent as JSON!
     "audio/speech": MockStreamingConfig(response_data=[b"mock", b"audio", b"data"]),
@@ -97,49 +347,8 @@ default_post_configs = {
             text="This is a mock transcription", usage=UsageDuration(type="duration", seconds=60)
         ).model_dump()
     ),
-    "batches": MockConfig(
-        response_data=Batch(
-            cancelled_at=None,
-            cancelling_at=None,
-            completed_at=None,
-            completion_window="24h",
-            created_at=1694268190,
-            endpoint="/v1/chat/completions",
-            error_file_id=None,
-            errors=None,
-            expires_at=1773058900,
-            failed_at=None,
-            finalizing_at=None,
-            id="batch_123456789",
-            in_progress_at=None,
-            input_file_id="file-123456789",
-            metadata={"custom_id": "my-batch"},
-            object="batch",
-            request_counts=BatchRequestCounts(completed=0, failed=0, total=0),
-            status="validating",
-        ).model_dump()
-    ),
-    "batches/id/cancel": MockConfig(
-        response_data=Batch(
-            cancelled_at=1773058900,
-            cancelling_at=1773058900,
-            completed_at=None,
-            completion_window="24h",
-            created_at=1694268190,
-            endpoint="/v1/chat/completions",
-            error_file_id=None,
-            errors=None,
-            failed_at=None,
-            finalizing_at=None,
-            id="batch_123456789",
-            in_progress_at=None,
-            input_file_id="file-123456789",
-            metadata={"custom_id": "my-batch"},
-            object="batch",
-            request_counts=BatchRequestCounts(completed=0, failed=0, total=0),
-            status="cancelled",
-        ).model_dump()
-    ),
+    "batches": MockConfig(response_data=batch_detail_response),
+    "batches/id/cancel": MockConfig(response_data=batch_cancel_response),
     "completions": MockConfig(
         response_data=TextCompletionResponse(
             id="cmpl-123456789",
@@ -196,19 +405,7 @@ default_post_configs = {
             usage=Usage(prompt_tokens=8, total_tokens=8),
         ).model_dump()
     ),
-    "files": MockConfig(
-        response_data=FileObject(
-            id="file-mock-123",
-            filename="test.jsonl",
-            bytes=100,
-            purpose="batch",
-            created_at=int(datetime.now(tz=UTC).timestamp()),
-            expires_at=int((datetime.now(tz=UTC) + timedelta(days=7)).timestamp()),
-            status="processed",
-            status_details=None,
-            object="file",
-        ).model_dump()
-    ),
+    "files": MockConfig(response_data=file_detail_response),
     "images/generations": MockConfig(
         response_data=ImagesResponse(
             created=1713833628,
@@ -225,107 +422,17 @@ default_post_configs = {
             ),
         ).model_dump()
     ),
-    "responses": MockConfig(
-        response_data=Response(
-            **_response_basic_data,
-            created_at=1741476542,
-            id="resp_12345abc",
-            output=[
-                ResponseOutputMessage(
-                    type="message",
-                    id="msg_12345abc",
-                    status="completed",
-                    role="assistant",
-                    content=[
-                        ResponseOutputText(
-                            type="output_text",
-                            text="Hello! I'm doing well, thank you. How can I assist you today?",
-                            annotations=[],
-                        )
-                    ],
-                )
-            ],
-            status="completed",
-            usage=ResponseUsage(
-                input_tokens=13,
-                input_tokens_details=InputTokensDetails(cached_tokens=0),
-                output_tokens=17,
-                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                total_tokens=30,
-            ),
-        ).model_dump()
-    ),
-    "vector_stores": MockConfig(
-        response_data=VectorStore(
-            id="vs-mock-123",
-            name="Test Store",
-            status="completed",
-            usage_bytes=0,
-            created_at=1741476542,
-            expires_after=None,
-            metadata=None,
-            object="vector_store",
-            file_counts=FileCounts(total=0, completed=0, failed=0, in_progress=0, cancelled=0),
-            last_active_at=None,
-            expires_at=None,
-        ).model_dump()
-    ),
-    "vector_stores/id": MockConfig(
-        response_data=VectorStore(
-            id="vs-mock-123",
-            name="Updated Name",
-            status="completed",
-            usage_bytes=0,
-            created_at=1741476542,
-            expires_after=None,
-            metadata=None,
-            object="vector_store",
-            file_counts=FileCounts(total=0, completed=0, failed=0, in_progress=0, cancelled=0),
-            last_active_at=None,
-            expires_at=None,
-        ).model_dump()
-    ),
+    "responses": MockConfig(response_data=responses_detail_response),
+    "vector_stores": MockConfig(response_data=vector_store_detail_response),
+    "vector_stores/id": MockConfig(response_data=vector_store_update_response),
     "vector_stores/id/file_batches": MockConfig(
-        response_data=VectorStoreFileBatch(
-            id="vsb-mock-123",
-            status="in_progress",
-            created_at=1741476542,
-            file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=2, cancelled=0),
-            object="vector_store.files_batch",
-            vector_store_id="vs-mock-123",
-        ).model_dump()
+        response_data=vector_store_file_batch_detail_response
     ),
     "vector_stores/id/file_batches/id/cancel": MockConfig(
-        response_data=VectorStoreFileBatch(
-            id="vsb-mock-123",
-            status="cancelled",
-            created_at=1741476542,
-            file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=0, cancelled=2),
-            object="vector_store.files_batch",
-            vector_store_id="vs-mock-123",
-        ).model_dump()
+        response_data=vector_store_file_batch_cancel_response
     ),
-    "vector_stores/id/files": MockConfig(
-        response_data=VectorStoreFile(
-            id="vsf-mock-123",
-            status="completed",
-            usage_bytes=0,
-            created_at=1741476542,
-            object="vector_store.file",
-            vector_store_id="vs-mock-123",
-        ).model_dump()
-    ),
-    "vector_stores/id/files/id": MockConfig(
-        response_data=VectorStoreFile(
-            id="vsf-mock-123",
-            status="completed",
-            usage_bytes=0,
-            created_at=1741476542,
-            object="vector_store.file",
-            vector_store_id="vs-mock-123",
-            attributes={"key": "value"},
-        ).model_dump()
-    ),
+    "vector_stores/id/files": MockConfig(response_data=vector_store_file_detail_response),
+    "vector_stores/id/files/id": MockConfig(response_data=vector_store_file_update_response),
     "vector_stores/id/search": MockConfig(
         response_data={
             "object": "vector_store.search_results.page",
@@ -341,6 +448,7 @@ default_post_configs = {
         }
     ),
 }
+
 
 _chat_completion_stream_data = [
     ModelResponse(
@@ -538,42 +646,12 @@ default_post_stream_configs = {
     "responses": MockStreamingConfig(response_data=convert_to_stream_data(_responses_stream_data)),
 }
 
+
+# =============== GET-request responses ===============
+
 default_get_configs = {
-    "batches/id": MockConfig(
-        response_data=Batch(
-            cancelled_at=None,
-            cancelling_at=None,
-            completed_at=None,
-            completion_window="24h",
-            created_at=1694268190,
-            endpoint="/v1/chat/completions",
-            error_file_id=None,
-            errors=None,
-            expires_at=1773058900,
-            failed_at=None,
-            finalizing_at=None,
-            id="batch_123456789",
-            in_progress_at=None,
-            input_file_id="file-123456789",
-            metadata={"custom_id": "my-batch"},
-            object="batch",
-            request_counts=BatchRequestCounts(completed=0, failed=0, total=0),
-            status="validating",
-        ).model_dump()
-    ),
-    "files/id": MockConfig(
-        response_data=FileObject(
-            id="file-mock-123",
-            filename="test.jsonl",
-            bytes=100,
-            purpose="batch",
-            created_at=1741476542,
-            expires_at=None,
-            status="processed",
-            status_details=None,
-            object="file",
-        ).model_dump()
-    ),
+    "batches/id": MockConfig(response_data=batch_detail_response),
+    "files/id": MockConfig(response_data=file_detail_response),
     "files/id/content": MockStreamingConfig(
         response_data=[
             b'{"custom_id": "bar"}\n',
@@ -582,34 +660,7 @@ default_get_configs = {
             b'{"custom_id": "1234"}\n',
         ]
     ),
-    "responses/id": MockConfig(
-        response_data=Response(
-            **_response_basic_data,
-            created_at=1769125418.0,
-            id="resp_12345abc",
-            output=[
-                ResponseOutputMessage(
-                    content=[
-                        ResponseOutputText(
-                            annotations=[], text="Hello, how are you?", type="output_text"
-                        )
-                    ],
-                    id="msg_12345abc",
-                    role="assistant",
-                    status="completed",
-                    type="message",
-                )
-            ],
-            status="completed",
-            usage=ResponseUsage(
-                input_tokens=13,
-                input_tokens_details=InputTokensDetails(cached_tokens=0),
-                output_tokens=21,
-                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                total_tokens=34,
-            ),
-        ).model_dump()
-    ),
+    "responses/id": MockConfig(response_data=responses_detail_response),
     "responses/id/input_items": MockConfig(
         response_data=ResponseItemList(
             data=[
@@ -627,86 +678,22 @@ default_get_configs = {
             object="list",
         ).model_dump()
     ),
-    "vector_stores/id": MockConfig(
-        response_data=VectorStore(
-            id="vs-mock-123",
-            name="Test Store",
-            status="completed",
-            usage_bytes=0,
-            created_at=1741476542,
-            expires_after=None,
-            metadata=None,
-            object="vector_store",
-            file_counts=FileCounts(total=0, completed=0, failed=0, in_progress=0, cancelled=0),
-            last_active_at=None,
-            expires_at=None,
-        ).model_dump()
-    ),
+    "vector_stores/id": MockConfig(response_data=vector_store_detail_response),
     "vector_stores/id/file_batches/id": MockConfig(
-        response_data=VectorStoreFileBatch(
-            id="vsb-mock-123",
-            status="in_progress",
-            created_at=1741476542,
-            file_counts=FileCountsBatch(total=2, completed=0, failed=0, in_progress=2, cancelled=0),
-            object="vector_store.files_batch",
-            vector_store_id="vs-mock-123",
-        ).model_dump()
+        response_data=vector_store_file_batch_detail_response
     ),
     "vector_stores/id/file_batches/id/files": MockConfig(
-        response_data=AsyncCursorPage[VectorStoreFile](
-            data=[
-                VectorStoreFile(
-                    id="file-mock-1",
-                    status="completed",
-                    usage_bytes=100,
-                    created_at=1741476542,
-                    last_error=None,
-                    object="vector_store.file",
-                    vector_store_id="vs-remote-123",
-                ).model_dump(),
-                VectorStoreFile(
-                    id="file-mock-2",
-                    status="completed",
-                    usage_bytes=200,
-                    created_at=1741476542,
-                    last_error=None,
-                    object="vector_store.file",
-                    vector_store_id="vs-remote-123",
-                ).model_dump(),
-            ],
-            has_more=False,
-        ).model_dump()
+        response_data=vector_store_file_batch_files_list_response
     ),
-    "vector_stores/id/files": MockConfig(
-        response_data=AsyncCursorPage[VectorStoreFile](
-            data=[
-                VectorStoreFile(
-                    id="vsf-mock-123",
-                    status="completed",
-                    usage_bytes=100,
-                    created_at=1741476542,
-                    last_error=None,
-                    object="vector_store.file",
-                    vector_store_id="vs-mock-123",
-                ).model_dump()
-            ],
-            has_more=False,
-        ).model_dump()
-    ),
-    "vector_stores/id/files/id": MockConfig(
-        response_data=VectorStoreFile(
-            id="vsf-mock-123",
-            status="completed",
-            usage_bytes=0,
-            created_at=1741476542,
-            object="vector_store.file",
-            vector_store_id="vs-mock-123",
-        ).model_dump()
-    ),
+    "vector_stores/id/files": MockConfig(response_data=vector_store_file_list_response),
+    "vector_stores/id/files/id": MockConfig(response_data=vector_store_file_detail_response),
     "vector_stores/id/files/id/content": MockConfig(
         response_data=FileContentResponse(text="Test file content", type="text").model_dump()
     ),
 }
+
+
+# =============== DELETE-request responses ===============
 
 default_delete_configs = {
     "files/id": MockConfig(
@@ -720,5 +707,8 @@ default_delete_configs = {
         response_data={"id": "vsf-mock-123", "object": "vector_store.deleted", "deleted": True}
     ),
 }
+
+
+# =============== user-defined responses ===============
 
 special_configs: dict[str, MockConfig] = {}

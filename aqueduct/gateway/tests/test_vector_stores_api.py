@@ -20,7 +20,7 @@ from management.models import (
 from management.models import VectorStore as VectorStoreModel
 from management.models import VectorStoreFile as VectorStoreFileModel
 from management.models import VectorStoreFileBatch as VectorStoreFileBatchModel
-from mock_api.mock_configs import MockConfig
+from mock_api.mock_configs import MockConfig, vector_store_file_detail_response
 
 
 @override_settings(MAX_USER_VECTOR_STORES=3, MAX_TEAM_VECTOR_STORES=10, MAX_VECTOR_STORE_FILES=100)
@@ -391,12 +391,16 @@ class TestVectorStoreFiles(TestVectorStoresBase):
         file_obj = self._create_file_object()
 
         # Add file to vector store
-        resp = self.client.post(
-            self.vs_files_url,
-            data=json.dumps({"file_id": file_obj.id}),
-            headers=self.headers,
-            content_type="application/json",
+        new_vsf_resp = MockConfig(
+            response_data=vector_store_file_detail_response((self.vs_id, "vsf-mock-123"))
         )
+        with self.mock_server.patch_external_api(self.vs_files_url, new_vsf_resp):
+            resp = self.client.post(
+                self.vs_files_url,
+                data=json.dumps({"file_id": file_obj.id}),
+                headers=self.headers,
+                content_type="application/json",
+            )
         self.assertEqual(resp.status_code, 200, f"Add file failed: {resp.json()}")
         data = resp.json()
         # ID is now the upstream ID

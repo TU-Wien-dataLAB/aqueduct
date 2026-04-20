@@ -12,7 +12,7 @@ from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
 from httpx import Request as HttpxRequest
 from httpx import Response
-from litellm.types.utils import ModelResponse, Usage
+from litellm.types.utils import Choices, Message, ModelResponse, Usage
 from openai.types.chat import ChatCompletion
 
 from gateway.config import get_router_config
@@ -804,14 +804,13 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
                 model="gpt-4.1-nano-2025-04-14",
                 object="chat.completion",
                 choices=[
-                    {
-                        "finish_reason": "stop",
-                        "index": 0,
-                        "message": {
-                            "content": '{"greeting":"Hello, world!","count":1}',
-                            "role": "assistant",
-                        },
-                    }
+                    Choices(
+                        finish_reason="stop",
+                        index=0,
+                        message=Message(
+                            content='{"greeting":"Hello, world!","count":1}', role="assistant"
+                        ),
+                    )
                 ],
                 usage=Usage(
                     completion_tokens=13,

@@ -28,8 +28,8 @@ log = logging.getLogger("aqueduct")
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
-@check_limits
 @parse_body(model=TypeAdapter(ImageGenerateParams, config=ConfigDict(extra="forbid")))
+@check_limits
 @resolve_alias
 @log_request
 @check_model_availability

@@ -34,6 +34,7 @@ from tos.models import has_user_agreed_latest_tos  # type: ignore[import-untyped
 from gateway.authentication import token_from_request
 from gateway.config import (
     MCPServerConfig,
+    get_all_model_request_limit_multipliers,
     get_files_api_client,
     get_mcp_config,
     get_router,
@@ -278,23 +279,35 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 # Define the time window for usage check (last 60 seconds)
                 time_window_start = timezone.now() - timedelta(seconds=60)
 
+                # Build query filter - no model filter (count all requests)
+                query_filter: dict[str, Any] = {"token": token, "timestamp__gte": time_window_start}
+
                 # Query recent usage asynchronously using Django's async ORM
-                recent_requests_agg = await Request.objects.filter(
-                    token=token, timestamp__gte=time_window_start
-                ).aaggregate(
+                # Get overall token counts
+                recent_requests_agg = await Request.objects.filter(**query_filter).aaggregate(
                     request_count=Count("id"),
                     total_input_tokens=Sum("input_tokens"),
                     total_output_tokens=Sum("output_tokens"),
                 )
 
-                request_count = recent_requests_agg.get("request_count", 0) or 0
                 total_input = recent_requests_agg.get("total_input_tokens", 0) or 0
                 total_output = recent_requests_agg.get("total_output_tokens", 0) or 0
 
+                # Get per-model request counts for weighted budget calculation
+                model_counts: dict[str, int] = {}
+                async for item in (
+                    Request.objects.filter(**query_filter)
+                    .values("model")
+                    .annotate(request_count=Count("id"))
+                ):
+                    model = item.get("model")
+                    if model:
+                        model_counts[model] = item["request_count"]
+
                 log.debug(
-                    "Recent usage (last 60s) for Token %r: Requests=%s, Input=%s, Output=%s",
+                    "Recent usage (last 60s) for Token %r: Model counts=%s, Input=%s, Output=%s",
                     token.name,
-                    request_count,
+                    model_counts,
                     total_input,
                     total_output,
                 )
@@ -302,9 +315,24 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 # --- Check Limits ---
                 exceeded = []
 
+                # Calculate weighted request count using per-model multipliers
+                # "2x Limits" means multiplier=2, so cost = 1/2 = 0.5 per request
+                weighted_request_count: float = 0.0
+                multipliers = get_all_model_request_limit_multipliers()
+                for model, count in model_counts.items():
+                    multiplier = multipliers.get(model, 1.0)
+                    weighted_request_count += count * (1.0 / multiplier)
+
+                log.debug(
+                    "Weighted request count for Token %r: %.2f (base limit: %s)",
+                    token.name,
+                    weighted_request_count,
+                    limits.requests_per_minute,
+                )
+
                 if (
                     limits.requests_per_minute is not None
-                    and request_count >= limits.requests_per_minute
+                    and weighted_request_count >= limits.requests_per_minute
                 ):
                     exceeded.append(f"Request limit ({limits.requests_per_minute}/min)")
 

@@ -136,6 +136,52 @@ def resolve_model_alias(model_or_alias: str) -> str:
     return model_or_alias
 
 
+def get_model_request_limit_multiplier(model_name: str) -> float:
+    """
+    Get the request limit multiplier for a given model.
+    Returns 1.0 if no multiplier is configured.
+
+    Args:
+        model_name: The model name (or alias, will be resolved)
+
+    Returns:
+        The request limit multiplier (defaults to 1.0)
+    """
+    resolved = resolve_model_alias(model_name)
+    config = get_router_config()
+    model_list = config.get("model_list", [])
+
+    for model in model_list:
+        if model.get("model_name") == resolved:
+            multiplier = model.get("model_info", {}).get("request_limit_multiplier")
+            if multiplier is not None:
+                return float(multiplier)
+            break
+
+    return 1.0
+
+
+@lru_cache(maxsize=1)
+def get_all_model_request_limit_multipliers() -> dict[str, float]:
+    """
+    Get request limit multipliers for all configured models.
+
+    Returns:
+        Dict mapping model names to their multipliers (defaults to 1.0)
+    """
+    config = get_router_config()
+    model_list = config.get("model_list", [])
+    multipliers: dict[str, float] = {}
+
+    for model in model_list:
+        model_name = model.get("model_name")
+        if model_name:
+            multiplier = model.get("model_info", {}).get("request_limit_multiplier")
+            multipliers[model_name] = float(multiplier) if multiplier is not None else 1.0
+
+    return multipliers
+
+
 @lru_cache(maxsize=1)
 def get_mcp_config() -> dict[str, MCPServerConfig]:
     path = settings.MCP_CONFIG_FILE_PATH

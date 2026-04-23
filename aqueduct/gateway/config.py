@@ -162,6 +162,27 @@ def get_model_request_limit_multiplier(model_name: str) -> float:
 
 
 @lru_cache(maxsize=1)
+def get_all_model_request_limit_multipliers() -> dict[str, float]:
+    """
+    Get request limit multipliers for all configured models.
+
+    Returns:
+        Dict mapping model names to their multipliers (defaults to 1.0)
+    """
+    config = get_router_config()
+    model_list = config.get("model_list", [])
+    multipliers: dict[str, float] = {}
+
+    for model in model_list:
+        model_name = model.get("model_name")
+        if model_name:
+            multiplier = model.get("model_info", {}).get("request_limit_multiplier")
+            multipliers[model_name] = float(multiplier) if multiplier is not None else 1.0
+
+    return multipliers
+
+
+@lru_cache(maxsize=1)
 def get_mcp_config() -> dict[str, MCPServerConfig]:
     path = settings.MCP_CONFIG_FILE_PATH
     try:

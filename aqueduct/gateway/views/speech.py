@@ -28,8 +28,8 @@ from .decorators import (
 @require_POST
 @token_authenticated(token_auth_only=True)
 @tos_accepted
-@check_limits
 @parse_body(model=TypeAdapter(openai.types.audio.SpeechCreateParams))
+@check_limits
 @resolve_alias
 @ensure_usage
 @log_request

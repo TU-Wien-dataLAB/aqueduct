@@ -31,8 +31,8 @@ if TYPE_CHECKING:
 @require_POST
 @token_authenticated(token_auth_only=True)
 @tos_accepted
-@check_limits
 @parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
+@check_limits
 @ensure_usage
 @resolve_alias
 @log_request

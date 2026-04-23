@@ -15,7 +15,7 @@ from httpx import Response
 from litellm.types.utils import ModelResponse, Usage
 from openai.types.chat import ChatCompletion
 
-from gateway.config import get_router_config
+from gateway.config import get_model_request_limit_multiplier, get_router_config
 from gateway.tests.utils import (
     _build_chat_headers,
     _build_chat_payload,
@@ -1353,6 +1353,41 @@ class TokenLimitTest(ChatCompletionsBase):
             limit_desc="user output_tokens_per_minute",
         )
 
+    @patch("gateway.views.decorators.get_model_request_limit_multiplier", return_value=2.0)
+    def test_per_model_request_limit_multiplier_allows_more_requests(self, mock_multiplier):
+        """
+        Tests that a model with request_limit_multiplier of 2 allows double the requests
+        before hitting the rate limit.
+        """
+        # Set request limit to 1
+        self._setup_limits("org", "requests_per_minute", 1)
+
+        # First request should succeed
+        response1 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(
+            response1.status_code,
+            200,
+            f"Expected 200 OK, got {response1.status_code}: {response1.content}",
+        )
+
+        # Second request should also succeed because multiplier is 2x
+        # (effective limit is 2 requests/min)
+        response2 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(
+            response2.status_code,
+            200,
+            f"Expected 200 OK (multiplier applied), "
+            f"got {response2.status_code}: {response2.content}",
+        )
+
+        # Third request should fail (effective limit of 2 reached)
+        response3 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(
+            response3.status_code,
+            429,
+            f"Expected 429 Too Many Requests, got {response3.status_code}: {response3.content}",
+        )
+
 
 @override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH="router.yaml")
 class ModelAliasConfigValidationTest(TransactionTestCase):
@@ -1528,6 +1563,133 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
             self.assertIn("main", all_aliases)
             self.assertEqual(len([a for a in all_aliases if a.lower() == "main"]), 2)
             mock_load.assert_called_once()
+
+    def test_config_load_with_request_limit_multiplier(self):
+        """
+        Test that config loads successfully with request_limit_multiplier.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-4.1-nano",
+                    "litellm_params": {
+                        "model": "openai/gpt-4.1-nano",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["main"], "request_limit_multiplier": 2},
+                },
+                {
+                    "model_name": "gpt-4o",
+                    "litellm_params": {
+                        "model": "openai/gpt-4o",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["default"]},
+                },
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            loaded_config = get_router_config()
+
+            self.assertIsInstance(loaded_config, dict)
+            first_model = loaded_config["model_list"][0]
+            self.assertEqual(first_model["model_info"]["request_limit_multiplier"], 2)
+
+    def test_get_model_request_limit_multiplier_returns_configured_value(self):
+        """
+        Test that get_model_request_limit_multiplier returns the configured value.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-4.1-nano",
+                    "litellm_params": {
+                        "model": "openai/gpt-4.1-nano",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["main"], "request_limit_multiplier": 1.5},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            multiplier = get_model_request_limit_multiplier("gpt-4.1-nano")
+            self.assertEqual(multiplier, 1.5)
+
+    def test_get_model_request_limit_multiplier_returns_default_for_unconfigured(self):
+        """
+        Test that get_model_request_limit_multiplier returns 1.0 for models without multiplier.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-4o",
+                    "litellm_params": {
+                        "model": "openai/gpt-4o",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["default"]},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            multiplier = get_model_request_limit_multiplier("gpt-4o")
+            self.assertEqual(multiplier, 1.0)
+
+    def test_get_model_request_limit_multiplier_resolves_alias(self):
+        """
+        Test that get_model_request_limit_multiplier resolves aliases correctly.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-4.1-nano",
+                    "litellm_params": {
+                        "model": "openai/gpt-4.1-nano",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["main"], "request_limit_multiplier": 2},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            # Should resolve alias and return the multiplier
+            multiplier = get_model_request_limit_multiplier("main")
+            self.assertEqual(multiplier, 2.0)
+
+    def test_get_model_request_limit_multiplier_returns_1_for_unknown_model(self):
+        """
+        Test that get_model_request_limit_multiplier returns 1.0 for unknown models.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-4o",
+                    "litellm_params": {
+                        "model": "openai/gpt-4o",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["default"]},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            multiplier = get_model_request_limit_multiplier("unknown-model")
+            self.assertEqual(multiplier, 1.0)
 
 
 class ModelAliasRoutingTest(GatewayIntegrationTestCase):

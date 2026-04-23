@@ -36,6 +36,7 @@ from gateway.config import (
     MCPServerConfig,
     get_files_api_client,
     get_mcp_config,
+    get_model_request_limit_multiplier,
     get_router,
     resolve_model_alias,
 )
@@ -278,10 +279,19 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 # Define the time window for usage check (last 60 seconds)
                 time_window_start = timezone.now() - timedelta(seconds=60)
 
+                # Extract model name from pydantic_model (parse_body runs before check_limits)
+                pydantic_model: dict[str, Any] | None = kwargs.get("pydantic_model")
+                model_name: str | None = None
+                if pydantic_model:
+                    model_name = pydantic_model.get("model")
+
+                # Build query filter - filter by model if we have one
+                query_filter: dict[str, Any] = {"token": token, "timestamp__gte": time_window_start}
+                if model_name:
+                    query_filter["model"] = model_name
+
                 # Query recent usage asynchronously using Django's async ORM
-                recent_requests_agg = await Request.objects.filter(
-                    token=token, timestamp__gte=time_window_start
-                ).aaggregate(
+                recent_requests_agg = await Request.objects.filter(**query_filter).aaggregate(
                     request_count=Count("id"),
                     total_input_tokens=Sum("input_tokens"),
                     total_output_tokens=Sum("output_tokens"),
@@ -292,8 +302,10 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 total_output = recent_requests_agg.get("total_output_tokens", 0) or 0
 
                 log.debug(
-                    "Recent usage (last 60s) for Token %r: Requests=%s, Input=%s, Output=%s",
+                    "Recent usage (last 60s) for Token %r (model=%s): "
+                    "Requests=%s, Input=%s, Output=%s",
                     token.name,
+                    model_name,
                     request_count,
                     total_input,
                     total_output,
@@ -302,11 +314,22 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 # --- Check Limits ---
                 exceeded = []
 
-                if (
-                    limits.requests_per_minute is not None
-                    and request_count >= limits.requests_per_minute
-                ):
-                    exceeded.append(f"Request limit ({limits.requests_per_minute}/min)")
+                # Apply per-model multiplier to requests_per_minute limit
+                effective_rpm_limit = limits.requests_per_minute
+                if limits.requests_per_minute is not None and model_name:
+                    multiplier = get_model_request_limit_multiplier(model_name)
+                    effective_rpm_limit = int(limits.requests_per_minute * multiplier)
+                    if multiplier != 1.0:
+                        log.debug(
+                            "Applied request limit multiplier %.2f for model %s: %d -> %d",
+                            multiplier,
+                            model_name,
+                            limits.requests_per_minute,
+                            effective_rpm_limit,
+                        )
+
+                if effective_rpm_limit is not None and request_count >= effective_rpm_limit:
+                    exceeded.append(f"Request limit ({effective_rpm_limit}/min)")
 
                 if (
                     limits.input_tokens_per_minute is not None

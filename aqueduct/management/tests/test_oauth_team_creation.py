@@ -184,6 +184,55 @@ class OAuthTeamMembershipTestCase(TestCase):
         self.assertEqual(memberships.count(), 1)
         self.assertEqual(memberships.first().team.name, "E123")
 
+    def test_user_removed_from_oauth_managed_teams_even_when_removal_disabled(self):
+        """Test that user is always removed from OAuth-managed teams."""
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
+
+        initial_groups = ["E123-Students", "E456-Staff"]
+        self.backend._sync_teams(user, profile, initial_groups)
+
+        self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 2)
+        team1 = Team.objects.get(name="E123", org=self.org)
+        team2 = Team.objects.get(name="E456", org=self.org)
+        self.assertTrue(team1.managed_by_oauth)
+        self.assertTrue(team2.managed_by_oauth)
+
+        with override_settings(ENABLE_OAUTH_GROUP_REMOVAL=False):
+            updated_groups = ["E123-Students"]
+            self.backend._sync_teams(user, profile, updated_groups)
+
+            memberships = TeamMembership.objects.filter(user_profile=profile)
+            self.assertEqual(memberships.count(), 1)
+            self.assertEqual(memberships.first().team.name, "E123")
+
+    @override_settings(ENABLE_OAUTH_GROUP_REMOVAL=False)
+    def test_user_not_removed_from_non_oauth_teams_when_removal_disabled(self):
+        """Test that user stays in non-OAuth teams when ENABLE_OAUTH_GROUP_REMOVAL=False."""
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
+
+        oauth_team = Team.objects.create(
+            name="E123", org=self.org, oauth_group_name="E123-Students"
+        )
+        manual_team = Team.objects.create(name="ManualTeam", org=self.org, oauth_group_name="")
+
+        TeamMembership.objects.create(user_profile=profile, team=oauth_team)
+        TeamMembership.objects.create(user_profile=profile, team=manual_team)
+
+        self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 2)
+
+        updated_groups = ["E123-Students", "OtherGroup"]
+        self.backend._sync_teams(user, profile, updated_groups)
+
+        memberships = TeamMembership.objects.filter(user_profile=profile)
+        team_names = {m.team.name for m in memberships}
+        self.assertEqual(memberships.count(), 2)
+        self.assertIn("E123", team_names)
+        self.assertIn("ManualTeam", team_names)
+
     def test_membership_sync_on_update(self):
         """Test membership sync on update_user()."""
         claims_initial = {"email": "test@example.com", "groups": ["E123-Students"]}
@@ -314,6 +363,7 @@ class OAuthTeamEdgeCasesTestCase(TestCase):
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
+    OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=lambda group, groups=None: None,
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )

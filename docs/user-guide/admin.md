@@ -41,6 +41,7 @@ OAuth team management automatically syncs user team memberships based on OAuth g
 |---------|---------|
 | `ENABLE_OAUTH_GROUP_MANAGEMENT` | Master switch - when `False`, no team sync happens on login |
 | `ENABLE_OAUTH_GROUP_CREATION` | When `True`, teams are auto-created from OAuth groups; when `False`, users only join existing teams |
+| `ENABLE_OAUTH_GROUP_REMOVAL` | Controls removal from **non-OAuth** teams only. When `True` (default), users are removed from all teams not in their OAuth groups. When `False`, users stay in manually created teams but are **always** removed from OAuth-managed teams when they lose the corresponding OAuth group |
 | `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` | Custom logic to transform individual group names |
 
 ### Function Signature
@@ -86,7 +87,7 @@ The function is called once for each OAuth group, allowing you to:
 4. Groups that return a tuple create teams; groups that return `None` are skipped
 5. Teams are created (if `ENABLE_OAUTH_GROUP_CREATION=True`) or reused
 6. User is added to teams via `TeamMembership`
-7. User is removed from teams no longer in their OAuth groups
+7. User is removed from teams no longer in their OAuth groups (only if `ENABLE_OAUTH_GROUP_REMOVAL=True`)
 
 ### Admin Panel
 

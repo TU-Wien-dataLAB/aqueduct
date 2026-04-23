@@ -130,6 +130,7 @@ ADMIN_GROUP = "default"  # all users are admins
 
 ENABLE_OAUTH_GROUP_MANAGEMENT = os.getenv("ENABLE_OAUTH_GROUP_MANAGEMENT", "False").lower() == "true"
 ENABLE_OAUTH_GROUP_CREATION = os.getenv("ENABLE_OAUTH_GROUP_CREATION", "True").lower() == "true"
+ENABLE_OAUTH_GROUP_REMOVAL = os.getenv("ENABLE_OAUTH_GROUP_REMOVAL", "True").lower() == "true"
 
 
 def default_oauth_team_names_from_groups(
@@ -155,7 +156,13 @@ def default_oauth_team_names_from_groups(
     return None
 
 
-OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION = default_oauth_team_names_from_groups
+def my_transform(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
+    if group.startswith("E"):
+        team_name = group.split("-")[0]
+        return (team_name, group)
+    return None
+
+OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION = my_transform
 
 EXTRA_NAV_LINKS = {
     "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",

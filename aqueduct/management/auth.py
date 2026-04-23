@@ -112,6 +112,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
             teams_to_remove = existing_memberships - target_team_names
 
             enable_creation = getattr(settings, "ENABLE_OAUTH_GROUP_CREATION", True)
+            enable_removal = getattr(settings, "ENABLE_OAUTH_GROUP_REMOVAL", True)
 
             for team_name, original_group_name in teams_to_add:
                 try:
@@ -135,10 +136,18 @@ class OIDCBackend(OIDCAuthenticationBackend):
             for team_name in teams_to_remove:
                 try:
                     team = Team.objects.get(name=team_name, org=org)
-                    TeamMembership.objects.filter(user_profile=profile, team=team).delete()
-                    log.info(
-                        "Removed user '%s' from team '%s' (%s)", user.email, team_name, org.name
-                    )
+                    is_oauth_managed = bool(team.oauth_group_name)
+                    if is_oauth_managed or enable_removal:
+                        TeamMembership.objects.filter(user_profile=profile, team=team).delete()
+                        log.info(
+                            "Removed user '%s' from team '%s' (%s)", user.email, team_name, org.name
+                        )
+                    else:
+                        log.info(
+                            "Skipping removal from non-OAuth team '%s' for user '%s'",
+                            team_name,
+                            user.email,
+                        )
                 except Team.DoesNotExist:
                     log.warning(
                         "Team '%s' not found for removal (org: %s, user: %s)",

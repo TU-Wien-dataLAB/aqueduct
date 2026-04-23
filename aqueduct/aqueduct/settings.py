@@ -125,6 +125,45 @@ OIDC_DEFAULT_GROUPS = ["default"]
 ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
 ADMIN_GROUP = "default"  # all users are admins
 
+# OAuth Group Management Settings
+# Controls automatic team creation and membership management from OAuth groups
+
+ENABLE_OAUTH_GROUP_MANAGEMENT = os.getenv("ENABLE_OAUTH_GROUP_MANAGEMENT", "False").lower() == "true"
+ENABLE_OAUTH_GROUP_CREATION = os.getenv("ENABLE_OAUTH_GROUP_CREATION", "True").lower() == "true"
+ENABLE_OAUTH_GROUP_REMOVAL = os.getenv("ENABLE_OAUTH_GROUP_REMOVAL", "True").lower() == "true"
+
+
+def default_oauth_team_names_from_groups(
+    group: str, groups: list[str] | None = None
+) -> tuple[str, str] | None:
+    """
+    Default function to transform a single OAuth group name to a team name.
+
+    Args:
+        group: The specific OAuth group name to transform
+        groups: Full list of user's groups for context (optional)
+
+    Returns:
+        Tuple of (transformed_team_name, original_group_name) or None to skip this group
+
+    Example:
+        def my_transform(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
+            if group.startswith("E"):
+                team_name = group.split("-")[0]
+                return (team_name, group)
+            return None
+    """
+    return None
+
+
+def my_transform(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
+    if group.startswith("E"):
+        team_name = group.split("-")[0]
+        return (team_name, group)
+    return None
+
+OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION = my_transform
+
 EXTRA_NAV_LINKS = {
     "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",
     "Documentation": "https://tu-wien-datalab.github.io/aqueduct/",

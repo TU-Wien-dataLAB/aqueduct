@@ -1,12 +1,15 @@
 import asyncio
+import logging
 from contextlib import suppress
 from datetime import UTC, datetime
 from typing import ClassVar
 
 from django import forms
+from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
+from django.db import transaction
 from django.db.models import QuerySet
 from django.urls import reverse
 from django.utils.html import format_html
@@ -27,6 +30,8 @@ from .models import (
     VectorStoreFile,
     VectorStoreFileBatch,
 )
+
+log = logging.getLogger("aqueduct")
 
 
 def format_unix_timestamp(timestamp: int | None) -> str:
@@ -174,6 +179,114 @@ def delete_tos_cache(modeladmin, request, queryset):
         cache.delete(f"django:tos:agreed:{user.id}", version=key_version)
 
 
+@admin.action(description="Sync OAuth team names")
+def sync_oauth_team_names_action(modeladmin, request, queryset):
+    """
+    Admin action to sync team names from OAuth group mappings.
+    Only affects OAuth-managed teams (those with oauth_group_name set).
+    """
+    func = getattr(settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", None)
+    if not func:
+        modeladmin.message_user(
+            request, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION not configured", level=messages.WARNING
+        )
+        return
+
+    # Only process OAuth-managed teams
+    oauth_teams = queryset.filter(oauth_group_name__gt="").select_related("org")
+
+    if not oauth_teams.exists():
+        modeladmin.message_user(request, "No OAuth-managed teams selected", level=messages.INFO)
+        return
+
+    teams_to_update = []
+    teams_to_delete = []
+    teams_skipped = []
+
+    all_oauth_groups = list(
+        Team.objects.filter(oauth_group_name__gt="")
+        .values_list("oauth_group_name", flat=True)
+        .distinct()
+    )
+
+    tuple_length = 2
+    max_skipped_display = 5
+
+    for team in oauth_teams:
+        original_group = team.oauth_group_name
+        try:
+            result = func(original_group, all_oauth_groups)
+            if result is None:
+                teams_to_delete.append(team)
+            elif isinstance(result, tuple) and len(result) == tuple_length:
+                new_team_name, _ = result
+                new_team_name = new_team_name.strip()
+                if new_team_name == team.name:
+                    teams_skipped.append((team, "Name unchanged"))
+                else:
+                    existing = Team.objects.filter(name=new_team_name, org=team.org).exclude(
+                        pk=team.pk
+                    )
+                    if existing.exists():
+                        teams_skipped.append(
+                            (team, f"Name collision: '{new_team_name}' already exists")
+                        )
+                    else:
+                        teams_to_update.append((team, new_team_name))
+            else:
+                log.error(
+                    "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION must return "
+                    "tuple[str, str] | None for group '%s'",
+                    original_group,
+                )
+                teams_skipped.append((team, "Invalid return type"))
+        except Exception as e:
+            log.exception("Error processing team '%s': %s", team.name, e)
+            teams_skipped.append((team, f"Error: {e}"))
+
+    if teams_to_delete:
+        modeladmin.message_user(
+            request,
+            f"Warning: {len(teams_to_delete)} team(s) would be deleted. "
+            "Deletion is not performed via admin action. "
+            "Use the management command with --force flag if needed.",
+            level=messages.WARNING,
+        )
+
+    with transaction.atomic():
+        updated_count = 0
+        for team, new_name in teams_to_update:
+            old_name = team.name
+            team.name = new_name
+            team.save(update_fields=["name"])
+            log.info(
+                "Updated team '%s' → '%s' (org: %s, oauth_group: '%s')",
+                old_name,
+                new_name,
+                team.org.name,
+                team.oauth_group_name,
+            )
+            updated_count += 1
+
+        skipped_count = len(teams_skipped)
+
+    # Report results
+    if updated_count > 0:
+        modeladmin.message_user(
+            request, f"Successfully updated {updated_count} team(s)", level=messages.SUCCESS
+        )
+
+    if skipped_count > 0:
+        skip_details = "; ".join(
+            [f"{team.name}: {reason}" for team, reason in teams_skipped[:max_skipped_display]]
+        )
+        if len(teams_skipped) > max_skipped_display:
+            skip_details += f" and {len(teams_skipped) - max_skipped_display} more"  # type: ignore[operator]
+        modeladmin.message_user(
+            request, f"Skipped {skipped_count} team(s): {skip_details}", level=messages.WARNING
+        )
+
+
 @admin.action(description="Reload from upstream")
 def reload_from_upstream(modeladmin, request, queryset):
     objects = list(queryset)
@@ -274,6 +387,7 @@ class TeamAdmin(admin.ModelAdmin):
     list_display: ClassVar[tuple] = (
         "name",
         "org_link",
+        "managed_by_oauth",
         "requests_per_minute",
         "input_tokens_per_minute",
         "output_tokens_per_minute",
@@ -281,14 +395,111 @@ class TeamAdmin(admin.ModelAdmin):
     list_select_related: ClassVar[list] = ["org"]
     search_fields: ClassVar[tuple] = ("name",)
     inlines: ClassVar[list] = [TeamMembershipInline]
-    list_filter: ClassVar[list] = ["org__name"]
+    list_filter: ClassVar[list] = ["org__name", "oauth_group_name"]
     form = TeamAdminForm
+    readonly_fields: ClassVar[tuple] = ("oauth_group_name", "managed_by_oauth_display")
+    actions: ClassVar[list] = [sync_oauth_team_names_action]
+
+    fieldsets: ClassVar[tuple] = (
+        (None, {"fields": ("name", "description", "org")}),
+        (
+            "Rate Limits",
+            {
+                "fields": (
+                    "requests_per_minute",
+                    "input_tokens_per_minute",
+                    "output_tokens_per_minute",
+                )
+            },
+        ),
+        (
+            "Exclusions",
+            {
+                "fields": (
+                    "excluded_models",
+                    "merge_exclusion_lists",
+                    "excluded_mcp_servers",
+                    "merge_mcp_server_exclusion_lists",
+                )
+            },
+        ),
+        (
+            "OAuth Management",
+            {"fields": ("oauth_group_name", "managed_by_oauth_display"), "classes": ("collapse",)},
+        ),
+    )
 
     def org_link(self, obj) -> str:
         link = reverse("admin:management_org_change", args=[obj.org.id])
         return format_html('<a href="{}">{}</a>', link, obj.org.name)
 
     org_link.short_description = "Org"
+
+    def managed_by_oauth(self, obj) -> str:
+        return "Yes" if obj.managed_by_oauth else "No"
+
+    managed_by_oauth.short_description = "OAuth Managed"
+    managed_by_oauth.admin_order_field = "oauth_group_name"
+
+    def managed_by_oauth_display(self, obj) -> str:
+        return "Yes" if obj.managed_by_oauth else "No"
+
+    managed_by_oauth_display.short_description = "Managed by OAuth"
+
+    def get_readonly_fields(self, request, obj=None) -> tuple:
+        readonly = list(self.readonly_fields)
+        if obj and obj.managed_by_oauth:
+            readonly.append("name")
+            readonly.append("org")
+        return tuple(readonly)
+
+    def get_fieldsets(self, request, obj=None) -> tuple:
+        if obj and obj.managed_by_oauth:
+            return (
+                (
+                    None,
+                    {
+                        "fields": ("name", "description", "org"),
+                        "description": "This team is managed by OAuth synchronization. "
+                        "To update the team name, modify the OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION "
+                        "setting and use the 'Sync OAuth team names' action above.",
+                    },
+                ),
+                (
+                    "Rate Limits",
+                    {
+                        "fields": (
+                            "requests_per_minute",
+                            "input_tokens_per_minute",
+                            "output_tokens_per_minute",
+                        )
+                    },
+                ),
+                (
+                    "Exclusions",
+                    {
+                        "fields": (
+                            "excluded_models",
+                            "merge_exclusion_lists",
+                            "excluded_mcp_servers",
+                            "merge_mcp_server_exclusion_lists",
+                        )
+                    },
+                ),
+                (
+                    "OAuth Management",
+                    {
+                        "fields": ("oauth_group_name", "managed_by_oauth_display"),
+                        "classes": ("collapse",),
+                    },
+                ),
+            )
+        return super().get_fieldsets(request, obj)
+
+    def get_inline_instances(self, request, obj=None) -> list:
+        if obj and obj.managed_by_oauth:
+            return []
+        return super().get_inline_instances(request, obj)
 
 
 class OrgAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):

@@ -354,7 +354,7 @@ def log_request(view_func: AsyncView) -> AsyncView:
         token = kwargs.get("token")
         request_log = Request(
             token=token,
-            model=None if not pydantic_model else pydantic_model.get("model", None),
+            model="" if not pydantic_model else pydantic_model.get("model", ""),
             # Use the resolved model from self
             timestamp=timezone.now(),
             method=request.method,

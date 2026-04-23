@@ -2,9 +2,10 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
-from .models import Org, UserProfile
+from .models import Org, Team, TeamMembership, UserProfile
 
 User = get_user_model()
 
@@ -41,6 +42,120 @@ class OIDCBackend(OIDCAuthenticationBackend):
         org, _created = Org.objects.get_or_create(name=org_name)
         return org
 
+    def _get_teams_from_groups(self, groups: list[str]) -> list[tuple[str, str]]:
+        """
+        Get list of (team_name, original_group_name) tuples to create/join from OAuth groups.
+        Calls OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION setting for each group.
+        Returns empty list on error or if feature is disabled.
+
+        Returns:
+            List of tuples: [(transformed_team_name, original_oauth_group_name), ...]
+        """
+        if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
+            return []
+
+        func = getattr(
+            settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", lambda group, groups=None: None
+        )
+        try:
+            team_mappings = []
+            if not groups:
+                return team_mappings
+            for group in groups:
+                result = func(group, groups)
+                if not isinstance(result, tuple) or len(result) != 2:  # noqa: PLR2004
+                    continue
+                team_name, original_name = result
+                if not (team_name and isinstance(team_name, str) and original_name):
+                    continue
+                team_mappings.append((team_name.strip(), original_name.strip()))
+        except Exception as e:
+            log.exception("Error calling OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION: %s", e)
+            return []
+        else:
+            return team_mappings
+
+    def _sync_teams(self, user: User, profile: UserProfile, groups: list[str]) -> None:
+        """
+        Synchronize team membership based on OAuth groups.
+
+        - Creates teams if ENABLE_OAUTH_GROUP_CREATION=True and team doesn't exist
+        - Adds user to teams via TeamMembership
+        - Removes user from teams no longer in their groups
+        - Uses transactions for atomicity
+        - Logs all changes
+        - Respects org boundaries (teams must belong to user's org)
+        """
+        if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
+            return
+
+        team_mappings = self._get_teams_from_groups(groups)
+        if not team_mappings:
+            return
+
+        org = profile.org
+
+        with transaction.atomic():
+            existing_memberships = set(
+                TeamMembership.objects.filter(user_profile=profile).values_list(
+                    "team__name", flat=True
+                )
+            )
+
+            target_team_names = {team_name for team_name, _ in team_mappings}
+            team_name_to_original = dict(team_mappings)
+
+            teams_to_add = [
+                (name, team_name_to_original[name])
+                for name in target_team_names - existing_memberships
+            ]
+            teams_to_remove = existing_memberships - target_team_names
+
+            enable_creation = getattr(settings, "ENABLE_OAUTH_GROUP_CREATION", True)
+            enable_removal = getattr(settings, "ENABLE_OAUTH_GROUP_REMOVAL", True)
+
+            for team_name, original_group_name in teams_to_add:
+                try:
+                    team = Team.objects.get(name=team_name, org=org)
+                    log.info("Reused existing team '%s' for org '%s'", team_name, org.name)
+                except Team.DoesNotExist:
+                    if not enable_creation:
+                        log.info(
+                            "Skipping team creation for '%s' (ENABLE_OAUTH_GROUP_CREATION=False)",
+                            team_name,
+                        )
+                        continue
+                    team = Team.objects.create(
+                        name=team_name, org=org, oauth_group_name=original_group_name
+                    )
+                    log.info("Created team '%s' for org '%s'", team_name, org.name)
+
+                TeamMembership.objects.get_or_create(user_profile=profile, team=team)
+                log.info("Added user '%s' to team '%s' (%s)", user.email, team_name, org.name)
+
+            for team_name in teams_to_remove:
+                try:
+                    team = Team.objects.get(name=team_name, org=org)
+                    is_oauth_managed = bool(team.oauth_group_name)
+                    if is_oauth_managed or enable_removal:
+                        TeamMembership.objects.filter(user_profile=profile, team=team).delete()
+                        log.info(
+                            "Removed user '%s' from team '%s' (%s)", user.email, team_name, org.name
+                        )
+                    else:
+                        log.info(
+                            "Skipping removal from non-OAuth team '%s' for user '%s'",
+                            team_name,
+                            user.email,
+                        )
+                except Team.DoesNotExist:
+                    log.warning(
+                        "Team '%s' not found for removal (org: %s, user: %s)",
+                        team_name,
+                        org.name,
+                        user.email,
+                    )
+
     def create_user(self, claims) -> User | None:
         groups = self._groups(claims)
         org = self._org(groups)
@@ -66,6 +181,10 @@ class OIDCBackend(OIDCAuthenticationBackend):
         profile.save()
 
         log.info("Created user '%s' (%s)", user.email, profile.group)
+
+        # Sync team membership from OAuth groups
+        self._sync_teams(user, profile, groups)
+
         return user
 
     def update_user(self, user, claims) -> User:
@@ -99,4 +218,8 @@ class OIDCBackend(OIDCAuthenticationBackend):
         profile.save()
 
         log.info("Updated user '%s' (%s)", user.email, profile.group)
+
+        # Sync team membership from OAuth groups
+        self._sync_teams(user, profile, groups)
+
         return user

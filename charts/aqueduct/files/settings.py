@@ -128,8 +128,8 @@ ADMIN_GROUP = "default"  # all users are admins
 # OAuth Group Management Settings
 # Controls automatic team creation and membership management from OAuth groups
 
-ENABLE_OAUTH_GROUP_MANAGEMENT = False  # Master switch for OAuth group-based team management
-ENABLE_OAUTH_GROUP_CREATION = True  # Automatically create teams from OAuth groups
+ENABLE_OAUTH_GROUP_MANAGEMENT = os.getenv("ENABLE_OAUTH_GROUP_MANAGEMENT", "False").lower() == "true"
+ENABLE_OAUTH_GROUP_CREATION = os.getenv("ENABLE_OAUTH_GROUP_CREATION", "True").lower() == "true"
 
 
 def default_oauth_team_names_from_groups(

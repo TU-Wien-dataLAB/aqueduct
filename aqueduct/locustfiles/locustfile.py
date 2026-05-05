@@ -1,7 +1,4 @@
-# ruff: noqa: ERA001  # TODO: fix this later
 import logging
-from http import HTTPStatus
-from typing import ClassVar
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from locust import HttpUser, between, task
@@ -11,15 +8,35 @@ log = logging.getLogger(__name__)
 
 class GatewayUser(HttpUser):
     wait_time = between(1, 3)
-    headers: ClassVar[dict[str, str]] = {
-        "Authorization": "Bearer sk-123abc",
-        "Content-Type": "application/json",
-    }
-    multipart_headers: ClassVar[dict[str, str]] = {"Authorization": "Bearer sk-123abc"}
+    headers: dict[str, str]
+    multipart_headers: dict[str, str]
     host = "http://localhost:8000/"
+
+    def _create_user(self):
+        resp = self.client.post("aqueduct/management/test-auth/generate-token/")
+        resp.raise_for_status()
+        token_data = resp.json()
+
+        self.headers = {
+            "Authorization": f"Bearer {token_data['token']}",
+            "Content-Type": "application/json",
+        }
+        self.multipart_headers = {"Authorization": f"Bearer {token_data['token']}"}
 
     def on_start(self):
         """Runs once per user when they start - creates test resources"""
+        self._create_user()
+
+        # Create a file object for batches/files API tasks
+        file = SimpleUploadedFile("test.txt", b"test user data file\n", content_type="test/plain")
+        file_resp = self.client.post(
+            "files",
+            files={"file": ("test.txt", file, "test/plain")},
+            data={"purpose": "user_data"},
+            headers=self.multipart_headers,
+        )
+        file_resp.raise_for_status()
+        self._file_id = file_resp.json()["id"]
 
         # Add an initial response to the cache
         resp_resp = self.client.post(
@@ -27,23 +44,15 @@ class GatewayUser(HttpUser):
             json={"model": "main", "input": "Hello, how are you?"},
             headers=self.headers,
         )
-        if resp_resp.status_code == HTTPStatus.OK:
-            self._response_id = resp_resp.json()["id"]
-        else:
-            log.warning(
-                "Creation of test response on start failed with code %s: %s",
-                resp_resp.status_code,
-                resp_resp.json(),
-            )
-            self._response_id = "resp_12345abc"  # fallback
+        resp_resp.raise_for_status()
+        self._response_id = resp_resp.json()["id"]
 
-        # Note: initial objects are loaded from locust_fixture.json.
-        # self._test_file_id = "file-mock-123"
-        self._batch_id = "batch_123456789"
-        self._vector_store_id = "vs-mock-123"
-        self._vector_store_file_id = "vsf-mock-123"
-        self._file_batch_id = "vsb-mock-123"
-        self._test_file_id = "file-mock-123"
+        # Create a vector store for the new user
+        resp = self.client.post(
+            "vector_stores", json={"name": "test-vector-store"}, headers=self.headers
+        )
+        resp.raise_for_status()
+        self._vector_store_id = resp.json()["id"]
 
     @task
     def chat_completions(self):
@@ -102,212 +111,186 @@ class GatewayUser(HttpUser):
 
     # Files API tasks
     @task
-    def list_files(self):
-        _ = self.client.get("files", headers=self.headers)
+    def files_lifecycle(self):
+        """Create, list, retrieve, download content, and delete a file"""
 
-    @task
-    def create_file(self):
         file = SimpleUploadedFile(
             "test.jsonl",
             b'{"custom_id": "test-1", "method": "POST", "url": "/chat/completions", '
             b'"body": {"model": "main", "messages": [{"role": "user", "content": "Hello"}]}}\n',
             content_type="application/jsonl",
         )
+        # Upload a file
         resp = self.client.post(
             "files",
             files={"file": ("test.jsonl", file, "application/jsonl")},
             data={"purpose": "batch"},
             headers=self.multipart_headers,
         )
-        if resp.status_code == HTTPStatus.OK:
-            self._test_file_id = resp.json()["id"]
-
-    @task
-    def get_file_content(self):
-        _ = self.client.get(f"files/{self._test_file_id}/content", headers=self.headers)
-
-    # @task
-    # def delete_file(self):
-    #     _ = self.client.delete(f"files/{self._test_file_id}", headers=self.headers)
-
-    @task
-    def get_file(self):
-        _ = self.client.get(f"files/{self._test_file_id}", headers=self.headers)
+        resp.raise_for_status()
+        file_id = resp.json()["id"]
+        # List files
+        self.client.get("files", headers=self.headers)
+        # Retrieve file metadata
+        self.client.get(f"files/{file_id}", headers=self.headers)
+        # Download file content
+        self.client.get(f"files/{file_id}/content", headers=self.headers)
+        # Delete file
+        self.client.delete(f"files/{file_id}", headers=self.headers)
 
     # Batch API tasks
     @task
-    def list_batches(self):
-        _ = self.client.get("batches", headers=self.headers)
-
-    @task
-    def create_batch(self):
+    def batches_lifecycle(self):
+        """Create, list, retrieve, and cancel a batch"""
+        # Create a batch
         resp = self.client.post(
             "batches",
             json={
-                "input_file_id": self._test_file_id,
+                "input_file_id": self._file_id,
                 "endpoint": "/v1/chat/completions",
                 "completion_window": "24h",
             },
             headers=self.headers,
         )
-        if resp.status_code == HTTPStatus.OK:
-            self._batch_id = resp.json()["id"]
-
-    @task
-    def get_batch(self):
-        _ = self.client.get(f"batches/{self._batch_id}", headers=self.headers)
-
-    @task
-    def cancel_batch(self):
-        _ = self.client.post(f"batches/{self._batch_id}/cancel", headers=self.headers)
+        resp.raise_for_status()
+        batch_id = resp.json()["id"]
+        try:
+            # List batches
+            self.client.get("batches", headers=self.headers)
+            # Retrieve batch
+            self.client.get(f"batches/{batch_id}", headers=self.headers)
+        finally:
+            # Cancel batch
+            self.client.post(f"batches/{batch_id}/cancel", headers=self.headers)
 
     # Responses API tasks
     @task
-    def create_response(self):
+    def responses_lifecycle(self):
+        """Create, retrieve, get input items, and delete a response"""
+        # Create a response
         resp = self.client.post(
             "responses",
             json={"model": "main", "input": "Hello, how are you?"},
             headers=self.headers,
         )
-        if resp.status_code == HTTPStatus.OK:
-            self._response_id = resp.json()["id"]
-
-    @task
-    def get_response(self):
-        _ = self.client.get(f"responses/{self._response_id}", headers=self.headers)
-
-    @task
-    # def delete_response(self):
-    #     _ = self.client.delete(f"responses/{self._response_id}", headers=self.headers)
-
-    @task
-    def get_response_input_items(self):
-        _ = self.client.get(f"responses/{self._response_id}/input_items", headers=self.headers)
+        resp.raise_for_status()
+        response_id = resp.json()["id"]
+        try:
+            # Retrieve response
+            self.client.get(f"responses/{response_id}", headers=self.headers)
+            # Get input items of the response
+            self.client.get(f"responses/{response_id}/input_items", headers=self.headers)
+        finally:
+            # Delete response
+            self.client.delete(f"responses/{response_id}", headers=self.headers)
 
     # Vector Stores tasks
     @task
-    def list_vector_stores(self):
-        _ = self.client.get("vector_stores", headers=self.headers)
+    def vector_store_lifecycle(self):
+        """Create, list, retrieve, search, update, and delete a vector store"""
 
-    @task
-    def create_vector_store(self):
-        response = self.client.post(
+        # Create a vector store
+        resp = self.client.post(
             "vector_stores", json={"name": "test-vector-store"}, headers=self.headers
         )
-        if response.status_code == HTTPStatus.OK:
-            self._vector_store_id = response.json()["id"]
-
-    @task
-    def get_vector_store(self):
-        _ = self.client.get(f"vector_stores/{self._vector_store_id}", headers=self.headers)
-
-    @task
-    def update_vector_store(self):
-        _ = self.client.post(
-            f"vector_stores/{self._vector_store_id}",
-            json={"name": "updated-vector-store"},
-            headers=self.headers,
-        )
-
-    # @task
-    # def delete_vector_store(self):
-    #     _ = self.client.delete(f"vector_stores/{self._vector_store_id}", headers=self.headers)
-
-    @task
-    def search_vector_store(self):
-        _ = self.client.post(
-            f"vector_stores/{self._vector_store_id}/search",
-            json={"query": "test query"},
-            headers=self.headers,
-        )
+        resp.raise_for_status()
+        vs_id = resp.json()["id"]
+        try:
+            # List vector stores
+            self.client.get("vector_stores", headers=self.headers)
+            # Retrieve a vector store
+            self.client.get(f"vector_stores/{vs_id}", headers=self.headers)
+            # Search a vector store
+            self.client.post(
+                f"vector_stores/{vs_id}/search", json={"query": "test query"}, headers=self.headers
+            )
+            # Update a vector store
+            self.client.post(
+                f"vector_stores/{vs_id}",
+                json={"name": "updated-vector-store"},
+                headers=self.headers,
+            )
+        finally:
+            # Delete a vector store
+            self.client.delete(f"vector_stores/{vs_id}", headers=self.headers)
 
     # Vector Store Files tasks
     @task
-    def list_vector_store_files(self):
-        _ = self.client.get(f"vector_stores/{self._vector_store_id}/files", headers=self.headers)
-
-    @task
-    def add_file_to_vector_store(self):
-        response = self.client.post(
+    def vector_store_files_lifecycle(self):
+        """Create, list, retrieve, get content, update, and delete a vector store file"""
+        # Add a vector store file
+        resp = self.client.post(
             f"vector_stores/{self._vector_store_id}/files",
-            json={"file_id": self._test_file_id},
+            json={"file_id": self._file_id},
             headers=self.headers,
         )
-        if response.status_code == HTTPStatus.OK:
-            self._vector_store_file_id = response.json()["id"]
-
-    @task
-    def get_vector_store_file(self):
-        _ = self.client.get(
-            f"vector_stores/{self._vector_store_id}/files/{self._vector_store_file_id}",
-            headers=self.headers,
-        )
-
-    @task
-    def update_vector_store_file(self):
-        _ = self.client.post(
-            f"vector_stores/{self._vector_store_id}/files/{self._vector_store_file_id}",
-            json={"attributes": {"key": "value"}},
-            headers=self.headers,
-        )
-
-    # @task
-    # def delete_vector_store_file(self):
-    #     _ = self.client.delete(
-    #         f"vector_stores/{self._vector_store_id}/files/{self._vector_store_file_id}",
-    #         headers=self.headers,
-    #     )
-
-    @task
-    def get_vector_store_file_content(self):
-        _ = self.client.get(
-            f"vector_stores/{self._vector_store_id}/files/{self._vector_store_file_id}/content",
-            headers=self.headers,
-        )
+        resp.raise_for_status()
+        vsf_id = resp.json()["id"]
+        try:
+            # List vector store files
+            self.client.get(f"vector_stores/{self._vector_store_id}/files", headers=self.headers)
+            # Retrieve vector store file
+            self.client.get(
+                f"vector_stores/{self._vector_store_id}/files/{vsf_id}", headers=self.headers
+            )
+            # Get content of vector store file
+            self.client.get(
+                f"vector_stores/{self._vector_store_id}/files/{vsf_id}/content",
+                headers=self.headers,
+            )
+            # Update vector store file
+            self.client.post(
+                f"vector_stores/{self._vector_store_id}/files/{vsf_id}",
+                json={"attributes": {"key": "value"}},
+                headers=self.headers,
+            )
+        finally:
+            # Delete vector store file
+            self.client.delete(
+                f"vector_stores/{self._vector_store_id}/files/{vsf_id}", headers=self.headers
+            )
 
     # Vector Store File Batches tasks
-
-    # @task
-    # def create_vector_store_file_batch(self):
-    #     new_file_id = f"file-{self.counter:09}"
-    #     self.counter =+ 1
-    #     file = SimpleUploadedFile(
-    #         "test.txt",
-    #         b'test user data file\n',
-    #         content_type="test/plain",
-    #     )
-    #     file_resp = self.client.post(
-    #         "files",
-    #         files={"file": ("test.txt", file, "test/plain")},
-    #         data={"purpose": "user_data"},
-    #         headers=self.multipart_headers,
-    #     )
-    #     # new_file_id = file_resp.json()["id"]
-    #     response = self.client.post(
-    #         f"vector_stores/{self._vector_store_id}/file_batches",
-    #         json={"file_ids": [new_file_id]},
-    #         headers=self.headers,
-    #     )
-    #     if response.status_code == HTTPStatus.OK:
-    #         self._file_batch_id = response.json()["id"]
-
     @task
-    def get_vector_store_file_batch(self):
-        _ = self.client.get(
-            f"vector_stores/{self._vector_store_id}/file_batches/{self._file_batch_id}",
-            headers=self.headers,
+    def vector_store_file_batch_lifecycle(self):
+        """Create, retrieve, list files of, and cancel a vector store file batch"""
+        # Setup: create a new file object
+        file = SimpleUploadedFile("test.txt", b"test user data file\n", content_type="test/plain")
+        file_resp = self.client.post(
+            "files",
+            files={"file": ("test.txt", file, "test/plain")},
+            data={"purpose": "user_data"},
+            headers=self.multipart_headers,
         )
+        file_resp.raise_for_status()
+        new_file_id = file_resp.json()["id"]
 
-    @task
-    def cancel_vector_store_file_batch(self):
-        _ = self.client.post(
-            f"vector_stores/{self._vector_store_id}/file_batches/{self._file_batch_id}/cancel",
-            headers=self.headers,
-        )
-
-    @task
-    def list_vector_store_file_batch_files(self):
-        _ = self.client.get(
-            f"vector_stores/{self._vector_store_id}/file_batches/{self._file_batch_id}/files",
-            headers=self.headers,
-        )
+        try:
+            # Create a vector store file batch
+            resp = self.client.post(
+                f"vector_stores/{self._vector_store_id}/file_batches",
+                json={"file_ids": [new_file_id]},
+                headers=self.headers,
+            )
+            resp.raise_for_status()
+            vsb_id = resp.json()["id"]
+            try:
+                # Retrieve a vector store file batch
+                self.client.get(
+                    f"vector_stores/{self._vector_store_id}/file_batches/{vsb_id}",
+                    headers=self.headers,
+                )
+                # List files of a vector store file batch
+                self.client.get(
+                    f"vector_stores/{self._vector_store_id}/file_batches/{vsb_id}/files",
+                    headers=self.headers,
+                )
+            finally:
+                # Cancel a vector store file batch
+                self.client.post(
+                    f"vector_stores/{self._vector_store_id}/file_batches/{vsb_id}/cancel",
+                    headers=self.headers,
+                )
+        finally:
+            # Cleanup: delete the created file object
+            self.client.delete(f"files/{new_file_id}", headers=self.headers)

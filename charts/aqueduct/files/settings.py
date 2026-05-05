@@ -34,6 +34,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "insecure-secret-key")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
+LOAD_TESTING = os.getenv("LOAD_TESTING", "False").lower() == "true"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split()
 

@@ -77,10 +77,10 @@ class GatewayUser(HttpUser):
             resp = self.client.post(
                 "aqueduct/management/test-auth/cleanup-token/", headers=self.headers
             )
-            if resp.ok():
+            if resp.ok:
                 log.info("Cleaned up Locust user: %s", self._username)
             else:
-                log.warning("Cleanup failed for %s: %s", self._username, resp.json())
+                log.warning("Cleanup failed for %s: %s", self._username, resp.text)
         except Exception as e:
             log.exception("Cleanup exception for %s: %s", self._username, e)
             # Don't re-raise - cleanup failure shouldn't affect test metrics

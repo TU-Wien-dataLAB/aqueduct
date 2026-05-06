@@ -50,7 +50,7 @@
       "requests_per_minute": null,
       "input_tokens_per_minute": null,
       "output_tokens_per_minute": null,
-      "name": "E060"
+      "name": "Performance Test"
     }
   },
   {

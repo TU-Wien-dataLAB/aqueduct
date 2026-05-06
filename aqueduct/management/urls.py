@@ -67,5 +67,8 @@ if getattr(settings, "LOAD_TESTING", False):
     from .views import test_auth
 
     urlpatterns += [
-        path("test-auth/generate-token/", test_auth.generate_test_token, name="test-generate-token")
+        path(
+            "test-auth/generate-token/", test_auth.generate_test_token, name="generate-test-token"
+        ),
+        path("test-auth/cleanup-token/", test_auth.cleanup_test_token, name="cleanup-test-token"),
     ]

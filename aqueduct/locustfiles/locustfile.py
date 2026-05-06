@@ -1,4 +1,5 @@
 import logging
+from typing import ClassVar
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from locust import HttpUser, between, task
@@ -10,21 +11,17 @@ class GatewayUser(HttpUser):
     wait_time = between(1, 3)
     headers: dict[str, str]
     multipart_headers: dict[str, str]
+    # Headers with the token of the initial user that was loaded from the fixture:
+    _init_user_headers: ClassVar[dict[str, str]] = {
+        "Authorization": "Bearer sk-123abc",
+        "Content-Type": "application/json",
+    }
     host = "http://localhost:8000/"
-
-    def _create_user(self):
-        resp = self.client.post("aqueduct/management/test-auth/generate-token/")
-        resp.raise_for_status()
-        token_data = resp.json()
-
-        self.headers = {
-            "Authorization": f"Bearer {token_data['token']}",
-            "Content-Type": "application/json",
-        }
-        self.multipart_headers = {"Authorization": f"Bearer {token_data['token']}"}
+    # Store user-specific cleanup info:
+    _username: str | None = None
 
     def on_start(self):
-        """Runs once per user when they start - creates test resources"""
+        """Creates a Django user, related profile and token, and some initial resources."""
         self._create_user()
 
         # Create a file object for batches/files API tasks
@@ -53,6 +50,40 @@ class GatewayUser(HttpUser):
         )
         resp.raise_for_status()
         self._vector_store_id = resp.json()["id"]
+
+    def _create_user(self):
+        # Note: Use the initial user's token to authenticate the request
+        resp = self.client.post(
+            "aqueduct/management/test-auth/generate-token/", headers=self._init_user_headers
+        )
+        resp.raise_for_status()
+        token_data = resp.json()
+
+        self.headers = {
+            "Authorization": f"Bearer {token_data['token']}",
+            "Content-Type": "application/json",
+        }
+        self.multipart_headers = {"Authorization": f"Bearer {token_data['token']}"}
+        self._username = token_data["username"]
+
+    def on_stop(self):
+        """
+        Cleans up this user's data: user, profile, and token.
+
+        Note: This method won't run if Locus is not stopped normally; if Locus is killed
+        or crashes, the user-related objects will stay in the db.
+        """
+        try:
+            resp = self.client.post(
+                "aqueduct/management/test-auth/cleanup-token/", headers=self.headers
+            )
+            if resp.ok():
+                log.info("Cleaned up Locust user: %s", self._username)
+            else:
+                log.warning("Cleanup failed for %s: %s", self._username, resp.json())
+        except Exception as e:
+            log.exception("Cleanup exception for %s: %s", self._username, e)
+            # Don't re-raise - cleanup failure shouldn't affect test metrics
 
     @task
     def chat_completions(self):

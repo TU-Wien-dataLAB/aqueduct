@@ -31,6 +31,7 @@ class GatewayUser(HttpUser):
             files={"file": ("test.txt", file, "test/plain")},
             data={"purpose": "user_data"},
             headers=self.multipart_headers,
+            name="setup",
         )
         file_resp.raise_for_status()
         self._file_id = file_resp.json()["id"]
@@ -40,13 +41,14 @@ class GatewayUser(HttpUser):
             "responses",
             json={"model": "main", "input": "Hello, how are you?"},
             headers=self.headers,
+            name="setup",
         )
         resp_resp.raise_for_status()
         self._response_id = resp_resp.json()["id"]
 
         # Create a vector store for the new user
         resp = self.client.post(
-            "vector_stores", json={"name": "test-vector-store"}, headers=self.headers
+            "vector_stores", json={"name": "test-vector-store"}, headers=self.headers, name="setup"
         )
         resp.raise_for_status()
         self._vector_store_id = resp.json()["id"]
@@ -54,7 +56,9 @@ class GatewayUser(HttpUser):
     def _create_user(self):
         # Note: Use the initial user's token to authenticate the request
         resp = self.client.post(
-            "aqueduct/management/test-auth/generate-token/", headers=self._init_user_headers
+            "aqueduct/management/test-auth/generate-token/",
+            headers=self._init_user_headers,
+            name="setup",
         )
         resp.raise_for_status()
         token_data = resp.json()
@@ -163,11 +167,13 @@ class GatewayUser(HttpUser):
         # List files
         self.client.get("files", headers=self.headers)
         # Retrieve file metadata
-        self.client.get(f"files/{file_id}", headers=self.headers)
+        self.client.get(f"files/{file_id}", headers=self.headers, name="/files/[id]")
         # Download file content
-        self.client.get(f"files/{file_id}/content", headers=self.headers)
+        self.client.get(
+            f"files/{file_id}/content", headers=self.headers, name="/files/[id]/content"
+        )
         # Delete file
-        self.client.delete(f"files/{file_id}", headers=self.headers)
+        self.client.delete(f"files/{file_id}", headers=self.headers, name="/files/[id]")
 
     # Batch API tasks
     @task
@@ -189,10 +195,12 @@ class GatewayUser(HttpUser):
             # List batches
             self.client.get("batches", headers=self.headers)
             # Retrieve batch
-            self.client.get(f"batches/{batch_id}", headers=self.headers)
+            self.client.get(f"batches/{batch_id}", headers=self.headers, name="/batches/[id]")
         finally:
             # Cancel batch
-            self.client.post(f"batches/{batch_id}/cancel", headers=self.headers)
+            self.client.post(
+                f"batches/{batch_id}/cancel", headers=self.headers, name="/batches/[id]/cancel"
+            )
 
     # Responses API tasks
     @task
@@ -208,12 +216,20 @@ class GatewayUser(HttpUser):
         response_id = resp.json()["id"]
         try:
             # Retrieve response
-            self.client.get(f"responses/{response_id}", headers=self.headers)
+            self.client.get(
+                f"responses/{response_id}", headers=self.headers, name="/responses/[id]"
+            )
             # Get input items of the response
-            self.client.get(f"responses/{response_id}/input_items", headers=self.headers)
+            self.client.get(
+                f"responses/{response_id}/input_items",
+                headers=self.headers,
+                name="/responses/[id]/input_items",
+            )
         finally:
             # Delete response
-            self.client.delete(f"responses/{response_id}", headers=self.headers)
+            self.client.delete(
+                f"responses/{response_id}", headers=self.headers, name="/responses/[id]"
+            )
 
     # Vector Stores tasks
     @task
@@ -230,20 +246,28 @@ class GatewayUser(HttpUser):
             # List vector stores
             self.client.get("vector_stores", headers=self.headers)
             # Retrieve a vector store
-            self.client.get(f"vector_stores/{vs_id}", headers=self.headers)
+            self.client.get(
+                f"vector_stores/{vs_id}", headers=self.headers, name="/vector_stores/[id]"
+            )
             # Search a vector store
             self.client.post(
-                f"vector_stores/{vs_id}/search", json={"query": "test query"}, headers=self.headers
+                f"vector_stores/{vs_id}/search",
+                json={"query": "test query"},
+                headers=self.headers,
+                name="/vector_stores/[id]/search",
             )
             # Update a vector store
             self.client.post(
                 f"vector_stores/{vs_id}",
                 json={"name": "updated-vector-store"},
                 headers=self.headers,
+                name="/vector_stores/[id]",
             )
         finally:
             # Delete a vector store
-            self.client.delete(f"vector_stores/{vs_id}", headers=self.headers)
+            self.client.delete(
+                f"vector_stores/{vs_id}", headers=self.headers, name="/vector_stores/[id]"
+            )
 
     # Vector Store Files tasks
     @task
@@ -254,31 +278,42 @@ class GatewayUser(HttpUser):
             f"vector_stores/{self._vector_store_id}/files",
             json={"file_id": self._file_id},
             headers=self.headers,
+            name="/vector_stores/[id]/files",
         )
         resp.raise_for_status()
         vsf_id = resp.json()["id"]
         try:
             # List vector store files
-            self.client.get(f"vector_stores/{self._vector_store_id}/files", headers=self.headers)
+            self.client.get(
+                f"vector_stores/{self._vector_store_id}/files",
+                headers=self.headers,
+                name="/vector_stores/[id]/files",
+            )
             # Retrieve vector store file
             self.client.get(
-                f"vector_stores/{self._vector_store_id}/files/{vsf_id}", headers=self.headers
+                f"vector_stores/{self._vector_store_id}/files/{vsf_id}",
+                headers=self.headers,
+                name="/vector_stores/[id]/files/[id]",
             )
             # Get content of vector store file
             self.client.get(
                 f"vector_stores/{self._vector_store_id}/files/{vsf_id}/content",
                 headers=self.headers,
+                name="/vector_stores/[id]/files/[id]/content",
             )
             # Update vector store file
             self.client.post(
                 f"vector_stores/{self._vector_store_id}/files/{vsf_id}",
                 json={"attributes": {"key": "value"}},
                 headers=self.headers,
+                name="/vector_stores/[id]/files/[id]",
             )
         finally:
             # Delete vector store file
             self.client.delete(
-                f"vector_stores/{self._vector_store_id}/files/{vsf_id}", headers=self.headers
+                f"vector_stores/{self._vector_store_id}/files/{vsf_id}",
+                headers=self.headers,
+                name="/vector_stores/[id]/files/[id]",
             )
 
     # Vector Store File Batches tasks
@@ -302,6 +337,7 @@ class GatewayUser(HttpUser):
                 f"vector_stores/{self._vector_store_id}/file_batches",
                 json={"file_ids": [new_file_id]},
                 headers=self.headers,
+                name="/vector_stores/[id]/file_batches",
             )
             resp.raise_for_status()
             vsb_id = resp.json()["id"]
@@ -310,18 +346,21 @@ class GatewayUser(HttpUser):
                 self.client.get(
                     f"vector_stores/{self._vector_store_id}/file_batches/{vsb_id}",
                     headers=self.headers,
+                    name="/vector_stores/[id]/file_batches/[id]",
                 )
                 # List files of a vector store file batch
                 self.client.get(
                     f"vector_stores/{self._vector_store_id}/file_batches/{vsb_id}/files",
                     headers=self.headers,
+                    name="/vector_stores/[id]/file_batches/[id]/files",
                 )
             finally:
                 # Cancel a vector store file batch
                 self.client.post(
                     f"vector_stores/{self._vector_store_id}/file_batches/{vsb_id}/cancel",
                     headers=self.headers,
+                    name="/vector_stores/[id]/file_batches/[id]/cancel",
                 )
         finally:
             # Cleanup: delete the created file object
-            self.client.delete(f"files/{new_file_id}", headers=self.headers)
+            self.client.delete(f"files/{new_file_id}", headers=self.headers, name="/files/[id]")

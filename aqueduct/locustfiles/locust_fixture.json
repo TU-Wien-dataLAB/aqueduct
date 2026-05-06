@@ -120,21 +120,5 @@
       "created_at": "2025-04-17T09:52:32.153Z",
       "expires_at": null
     }
-  },
-  {
-    "model": "management.vectorstore",
-    "pk": "vs-mock-123",
-    "fields": {
-      "token": 1,
-      "name": "updated-vector-store",
-      "expires_after": null,
-      "chunking_strategy": null,
-      "metadata": null,
-      "status": "completed",
-      "usage_bytes": 0,
-      "created_at": 1776259628,
-      "last_active_at": 1776259633,
-      "upstream_url": "http://mock_api:45999"
-    }
   }
 ]

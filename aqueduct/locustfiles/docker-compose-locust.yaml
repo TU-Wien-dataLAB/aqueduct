@@ -54,7 +54,7 @@ services:
       start_period: 2s
 
   locust_redis:
-    image: redis:8.6.0
+    image: redis:8
     container_name: locust_redis
 
   locust_db:

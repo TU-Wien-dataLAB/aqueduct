@@ -169,14 +169,14 @@ def _find_config_for_path(
 
     # Try template matching
     for template, config in config_dict.items():
-        ids = _path_matches_template_and_extract_ids(path, template)
+        ids = _match_and_extract_ids(path, template)
         if ids is not None:
             return config, ids
 
     raise KeyError(f"No config found for path: {path}")
 
 
-def _path_matches_template_and_extract_ids(path: str, template: str) -> PathIds | None:
+def _match_and_extract_ids(path: str, template: str) -> PathIds | None:
     """
     Check if a path matches a template where the string "id" is a wildcard.
     Returns extracted IDs if match succeeds, None otherwise.
@@ -188,6 +188,8 @@ def _path_matches_template_and_extract_ids(path: str, template: str) -> PathIds 
           ->  ("vs_123", "file_456")
         "chat/completions" matches "chat/completions"
           -> ()  # empty tuple
+        "responses/resp123/input_items" does not match "responses/id"
+          -> None
     """
     path_segments = path.split("/")
     template_segments = template.split("/")

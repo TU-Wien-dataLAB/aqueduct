@@ -76,7 +76,9 @@ async def generate_test_token(request: ASGIRequest, *args: Any, **kwargs: Any) -
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
-async def cleanup_test_token(request: ASGIRequest, *args: Any, **kwargs: Any) -> JsonResponse:
+async def cleanup_test_token(
+    request: ASGIRequest, token: Token, *args: Any, **kwargs: Any
+) -> JsonResponse:
     """
     Delete the test `User` and its related objects (particularly: `Token`) after load testing.
 
@@ -89,20 +91,7 @@ async def cleanup_test_token(request: ASGIRequest, *args: Any, **kwargs: Any) ->
             status=HTTPStatus.FORBIDDEN,
         )
 
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return JsonResponse(
-            {"error": "Missing or invalid Authorization header"}, status=HTTPStatus.BAD_REQUEST
-        )
-
-    token_key = auth_header.split(" ", 1)[1]
-    token = await sync_to_async(Token.find_by_key)(token_key)
-
-    if not token:
-        return JsonResponse({"error": "Token not found"}, status=HTTPStatus.NOT_FOUND)
-
     username = token.user.username
-
     if not username.startswith("loadtest-"):
         log.warning("Attempted to delete non-loadtest user via cleanup endpoint: %s", username)
         return JsonResponse(

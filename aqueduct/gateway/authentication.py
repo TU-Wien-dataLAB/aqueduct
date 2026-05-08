@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend
 from django.http import HttpRequest
-from django.utils import timezone
 
 from management.models import Token
 
@@ -75,7 +74,7 @@ class TokenAuthenticationBackend(BaseBackend):
             return None
 
         # Optional: Check for token expiry
-        if token_instance.expires_at and token_instance.expires_at < timezone.now():
+        if token_instance.is_expired:
             logger.warning(
                 "Authentication failed: Token %s (%s) has expired.",
                 token_instance.name,

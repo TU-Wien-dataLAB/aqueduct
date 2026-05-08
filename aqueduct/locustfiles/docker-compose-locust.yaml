@@ -5,7 +5,7 @@ services:
       context: ../..
       dockerfile: ./aqueduct/locustfiles/Dockerfile
     container_name: mock_api
-    command: python -m mock_api.mock_server --host 0.0.0.0 --port 45999 --delays --log-level debug
+    command: python -m mock_api.mock_server --host 0.0.0.0 --port 45999 --delays
     volumes:
       - ./locust_router_config.yaml:/app/aqueduct/locust_router_config.yaml
     ports:
@@ -15,10 +15,8 @@ services:
     depends_on:
       locust_web:
         condition: service_started
-    tty: true  # for debugging
-    stdin_open: true  # for debugging
 
-  locust_migrate:  # Comment out to speed up restarting the services
+  locust_migrate:
     build:
       context: ../..
       dockerfile: ./aqueduct/locustfiles/Dockerfile
@@ -33,14 +31,10 @@ services:
     build:
       context: ../..
     container_name: locust_django_app
-    command: |    # Using `runserver` for debugging; static files not really needed, but Django shows a warning, so...
+    command: |
       sh -c "python manage.py collectstatic --no-input &&
-            python manage.py loaddata locustfiles/locust_fixture.json &&
-            python manage.py runserver 0.0.0.0:8000"
-#    command: |
-#      sh -c "python manage.py collectstatic --no-input &&
-#             python manage.py loaddata locustfiles/locust_fixture.json
-#             && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
+             python manage.py loaddata locustfiles/locust_fixture.json
+             && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
     volumes:
       - ../../aqueduct/:/app/aqueduct/
     ports:
@@ -58,8 +52,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 2s
-    tty: true  # for debugging
-    stdin_open: true  # for debugging
 
   locust_redis:
     image: redis:8.6.0

@@ -55,12 +55,14 @@ INSTALLED_APPS = [
     "mozilla_django_oidc",
     "django_celery_beat",
     "django.contrib.sites",
+    "django_prometheus",
     "tos",
     "management.apps.AqueductManagementConfig",
     "gateway.apps.GatewayConfig",
 ]
 
 MIDDLEWARE = [
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "management.middleware.HealthCheckMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -71,6 +73,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "mozilla_django_oidc.middleware.SessionRefresh",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]
 
 AUTHENTICATION_BACKENDS = (

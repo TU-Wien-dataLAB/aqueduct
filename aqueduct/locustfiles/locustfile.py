@@ -1,9 +1,36 @@
 import logging
 from typing import ClassVar
 
-from locust import HttpUser, between, task
+from locust import HttpUser, between, events, task
+from prometheus_client import Counter, Histogram, start_http_server
 
 log = logging.getLogger(__name__)
+
+
+# Define Prometheus metrics, just for the sake of testing what works.
+# TODO: if locust runs in a container, prometheus_client is not available!
+requests_total = Counter("locust_requests_total", "Total requests", ["method", "name", "status"])
+request_latency = Histogram("locust_request_latency_seconds", "Request latency")
+
+start_http_server(8090)
+
+
+@events.request.add_listener
+def on_request(
+    request_type,
+    name,
+    response_time,
+    response_length,
+    response,
+    context,
+    exception,
+    start_time,
+    url,
+    **kwargs,
+):
+    status = response.status_code if response else 0
+    requests_total.labels(method=request_type, name=name, status=status).inc()
+    request_latency.observe(response_time / 1000)  # Convert ms to seconds
 
 
 class GatewayUser(HttpUser):

@@ -38,3 +38,10 @@ if getattr(settings, "SILKY_ENABLED", False):
 
 if getattr(settings, "TOS_ENABLED", False):
     urlpatterns.insert(len(urlpatterns) - 1, path("terms-of-service/", include("tos.urls")))
+
+if getattr(settings, "DEBUG", False) or getattr(settings, "LOAD_TESTING", False):
+    # Matches `aqueduct/metrics`; only for local development and load testing for now
+    urlpatterns.insert(
+        len(urlpatterns) - 1,
+        path("aqueduct/", include("django_prometheus.urls"), name="prometheus-django-metrics"),
+    )

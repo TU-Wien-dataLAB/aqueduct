@@ -53,17 +53,46 @@ services:
       retries: 5
       start_period: 2s
 
-  locust_redis:
+  locust-redis:
     image: redis:8
-    container_name: locust_redis
+    container_name: locust-redis
 
-  locust_db:
+  locust-db:
     image: postgres:15
-    container_name: locust_postgres_db
+    container_name: locust-postgres-db
     volumes:
       - locust_postgres_data:/var/lib/postgresql/data/
     env_file:
       - .locust.env
+
+  locust-prometheus:
+    image: prom/prometheus:latest
+    container_name: locust-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      locust-web:
+        condition: service_started
+    network_mode: host
+#        condition: service_healthy
+
+# # TODO: locust container doesn't have prometheus_client, so "custom metrics" in locustfile won't work.
+#  locust:
+#    image: locustio/locust:latest
+#    container_name: locust
+#    ports:
+#      - "8089:8089"  # Locust web UI
+#      - "8090:8090"  # Prometheus metrics
+#    environment:
+#      - LOCUST_PROMETHEUS_EXPORTER=1
+#    command: "-f /locust/locustfile.py --prometheus-exporter-port=8090"
+#    volumes:
+#      - ./locustfile.py:/locust/locustfile.py
+#    depends_on:
+#      locust-web:
+#        condition: service_started
 
 volumes:
   locust_postgres_data:

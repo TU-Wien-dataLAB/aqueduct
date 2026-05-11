@@ -1,7 +1,6 @@
 import logging
 from typing import ClassVar
 
-from django.core.files.uploadedfile import SimpleUploadedFile
 from locust import HttpUser, between, task
 
 log = logging.getLogger(__name__)
@@ -25,10 +24,9 @@ class GatewayUser(HttpUser):
         self._create_user()
 
         # Create a file object for batches/files API tasks
-        file = SimpleUploadedFile("test.txt", b"test user data file\n", content_type="test/plain")
         file_resp = self.client.post(
             "files",
-            files={"file": ("test.txt", file, "test/plain")},
+            files={"file": ("test.txt", b"test user data file\n", "text/plain")},
             data={"purpose": "user_data"},
             headers=self.multipart_headers,
             name="setup",
@@ -136,10 +134,9 @@ class GatewayUser(HttpUser):
 
     @task
     def transcriptions(self):
-        file = SimpleUploadedFile("test.oga", b"fake audio data", content_type="audio/ogg")
         _ = self.client.post(
             "audio/transcriptions",
-            files={"file": ("test.oga", file, "audio/ogg")},
+            files={"file": ("test.oga", b"fake audio data", "audio/ogg")},
             data={"model": "transcribe"},
             headers=self.multipart_headers,
         )
@@ -148,17 +145,14 @@ class GatewayUser(HttpUser):
     @task
     def files_lifecycle(self):
         """Create, list, retrieve, download content, and delete a file"""
-
-        file = SimpleUploadedFile(
-            "test.jsonl",
+        content = (
             b'{"custom_id": "test-1", "method": "POST", "url": "/chat/completions", '
-            b'"body": {"model": "main", "messages": [{"role": "user", "content": "Hello"}]}}\n',
-            content_type="application/jsonl",
+            b'"body": {"model": "main", "messages": [{"role": "user", "content": "Hello"}]}}\n'
         )
         # Upload a file
         resp = self.client.post(
             "files",
-            files={"file": ("test.jsonl", file, "application/jsonl")},
+            files={"file": ("test.jsonl", content, "application/jsonl")},
             data={"purpose": "batch"},
             headers=self.multipart_headers,
         )
@@ -321,10 +315,9 @@ class GatewayUser(HttpUser):
     def vector_store_file_batch_lifecycle(self):
         """Create, retrieve, list files of, and cancel a vector store file batch"""
         # Setup: create a new file object
-        file = SimpleUploadedFile("test.txt", b"test user data file\n", content_type="test/plain")
         file_resp = self.client.post(
             "files",
-            files={"file": ("test.txt", file, "test/plain")},
+            files={"file": ("test.txt", b"test user data file\n", "text/plain")},
             data={"purpose": "user_data"},
             headers=self.multipart_headers,
         )

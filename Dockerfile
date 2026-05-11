@@ -27,8 +27,7 @@ COPY --from=builder /install /usr/local
 RUN groupadd -g 1000 aqueduct && useradd -u 1000 -g 1000 -r aqueduct
 
 # Copy app code, set ownership
-COPY . /app/
-RUN chown -R aqueduct:aqueduct /app
+COPY --chown=queduct:aqueduct . /app/
 
 USER aqueduct
 WORKDIR /app/aqueduct

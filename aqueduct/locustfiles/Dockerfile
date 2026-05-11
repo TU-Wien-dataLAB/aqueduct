@@ -28,8 +28,7 @@ COPY --from=builder /install /usr/local
 RUN groupadd -g 1000 mockapi && useradd -u 1000 -g 1000 -r mockapi
 
 # Copy app code, set ownership
-COPY ./aqueduct /app/aqueduct
-RUN chown -R mockapi:mockapi /app
+COPY --chown=mockapi:mockapi ./aqueduct /app/aqueduct
 
 USER mockapi
 WORKDIR /app/aqueduct

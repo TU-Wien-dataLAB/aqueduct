@@ -193,7 +193,7 @@ def sync_oauth_team_names_action(modeladmin, request, queryset):
         return
 
     # Only process OAuth-managed teams
-    oauth_teams = queryset.filter(oauth_group_name__gt="").select_related("org")
+    oauth_teams = queryset.exclude(oauth_group_name="")
 
     if not oauth_teams.exists():
         modeladmin.message_user(request, "No OAuth-managed teams selected", level=messages.INFO)
@@ -204,7 +204,7 @@ def sync_oauth_team_names_action(modeladmin, request, queryset):
     teams_skipped = []
 
     all_oauth_groups = list(
-        Team.objects.filter(oauth_group_name__gt="")
+        Team.objects.exclude(oauth_group_name="")
         .values_list("oauth_group_name", flat=True)
         .distinct()
     )

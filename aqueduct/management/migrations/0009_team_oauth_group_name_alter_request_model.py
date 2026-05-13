@@ -2,6 +2,9 @@
 
 from django.db import migrations, models
 
+def replace_nulls(apps, schema_editor):
+    Request = apps.get_model('management', 'Request')
+    Request.objects.filter(model__isnull=True).update(model='')
 
 class Migration(migrations.Migration):
 
@@ -15,6 +18,7 @@ class Migration(migrations.Migration):
             name='oauth_group_name',
             field=models.CharField(blank=True, db_index=True, default='', help_text='The OAuth group that created this team (auto-managed, not user-editable)', max_length=255, verbose_name='OAuth group name'),
         ),
+        migrations.RunPython(replace_nulls, migrations.RunPython.noop),
         migrations.AlterField(
             model_name='request',
             name='model',

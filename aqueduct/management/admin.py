@@ -9,7 +9,6 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
-from django.db import transaction
 from django.db.models import QuerySet
 from django.urls import reverse
 from django.utils.html import format_html
@@ -209,7 +208,6 @@ def sync_oauth_team_names_action(modeladmin, request, queryset):
         .distinct()
     )
 
-    tuple_length = 2
     max_skipped_display = 5
 
     for team in oauth_teams:
@@ -218,7 +216,7 @@ def sync_oauth_team_names_action(modeladmin, request, queryset):
             result = func(original_group, all_oauth_groups)
             if result is None:
                 teams_to_delete.append(team)
-            elif isinstance(result, tuple) and len(result) == tuple_length:
+            elif isinstance(result, tuple) and len(result) == 2:  # noqa: PLR2004 (tuple length for (name, original_group))
                 new_team_name, _ = result
                 new_team_name = new_team_name.strip()
                 if new_team_name == team.name:
@@ -253,22 +251,14 @@ def sync_oauth_team_names_action(modeladmin, request, queryset):
             level=messages.WARNING,
         )
 
-    with transaction.atomic():
-        updated_count = 0
-        for team, new_name in teams_to_update:
-            old_name = team.name
-            team.name = new_name
-            team.save(update_fields=["name"])
-            log.info(
-                "Updated team '%s' → '%s' (org: %s, oauth_group: '%s')",
-                old_name,
-                new_name,
-                team.org.name,
-                team.oauth_group_name,
-            )
-            updated_count += 1
+    for team, new_name in teams_to_update:
+        team.name = new_name
 
-        skipped_count = len(teams_skipped)
+    if teams_to_update:
+        Team.objects.bulk_update([t for t, _ in teams_to_update], ["name"])
+
+    updated_count = len(teams_to_update)
+    skipped_count = len(teams_skipped)
 
     # Report results
     if updated_count > 0:

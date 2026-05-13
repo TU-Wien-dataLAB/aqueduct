@@ -57,23 +57,29 @@ class OIDCBackend(OIDCAuthenticationBackend):
         func = getattr(
             settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", lambda group, groups=None: None
         )
-        try:
-            team_mappings = []
-            if not groups:
-                return team_mappings
-            for group in groups:
-                result = func(group, groups)
-                if not isinstance(result, tuple) or len(result) != 2:  # noqa: PLR2004
-                    continue
-                team_name, original_name = result
-                if not (team_name and isinstance(team_name, str) and original_name):
-                    continue
-                team_mappings.append((team_name.strip(), original_name.strip()))
-        except Exception as e:
-            log.exception("Error calling OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION: %s", e)
-            return []
-        else:
+        team_mappings = []
+        if not groups:
             return team_mappings
+
+        for group in groups:
+            try:
+                result = func(group, groups)
+            except Exception as e:
+                log.exception(
+                    "Error calling OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION for group '%s': %s",
+                    group,
+                    e,
+                )
+                continue
+
+            if not isinstance(result, tuple) or len(result) != 2:  # noqa: PLR2004
+                continue
+            team_name, original_name = result
+            if not (team_name and isinstance(team_name, str) and original_name):
+                continue
+            team_mappings.append((team_name.strip(), original_name.strip()))
+
+        return team_mappings
 
     def _sync_teams(self, user: User, profile: UserProfile, groups: list[str]) -> None:
         """
@@ -115,20 +121,20 @@ class OIDCBackend(OIDCAuthenticationBackend):
             enable_removal = getattr(settings, "ENABLE_OAUTH_GROUP_REMOVAL", True)
 
             for team_name, original_group_name in teams_to_add:
-                try:
-                    team = Team.objects.get(name=team_name, org=org)
-                    log.info("Reused existing team '%s' for org '%s'", team_name, org.name)
-                except Team.DoesNotExist:
-                    if not enable_creation:
-                        log.info(
-                            "Skipping team creation for '%s' (ENABLE_OAUTH_GROUP_CREATION=False)",
-                            team_name,
-                        )
-                        continue
-                    team = Team.objects.create(
-                        name=team_name, org=org, oauth_group_name=original_group_name
-                    )
+                if (
+                    not enable_creation
+                    and not Team.objects.filter(name=team_name, org=org).exists()
+                ):
+                    log.info("Skipping team '%s' (ENABLE_OAUTH_GROUP_CREATION=False)", team_name)
+                    continue
+
+                team, created = Team.objects.get_or_create(
+                    name=team_name, org=org, defaults={"oauth_group_name": original_group_name}
+                )
+                if created:
                     log.info("Created team '%s' for org '%s'", team_name, org.name)
+                else:
+                    log.info("Reused existing team '%s' for org '%s'", team_name, org.name)
 
                 TeamMembership.objects.get_or_create(user_profile=profile, team=team)
                 log.info("Added user '%s' to team '%s' (%s)", user.email, team_name, org.name)

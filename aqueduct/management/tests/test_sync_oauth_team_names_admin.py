@@ -2,6 +2,8 @@
 Tests for OAuth team name sync admin action.
 """
 
+from unittest.mock import patch
+
 from django.contrib.admin import site
 from django.contrib.auth import get_user_model
 from django.contrib.messages.storage.cookie import CookieStorage
@@ -119,11 +121,18 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_empty):
+        with (
+            patch.object(self.modeladmin, "message_user") as mock_msg,
+            override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_empty),
+        ):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123-Students")
         self.assertIsNotNone(team)
+
+        mock_msg.assert_called()
+        call_args = mock_msg.call_args
+        self.assertIn("would be deleted", call_args[0][1])
 
     def test_filter_by_queryset(self):
         """Test that action only affects selected teams."""

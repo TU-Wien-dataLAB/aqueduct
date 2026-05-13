@@ -375,15 +375,18 @@ class OAuthTeamSettingsTestCase(TestCase):
         self.org = Org.objects.create(name="test-org")
         self.user_group, _ = Group.objects.get_or_create(name="user")
 
-    def test_default_function_returns_none(self):
-        """Test that default function returns None (no teams)."""
-        from django.conf import settings
+    def test_default_function_creates_no_teams_or_memberships(self):
+        """Test that when the function returns None, no teams or memberships are created."""
+        claims = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
 
-        func = getattr(
-            settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", lambda group, groups=None: None
-        )
-        result = func("E123-Students", ["E123-Students", "E456-Staff"])
-        self.assertIsNone(result)
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
+
+        self.backend._sync_teams(user, profile, claims["groups"])
+
+        self.assertEqual(Team.objects.count(), 0)
+        self.assertEqual(TeamMembership.objects.count(), 0)
 
     def test_custom_filter_function(self):
         """Test custom filter function."""

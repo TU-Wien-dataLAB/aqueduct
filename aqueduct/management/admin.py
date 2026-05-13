@@ -246,8 +246,8 @@ def sync_oauth_team_names_action(modeladmin, request, queryset):
         modeladmin.message_user(
             request,
             f"Warning: {len(teams_to_delete)} team(s) would be deleted. "
-            "Deletion is not performed via admin action. "
-            "Use the management command with --force flag if needed.",
+            "Deletion is not performed automatically. "
+            "Please delete these teams manually if needed.",
             level=messages.WARNING,
         )
 

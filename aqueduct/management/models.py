@@ -187,11 +187,25 @@ class Team(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Mode
 
     org = models.ForeignKey(Org, on_delete=models.CASCADE, related_name="teams")
 
+    oauth_group_name = models.CharField(
+        verbose_name="OAuth group name",
+        max_length=255,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="The OAuth group that created this team (auto-managed, not user-editable)",
+    )
+
     class Meta:
         unique_together = ("name", "org")
 
     def __str__(self) -> str:
         return f"{self.name} ({self.org.name})"
+
+    @property
+    def managed_by_oauth(self) -> bool:
+        """Returns True if this team is managed by OAuth group synchronization."""
+        return bool(self.oauth_group_name)
 
 
 class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Model):
@@ -661,9 +675,8 @@ class Request(models.Model):
         on_delete=models.CASCADE,  # If Token is deleted, delete its associated Requests
         related_name="requests",
     )
-    # django: DJ001 - null=True on CharField may cause SQL NULL instead of empty string
     model = models.CharField(
-        max_length=255, null=True, blank=True, help_text="Model used in request"
+        max_length=255, blank=True, default="", help_text="Model used in request"
     )
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
 

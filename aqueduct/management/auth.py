@@ -121,16 +121,52 @@ class OIDCBackend(OIDCAuthenticationBackend):
             enable_removal = getattr(settings, "ENABLE_OAUTH_GROUP_REMOVAL", True)
 
             for team_name, original_group_name in teams_to_add:
-                if (
+                # Look up by oauth_group_name first, so renaming the mapping
+                # function renames existing teams instead of creating duplicates.
+                existing = Team.objects.filter(
+                    oauth_group_name=original_group_name, org=org
+                ).first()
+
+                if existing is not None:
+                    if existing.name != team_name:
+                        # Check for name collision before renaming
+                        collision = (
+                            Team.objects.filter(name=team_name, org=org)
+                            .exclude(pk=existing.pk)
+                            .exists()
+                        )
+                        if collision:
+                            log.warning(
+                                "Cannot rename team '%s' -> '%s': name collision (org: %s, "
+                                "oauth_group: '%s'). Reusing existing team as-is.",
+                                existing.name,
+                                team_name,
+                                org.name,
+                                original_group_name,
+                            )
+                        else:
+                            log.info(
+                                "Renaming team '%s' -> '%s' (org: %s, oauth_group: '%s')",
+                                existing.name,
+                                team_name,
+                                org.name,
+                                original_group_name,
+                            )
+                            existing.name = team_name
+                            existing.save(update_fields=["name"])
+                    team = existing
+                    created = False
+                elif (
                     not enable_creation
                     and not Team.objects.filter(name=team_name, org=org).exists()
                 ):
                     log.info("Skipping team '%s' (ENABLE_OAUTH_GROUP_CREATION=False)", team_name)
                     continue
+                else:
+                    team, created = Team.objects.get_or_create(
+                        name=team_name, org=org, defaults={"oauth_group_name": original_group_name}
+                    )
 
-                team, created = Team.objects.get_or_create(
-                    name=team_name, org=org, defaults={"oauth_group_name": original_group_name}
-                )
                 if created:
                     log.info("Created team '%s' for org '%s'", team_name, org.name)
                 else:

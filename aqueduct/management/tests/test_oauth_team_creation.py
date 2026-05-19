@@ -70,6 +70,77 @@ class OAuthTeamCreationTestCase(TestCase):
         self.assertTrue(team1.managed_by_oauth)
         self.assertTrue(team2.managed_by_oauth)
 
+    def test_rename_team_when_mapping_changes(self):
+        """Test that existing OAuth teams are renamed (not duplicated) when mapping changes."""
+
+        # Helper: keeps full group name as team name (opposite of sample_team_names_from_groups)
+        def team_names_keep_full(group: str, groups: list[str] | None = None):
+            if group.startswith("E"):
+                return (group, group)
+            return None
+
+        claims = {"email": "test@example.com", "groups": ["E123-Students"]}
+
+        # Step 1: Create team with old mapping (strips suffix: "E123-Students" -> "E123")
+        user1 = User.objects.create_user(username="user1", email="user1@example.com")
+        user1.groups.add(self.user_group)
+        profile1 = UserProfile.objects.create(user=user1, org=self.org)
+        self.backend._sync_teams(user1, profile1, claims["groups"])
+
+        self.assertEqual(Team.objects.count(), 1)
+        team = Team.objects.get(oauth_group_name="E123-Students")
+        self.assertEqual(team.name, "E123")
+
+        # Step 2: New user logs in with new mapping
+        # (keeps full name: "E123-Students" -> "E123-Students")
+        user2 = User.objects.create_user(username="user2", email="user2@example.com")
+        user2.groups.add(self.user_group)
+        profile2 = UserProfile.objects.create(user=user2, org=self.org)
+
+        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_keep_full):
+            self.backend._sync_teams(user2, profile2, claims["groups"])
+
+        # Should rename existing team, not create a duplicate
+        self.assertEqual(Team.objects.count(), 1)
+        team.refresh_from_db()
+        self.assertEqual(team.name, "E123-Students")
+        self.assertEqual(team.oauth_group_name, "E123-Students")
+
+        # Both users should be members of the same team
+        memberships = TeamMembership.objects.filter(team=team)
+        self.assertEqual(memberships.count(), 2)
+
+    def test_name_collision_prevents_rename(self):
+        """Test that rename is skipped when target name already exists."""
+
+        def team_names_keep_full(group: str, groups: list[str] | None = None):
+            if group.startswith("E"):
+                return (group, group)
+            return None
+
+        # Create team with old mapping name
+        old_team = Team.objects.create(name="E123", org=self.org, oauth_group_name="E123-Students")
+        # Create a different team occupying the target name
+        blocker = Team.objects.create(
+            name="E123-Students", org=self.org, oauth_group_name="something-else"
+        )
+
+        claims = {"email": "test@example.com", "groups": ["E123-Students"]}
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
+
+        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_keep_full):
+            self.backend._sync_teams(user, profile, claims["groups"])
+
+        # Should NOT rename old_team (name collision with blocker)
+        old_team.refresh_from_db()
+        self.assertEqual(old_team.name, "E123")
+
+        # User should be added to old_team (found by oauth_group_name)
+        self.assertTrue(TeamMembership.objects.filter(user_profile=profile, team=old_team).exists())
+        self.assertFalse(TeamMembership.objects.filter(user_profile=profile, team=blocker).exists())
+
     def test_team_reuse_existing(self):
         """Test that existing teams are reused, not duplicated."""
         team = Team.objects.create(name="E123", org=self.org, oauth_group_name="")

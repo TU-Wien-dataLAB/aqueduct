@@ -279,12 +279,14 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 # Define the time window for usage check (last 60 seconds)
                 time_window_start = timezone.now() - timedelta(seconds=60)
 
-                # Build query filter - no model filter (count all requests)
-                query_filter: dict[str, Any] = {"token": token, "timestamp__gte": time_window_start}
+                # Build queryset for recent requests (last 60 seconds)
+                recent_requests = Request.objects.filter(
+                    token=token, timestamp__gte=time_window_start
+                )
 
                 # Query recent usage asynchronously using Django's async ORM
                 # Get overall token counts
-                recent_requests_agg = await Request.objects.filter(**query_filter).aaggregate(
+                recent_requests_agg = await recent_requests.aaggregate(
                     request_count=Count("id"),
                     total_input_tokens=Sum("input_tokens"),
                     total_output_tokens=Sum("output_tokens"),
@@ -294,15 +296,14 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 total_output = recent_requests_agg.get("total_output_tokens", 0) or 0
 
                 # Get per-model request counts for weighted budget calculation
-                model_counts: dict[str, int] = {}
-                async for item in (
-                    Request.objects.filter(**query_filter)
-                    .values("model")
-                    .annotate(request_count=Count("id"))
-                ):
-                    model = item.get("model")
-                    if model:
-                        model_counts[model] = item["request_count"]
+                model_counts = {
+                    item["model"]: item["request_count"]
+                    async for item in (
+                        recent_requests.exclude(model="")
+                        .values("model")
+                        .annotate(request_count=Count("id"))
+                    )
+                }
 
                 log.debug(
                     "Recent usage (last 60s) for Token %r: Model counts=%s, Input=%s, Output=%s",
@@ -348,7 +349,7 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 ):
                     exceeded.append(f"Output token limit ({limits.output_tokens_per_minute}/min)")
 
-                if len(exceeded) > 0:
+                if exceeded:
                     error_message = "Rate limit exceeded. " + ", ".join(exceeded) + "."
                     log.warning(
                         "Rate limit exceeded for Token %r (ID: %s). Details: %s",

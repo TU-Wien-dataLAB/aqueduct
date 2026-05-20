@@ -13,6 +13,7 @@ model_list:
   model_info:
     mode: embedding
     aliases: ["embedding", "embed"]
+    request_limit_multiplier: 2.0
 - model_name: gpt-4o-mini-tts
   litellm_params:
     model: openai/gpt-4o-mini-tts

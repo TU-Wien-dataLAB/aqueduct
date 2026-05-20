@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "django_celery_beat",
     "django.contrib.sites",
     "tos",
+    "corsheaders",
     "management.apps.AqueductManagementConfig",
     "gateway.apps.GatewayConfig",
 ]
@@ -62,6 +63,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "management.middleware.HealthCheckMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -225,6 +227,13 @@ RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS = (
 )
 
 API_MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "0"))
+
+# CORS Settings
+CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "True").lower() == "true"
+CORS_URLS_REGEX = os.environ.get(
+    "CORS_URLS_REGEX",
+    r"^/(v1/)?(completions|chat/completions|embeddings|models|audio/|images/|files|batches|responses|mcp-servers/|vector_stores)",
+)
 
 # TOS Settings
 

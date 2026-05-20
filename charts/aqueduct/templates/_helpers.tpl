@@ -113,4 +113,12 @@ Usage:
 {{- end }}
 - name: DJANGO_LOG_LEVEL
   value: {{ .Values.logLevel }}
+- name: CORS_ALLOW_ALL_ORIGINS
+{{- if .Values.cors.allowAllOrigins }}
+  value: "True"
+{{- else }}
+  value: "False"
+{{- end }}
+- name: CORS_URLS_REGEX
+  value: {{ .Values.cors.urlsRegex | quote }}
 {{- end }}

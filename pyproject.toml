@@ -150,8 +150,7 @@ suppress-none-returning = true
 [tool.ruff.lint.per-file-ignores]
 # Ignore `F401` (imported but unused) in all `__init__.py` files
 "__init__.py" = ["F401"]
-# TODO: remove DJ001 on next db migration and add it there
-"**/management/models.py" = ["DJ001"]
+
 # Decorator wrappers legitimately need *args: Any, **kwargs: Any
 "**/gateway/views/decorators.py" = ["ANN401"]
 # Too much noise for tests

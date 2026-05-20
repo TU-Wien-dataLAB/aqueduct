@@ -191,10 +191,13 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         for image in response_json["data"]:
             self.assertIn("b64_json", image, "Each image should contain 'b64_json' data")
 
-    def test_image_generation_endpoint_invalid_size(self):
-        """Test image generation endpoint with invalid size parameter."""
+    def test_image_generation_endpoint_with_custom_size(self):
+        """Test image generation endpoint with a custom (non-standard) size parameter.
 
-        payload = {"model": self.model, "prompt": "A test image", "size": "1x1"}
+        The OpenAI SDK 2.36.0+ accepts any string for size (not just known literals),
+        so the gateway forwards the value to the upstream provider."""
+
+        payload = {"model": self.model, "prompt": "A test image", "size": "1024x1024"}
 
         response = self.client.post(
             self.url,
@@ -203,7 +206,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
     def test_image_generation_endpoint_stream(self):
         """Test image generation endpoint with `stream=True`."""

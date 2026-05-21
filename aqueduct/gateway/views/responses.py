@@ -38,8 +38,8 @@ from .utils import (
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
-@check_limits
 @parse_body(model=TypeAdapter(openai.types.responses.ResponseCreateParams))
+@check_limits
 @tos_accepted
 @resolve_alias
 @log_request

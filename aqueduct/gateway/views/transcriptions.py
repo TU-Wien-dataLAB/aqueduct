@@ -35,8 +35,8 @@ class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
 @require_POST
 @token_authenticated(token_auth_only=True)
 @tos_accepted
-@check_limits
 @parse_body(model=TypeAdapter(TranscriptionCreateParams))
+@check_limits
 @resolve_alias
 @log_request
 @check_model_availability

@@ -38,7 +38,12 @@
                     <tbody>
                     {% for model in model_list %}
                         <tr>
-                            <td class="font-mono">{{ model.model_name }}</td>
+                            <td class="font-mono">
+                                {{ model.model_name }}
+                                {% if model.model_info.request_limit_multiplier and model.model_info.request_limit_multiplier != 1 %}
+                                    <span class="badge badge-sm badge-soft badge-success ml-1">{{ model.model_info.request_limit_multiplier }}x Limits</span>
+                                {% endif %}
+                            </td>
                             <td>
                                 {% if model.model_info.aliases %}
                                     {% for alias in model.model_info.aliases %}

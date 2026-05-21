@@ -30,8 +30,8 @@ from .utils import _get_token_usage, _openai_stream
 @require_POST
 @token_authenticated(token_auth_only=True)
 @tos_accepted
-@check_limits
 @parse_body(model=TypeAdapter(openai.types.CompletionCreateParams))
+@check_limits
 @ensure_usage
 @resolve_alias
 @log_request

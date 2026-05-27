@@ -59,6 +59,10 @@ celery:
 silk:
   enabled: true
 
+cors:
+  allowAllOrigins: true
+  urlsRegex: "^/(v1/)?(completions|chat/completions|embeddings|models|audio/|images/|files|batches|responses|mcp-servers/|vector_stores)"
+
 tos:
   enabled: false
   gatewayValidation: true

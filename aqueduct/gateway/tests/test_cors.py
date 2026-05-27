@@ -1,14 +1,95 @@
 """
-Tests for CORS configuration — regex matching and header presence on API vs non-API endpoints.
+Tests for CORS configuration — regex matching, middleware logic, and header presence
+on API vs non-API endpoints.
 """
 
 import re
+from unittest.mock import Mock
 
+from corsheaders.middleware import CorsMiddleware
 from django.conf import settings
+from django.http import HttpRequest
 from django.test import SimpleTestCase
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayIntegrationTestCase
+
+
+def _make_request(path: str) -> HttpRequest:
+    """Build a minimal HttpRequest with just path_info set."""
+    request = Mock(spec=HttpRequest)
+    request.path_info = path
+    return request
+
+
+class CorsMiddlewareIsEnabledTest(SimpleTestCase):
+    """
+    Unit-test CorsMiddleware.is_enabled() directly by passing mocked HttpRequests.
+    This tests the actual middleware matching logic, not just the raw regex.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Instantiate the middleware with a no-op get_response.
+        cls.middleware = CorsMiddleware(lambda r: None)
+
+    def _assert_enabled(self, path: str):
+        request = _make_request(path)
+        self.assertTrue(
+            self.middleware.is_enabled(request), f"Expected CORS to be enabled for '{path}'"
+        )
+
+    def _assert_not_enabled(self, path: str):
+        request = _make_request(path)
+        self.assertFalse(
+            self.middleware.is_enabled(request), f"Expected CORS to be disabled for '{path}'"
+        )
+
+    # ── API paths (CORS enabled) ─────────────────────────────────────────
+
+    def test_api_paths_enabled(self):
+        api_paths = [
+            "/completions",
+            "/v1/completions",
+            "/chat/completions",
+            "/v1/chat/completions",
+            "/embeddings",
+            "/v1/embeddings",
+            "/models",
+            "/v1/models",
+            "/audio/speech",
+            "/v1/audio/speech",
+            "/images/generations",
+            "/files",
+            "/files/file-abc/content",
+            "/batches/batch-abc/cancel",
+            "/responses/resp-abc/input_items",
+            "/mcp-servers/my-server/mcp",
+            "/vector_stores/vs-abc/file_batches/batch-abc/files",
+        ]
+        for path in api_paths:
+            with self.subTest(path=path):
+                self._assert_enabled(path)
+
+    # ── non-API paths (CORS disabled) ─────────────────────────────────────
+
+    def test_non_api_paths_disabled(self):
+        non_api_paths = [
+            "/",
+            "/login/",
+            "/oidc/callback/",
+            "/admin/",
+            "/aqueduct/admin/",
+            "/aqueduct/management/tokens/",
+            "/static/css/main.css",
+            "/silk/requests/",
+            "/health/",
+            "/anything-else",
+        ]
+        for path in non_api_paths:
+            with self.subTest(path=path):
+                self._assert_not_enabled(path)
 
 
 class CorsRegexTest(SimpleTestCase):

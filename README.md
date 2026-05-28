@@ -90,6 +90,32 @@ For other installation methods, check out the [Getting Started Guide](https://tu
 cd aqueduct && python manage.py test
 ```
 
+### Load testing with Locust (locally)
+
+0. Install test dependencies:
+    ```bash
+    uv pip install --group dev-locust
+    ```
+
+1. Change to the `locustfile` directory:
+    ```bash
+    cd aqueduct/locustfiles
+    ```
+
+2. Start the application and the mock API server:
+    ```bash
+    docker compose -f docker-compose-locust.yaml up --build
+    ```
+
+    The Django app runs at `localhost:8000`. The mock server is available at `localhost:45999`.
+
+3. Start locust:
+    ```bash
+    locust -f locustfile.py
+    ```
+    The web interface is available in the browser at `localhost:8089`.
+    A test can be configured and started using the interface.
+
 ## Architecture
 
 ```mermaid

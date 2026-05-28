@@ -1,0 +1,69 @@
+services:
+
+  mock_api:
+    build:
+      context: ../..
+      dockerfile: ./aqueduct/locustfiles/Dockerfile
+    container_name: mock_api
+    command: python -m mock_api.mock_server --host 0.0.0.0 --port 45999 --delays
+    volumes:
+      - ./locust_router_config.yaml:/app/aqueduct/locust_router_config.yaml
+    ports:
+      - "45999:45999"
+    env_file:
+      - .locust.env
+    depends_on:
+      locust_web:
+        condition: service_started
+
+  locust_migrate:
+    build:
+      context: ../..
+      dockerfile: ./aqueduct/locustfiles/Dockerfile
+    container_name: locust_django_migrate
+    command: python manage.py migrate
+    env_file:
+      - .locust.env
+    depends_on:
+      - locust_db
+
+  locust_web:
+    build:
+      context: ../..
+    container_name: locust_django_app
+    command: |
+      sh -c "python manage.py collectstatic --no-input &&
+             python manage.py loaddata locustfiles/locust_fixture.json &&
+             daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
+    volumes:
+      - ../../aqueduct/:/app/aqueduct/
+    ports:
+      - "8000:8000"
+    env_file:
+      - .locust.env
+    depends_on:
+      locust_redis:
+        condition: service_started
+      locust_migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys, httpx; httpx.get('http://localhost:8000/health', timeout=4).raise_for_status()"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 2s
+
+  locust_redis:
+    image: redis:8
+    container_name: locust_redis
+
+  locust_db:
+    image: postgres:15
+    container_name: locust_postgres_db
+    volumes:
+      - locust_postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - .locust.env
+
+volumes:
+  locust_postgres_data:

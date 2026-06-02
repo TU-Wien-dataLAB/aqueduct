@@ -14,7 +14,7 @@ dependencies = [
     "django-silk>=5.4.0",
     "django-tos>=1.1.0",
     "httpx>=0.28.1, <1",
-    "litellm==1.72.0",
+    "litellm==1.85.2",
     "mcp==1.25.0",
     "mozilla-django-oidc>=4.0.1",
     "openai==2.36.0",

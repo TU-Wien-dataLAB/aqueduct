@@ -1021,6 +1021,151 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             req.output_tokens, 0, "output_tokens should be > 0 (streaming schema generation)"
         )
 
+    def test_reasoning_content_adds_reasoning_non_streaming(self):
+        """Non-streaming: 'reasoning_content' in message → 'reasoning' is added."""
+        mock_resp = MockConfig(
+            response_data=ModelResponse(
+                id="chatcmpl-reasoning-test",
+                created=1768397207,
+                model="gpt-4.1-nano-2025-04-14",
+                object="chat.completion",
+                choices=[
+                    Choices(
+                        finish_reason="stop",
+                        index=0,
+                        message=Message(
+                            content="Final answer",
+                            role="assistant",
+                            reasoning_content="Step-by-step reasoning...",
+                        ),
+                    )
+                ],
+                usage=Usage(
+                    completion_tokens=10,
+                    prompt_tokens=20,
+                    total_tokens=30,
+                    completion_tokens_details={"reasoning_tokens": 15},
+                ),
+            ).model_dump()
+        )
+        with self.mock_server.patch_external_api("chat/completions", mock_resp):
+            response = self._send_chat_completion(self.MESSAGES)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        message = data["choices"][0]["message"]
+        self.assertEqual(message["reasoning_content"], "Step-by-step reasoning...")
+        self.assertEqual(message["reasoning"], "Step-by-step reasoning...")
+
+    def test_reasoning_adds_reasoning_content_non_streaming(self):
+        """Non-streaming: 'reasoning' in message → 'reasoning_content' is added."""
+        mock_resp = MockConfig(
+            response_data=ModelResponse(
+                id="chatcmpl-reasoning-test",
+                created=1768397207,
+                model="gpt-4.1-nano-2025-04-14",
+                object="chat.completion",
+                choices=[
+                    Choices(
+                        finish_reason="stop",
+                        index=0,
+                        message=Message(
+                            content="Final answer",
+                            role="assistant",
+                            reasoning="Deep chain of thought...",
+                        ),
+                    )
+                ],
+                usage=Usage(
+                    completion_tokens=10,
+                    prompt_tokens=20,
+                    total_tokens=30,
+                    completion_tokens_details={"reasoning_tokens": 12},
+                ),
+            ).model_dump()
+        )
+        with self.mock_server.patch_external_api("chat/completions", mock_resp):
+            response = self._send_chat_completion(self.MESSAGES)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        message = data["choices"][0]["message"]
+        self.assertEqual(message["reasoning"], "Deep chain of thought...")
+        self.assertEqual(message["reasoning_content"], "Deep chain of thought...")
+
+    def test_neither_reasoning_field_present_unchanged(self):
+        """Non-streaming: neither field present → response unchanged."""
+        mock_resp = MockConfig(
+            response_data=ModelResponse(
+                id="chatcmpl-no-reasoning",
+                created=1768397207,
+                model="gpt-4.1-nano-2025-04-14",
+                object="chat.completion",
+                choices=[
+                    Choices(
+                        finish_reason="stop",
+                        index=0,
+                        message=Message(content="Plain response, no reasoning.", role="assistant"),
+                    )
+                ],
+                usage=Usage(completion_tokens=10, prompt_tokens=20, total_tokens=30),
+            ).model_dump()
+        )
+        with self.mock_server.patch_external_api("chat/completions", mock_resp):
+            response = self._send_chat_completion(self.MESSAGES)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        message = data["choices"][0]["message"]
+        self.assertNotIn("reasoning", message)
+        self.assertNotIn("reasoning_content", message)
+
+    async def test_reasoning_content_adds_reasoning_streaming(self):
+        """Streaming: 'reasoning_content' in delta → 'reasoning' is added to each chunk."""
+        _common = {
+            "id": "chatcmpl-stream-reasoning",
+            "created": 1768398242,
+            "model": "gpt-4.1-nano",
+            "object": "chat.completion.chunk",
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        stream_data = [
+            ModelResponse(
+                **_common,
+                choices=[
+                    {
+                        "index": 0,
+                        "delta": {"role": "assistant", "reasoning_content": "Let me think..."},
+                    }
+                ],
+            ).model_dump(),
+            ModelResponse(
+                **_common, choices=[{"index": 0, "delta": {"content": "The answer is 42."}}]
+            ).model_dump(),
+            ModelResponse(
+                **_common, choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}]
+            ).model_dump(),
+        ]
+        mock_resp = MockStreamingConfig(response_data=convert_to_stream_data(stream_data))
+        with self.mock_server.patch_external_api("chat/completions", mock_resp):
+            request = self._build_chat_completion_request(self.MESSAGES, stream=True)
+            response = await self.async_client.post(**request, content_type="application/json")
+
+        self.assertEqual(response.status_code, 200)
+        streamed_lines = await _read_streaming_response_lines(response)
+        # First chunk should have both reasoning and reasoning_content in delta
+        first_chunk = json.loads(streamed_lines[0])
+        delta = first_chunk["choices"][0]["delta"]
+        self.assertEqual(delta["reasoning_content"], "Let me think...")
+        self.assertEqual(delta["reasoning"], "Let me think...")
+
+        # Content-only chunk should be unchanged (no reasoning fields)
+        content_chunk = json.loads(streamed_lines[1])
+        content_delta = content_chunk["choices"][0]["delta"]
+        self.assertNotIn("reasoning", content_delta)
+        self.assertNotIn("reasoning_content", content_delta)
+
 
 class ListModelsIntegrationTest(GatewayIntegrationTestCase):
     def _send_model_list_request(self):

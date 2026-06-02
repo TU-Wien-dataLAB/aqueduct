@@ -5,11 +5,11 @@ import logging
 import re
 import sys
 import time
-from collections.abc import Callable, Coroutine, Iterable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, Iterable
 from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import litellm
@@ -21,7 +21,7 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Sum
-from django.http import HttpResponse, StreamingHttpResponse
+from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.urls import reverse
 from django.utils import timezone
 from mcp.types import JSONRPCMessage
@@ -690,6 +690,88 @@ def catch_router_exceptions(view_func: AsyncView) -> AsyncView:
         except Exception as e:
             log.exception("Unexpected error - %s", _r(e))
             return error_response(_r(e), error_type="server_error", status=502)
+
+    return wrapper
+
+
+def _normalize_choice_message(message: dict[str, Any]) -> bool:
+    """Ensure both 'reasoning' and 'reasoning_content' are present if either exists.
+
+    Returns True if the message was modified.
+    """
+    reasoning = message.get("reasoning")
+    reasoning_content = message.get("reasoning_content")
+
+    if reasoning_content is not None and reasoning is None:
+        message["reasoning"] = reasoning_content
+        return True
+    if reasoning is not None and reasoning_content is None:
+        message["reasoning_content"] = reasoning
+        return True
+    return False
+
+
+def normalize_reasoning_fields(view_func: AsyncView) -> AsyncView:
+    """Normalize reasoning/reasoning_content fields in chat completion responses.
+
+    Ensures that if a response message contains either 'reasoning' or
+    'reasoning_content', both fields are present with the same value.
+    This provides compatibility for clients that expect one field name
+    or the other.
+
+    Handles both streaming and non-streaming responses.
+    """
+
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
+        result = await view_func(request, *args, **kwargs)
+
+        if isinstance(result, StreamingHttpResponse):
+            original_stream = cast("AsyncIterator[bytes]", result.streaming_content)
+
+            async def normalized_stream() -> AsyncGenerator[str, None]:
+                async for chunk in original_stream:
+                    # Chunks may be bytes or str; normalize to str for parsing
+                    if isinstance(chunk, bytes):
+                        chunk_str = chunk.decode("utf-8")
+                    else:
+                        chunk_str = chunk
+
+                    if chunk_str.startswith("data: ") and not chunk_str.startswith("data: [DONE]"):
+                        try:
+                            data_str = chunk_str.removeprefix("data: ")
+                            data_str = data_str.rstrip("\n")
+                            chunk_data = json.loads(data_str)
+
+                            choices = chunk_data.get("choices", [])
+                            for choice in choices:
+                                # Streaming chunks use "delta"; final chunks use "message"
+                                message = choice.get("delta") or {}
+                                if message:
+                                    _normalize_choice_message(message)
+
+                            modified_chunk = f"data: {json.dumps(chunk_data)}\n\n"
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            modified_chunk = chunk_str
+
+                    else:
+                        modified_chunk = chunk_str
+
+                    yield modified_chunk
+
+            result.streaming_content = normalized_stream()
+
+        elif isinstance(result, JsonResponse):
+            content = json.loads(result.content)
+            choices = content.get("choices", [])
+            for choice in choices:
+                message = choice.get("message", {})
+                if message:
+                    _normalize_choice_message(message)
+
+            result = JsonResponse(content, status=result.status_code)
+
+        return result
 
     return wrapper
 

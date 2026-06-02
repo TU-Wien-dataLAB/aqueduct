@@ -18,6 +18,7 @@ from .decorators import (
     check_model_availability,
     ensure_usage,
     log_request,
+    normalize_reasoning_fields,
     parse_body,
     process_file_content,
     resolve_alias,
@@ -38,6 +39,7 @@ from .utils import _get_token_usage, _openai_stream
 @resolve_alias
 @log_request
 @check_model_availability
+@normalize_reasoning_fields
 @catch_router_exceptions
 async def chat_completions(
     request: ASGIRequest,

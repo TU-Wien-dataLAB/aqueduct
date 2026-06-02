@@ -16,22 +16,24 @@ COPY ./pyproject.toml /app/pyproject.toml
 
 # Install Python dependencies
 RUN uv pip install --prefix=/install ".[postgresql]"
+RUN uv pip install --prefix=/install --group=dev-locust
 
-# Final image
+# Final image with dependencies for running locust tests
 FROM base AS final
 
 # Copy installed Python packages
 COPY --from=builder /install /usr/local
 
 # Create a user, so that the processes in the containers don't run as root
-RUN groupadd -g 1000 aqueduct && useradd -u 1000 -g 1000 -r aqueduct
+RUN groupadd -g 1000 mockapi && useradd -u 1000 -g 1000 -r mockapi
 
 # Copy app code, set ownership
-COPY --chown=aqueduct:aqueduct . /app/
+COPY --chown=mockapi:mockapi ./aqueduct /app/aqueduct
 
-USER aqueduct
+USER mockapi
 WORKDIR /app/aqueduct
 
-EXPOSE 8000
+# `EXPOSE` is not necessary, but let's keep it for documentation's sake
+EXPOSE 45999
 
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "aqueduct.asgi:application"]
+CMD ["python", "-m", "mock_api.mock_server", "--port", "45999"]

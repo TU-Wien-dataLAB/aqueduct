@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.urls import path
 
 from . import views
@@ -60,3 +61,14 @@ urlpatterns = [
         name="vector_store_card_refresh",
     ),
 ]
+
+# Test-only endpoints (only active during load testing)
+if getattr(settings, "LOAD_TESTING", False):
+    from .views import test_auth
+
+    urlpatterns += [
+        path(
+            "test-auth/generate-token/", test_auth.generate_test_token, name="generate-test-token"
+        ),
+        path("test-auth/cleanup-token/", test_auth.cleanup_test_token, name="cleanup-test-token"),
+    ]

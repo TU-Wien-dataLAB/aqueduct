@@ -74,9 +74,7 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         self.assertEqual(
             response.status_code, 400, f"Expected 400 Bad Request, got {response.status_code}"
         )
-        self.assertIn(
-            "There is no 'model_name' with this string", response.json()["error"]["message"]
-        )
+        self.assertIn("no healthy deployments for this model", response.json()["error"]["message"])
 
     def test_speech_endpoint_missing_required_fields(self):
         """Test speech endpoint with missing required fields."""

@@ -774,9 +774,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             400,
             f"Expected 400 Bad Request, got {response.status_code}: {response.content}",
         )
-        self.assertIn(
-            "There is no 'model_name' with this string", response.json()["error"]["message"]
-        )
+        self.assertIn("no healthy deployments for this model", response.json()["error"]["message"])
 
     def test_chat_completion_schema_generation(self):
         """

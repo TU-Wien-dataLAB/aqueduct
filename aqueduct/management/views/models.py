@@ -27,4 +27,5 @@ class ModelListView(LoginRequiredMixin, TemplateView):
 
         context["title"] = "Models"
         context["model_list"] = model_list
+        context["site_host"] = f"{self.request.scheme}://{self.request.get_host()}"
         return context

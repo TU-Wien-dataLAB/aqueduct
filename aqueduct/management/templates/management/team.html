@@ -14,7 +14,13 @@
         {% if is_team_admin %}
             <div class="space-x-2">
                 <a href="{% url 'team_edit' id=team.id %}" class="btn btn-sm btn-outline">Edit Team</a>
-                <a href="{% url 'service_account_create' id=team.id %}" class="btn btn-sm btn-primary">Add Service Account</a>
+                {% if can_add_service_account %}
+                    <a href="{% url 'service_account_create' id=team.id %}" class="btn btn-sm btn-primary">Add Service Account</a>
+                {% else %}
+                    <div class="tooltip tooltip-left" data-tip="This team has reached the maximum of {{ max_service_accounts }} service accounts. Delete an existing service account to add a new one.">
+                        <button class="btn btn-sm btn-primary" disabled>Add Service Account</button>
+                    </div>
+                {% endif %}
             </div>
         {% endif %}
     </div>
@@ -36,7 +42,7 @@
 
     {# --- Service Accounts Section --- #}
     <div class="mb-8">
-        <h2 class="text-xl font-semibold mb-2">Service Accounts</h2>
+        <h2 class="text-xl font-semibold mb-2">Service Accounts ({{ service_accounts.count }}/{{ max_service_accounts }})</h2>
         {% if service_accounts %}
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for sa in service_accounts %}

@@ -56,7 +56,7 @@
                                 Owner: {{ sa.token.user.email|default:"(No Owner)" }}
                             </span>
                             <span class="text-sm opacity-50 flex-shrink-0 ml-2">
-                                Token: <span class="font-mono text-xs">{{ sa.token.key_preview }}</span> {# Show preview #}
+                                Key: <span class="font-mono text-xs">{{ sa.token.key_preview }}</span> {# Show preview #}
                             </span>
                         </div>
 
@@ -76,8 +76,8 @@
                                         {% csrf_token %}
                                         <button type="submit"
                                                 class="btn btn-sm btn-square btn-warning"
-                                                title="Regenerate Token for {{ sa.name }}"
-                                                onclick="return confirm('Are you sure you want to regenerate the token for service account {{ sa.name|escapejs }}? This will invalidate the current token immediately.');">
+                                                title="Regenerate API Key for {{ sa.name }}"
+                                                onclick="return confirm('Are you sure you want to regenerate the API key for service account {{ sa.name|escapejs }}? This will invalidate the current API key immediately.');">
                                             <img src="{% static 'icons/update.svg' %}" alt="Regenerate" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                         </button>
                                     </form>
@@ -118,7 +118,7 @@
                             <img src="{% static 'icons/user-circle.svg' %}" alt="" class="w-5 mr-2 flex-shrink-0 [[data-theme=dark]_&]:invert">
                             <span class="font-medium truncate mr-2">{{ member.profile.user.email }}</span>
                             <span class="text-sm opacity-50 flex-shrink-0">
-                                {{ member.profile.user.custom_auth_tokens.count }} Token{{ member.profile.user.custom_auth_tokens.count|pluralize }}
+                                {{ member.profile.user.custom_auth_tokens.count }} API Key{{ member.profile.user.custom_auth_tokens.count|pluralize }}
                             </span>
                             <span class="ml-2">
                                 {% if member.group == 'admin' %}

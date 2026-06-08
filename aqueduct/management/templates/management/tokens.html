@@ -6,6 +6,10 @@
         <h1 class="text-3xl font-bold">Tokens</h1>
         {% if can_add_token %}
             <a href="{% url 'token_create' %}" class="btn btn-primary btn-sm">Create New Token</a>
+        {% else %}
+            <div class="tooltip tooltip-left" data-tip="You have reached the maximum of {{ max_tokens }} tokens. Delete an existing token to create a new one.">
+                <button class="btn btn-primary btn-sm" disabled>Create New Token</button>
+            </div>
         {% endif %}
     </div>
 

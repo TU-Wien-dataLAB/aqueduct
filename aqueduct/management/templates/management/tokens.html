@@ -18,31 +18,39 @@
         {% if tokens %}
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for token in tokens %}
-                    <li class="list-row flex justify-between items-center">
-                        <div class="flex items-center flex-grow mr-4 overflow-hidden">
-                            <img src="{% static 'icons/key.svg' %}" alt="API Key" class="w-5 mr-2 flex-shrink-0 [[data-theme=dark]_&]:invert">
-                            <span class="font-medium truncate mr-2">{{ token.name }}</span>
-                            <span class="text-sm opacity-50 flex-shrink-0">
-                                Created: {{ token.created_at|date:"Y-m-d" }}
-                            </span>
-                            <span class="text-sm opacity-50 flex-shrink-0 ml-2">
-                                Key: <span class="font-mono text-xs">{{ token.key_preview }}</span>
-                            </span>
-                            <span class="text-sm opacity-50 flex-shrink-0 ml-2">
-                                {% if token.expires_at %}
-                                    Expires: 
-                                    <span {% if token.expires_at <= now %}class="text-error font-semibold"{% endif %}>
-                                        {{ token.expires_at|date:"Y-m-d H:i" }} {{ tz |default:'UTC' }}
-                                        {% if token.is_expired %}
-                                            (Expired)
+                    <li class="list-row flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div class="flex items-start flex-grow mr-4 overflow-hidden min-w-0">
+                            <img src="{% static 'icons/key.svg' %}" alt="API Key" class="w-5 mr-2 mt-0.5 flex-shrink-0 [[data-theme=dark]_&]:invert">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-baseline gap-x-2">
+                                    <span class="font-medium truncate">{{ token.name }}</span>
+                                    <span class="text-sm opacity-50 flex-shrink-0">
+                                        Created: {{ token.created_at|date:"Y-m-d" }}
+                                    </span>
+                                    <span class="text-sm opacity-50 flex-shrink-0">
+                                        Key: <span class="font-mono text-xs">{{ token.key_preview }}</span>
+                                    </span>
+                                    <span class="text-sm opacity-50 flex-shrink-0">
+                                        {% if token.expires_at %}
+                                            Expires:
+                                            <span {% if token.expires_at <= now %}class="text-error font-semibold"{% endif %}>
+                                                {{ token.expires_at|date:"Y-m-d H:i" }} {{ tz |default:'UTC' }}
+                                                {% if token.is_expired %}
+                                                    (Expired)
+                                                {% endif %}
+                                            </span>
+                                        {% else %}
+                                            Expires: Never
                                         {% endif %}
                                     </span>
-                                {% else %}
-                                    Expires: Never
-                                {% endif %}
-                            </span>
+                                </div>
+                                {# Effective limits (UserProfile + Org fallback) #}
+                                <div class="mt-1">
+                                    {% include 'management/_limits_compact.html' with limit_object=user_limits %}
+                                </div>
+                            </div>
                         </div>
-                        <div class="flex items-center space-x-2 flex-shrink-0">
+                        <div class="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
                             <form action="{% url 'token_regenerate' token.id %}" method="post" class="inline">
                                 {% csrf_token %}
                                 <button type="submit"
@@ -72,16 +80,24 @@
         {% if service_accounts %}
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for sa in service_accounts %}
-                    <li class="list-row flex justify-between items-center">
-                        <div class="flex items-center flex-grow mr-4 overflow-hidden">
-                            <img src="{% static 'icons/key.svg' %}" alt="Service Account" class="w-5 mr-2 flex-shrink-0 [[data-theme=dark]_&]:invert">
-                            <span class="font-medium truncate mr-2">{{ sa.name }}</span>
-                            <span class="text-sm opacity-50 flex-shrink-0">
-                                Team: {{ sa.team.name }}
-                            </span>
-                            <span class="text-sm opacity-50 flex-shrink-0 ml-2">
-                                Key: {{ sa.token.key_preview }}
-                            </span>
+                    <li class="list-row flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div class="flex items-start flex-grow mr-4 overflow-hidden min-w-0">
+                            <img src="{% static 'icons/key.svg' %}" alt="Service Account" class="w-5 mr-2 mt-0.5 flex-shrink-0 [[data-theme=dark]_&]:invert">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-baseline gap-x-2">
+                                    <span class="font-medium truncate">{{ sa.name }}</span>
+                                    <span class="text-sm opacity-50 flex-shrink-0">
+                                        Team: {{ sa.team.name }}
+                                    </span>
+                                    <span class="text-sm opacity-50 flex-shrink-0">
+                                        Key: {{ sa.token.key_preview }}
+                                    </span>
+                                </div>
+                                {# Per-SA effective limits (Team + Org fallback) #}
+                                <div class="mt-1">
+                                    {% include 'management/_limits_compact.html' with limit_object=sa.effective_limits %}
+                                </div>
+                            </div>
                         </div>
                     </li>
                 {% endfor %}

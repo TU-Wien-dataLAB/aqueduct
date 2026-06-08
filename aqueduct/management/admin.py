@@ -325,17 +325,17 @@ class UserAdmin(BaseUserAdmin):
     def request_limit(self, obj) -> int:
         return obj.profile.requests_per_minute
 
-    request_limit.short_description = "Requests per minute"
+    request_limit.short_description = "Requests/min (per API key)"
 
     def input_limit(self, obj) -> int:
         return obj.profile.input_tokens_per_minute
 
-    input_limit.short_description = "Input tokens per minute"
+    input_limit.short_description = "Input tokens/min (per API key)"
 
     def output_limit(self, obj) -> int:
         return obj.profile.output_tokens_per_minute
 
-    output_limit.short_description = "Output tokens per minute"
+    output_limit.short_description = "Output tokens/min (per API key)"
 
 
 # Re-register UserAdmin

@@ -136,7 +136,6 @@
                         <th>Total<br>Tokens</th>
                         {% if selected_org and not selected_token %}
                             <th>API Key Owner</th>
-                            <th>Service Account</th>
                         {% endif %}
                     </tr>
                     </thead>
@@ -154,12 +153,23 @@
                                         {% if item.user_is_token_owner %}
                                             <a href="?org={{ selected_org.id }}&span={{ selected_span }}&token={{ item.token_id }}"
                                                class="font-bold link link-hover text-primary">
-                                                {{ item.name|default:"N/A" }}
+                                                {% if item.service_account_name %}
+                                                    {{ item.service_account_name }}
+                                                {% else %}
+                                                    {{ item.name|default:"N/A" }}
+                                                {% endif %}
                                             </a>
                                         {%  else %}
                                             <span class="font-bold">
-                                                {{ item.name|default:"N/A" }}
+                                                {% if item.service_account_name %}
+                                                    {{ item.service_account_name }}
+                                                {% else %}
+                                                    {{ item.name|default:"N/A" }}
+                                                {% endif %}
                                             </span>
+                                        {% endif %}
+                                        {% if item.service_account_name %}
+                                            <span class="badge badge-sm badge-soft badge-secondary ml-1 whitespace-nowrap">Service Account</span>
                                         {% endif %}
                                     {% else %}
                                         <a href="?org={{ item.org_id }}&span={{ selected_span }}"
@@ -183,9 +193,6 @@
                                 {% if selected_org and not selected_token %}
                                     <td>
                                         {{ item.user_email }}
-                                    </td>
-                                    <td>
-                                        {{ item.service_account_name|default:"-" }}
                                     </td>
                                 {% endif %}
                             </tr>

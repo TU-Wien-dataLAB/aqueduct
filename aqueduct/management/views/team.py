@@ -1,5 +1,4 @@
 # management/views/team.py
-from django.conf import settings
 from django.contrib import messages
 from django.db import transaction
 from django.http import Http404, HttpResponse
@@ -250,12 +249,6 @@ class TeamDetailView(BaseTeamView, DetailView):
         context["service_accounts"] = self.team.service_accounts.select_related(
             "token__user__profile"
         ).all()
-
-        max_service_accounts = getattr(settings, "MAX_SERVICE_ACCOUNTS_PER_TEAM", 10)
-        context["max_service_accounts"] = max_service_accounts
-        context["can_add_service_account"] = (
-            context["service_accounts"].count() < max_service_accounts
-        )
 
         context["profile_ids_owning_service_accounts"] = set(
             self.team.service_accounts.filter(token__user__profile__isnull=False).values_list(

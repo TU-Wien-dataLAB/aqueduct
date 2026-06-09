@@ -20,6 +20,7 @@
                         <th>Progress</th>
                         <th>Completion &amp; Failure %</th>
                         <th>Created At</th>
+                        <th>Expires</th>
                         <th>Actions</th>
                     </tr>
                     </thead>
@@ -137,6 +138,23 @@
                                 </div>
                             </td>
                             <td>{{ batch.created_dt|date:"Y-m-d H:i" }}</td>
+                            <td>
+                                {% if batch.expiration_status == "expired" %}
+                                    <span class="badge badge-sm badge-soft badge-error gap-1">
+                                        {{ batch.expires_dt|date:"Y-m-d H:i" }}
+                                    </span>
+                                {% elif batch.expiration_status == "expiring_soon" %}
+                                    <span class="badge badge-sm badge-soft badge-warning gap-1">
+                                        {{ batch.expires_dt|date:"Y-m-d H:i" }}
+                                    </span>
+                                {% elif batch.expiration_status == "active" %}
+                                    <span class="badge badge-sm badge-soft badge-success gap-1">
+                                        {{ batch.expires_dt|date:"Y-m-d H:i" }}
+                                    </span>
+                                {% else %}
+                                    <span class="badge badge-sm badge-soft badge-ghost gap-1">Never</span>
+                                {% endif %}
+                            </td>
                             <td class="flex-shrink-0">
                                 {% if batch.status == 'validating' or batch.status == 'in_progress' or batch.status == 'finalizing' %}
                                     <button type="button"

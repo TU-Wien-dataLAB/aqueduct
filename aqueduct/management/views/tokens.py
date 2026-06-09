@@ -15,7 +15,7 @@ from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, TemplateView, UpdateView
 
 from management.forms import TokenCreateForm
-from management.models import LimitSet, ServiceAccount, Token
+from management.models import ServiceAccount, Token
 from management.views.base import BaseAqueductView
 
 
@@ -29,21 +29,10 @@ class UserTokensView(BaseAqueductView, TemplateView):
 
         tokens = Token.objects.filter(user=user, service_account__isnull=True)
         teams = profile.teams.all()
-        service_accounts = ServiceAccount.objects.filter(team__in=teams).select_related(
-            "team__org", "token"
-        )
+        service_accounts = ServiceAccount.objects.filter(team__in=teams)
 
         max_tokens = getattr(settings, "MAX_USER_TOKENS", 3)
         can_add_token = tokens.count() < max_tokens
-
-        # Effective limits for user-owned tokens (UserProfile + Org fallback)
-        user_limits: LimitSet = LimitSet.from_objects(profile, profile.org)
-
-        # Effective limits per service account (Team + Org fallback).
-        # Computed inline from already-select_related data to avoid the
-        # per-SA DB query that sa.token.get_limit() would trigger.
-        for sa in service_accounts:
-            sa.effective_limits = LimitSet.from_objects(sa.team, sa.team.org)  # type: ignore[attr-defined]
 
         context.update(
             {
@@ -51,7 +40,6 @@ class UserTokensView(BaseAqueductView, TemplateView):
                 "service_accounts": service_accounts,
                 "can_add_token": can_add_token,
                 "max_tokens": max_tokens,
-                "user_limits": user_limits,
             }
         )
         return context

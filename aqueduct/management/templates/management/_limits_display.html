@@ -1,7 +1,7 @@
 <div class="stats stats-vertical lg:stats-horizontal shadow w-full bg-base-100">
 
   <div class="stat">
-    <div class="stat-title">Requests/Minute (per API key)</div>
+    <div class="stat-title">Requests/Minute</div>
     <div class="stat-value text-secondary">{{ primary_limit_object.requests_per_minute|default:"-" }}</div>
     <div class="stat-desc">{{ primary_title|default:"Limit" }}{% if request.user.profile.is_admin and primary_admin_url %}<a href="{{ primary_admin_url }}" class="link link-secondary link-hover text-xs ml-1" title="Edit in Admin">(edit)</a>{% endif %}</div>
     {% if secondary_limit_object %}
@@ -11,7 +11,7 @@
   </div>
 
   <div class="stat">
-    <div class="stat-title">Input Tokens/Minute (per API key)</div>
+    <div class="stat-title">Input Tokens/Minute</div>
     <div class="stat-value text-secondary">{{ primary_limit_object.input_tokens_per_minute|default:"-" }}</div>
     <div class="stat-desc">{{ primary_title|default:"Limit" }}{% if request.user.profile.is_admin and primary_admin_url %}<a href="{{ primary_admin_url }}" class="link link-secondary link-hover text-xs ml-1" title="Edit in Admin">(edit)</a>{% endif %}</div>
     {% if secondary_limit_object %}
@@ -21,7 +21,7 @@
   </div>
 
   <div class="stat">
-    <div class="stat-title">Output Tokens/Minute (per API key)</div>
+    <div class="stat-title">Output Tokens/Minute</div>
     <div class="stat-value text-secondary">{{ primary_limit_object.output_tokens_per_minute|default:"-" }}</div>
     <div class="stat-desc">{{ primary_title|default:"Limit" }}{% if request.user.profile.is_admin and primary_admin_url %}<a href="{{ primary_admin_url }}" class="link link-secondary link-hover text-xs ml-1" title="Edit in Admin">(edit)</a>{% endif %}</div>
      {% if secondary_limit_object %}

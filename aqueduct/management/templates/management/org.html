@@ -29,7 +29,7 @@
 
     <div class="mb-8">
         <h2 class="text-xl font-semibold mb-2">Rate Limits</h2>
-        <p class="mb-4 text-sm text-gray-600">These limits apply per API key or Service Account unless overridden at a more specific level.</p>
+        <p class="mb-4 text-sm text-gray-600">These limits apply to users or teams unless overridden at a more specific level.</p>
         {# Prepare admin URL if user is admin #}
         {% if request.user.profile.is_admin %}
             {% url 'admin:management_org_change' org_object.id as admin_org_url %}

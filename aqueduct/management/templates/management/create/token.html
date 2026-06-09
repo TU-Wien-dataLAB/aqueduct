@@ -3,7 +3,7 @@
 
 {% block content %}
     <div class="max-w-lg mx-auto mt-8"> {# Center content, limit width #}
-        <h1 class="text-3xl font-bold mb-6">{{ view_title|default:"Create API Key" }}</h1> {# Use title from context #}
+        <h1 class="text-3xl font-bold mb-6">{{ view_title|default:"Create Token" }}</h1> {# Use title from context #}
 
         <form id="token-create-form" method="post" class="card bg-base-100 shadow-xl">
             {% csrf_token %} {# Important for security #}
@@ -36,7 +36,7 @@
                            required="{{ form.name.field.required|yesno:'required,' }}"
                            class="input input-bordered w-full {% if form.name.errors %}input-error{% endif %}"
                            value="{{ form.name.value|default:'' }}"
-                           placeholder="Enter API key name"> {# Adapted placeholder #}
+                           placeholder="Enter token name"> {# Adapted placeholder #}
                     {# Display field-specific errors #}
                     {% if form.name.errors %}
                         <label class="label">
@@ -76,7 +76,7 @@
                 {# Card Actions for Buttons #}
                 <div class="card-actions justify-end mt-4">
                     <a href="{% url 'tokens' %}" class="btn btn-ghost">Cancel</a> {# Link back to tokens view #}
-                    <button type="submit" class="btn btn-primary">Create API Key</button>
+                    <button type="submit" class="btn btn-primary">Create Token</button>
                 </div>
 
             </div>

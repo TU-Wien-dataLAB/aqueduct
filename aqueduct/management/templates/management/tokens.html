@@ -3,30 +3,30 @@
 
 {% block content %}
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold">API Keys</h1>
+        <h1 class="text-3xl font-bold">Tokens</h1>
         {% if can_add_token %}
-            <a href="{% url 'token_create' %}" class="btn btn-primary btn-sm">Create New API Key</a>
+            <a href="{% url 'token_create' %}" class="btn btn-primary btn-sm">Create New Token</a>
         {% else %}
-            <div class="tooltip tooltip-left" data-tip="You have reached the maximum of {{ max_tokens }} API keys. Delete an existing API key to create a new one.">
-                <button class="btn btn-primary btn-sm" disabled>Create New API Key</button>
+            <div class="tooltip tooltip-left" data-tip="You have reached the maximum of {{ max_tokens }} tokens. Delete an existing token to create a new one.">
+                <button class="btn btn-primary btn-sm" disabled>Create New Token</button>
             </div>
         {% endif %}
     </div>
 
     <div class="mb-8">
-        <h2 class="text-xl font-semibold mb-2">Your API Keys ({{ tokens.count }}/{{ max_tokens }})</h2>
+        <h2 class="text-xl font-semibold mb-2">Your Tokens ({{ tokens.count }}/{{ max_tokens }})</h2>
         {% if tokens %}
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for token in tokens %}
                     <li class="list-row flex justify-between items-center">
                         <div class="flex items-center flex-grow mr-4 overflow-hidden">
-                            <img src="{% static 'icons/key.svg' %}" alt="API Key" class="w-5 mr-2 flex-shrink-0 [[data-theme=dark]_&]:invert">
+                            <img src="{% static 'icons/key.svg' %}" alt="Token" class="w-5 mr-2 flex-shrink-0 [[data-theme=dark]_&]:invert">
                             <span class="font-medium truncate mr-2">{{ token.name }}</span>
                             <span class="text-sm opacity-50 flex-shrink-0">
                                 Created: {{ token.created_at|date:"Y-m-d" }}
                             </span>
                             <span class="text-sm opacity-50 flex-shrink-0 ml-2">
-                                Key: <span class="font-mono text-xs">{{ token.key_preview }}</span>
+                                Token: <span class="font-mono text-xs">{{ token.key_preview }}</span>
                             </span>
                             <span class="text-sm opacity-50 flex-shrink-0 ml-2">
                                 {% if token.expires_at %}
@@ -47,8 +47,8 @@
                                 {% csrf_token %}
                                 <button type="submit"
                                         class="btn btn-sm btn-square btn-warning"
-                                        title="Regenerate API Key {{ token.name }}"
-                                        onclick="return confirm('Are you sure you want to regenerate the API key {{ token.name|escapejs }}? This will invalidate the current API key immediately.');">
+                                        title="Regenerate Token {{ token.name }}"
+                                        onclick="return confirm('Are you sure you want to regenerate the token {{ token.name|escapejs }}? This will invalidate the current token immediately.');">
                                     <img src="{% static 'icons/update.svg' %}" alt="Regenerate" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                 </button>
                             </form>
@@ -63,7 +63,7 @@
                 {% endfor %}
             </ul>
         {% else %}
-            <p class="text-gray-500 italic">No API keys available.</p>
+            <p class="text-gray-500 italic">No tokens available.</p>
         {% endif %}
     </div>
 
@@ -80,7 +80,7 @@
                                 Team: {{ sa.team.name }}
                             </span>
                             <span class="text-sm opacity-50 flex-shrink-0 ml-2">
-                                Key: {{ sa.token.key_preview }}
+                                Token: {{ sa.token.key_preview }}
                             </span>
                         </div>
                     </li>

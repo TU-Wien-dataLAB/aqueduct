@@ -27,7 +27,7 @@ class ServiceAccountCreateView(BaseTeamView, TeamAdminRequiredMixin, CreateView)
     """
     Handles creation of Service Accounts within a specific Team.
     Requires Team Admin privileges for that team.
-    Also creates an initial API key owned by the creator.
+    Also creates an initial Token owned by the creator.
     """
 
     model = ServiceAccount
@@ -212,7 +212,7 @@ class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
 # Uses BaseServiceAccountView to fetch SA and handle permissions via TeamAdminRequiredMixin
 class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
     """
-    Handles the transfer of a Service Account's API key ownership to another user within the team.
+    Handles the transfer of a Service Account's Token ownership to another user within the team.
     Requires the requesting user to be an admin of the Service Account's team.
     GET displays the transfer form, POST processes the transfer.
     """
@@ -326,7 +326,7 @@ class ServiceAccountTransferOwnershipView(BaseServiceAccountView, View):
                 token.save(update_fields=["user"])
                 messages.success(
                     request,
-                    f"API key ownership for '{sa.name}' transferred from {original_owner_email} to "
+                    f"Token ownership for '{sa.name}' transferred from {original_owner_email} to "
                     f"{target_profile.user.email}.",
                 )
 

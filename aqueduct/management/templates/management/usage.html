@@ -110,7 +110,7 @@
         <div class="w-full lg:w-3/5 flex-shrink-0 flex flex-col" style="min-width:600px;">
             <div class="flex justify-between items-center mb-2">
                 <h2 class="text-xl font-semibold mb-2">Request Counts by
-                    {% if selected_token %}User ID{% elif selected_org %}API Key{% else %}Organization{% endif %}
+                    {% if selected_token %}User ID{% elif selected_org %}Token{% else %}Organization{% endif %}
                 </h2>
                 {% if selected_token %}
                     <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
@@ -128,14 +128,14 @@
                     <thead>
                     <tr>
                         <th>#</th>
-                        <th>{% if selected_token %}User ID{% elif selected_org %}API Key Name{% else %}
+                        <th>{% if selected_token %}User ID{% elif selected_org %}Token Name{% else %}
                             Organization{% endif %}</th>
                         <th>Requests</th>
                         <th>Input<br>Tokens</th>
                         <th>Output<br>Tokens</th>
                         <th>Total<br>Tokens</th>
                         {% if selected_org and not selected_token %}
-                            <th>API Key Owner</th>
+                            <th>Token Owner</th>
                             <th>Service Account</th>
                         {% endif %}
                     </tr>

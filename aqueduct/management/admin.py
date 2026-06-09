@@ -687,7 +687,7 @@ class VectorStoreAdmin(admin.ModelAdmin):
             )
         return format_html('<a href="{}">{}</a>', link, obj.token.name)
 
-    token_link.short_description = "API Key"
+    token_link.short_description = "Token"
 
     def delete_model(self, request, obj):
         """Delete from upstream API before deleting local record."""

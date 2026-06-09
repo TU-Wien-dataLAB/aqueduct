@@ -75,14 +75,14 @@ class TokenCreateView(BaseAqueductView, CreateView):
         self.object.save()
 
         # Use the returned secret_key in the success message
-        messages.success(self.request, f"API key '{self.object.name}' created successfully.")
+        messages.success(self.request, f"Token '{self.object.name}' created successfully.")
         messages.info(self.request, f"{secret_key}", extra_tags="token-regenerated-key")
 
         return redirect(self.get_success_url())
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        context["view_title"] = "Create New API Key"
+        context["view_title"] = "Create New Token"
 
         now = timezone.now().replace(second=0, microsecond=0)
         context["now"] = now.strftime("%Y-%m-%dT%H:%M")
@@ -104,7 +104,7 @@ class TokenEditView(BaseAqueductView, UpdateView):
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        context["view_title"] = "Edit API Key"
+        context["view_title"] = "Edit Token"
         context["cancel_url"] = self.get_success_url()
         return context
 
@@ -122,12 +122,12 @@ class TokenDeleteView(BaseAqueductView, DeleteView):
     def form_valid(self, form) -> HttpResponse:
         token_name = self.object.name
         response = super().form_valid(form)
-        messages.success(self.request, f"API key '{token_name}' deleted successfully.")
+        messages.success(self.request, f"Token '{token_name}' deleted successfully.")
         return response
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        context["object_type_name"] = "API Key"
+        context["object_type_name"] = "Token"
         context["object_name"] = str(self.object)
         context["cancel_url"] = self.get_success_url()
         return context
@@ -183,7 +183,7 @@ class TokenRegenerateView(BaseAqueductView, View):
                 new_key = token.regenerate_key()  # Assumes regenerate_key() saves the token
                 messages.success(
                     request,
-                    f"API key '{token_name}' has been regenerated. The new key is displayed below. "
+                    f"Token '{token_name}' has been regenerated. The new key is displayed below. "
                     f"Please update any clients using the old key.",
                 )
                 messages.info(

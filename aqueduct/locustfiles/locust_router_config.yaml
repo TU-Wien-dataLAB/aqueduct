@@ -3,7 +3,7 @@ model_list:
   litellm_params:
     model: openai/gpt-4.1-nano
     api_key: "fake_api_key"
-    api_base: "http://mock-api:45999"
+    api_base: "http://mock_api:45999"
   model_info:
     id: gpt-4.1-nano
     aliases: ["main", "coding"]
@@ -11,7 +11,7 @@ model_list:
   litellm_params:
     model: openai/text-embedding-ada-002
     api_key: "fake_api_key"
-    api_base: "http://mock-api:45999"
+    api_base: "http://mock_api:45999"
   model_info:
     id: text-embedding-ada-002
     mode: embedding
@@ -20,7 +20,7 @@ model_list:
   litellm_params:
     model: openai/gpt-4o-mini-tts
     api_key: "fake_api_key"
-    api_base: "http://mock-api:45999"
+    api_base: "http://mock_api:45999"
   model_info:
     id: gpt-4o-mini-tts
     mode: audio_speech
@@ -29,7 +29,7 @@ model_list:
   litellm_params:
     model: openai/whisper-1
     api_key: "fake_api_key"
-    api_base: "http://mock-api:45999"
+    api_base: "http://mock_api:45999"
   model_info:
     id: whisper-1
     mode: audio_transcriptions
@@ -38,7 +38,7 @@ model_list:
   litellm_params:
     model: openai/dall-e-2
     api_key: "fake_api_key"
-    api_base: "http://mock-api:45999"
+    api_base: "http://mock_api:45999"
   model_info:
     id: dall-e-2
     mode: image_generations

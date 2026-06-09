@@ -10,7 +10,7 @@ services:
 
   migrate:
     build: .
-    container_name: django-migrate
+    container_name: django_migrate
     command: python manage.py migrate
     env_file:
       - .example.env
@@ -19,7 +19,7 @@ services:
 
   web:
     build: .
-    container_name: django-app
+    container_name: django_app
     command: |
       sh -c "python manage.py collectstatic --no-input && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
     volumes:
@@ -72,7 +72,7 @@ services:
 
   db:
     image: postgres:15
-    container_name: postgres-db
+    container_name: postgres_db
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
@@ -85,7 +85,7 @@ services:
 
   mcp-everything:
     image: node:20-slim
-    container_name: mcp-everything
+    container_name: mcp_everything
     command: npx @modelcontextprotocol/server-everything streamableHttp
     environment:
       - PORT=3001

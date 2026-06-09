@@ -303,6 +303,28 @@ def reload_from_upstream(modeladmin, request, queryset):
         messages.success(request, f"Successfully reloaded {len(objects)} object(s).")
 
 
+class HasLimitSetFilter(admin.SimpleListFilter):
+    title = "has limit set"
+    parameter_name = "has_limit"
+
+    def lookups(self, request, model_admin) -> list[tuple[str, str]]:
+        return (("yes", "Yes"), ("no", "No"))
+
+    def queryset(self, request, queryset: QuerySet) -> QuerySet:
+        from django.db.models import Q
+
+        has_any = Q(
+            Q(profile__requests_per_minute__isnull=False)
+            | Q(profile__input_tokens_per_minute__isnull=False)
+            | Q(profile__output_tokens_per_minute__isnull=False)
+        )
+        if self.value() == "yes":
+            return queryset.filter(has_any)
+        if self.value() == "no":
+            return queryset.exclude(has_any)
+        return queryset
+
+
 # Define a new User admin
 class UserAdmin(BaseUserAdmin):
     inlines: ClassVar[tuple] = (ProfileInline,)
@@ -315,6 +337,7 @@ class UserAdmin(BaseUserAdmin):
         "output_limit",
     )
     list_select_related: ClassVar[list] = ["profile"]
+    list_filter: ClassVar[list] = ["is_staff", HasLimitSetFilter]
     actions: ClassVar[list] = [make_admin, make_org_admin, make_user, delete_tos_cache]
 
     def get_groups(self, obj) -> str:

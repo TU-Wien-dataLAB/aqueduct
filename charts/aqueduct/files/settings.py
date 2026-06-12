@@ -15,6 +15,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
@@ -327,14 +328,16 @@ ASGI_APPLICATION = "aqueduct.asgi.application"
 DATABASE_ENGINE = os.getenv("DATABASE_ENGINE", "django.db.backends.sqlite3")
 
 # 2. Set up DATABASES based on the engine
-DATABASES = {"default": {"ENGINE": DATABASE_ENGINE}}
+DATABASES: dict[str, Any] = {"default": {"ENGINE": DATABASE_ENGINE}}
 
 # 3. If it's SQLite, fill in the NAME for the file
 if DATABASE_ENGINE == "django.db.backends.sqlite3":
     DATABASES["default"]["NAME"] = str(BASE_DIR / "db.sqlite3")
     if TESTING:
-        DATABASES["default"]["TEST"] = {"NAME": str(BASE_DIR / "db_test.sqlite3")}  # type: ignore[assignment]
+        DATABASES["default"]["TEST"] = {"NAME": str(BASE_DIR / "db_test.sqlite3")}
 elif DATABASE_ENGINE == "django.db.backends.postgresql":
+    POSTGRESQL_POOL_MAX_SIZE = int(os.getenv("POSTGRESQL_POOL_MAX_SIZE", 20))
+    POSTGRESQL_POOL_NUM_WORKERS = int(os.getenv("POSTGRESQL_POOL_NUM_WORKERS", 3))
     DATABASES["default"].update(
         {
             "NAME": os.getenv("POSTGRES_DB", "aqueduct"),
@@ -342,6 +345,12 @@ elif DATABASE_ENGINE == "django.db.backends.postgresql":
             "PASSWORD": os.getenv("POSTGRES_PASSWORD", "aqueduct"),
             "HOST": os.getenv("POSTGRES_HOST", "localhost"),
             "PORT": os.getenv("POSTGRES_PORT", "5432"),
+            "OPTIONS": {
+                "pool": {
+                    "max_size": POSTGRESQL_POOL_MAX_SIZE,
+                    "num_workers": POSTGRESQL_POOL_NUM_WORKERS,
+                }
+            },
         }
     )
 else:

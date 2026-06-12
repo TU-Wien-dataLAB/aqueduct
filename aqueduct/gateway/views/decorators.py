@@ -55,6 +55,8 @@ def token_authenticated(token_auth_only: bool) -> Decorator:
     def decorator(view_func: AsyncView) -> AsyncView:
         @wraps(view_func)
         async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
+            kwargs["request_start"] = time.monotonic()
+
             unauthorized_response = error_response("Authentication Required", status=401)
             # Authentication Check
             if not (await request.auser()).is_authenticated:
@@ -398,11 +400,9 @@ def log_request(view_func: AsyncView) -> AsyncView:
         await request_log.asave()
         log.debug("Initial request log object created.")
 
-        start_time = time.monotonic()
         result: HttpResponse | StreamingHttpResponse = await view_func(request, *args, **kwargs)
         end_time = time.monotonic()
-
-        request_log.response_time_ms = int((end_time - start_time) * 1000)
+        request_log.response_time_ms = int((end_time - kwargs["request_start"]) * 1000)
         request_log.status_code = result.status_code
 
         await request_log.asave()

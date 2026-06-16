@@ -336,7 +336,14 @@ if DATABASE_ENGINE == "django.db.backends.sqlite3":
     if TESTING:
         DATABASES["default"]["TEST"] = {"NAME": str(BASE_DIR / "db_test.sqlite3")}
 elif DATABASE_ENGINE == "django.db.backends.postgresql":
+    # The following parameters are passed to `psycopg_pool.ConnectionPool`.
+    # See https://www.psycopg.org/psycopg3/docs/api/pool.html#the-connectionpool-class
+    # for details. The times are in seconds.
+    POSTGRESQL_POOL_MIN_SIZE = int(os.getenv("POSTGRESQL_POOL_MIN_SIZE", 4))
     POSTGRESQL_POOL_MAX_SIZE = int(os.getenv("POSTGRESQL_POOL_MAX_SIZE", 20))
+    POSTGRESQL_POOL_TIMEOUT = int(os.getenv("POSTGRESQL_POOL_TIMEOUT", 30))
+    POSTGRESQL_POOL_MAX_WAITING = int(os.getenv("POSTGRESQL_POOL_MAX_WAITING", 0))
+    POSTGRESQL_POOL_MAX_IDLE = int(os.getenv("POSTGRESQL_POOL_MAX_IDLE", 10 * 60))
     POSTGRESQL_POOL_NUM_WORKERS = int(os.getenv("POSTGRESQL_POOL_NUM_WORKERS", 3))
     DATABASES["default"].update(
         {
@@ -347,7 +354,11 @@ elif DATABASE_ENGINE == "django.db.backends.postgresql":
             "PORT": os.getenv("POSTGRES_PORT", "5432"),
             "OPTIONS": {
                 "pool": {
+                    "min_size": POSTGRESQL_POOL_MIN_SIZE,
                     "max_size": POSTGRESQL_POOL_MAX_SIZE,
+                    "timeout": POSTGRESQL_POOL_TIMEOUT,
+                    "max_waiting": POSTGRESQL_POOL_MAX_WAITING,
+                    "max_idle": POSTGRESQL_POOL_MAX_IDLE,
                     "num_workers": POSTGRESQL_POOL_NUM_WORKERS,
                 }
             },

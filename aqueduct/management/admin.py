@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.urls import reverse
 from django.utils.html import format_html
 
@@ -311,8 +311,6 @@ class HasLimitSetFilter(admin.SimpleListFilter):
         return (("yes", "Yes"), ("no", "No"))
 
     def queryset(self, request, queryset: QuerySet) -> QuerySet:
-        from django.db.models import Q
-
         has_any = Q(
             Q(profile__requests_per_minute__isnull=False)
             | Q(profile__input_tokens_per_minute__isnull=False)

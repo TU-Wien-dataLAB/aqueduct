@@ -1,0 +1,20 @@
+{% comment %}
+Shared expiration status badge. Pass an `obj` that exposes:
+- expiration_status: "expired" | "expiring_soon" | "active" | <other/None>  (renders as "Never")
+- expires_dt: a datetime to format
+{% endcomment %}
+{% if obj.expiration_status == "expired" %}
+    <span class="badge badge-sm badge-soft badge-error gap-1">
+        {{ obj.expires_dt|date:"Y-m-d H:i" }}
+    </span>
+{% elif obj.expiration_status == "expiring_soon" %}
+    <span class="badge badge-sm badge-soft badge-warning gap-1">
+        {{ obj.expires_dt|date:"Y-m-d H:i" }}
+    </span>
+{% elif obj.expiration_status == "active" %}
+    <span class="badge badge-sm badge-soft badge-success gap-1">
+        {{ obj.expires_dt|date:"Y-m-d H:i" }}
+    </span>
+{% else %}
+    <span class="badge badge-sm badge-soft badge-ghost gap-1">Never</span>
+{% endif %}

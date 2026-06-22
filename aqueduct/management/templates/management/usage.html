@@ -153,19 +153,11 @@
                                         {% if item.user_is_token_owner %}
                                             <a href="?org={{ selected_org.id }}&span={{ selected_span }}&token={{ item.token_id }}"
                                                class="font-bold link link-hover text-primary">
-                                                {% if item.service_account_name %}
-                                                    {{ item.service_account_name }}
-                                                {% else %}
-                                                    {{ item.name|default:"N/A" }}
-                                                {% endif %}
+                                                {{ item.service_account_name|default:item.name|default:"N/A" }}
                                             </a>
                                         {%  else %}
                                             <span class="font-bold">
-                                                {% if item.service_account_name %}
-                                                    {{ item.service_account_name }}
-                                                {% else %}
-                                                    {{ item.name|default:"N/A" }}
-                                                {% endif %}
+                                                {{ item.service_account_name|default:item.name|default:"N/A" }}
                                             </span>
                                         {% endif %}
                                         {% if item.service_account_name %}

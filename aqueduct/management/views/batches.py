@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from django.db.models import Q
+from django.utils import timezone
 from django.views.generic import TemplateView
 
 from management.models import Batch
@@ -25,6 +26,8 @@ class UserBatchesView(BaseAqueductView, TemplateView):
         batches = Batch.objects.filter(
             Q(token__user=user) | Q(token__service_account__team__in=teams)
         ).order_by("-created_at")
+
+        now_ts = int(timezone.now().timestamp())
 
         # Convert Unix timestamp to datetime for template date filter
         for b in batches:
@@ -55,6 +58,18 @@ class UserBatchesView(BaseAqueductView, TemplateView):
                 b.error_file_preview = ""
                 b.error_file_has_preview = False
                 b.error_file_id_preview = "-"
+            # expiration display
+            if b.expires_at is not None:
+                b.expires_dt = datetime.fromtimestamp(b.expires_at, tz=UTC)
+                if b.expires_at <= now_ts:
+                    b.expiration_status = "expired"
+                elif b.expires_at <= now_ts + 86400 * 14:  # within 2 weeks
+                    b.expiration_status = "expiring_soon"
+                else:
+                    b.expiration_status = "active"
+            else:
+                b.expires_dt = None
+                b.expiration_status = "never"
 
         context["batches"] = batches
         return context

@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.urls import reverse
 from django.utils.html import format_html
 
@@ -303,6 +303,26 @@ def reload_from_upstream(modeladmin, request, queryset):
         messages.success(request, f"Successfully reloaded {len(objects)} object(s).")
 
 
+class HasLimitSetFilter(admin.SimpleListFilter):
+    title = "has limit set"
+    parameter_name = "has_limit"
+
+    def lookups(self, request, model_admin) -> list[tuple[str, str]]:
+        return (("yes", "Yes"), ("no", "No"))
+
+    def queryset(self, request, queryset: QuerySet) -> QuerySet:
+        has_any = Q(
+            Q(profile__requests_per_minute__isnull=False)
+            | Q(profile__input_tokens_per_minute__isnull=False)
+            | Q(profile__output_tokens_per_minute__isnull=False)
+        )
+        if self.value() == "yes":
+            return queryset.filter(has_any)
+        if self.value() == "no":
+            return queryset.exclude(has_any)
+        return queryset
+
+
 # Define a new User admin
 class UserAdmin(BaseUserAdmin):
     inlines: ClassVar[tuple] = (ProfileInline,)
@@ -315,6 +335,7 @@ class UserAdmin(BaseUserAdmin):
         "output_limit",
     )
     list_select_related: ClassVar[list] = ["profile"]
+    list_filter: ClassVar[list] = ["is_staff", HasLimitSetFilter]
     actions: ClassVar[list] = [make_admin, make_org_admin, make_user, delete_tos_cache]
 
     def get_groups(self, obj) -> str:
@@ -325,17 +346,17 @@ class UserAdmin(BaseUserAdmin):
     def request_limit(self, obj) -> int:
         return obj.profile.requests_per_minute
 
-    request_limit.short_description = "Requests per minute"
+    request_limit.short_description = "Requests/min (per API key)"
 
     def input_limit(self, obj) -> int:
         return obj.profile.input_tokens_per_minute
 
-    input_limit.short_description = "Input tokens per minute"
+    input_limit.short_description = "Input tokens/min (per API key)"
 
     def output_limit(self, obj) -> int:
         return obj.profile.output_tokens_per_minute
 
-    output_limit.short_description = "Output tokens per minute"
+    output_limit.short_description = "Output tokens/min (per API key)"
 
 
 # Re-register UserAdmin
@@ -687,7 +708,7 @@ class VectorStoreAdmin(admin.ModelAdmin):
             )
         return format_html('<a href="{}">{}</a>', link, obj.token.name)
 
-    token_link.short_description = "Token"
+    token_link.short_description = "API Key"
 
     def delete_model(self, request, obj):
         """Delete from upstream API before deleting local record."""

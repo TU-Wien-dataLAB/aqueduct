@@ -11,7 +11,7 @@ dependencies = [
     "django>=5.2.7",
     "django-celery-beat>=2.8.1",
     "django-cors-headers>=4.7.0",
-    "django-silk>=5.4.0",
+    "django-silk>=5.5.0",
     "django-tos>=1.1.0",
     "httpx>=0.28.1, <1",
     "litellm==1.85.2",
@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 postgresql = [
-    "psycopg2-binary>=2.9.10",
+    "psycopg[binary,pool]>=3.3.4",
 ]
 vllm = [
     "vllm==0.8.4",

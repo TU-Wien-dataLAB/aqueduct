@@ -32,8 +32,8 @@ from .decorators import (
 @check_limits
 @resolve_alias
 @ensure_usage
-@log_request
 @check_model_availability
+@log_request
 @catch_router_exceptions
 async def speech(
     request: ASGIRequest,

@@ -29,7 +29,7 @@
                 {% for org in orgs %}
                     <option
                             value="{{ org.id }}"
-                            {% if selected_org and org.id == selected_org.id %}selected{% endif %}
+                            {% if org.id == selected_org.id %}selected{% endif %}
                     >
                         {{ org.name }}
                     </option>

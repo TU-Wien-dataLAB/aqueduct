@@ -31,8 +31,8 @@ log = logging.getLogger("aqueduct")
 @parse_body(model=TypeAdapter(ImageGenerateParams, config=ConfigDict(extra="forbid")))
 @check_limits
 @resolve_alias
-@log_request
 @check_model_availability
+@log_request
 @catch_router_exceptions
 async def image_generation(
     request: ASGIRequest,

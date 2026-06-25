@@ -148,12 +148,15 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         else:
             span_cfg = span_choices[selected_span]
             start_time = now - span_cfg["delta"]
+            end_time = now
 
         # Build time-series data for chart
-        timeseries = self._get_timeseries(reqs, selected_span, start_time, now, span_cfg)
+        timeseries = self._get_timeseries(reqs, selected_span, start_time, end_time, span_cfg)
 
         # Filter requests based on selected time span
         reqs_span = reqs.filter(timestamp__gte=start_time)
+        if selected_span == "custom":
+            reqs_span = reqs_span.filter(timestamp__lt=end_time)
 
         # Top entities: orgs global, or tokens per org, or user IDs per token
         top_items = self._get_top_items(reqs_span, selected_org, selected_token)
@@ -299,9 +302,11 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         span_cfg: dict,
     ) -> list[tuple[int, int]]:
         """Get the request count per time bucket of the timeseries."""
+        qs = reqs.filter(timestamp__gte=start_time)
+        if selected_span == "custom":
+            qs = qs.filter(timestamp__lt=end_time)
         qs = (
-            reqs.filter(timestamp__gte=start_time)
-            .annotate(period=span_cfg["trunc"])
+            qs.annotate(period=span_cfg["trunc"])
             .values("period")
             .annotate(count=Count("id"))
             .order_by("period")

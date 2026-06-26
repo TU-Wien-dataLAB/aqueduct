@@ -3,6 +3,7 @@ import json
 from datetime import timedelta
 from typing import Any
 
+from django.conf import settings
 from django.db.models import Avg, BooleanField, Count, ExpressionWrapper, F, Q, QuerySet, Sum, Value
 from django.db.models.functions import TruncDay, TruncHour, TruncMinute
 from django.utils import timezone
@@ -11,6 +12,23 @@ from django.views.generic import TemplateView
 from gateway.config import get_router_config
 from management.models import Org, Request, Token
 from management.views.base import BaseAqueductView
+
+
+def _bucket_config_for_range(
+    start_time: datetime.datetime, end_time: datetime.datetime
+) -> tuple[timedelta, Any]:
+    """Determine bucket delta and round function for a custom time range."""
+    duration = end_time - start_time
+    if duration <= timedelta(hours=2):
+        delta = timedelta(minutes=1)
+        round_time = lambda d: d.replace(second=0, microsecond=0)
+    elif duration <= timedelta(days=2):
+        delta = timedelta(hours=1)
+        round_time = lambda d: d.replace(minute=0, second=0, microsecond=0)
+    else:
+        delta = timedelta(days=1)
+        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
+    return delta, round_time
 
 
 def get_all_buckets(
@@ -25,8 +43,14 @@ def get_all_buckets(
         # one point per hour
         delta = timedelta(hours=1)
         round_time = lambda d: d.replace(minute=0, second=0, microsecond=0)
-    else:
+    elif freq_label == "1m":
         # one point per day
+        delta = timedelta(days=1)
+        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif freq_label == "custom":
+        delta, round_time = _bucket_config_for_range(start_time, now)
+    else:
+        # one point per day (1w fallback)
         delta = timedelta(days=1)
         round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -87,25 +111,59 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         if selected_token is not None:
             reqs = reqs.filter(token=selected_token)
 
-        # Time frame selection: 1 day, 1 week, or 1 month
+        # Time frame selection: 1 hour, 1 day, 1 week, 1 month, or custom range
         span_choices = {
             "1h": {"delta": timedelta(hours=1), "trunc": TruncMinute("timestamp")},
             "1d": {"delta": timedelta(days=1), "trunc": TruncHour("timestamp")},
             "1w": {"delta": timedelta(days=7), "trunc": TruncDay("timestamp")},
+            "1m": {"delta": timedelta(days=30), "trunc": TruncDay("timestamp")},
         }
+        now = timezone.now()
+
+        # Parse optional custom date range
+        custom_start_str = self.request.GET.get("start", "")
+        custom_end_str = self.request.GET.get("end", "")
+        custom_start, custom_end, custom_error = self._parse_custom_range(
+            custom_start_str, custom_end_str, now
+        )
+
         selected_span = self.request.GET.get("span", "1d")
-        if selected_span not in span_choices:
+        if custom_start and custom_end:
+            selected_span = "custom"
+        elif selected_span not in span_choices:
             selected_span = "1d"
-        span_cfg = span_choices[selected_span]
+
+        if selected_span == "custom" and custom_start and custom_end:
+            start_time = custom_start
+            end_time = custom_end
+            # Determine trunc based on range duration
+            duration = end_time - start_time
+            if duration <= timedelta(hours=2):
+                trunc_fn = TruncMinute("timestamp")
+            elif duration <= timedelta(days=2):
+                trunc_fn = TruncHour("timestamp")
+            else:
+                trunc_fn = TruncDay("timestamp")
+            span_cfg: dict[str, Any] = {"delta": duration, "trunc": trunc_fn}
+        else:
+            span_cfg = span_choices[selected_span]
+            start_time = now - span_cfg["delta"]
+            end_time = now
 
         # Build time-series data for chart
-        start_time, timeseries = self._get_timeseries(reqs, selected_span, span_cfg)
+        timeseries = self._get_timeseries(reqs, selected_span, start_time, end_time, span_cfg)
 
         # Filter requests based on selected time span
         reqs_span = reqs.filter(timestamp__gte=start_time)
+        if selected_span == "custom":
+            reqs_span = reqs_span.filter(timestamp__lt=end_time)
 
         # Top entities: orgs global, or tokens per org, or user IDs per token
         top_items = self._get_top_items(reqs_span, selected_org, selected_token)
+
+        # Retention warning
+        retention_days = getattr(settings, "REQUEST_RETENTION_DAYS", 7)
+        retention_warning = (now - start_time).days > retention_days
 
         # Simple statistics
         total_requests = reqs_span.count()
@@ -152,6 +210,12 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
+                "retention_warning": retention_warning,
+                "retention_days": int(retention_days),
+                "custom_start": custom_start_str,
+                "custom_end": custom_end_str,
+                "custom_error": custom_error,
+                "now_utc_iso": now.strftime("%Y-%m-%dT%H:%M"),
             }
         )
         return context
@@ -172,6 +236,45 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 selected_org = self.org
         return selected_org
 
+    @staticmethod
+    def _validate_custom_range(
+        start: datetime.datetime | None, end: datetime.datetime | None, now: datetime.datetime
+    ) -> str | None:
+        """Return the first validation error for a custom range, or ``None``."""
+        if not (start and end):
+            return None
+        if end > now:
+            return "End time is in the future."
+        if start >= end:
+            return "Start must be before end."
+        if (end - start) < timedelta(minutes=1):
+            return "Range must be at least 1 minute."
+        return None
+
+    def _parse_custom_range(
+        self, start_str: str, end_str: str, now: datetime.datetime
+    ) -> tuple[datetime.datetime | None, datetime.datetime | None, str | None]:
+        """Parse and validate the optional custom start/end query params.
+
+        Returns ``(start, end, error)``:
+            - ``start`` / ``end`` are timezone-aware datetimes in UTC, or ``None``
+              if missing or invalid.
+            - ``error`` is a human-readable message describing the first
+              validation problem found, or ``None`` when the range is valid.
+        """
+        if not start_str and not end_str:
+            return None, None, None
+        try:
+            start = datetime.datetime.fromisoformat(start_str) if start_str else None
+            end = datetime.datetime.fromisoformat(end_str) if end_str else None
+        except (ValueError, TypeError):
+            return None, None, "Invalid date format."
+        if start is not None and timezone.is_naive(start):
+            start = timezone.make_aware(start, datetime.UTC)
+        if end is not None and timezone.is_naive(end):
+            end = timezone.make_aware(end, datetime.UTC)
+        return start, end, self._validate_custom_range(start, end, now)
+
     def _get_selected_token(self, selected_org: Org | None) -> Token | None:
         """Optional token selection based on the query param and user permissions"""
         token_param = self.request.GET.get("token")
@@ -191,22 +294,26 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         return selected_token
 
     def _get_timeseries(
-        self, reqs: QuerySet[Request], selected_span: str, span_cfg: dict
-    ) -> (datetime.datetime, list[tuple[int, int]]):
-        """Get the start time and the request count per time bucket of the timeseries."""
-        now = timezone.now()
-        start_time = now - span_cfg["delta"]
+        self,
+        reqs: QuerySet[Request],
+        selected_span: str,
+        start_time: datetime.datetime,
+        end_time: datetime.datetime,
+        span_cfg: dict,
+    ) -> list[tuple[int, int]]:
+        """Get the request count per time bucket of the timeseries."""
+        qs = reqs.filter(timestamp__gte=start_time)
+        if selected_span == "custom":
+            qs = qs.filter(timestamp__lt=end_time)
         qs = (
-            reqs.filter(timestamp__gte=start_time)
-            .annotate(period=span_cfg["trunc"])
+            qs.annotate(period=span_cfg["trunc"])
             .values("period")
             .annotate(count=Count("id"))
             .order_by("period")
         )
         period_to_count = {int(item["period"].timestamp() * 1000): item["count"] for item in qs}
-        buckets = get_all_buckets(start_time, now, selected_span)
-        timeseries = [(b, period_to_count.get(b, 0)) for b in buckets]
-        return start_time, timeseries
+        buckets = get_all_buckets(start_time, end_time, selected_span)
+        return [(b, period_to_count.get(b, 0)) for b in buckets]
 
     def _get_top_items(
         self, reqs: QuerySet[Request], selected_org: Org | None, selected_token: Token | None

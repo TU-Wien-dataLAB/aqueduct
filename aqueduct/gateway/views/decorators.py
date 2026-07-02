@@ -6,7 +6,6 @@ import re
 import sys
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, Iterable
-from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
 from typing import Any, cast
@@ -20,7 +19,6 @@ from django.contrib import auth
 from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.core.handlers.asgi import ASGIRequest
-from django.db.models import Count, Sum
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.urls import reverse
 from django.utils import timezone
@@ -34,15 +32,15 @@ from tos.models import has_user_agreed_latest_tos  # type: ignore[import-untyped
 from gateway.authentication import token_from_request
 from gateway.config import (
     MCPServerConfig,
-    get_all_model_request_limit_multipliers,
     get_files_api_client,
     get_mcp_config,
     get_router,
     resolve_model_alias,
 )
+from gateway.rate_limiting import check_and_reserve, record_token_usage
 from gateway.views.errors import error_response
 from gateway.views.utils import get_response_from_cache, in_wildcard
-from management.models import FileObject, Request, Token, VectorStore
+from management.models import FileObject, LimitSet, Request, Token, VectorStore
 
 log = logging.getLogger("aqueduct")
 
@@ -258,6 +256,19 @@ def ensure_usage(view_func: AsyncView) -> AsyncView:
     return wrapper
 
 
+def _has_any_limit(limits: LimitSet) -> bool:
+    """Return True if any window has any non-None limit.
+
+    Tokens with no limits at all skip the cache entirely (preserves the no-op
+    fast path). Because hour/day limits are derived from per-minute, this is True
+    iff at least one per-minute limit is set.
+    """
+    return any(
+        rpm is not None or itpm is not None or otpm is not None
+        for _name, _secs, rpm, itpm, otpm in limits.windows()
+    )
+
+
 def check_limits(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
@@ -271,85 +282,10 @@ def check_limits(view_func: AsyncView) -> AsyncView:
             limits = await sync_to_async(token.get_limit)()
             log.debug("Rate limits for Token %r (ID: %s): %s", token.name, token.id, limits)
 
-            if (
-                limits.requests_per_minute is not None
-                or limits.input_tokens_per_minute is not None
-                or limits.output_tokens_per_minute is not None
-            ):
-                # Define the time window for usage check (last 60 seconds)
-                time_window_start = timezone.now() - timedelta(seconds=60)
-
-                # Build queryset for recent requests (last 60 seconds)
-                recent_requests = Request.objects.filter(
-                    token=token, timestamp__gte=time_window_start
-                )
-
-                # Query recent usage asynchronously using Django's async ORM
-                # Get overall token counts
-                recent_requests_agg = await recent_requests.aaggregate(
-                    request_count=Count("id"),
-                    total_input_tokens=Sum("input_tokens"),
-                    total_output_tokens=Sum("output_tokens"),
-                )
-
-                total_input = recent_requests_agg.get("total_input_tokens", 0) or 0
-                total_output = recent_requests_agg.get("total_output_tokens", 0) or 0
-
-                # Get per-model request counts for weighted budget calculation
-                model_counts = {
-                    item["model"]: item["request_count"]
-                    async for item in (
-                        recent_requests.exclude(model="")
-                        .values("model")
-                        .annotate(request_count=Count("id"))
-                    )
-                }
-
-                log.debug(
-                    "Recent usage (last 60s) for Token %r: Model counts=%s, Input=%s, Output=%s",
-                    token.name,
-                    model_counts,
-                    total_input,
-                    total_output,
-                )
-
-                # --- Check Limits ---
-                exceeded = []
-
-                # Calculate weighted request count using per-model multipliers
-                # "2x Limits" means multiplier=2, so cost = 1/2 = 0.5 per request
-                weighted_request_count: float = 0.0
-                multipliers = get_all_model_request_limit_multipliers()
-                for model, count in model_counts.items():
-                    multiplier = multipliers.get(model, 1.0)
-                    weighted_request_count += count * (1.0 / multiplier)
-
-                log.debug(
-                    "Weighted request count for Token %r: %.2f (base limit: %s)",
-                    token.name,
-                    weighted_request_count,
-                    limits.requests_per_minute,
-                )
-
-                if (
-                    limits.requests_per_minute is not None
-                    and weighted_request_count >= limits.requests_per_minute
-                ):
-                    exceeded.append(f"Request limit ({limits.requests_per_minute}/min)")
-
-                if (
-                    limits.input_tokens_per_minute is not None
-                    and total_input >= limits.input_tokens_per_minute
-                ):
-                    exceeded.append(f"Input token limit ({limits.input_tokens_per_minute}/min)")
-
-                if (
-                    limits.output_tokens_per_minute is not None
-                    and total_output >= limits.output_tokens_per_minute
-                ):
-                    exceeded.append(f"Output token limit ({limits.output_tokens_per_minute}/min)")
-
-                if exceeded:
+            if settings.AQUEDUCT_RATE_LIMIT_ENABLED and _has_any_limit(limits):
+                model = (kwargs.get("pydantic_model") or {}).get("model")
+                allowed, exceeded = await sync_to_async(check_and_reserve)(limits, token.id, model)
+                if not allowed:
                     error_message = "Rate limit exceeded. " + ", ".join(exceeded) + "."
                     log.warning(
                         "Rate limit exceeded for Token %r (ID: %s). Details: %s",
@@ -406,6 +342,16 @@ def log_request(view_func: AsyncView) -> AsyncView:
         request_log.status_code = result.status_code
 
         await request_log.asave()
+
+        # Record token usage into the rate-limit buckets for non-streaming
+        # responses. For non-streaming responses the view has finalized
+        # ``request_log.token_usage`` before returning, so it is available here.
+        # Streaming responses defer token recording to ``_openai_stream`` (the
+        # generator runs after this wrapper returns), so we skip them here to
+        # avoid double-counting.
+        if not isinstance(result, StreamingHttpResponse):
+            record_token_usage(request_log.token_id, request_log.token_usage)
+
         return result
 
     return wrapper

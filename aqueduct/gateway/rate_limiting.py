@@ -28,6 +28,7 @@ Reservation vs. recording:
 """
 
 import logging
+from collections.abc import Collection
 from contextlib import AbstractContextManager
 from typing import Any
 
@@ -176,3 +177,33 @@ def record_token_usage(token_id: int, usage: Usage) -> None:
             buckets[key]["out"] += usage.output_tokens
         for (_name, secs), key in zip(WINDOWS, keys, strict=True):
             cache.set(key, buckets[key], _ttl(secs))
+
+
+def get_aggregate_usage(token_ids: Collection[int]) -> dict[str, dict[str, float]]:
+    """Sum current usage buckets across multiple tokens, per window (for display).
+
+    Returns a dict keyed by window name (``min``, ``hour``, ``day``) — matching
+    ``WINDOWS`` — each mapping to ``{"req": float, "in": int, "out": int}``,
+    summed across all given tokens. A single ``cache.get_many`` fetches every
+    ``(window, token)`` bucket at once.
+
+    Reads are lockless: values may be a momentarily stale snapshot of a
+    check/reserve or record in flight, which is acceptable for analytics
+    display and avoids needlessly contending the per-token locks.
+    """
+    now = timezone.now()
+    keys_by_window: dict[str, list[str]] = {
+        name: [_bucket_key(tid, name, now) for tid in token_ids] for name, _secs in WINDOWS
+    }
+    all_keys = [key for keys in keys_by_window.values() for key in keys]
+    raw = cache.get_many(all_keys) if all_keys else {}
+    totals: dict[str, dict[str, float]] = {
+        name: {"req": 0.0, "in": 0, "out": 0} for name, _secs in WINDOWS
+    }
+    for name, keys in keys_by_window.items():
+        for key in keys:
+            bucket = raw.get(key) or _new_bucket()
+            totals[name]["req"] += bucket["req"]
+            totals[name]["in"] += bucket["in"]
+            totals[name]["out"] += bucket["out"]
+    return totals

@@ -4,20 +4,17 @@ Compact inline rate-limit stats. Pass a `limit_object` with:
 A value of None renders as "—".
 {% endcomment %}
 {% load humanize %}
-<details class="text-xs cursor-pointer group">
-  <summary class="text-base-content opacity-50 hover:opacity-80 select-none">Limits</summary>
-  <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+<div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-xs">
     <span class="inline-flex items-center gap-1">
-      <span class="opacity-50">Requests/min</span>
-      <span class="font-semibold text-secondary tabular-nums">{% if limit_object.requests_per_minute is None %}—{% else %}{{ limit_object.requests_per_minute|intcomma }}{% endif %}</span>
+        <span class="opacity-50">Requests/min</span>
+        <span class="font-semibold text-secondary tabular-nums">{% if limit_object.requests_per_minute is None %}—{% else %}{{ limit_object.requests_per_minute|intcomma }}{% endif %}</span>
     </span>
     <span class="inline-flex items-center gap-1">
-      <span class="opacity-50">Input tokens/min</span>
-      <span class="font-semibold text-secondary tabular-nums">{% if limit_object.input_tokens_per_minute is None %}—{% else %}{{ limit_object.input_tokens_per_minute|intcomma }}{% endif %}</span>
+        <span class="opacity-50">Input tokens/min</span>
+        <span class="font-semibold text-secondary tabular-nums">{% if limit_object.input_tokens_per_minute is None %}—{% else %}{{ limit_object.input_tokens_per_minute|intcomma }}{% endif %}</span>
     </span>
     <span class="inline-flex items-center gap-1">
-      <span class="opacity-50">Output tokens/min</span>
-      <span class="font-semibold text-secondary tabular-nums">{% if limit_object.output_tokens_per_minute is None %}—{% else %}{{ limit_object.output_tokens_per_minute|intcomma }}{% endif %}</span>
+        <span class="opacity-50">Output tokens/min</span>
+        <span class="font-semibold text-secondary tabular-nums">{% if limit_object.output_tokens_per_minute is None %}—{% else %}{{ limit_object.output_tokens_per_minute|intcomma }}{% endif %}</span>
     </span>
-  </div>
-</details>
+</div>

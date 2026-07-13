@@ -2,7 +2,7 @@
 Per-window request-usage progress bars (daisyUI linear ``progress``).
 
 Context vars:
-  - usage: dict from gateway.rate_limiting.get_aggregate_usage(token_ids),
+  - usage: per-token dict from gateway.rate_limiting.get_per_token_usage(token_ids)[token_id],
     keyed by window name ("min"/"hour"/"day"), each {"req": float, "in": int, "out": int}.
   - limits: a management.models.LimitSet whose windows() yields
     (name, secs, rpm, itpm, otpm) tuples (finest-first: min, hour, day).

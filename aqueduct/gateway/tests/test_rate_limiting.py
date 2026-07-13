@@ -234,6 +234,48 @@ class GetAggregateUsageTest(RateLimitingBase):
         self.assertEqual(exceeded, [])
 
 
+class GetPerTokenUsageTest(RateLimitingBase):
+    def test_empty_token_list_returns_no_entries(self):
+        from gateway.rate_limiting import get_per_token_usage
+
+        self.assertEqual(get_per_token_usage([]), {})
+
+    def test_returns_per_token_buckets_without_summing(self):
+        from gateway.rate_limiting import get_per_token_usage
+
+        now = datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC)
+        limits = LimitSet(requests_per_minute=10)
+        token_a, token_b = TOKEN_ID, TOKEN_ID + 1
+        with _patch_time(_Clock(now)):
+            # Token A: reserve 2 request slots + record 7 in / 11 out tokens.
+            self.assertTrue(check_and_reserve(limits, token_a, model=None)[0])
+            self.assertTrue(check_and_reserve(limits, token_a, model=None)[0])
+            record_token_usage(token_a, Usage(input_tokens=7, output_tokens=11))
+            # Token B: reserve 3 request slots + record 4 in / 5 out tokens.
+            for _ in range(3):
+                self.assertTrue(check_and_reserve(limits, token_b, model=None)[0])
+            record_token_usage(token_b, Usage(input_tokens=4, output_tokens=5))
+            per_token = get_per_token_usage([token_a, token_b])
+        self.assertEqual(set(per_token), {token_a, token_b})
+        for name, _secs in WINDOWS:
+            self.assertEqual(per_token[token_a][name]["req"], 2.0)
+            self.assertEqual(per_token[token_a][name]["in"], 7)
+            self.assertEqual(per_token[token_a][name]["out"], 11)
+            self.assertEqual(per_token[token_b][name]["req"], 3.0)
+            self.assertEqual(per_token[token_b][name]["in"], 4)
+            self.assertEqual(per_token[token_b][name]["out"], 5)
+
+    def test_token_with_no_recorded_usage_gets_zero_buckets(self):
+        from gateway.rate_limiting import get_per_token_usage
+
+        now = datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC)
+        with _patch_time(_Clock(now)):
+            per_token = get_per_token_usage([TOKEN_ID])
+        self.assertEqual(set(per_token), {TOKEN_ID})
+        for name, _secs in WINDOWS:
+            self.assertEqual(per_token[TOKEN_ID][name], {"req": 0.0, "in": 0, "out": 0})
+
+
 class HourDayLimitTest(RateLimitingBase):
     def test_hour_limit_blocks_after_sustained_burst(self):
         """requests_per_minute=10, hourly_limit_multiplier=6 -> 60/hour.

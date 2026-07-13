@@ -179,31 +179,60 @@ def record_token_usage(token_id: int, usage: Usage) -> None:
             cache.set(key, buckets[key], _ttl(secs))
 
 
+def get_per_token_usage(token_ids: Collection[int]) -> dict[int, dict[str, dict[str, float]]]:
+    """Return current usage buckets per token, per window (for display).
+
+    Like ``get_aggregate_usage`` but keyed by token id so each token's own
+    consumption can be shown independently (e.g. per-token usage bars on the
+    tokens page). A single ``cache.get_many`` fetches every ``(token, window)``
+    bucket at once.
+
+    Returns a dict keyed by token id, each mapping to a window-keyed dict
+    (``min``, ``hour``, ``day`` — matching ``WINDOWS``) of
+    ``{"req": float, "in": int, "out": int}``. Tokens with no recorded usage
+    get zero buckets.
+
+    Reads are lockless (see ``get_aggregate_usage``).
+    """
+    now = timezone.now()
+    # Map each cache key back to (token_id, window_name) for per-token grouping.
+    keys: list[str] = []
+    key_index: dict[str, tuple[int, str]] = {}
+    for tid in token_ids:
+        for name, _secs in WINDOWS:
+            key = _bucket_key(tid, name, now)
+            keys.append(key)
+            key_index[key] = (tid, name)
+    raw = cache.get_many(keys) if keys else {}
+    result: dict[int, dict[str, dict[str, float]]] = {
+        tid: {name: {"req": 0.0, "in": 0, "out": 0} for name, _secs in WINDOWS} for tid in token_ids
+    }
+    for key in keys:
+        tid, name = key_index[key]
+        bucket = raw.get(key) or _new_bucket()
+        result[tid][name]["req"] = bucket["req"]
+        result[tid][name]["in"] = bucket["in"]
+        result[tid][name]["out"] = bucket["out"]
+    return result
+
+
 def get_aggregate_usage(token_ids: Collection[int]) -> dict[str, dict[str, float]]:
     """Sum current usage buckets across multiple tokens, per window (for display).
 
     Returns a dict keyed by window name (``min``, ``hour``, ``day``) — matching
     ``WINDOWS`` — each mapping to ``{"req": float, "in": int, "out": int}``,
-    summed across all given tokens. A single ``cache.get_many`` fetches every
-    ``(window, token)`` bucket at once.
+    summed across all given tokens.
 
     Reads are lockless: values may be a momentarily stale snapshot of a
     check/reserve or record in flight, which is acceptable for analytics
     display and avoids needlessly contending the per-token locks.
     """
-    now = timezone.now()
-    keys_by_window: dict[str, list[str]] = {
-        name: [_bucket_key(tid, name, now) for tid in token_ids] for name, _secs in WINDOWS
-    }
-    all_keys = [key for keys in keys_by_window.values() for key in keys]
-    raw = cache.get_many(all_keys) if all_keys else {}
     totals: dict[str, dict[str, float]] = {
         name: {"req": 0.0, "in": 0, "out": 0} for name, _secs in WINDOWS
     }
-    for name, keys in keys_by_window.items():
-        for key in keys:
-            bucket = raw.get(key) or _new_bucket()
-            totals[name]["req"] += bucket["req"]
-            totals[name]["in"] += bucket["in"]
-            totals[name]["out"] += bucket["out"]
+    for per_token in get_per_token_usage(token_ids).values():
+        for name, _secs in WINDOWS:
+            totals[name]["req"] += per_token[name]["req"]
+            totals[name]["in"] += per_token[name]["in"]
+            totals[name]["out"] += per_token[name]["out"]
     return totals

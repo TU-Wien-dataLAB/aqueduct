@@ -350,7 +350,7 @@ def log_request(view_func: AsyncView) -> AsyncView:
         # generator runs after this wrapper returns), so we skip them here to
         # avoid double-counting.
         if not isinstance(result, StreamingHttpResponse):
-            record_token_usage(request_log.token_id, request_log.token_usage)
+            await sync_to_async(record_token_usage)(request_log.token_id, request_log.token_usage)
 
         return result
 

@@ -1,9 +1,9 @@
 """Tests for the tokens list page — per-window request-usage progress bars.
 
 Covers the ``_rate_usage.html`` include driven by
-``gateway.rate_limiting.get_aggregate_usage`` on ``UserTokensView``, rendered
-under each API key list item as three daisyUI linear ``progress`` bars
-(per minute / per hour / per day).
+``gateway.rate_limiting.get_per_token_usage`` on ``UserTokensView``, rendered
+under each API key list item as two daisyUI linear ``progress`` bars
+(per hour / per day).
 """
 
 from typing import ClassVar

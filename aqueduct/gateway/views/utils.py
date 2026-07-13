@@ -56,6 +56,7 @@ def _get_token_usage(content: bytes | dict[str, Any]) -> Usage:
 def _openai_stream(
     stream: CustomStreamWrapper | TextCompletionStreamWrapper | AsyncStream[Any],
     request_log: Request,
+    total_request_start_time: int,
 ) -> AsyncGenerator[str, None]:
     start_time = time.monotonic()
 
@@ -76,8 +77,10 @@ def _openai_stream(
             except Exception as e:
                 yield f"data: {e!s}\n\n"
 
+        end_time = time.monotonic()
         request_log.token_usage = token_usage
-        request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
+        request_log.response_time_ms = int((end_time - start_time) * 1000)
+        request_log.total_response_time_ms = int((end_time - total_request_start_time) * 1000)
         await request_log.asave()
         # Streaming is done, yield the [DONE] chunk
         yield "data: [DONE]\n\n"

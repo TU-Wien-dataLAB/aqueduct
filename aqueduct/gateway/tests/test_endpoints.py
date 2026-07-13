@@ -636,6 +636,16 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             0,
             f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}",
         )
+        self.assertIsNotNone(
+            req.total_response_time_ms,
+            "Total response time should be recorded even for streaming timeout",
+        )
+        self.assertGreaterEqual(
+            req.total_response_time_ms,
+            req.response_time_ms,
+            f"Total response time should not be less than the response time "
+            f"for streaming timeout, got {req.total_response_time_ms}",
+        )
         # Access token_id instead of token to avoid async issues
         self.assertIsNotNone(req.token_id, "Token should be recorded for streaming timeout")
         self.assertEqual(
@@ -737,6 +747,16 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             req.response_time_ms,
             0,
             f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}",
+        )
+        self.assertIsNotNone(
+            req.total_response_time_ms,
+            "Total response time should be recorded even for streaming timeout",
+        )
+        self.assertGreaterEqual(
+            req.total_response_time_ms,
+            req.response_time_ms,
+            f"Total response time should not be less than the response time "
+            f"for streaming timeout, got {req.total_response_time_ms}",
         )
         # Access token_id instead of token to avoid async issues
         self.assertIsNotNone(req.token_id, "Token should be recorded for streaming timeout")

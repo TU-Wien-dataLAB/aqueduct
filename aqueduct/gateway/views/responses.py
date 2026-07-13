@@ -68,9 +68,14 @@ async def create_response(
     resp: Response | AsyncStream[Response] = await client.responses.create(**pydantic_model)
 
     if isinstance(resp, AsyncStream):
+        total_request_start_time = kwargs["request_start"]
         return StreamingHttpResponse(
             streaming_content=ResponseRegistrationWrapper(
-                streaming_content=_openai_stream(stream=resp, request_log=request_log),
+                streaming_content=_openai_stream(
+                    stream=resp,
+                    request_log=request_log,
+                    total_request_start_time=total_request_start_time,
+                ),
                 model=model,
                 email=token.user.email,
             ),

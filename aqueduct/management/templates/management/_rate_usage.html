@@ -12,9 +12,10 @@ The hour/day caps are derived from the per-minute cap via the resolved
 multipliers (``rpm * multiplier``), so they are usually much larger and only
 fill materially with sustained traffic.
 
-Windows with no request limit (None) render a faded bar with "—" since there is
-no cap to measure against. The bar fill is clamped to 100%; the count text
-shows the real ``used/limit`` counts (which may exceed the cap when over limit).
+Windows with no request limit (None) render no bar — only the "—" count text —
+since there is no cap to measure against. When a limit is set, the bar fill is
+clamped to 100%; the count text shows the real ``used/limit`` counts (which may
+exceed the cap when over limit).
 Colors shift to warning at >=80% and error at >=100%.
 {% endcomment %}
 {% load humanize %}
@@ -31,8 +32,6 @@ Colors shift to warning at >=80% and error at >=100%.
             {% if limit %}
                 {% widthratio used limit 100 as pct %}
                 <progress class="progress w-full {% if pct >= 100 %}progress-error{% elif pct >= 80 %}progress-warning{% else %}progress-primary{% endif %}" value="{% if pct > 100 %}100{% else %}{{ pct }}{% endif %}" max="100"></progress>
-            {% else %}
-                <progress class="progress progress-neutral w-full opacity-30" value="0" max="100"></progress>
             {% endif %}
         </div>
     {% endwith %}
@@ -48,8 +47,6 @@ Colors shift to warning at >=80% and error at >=100%.
             {% if limit %}
                 {% widthratio used limit 100 as pct %}
                 <progress class="progress w-full {% if pct >= 100 %}progress-error{% elif pct >= 80 %}progress-warning{% else %}progress-primary{% endif %}" value="{% if pct > 100 %}100{% else %}{{ pct }}{% endif %}" max="100"></progress>
-            {% else %}
-                <progress class="progress progress-neutral w-full opacity-30" value="0" max="100"></progress>
             {% endif %}
         </div>
     {% endwith %}

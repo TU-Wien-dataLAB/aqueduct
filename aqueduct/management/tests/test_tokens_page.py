@@ -81,7 +81,7 @@ class TokensPageTest(TestCase):
         self.assertNotContains(resp, "6/10")
 
     def test_page_renders_em_dash_when_no_request_limit(self):
-        """With no request limit configured, the bars render a faded "—" (no cap)."""
+        """No request limit -> no progress bar, only the "—" count text."""
         user = User.objects.get(pk=1)
         self.client.force_login(user)
         resp = self.client.get(reverse("tokens"))
@@ -89,5 +89,7 @@ class TokensPageTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         # No request limit -> the include renders the em-dash placeholder, not a fill.
         self.assertContains(resp, "—")
-        # No filled primary bar is rendered (every window has no request cap).
+        # No progress bar is rendered at all (every window has no request cap).
         self.assertNotContains(resp, "progress-primary")
+        self.assertNotContains(resp, "progress-neutral")
+        self.assertNotContains(resp, "<progress")

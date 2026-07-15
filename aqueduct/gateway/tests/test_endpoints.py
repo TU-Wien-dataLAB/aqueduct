@@ -659,7 +659,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
     async def test_chat_completion_streaming(self):
         """
         Sends a streaming chat completion request to the vLLM server using the Django test client.
-        After the request, checks that the database contains one request,
+        After the request, checks that the database contains one request including response times,
         the endpoint matches, and input/output tokens are > 0.
         """
         response = await self._send_chat_completion_streaming(self.MESSAGES)
@@ -687,6 +687,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIn(
             self.url, req.path, "Request endpoint should be for chat completion (streaming)."
         )
+        self.assertIsNotNone(req.response_time_ms)
+        self.assertIsNotNone(req.total_response_time_ms)
+        self.assertGreater(req.total_response_time_ms, req.response_time_ms)
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
@@ -1030,6 +1033,9 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             req.path,
             "Request endpoint should be for chat completion (streaming schema generation).",
         )
+        self.assertIsNotNone(req.response_time_ms)
+        self.assertIsNotNone(req.total_response_time_ms)
+        self.assertGreater(req.total_response_time_ms, req.response_time_ms)
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(

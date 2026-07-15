@@ -71,13 +71,8 @@ async def transcriptions(
             status=200,
         )
     if isinstance(transcription, openai.AsyncStream):
-        total_request_start_time = kwargs["request_start"]
         return StreamingHttpResponse(
-            streaming_content=_openai_stream(
-                stream=transcription,
-                request_log=request_log,
-                total_request_start_time=total_request_start_time,
-            ),
+            streaming_content=_openai_stream(stream=transcription, request_log=request_log),
             content_type="text/event-stream",
         )
     raise RuntimeError(f"Received unexpected response type: {type(transcription)}")

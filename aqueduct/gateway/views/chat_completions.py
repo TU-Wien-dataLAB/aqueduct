@@ -53,13 +53,8 @@ async def chat_completions(
         **pydantic_model
     )
     if isinstance(chat_completion, CustomStreamWrapper):
-        total_request_start_time = kwargs["request_start"]
         return StreamingHttpResponse(
-            streaming_content=_openai_stream(
-                stream=chat_completion,
-                request_log=request_log,
-                total_request_start_time=total_request_start_time,
-            ),
+            streaming_content=_openai_stream(stream=chat_completion, request_log=request_log),
             content_type="text/event-stream",
         )
     if isinstance(chat_completion, ModelResponse):

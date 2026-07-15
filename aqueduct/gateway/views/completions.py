@@ -49,13 +49,8 @@ async def completions(
         TextCompletionResponse | TextCompletionStreamWrapper
     ) = await router.atext_completion(**pydantic_model)
     if isinstance(completion, TextCompletionStreamWrapper):
-        total_request_start_time = kwargs["request_start"]
         return StreamingHttpResponse(
-            streaming_content=_openai_stream(
-                stream=completion,
-                request_log=request_log,
-                total_request_start_time=total_request_start_time,
-            ),
+            streaming_content=_openai_stream(stream=completion, request_log=request_log),
             headers={"Content-Type": "text/event-stream"},
         )
     if isinstance(completion, TextCompletionResponse):

@@ -52,8 +52,7 @@ class SpeechEndpointTest(GatewayTTSSTTestCase):
         req = requests[0]
         self.assertIn("speech", req.path, "Request endpoint should be for speech.")
         self.assertIsNotNone(req.response_time_ms)
-        self.assertIsNotNone(req.total_response_time_ms)
-        self.assertGreater(req.total_response_time_ms, req.response_time_ms)
+        self.assertIsNotNone(req.processing_time_ms)
         self.assertIsNotNone(req.token_usage)
 
     def test_speech_endpoint_invalid_model(self):
@@ -438,8 +437,7 @@ class TTSSTTLifecycleTest(GatewayTTSSTTestCase):
         self.assertEqual(len(stt_requests), 1, "There should be exactly one STT request.")
         stt_request = stt_requests[0]
         self.assertIsNotNone(stt_request.response_time_ms)
-        self.assertIsNotNone(stt_request.total_response_time_ms)
-        self.assertGreater(stt_request.total_response_time_ms, stt_request.response_time_ms)
+        self.assertIsNotNone(stt_request.processing_time_ms)
         self.assertIsNotNone(stt_request.token_usage)
 
         # Verify the complete lifecycle: total requests should be 2 (TTS + STT)

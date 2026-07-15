@@ -551,7 +551,7 @@ class RequestAdmin(admin.ModelAdmin):
         "output_tokens",
         "status_code",
         "response_time_ms",
-        "total_response_time_ms",
+        "processing_time_ms",
         "model",
         "token__name",
         "user_id",

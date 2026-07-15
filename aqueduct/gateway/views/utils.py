@@ -79,9 +79,6 @@ def _openai_stream(
         end_time = time.monotonic()
         request_log.token_usage = token_usage
         request_log.response_time_ms = int((end_time - start_time) * 1000)
-        # Add streaming time to the total processing time
-        processing_time_ms = request_log.total_response_time_ms or 0
-        request_log.total_response_time_ms = processing_time_ms + request_log.response_time_ms
         await request_log.asave()
         # Streaming is done, yield the [DONE] chunk
         yield "data: [DONE]\n\n"

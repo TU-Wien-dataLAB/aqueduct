@@ -193,8 +193,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
             "responses", req.path, "Request endpoint should be for responses (streaming)."
         )
         self.assertIsNotNone(req.response_time_ms)
-        self.assertIsNotNone(req.total_response_time_ms)
-        self.assertGreater(req.total_response_time_ms, req.response_time_ms)
+        self.assertIsNotNone(req.processing_time_ms)
 
         self.assertIsNotNone(req.input_tokens)
         self.assertGreater(req.input_tokens, 0)

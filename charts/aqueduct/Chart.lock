@@ -5,8 +5,11 @@ dependencies:
 - name: redis
   repository: https://charts.bitnami.com/bitnami
   version: 21.1.7
+- name: valkey
+  repository: https://valkey.io/valkey-helm/
+  version: 0.10.0
 - name: tika
   repository: https://apache.jfrog.io/artifactory/tika
   version: 3.2.2
-digest: sha256:c7f2f1603b88074705ef3baacb540e8d824afb0d031225d8ff996520eb66884b
-generated: "2026-07-15T10:55:30.033303+02:00"
+digest: sha256:59c500ddc5676374de0655323c9bde5c3169fbff7fe6558413aa0970bb303066
+generated: "2026-07-16T18:30:47.531448+02:00"

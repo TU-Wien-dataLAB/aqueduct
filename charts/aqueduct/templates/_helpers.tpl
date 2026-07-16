@@ -66,7 +66,7 @@ Usage:
   value: {{ .Values.oidc.clientSecret | quote }}
 {{- end }}
 - name: CELERY_BROKER_URL
-  value: {{ .Values.celery.brokerUrl | quote }}
+  value: {{ include "aqueduct.celery.brokerUrl" . | quote }}
 - name: CELERY_WORKER_CONCURRENCY
   value: {{ .Values.celery.workerConcurrency | quote }}
 - name: REQUEST_RETENTION_DAYS
@@ -200,4 +200,27 @@ valueFrom:
 {{- else }}
 value: {{ .Values.global.postgresql.auth.password | quote }}
 {{- end }}
+{{- end -}}
+
+{{/*
+Celery broker (Redis/Valkey) connection resolution.
+
+Mirrors the database helpers: decouples where the app connects from which
+backend deploys the broker, so the Bitnami `redis` subchart and a Valkey
+release can coexist during migration.
+
+Resolution order for the broker URL:
+  1. explicit `celery.brokerUrl` (use this to pin the app to a specific backend)
+  2. the Bitnami `redis` subchart service (`redis-master`), when `redis.enabled`
+     (current default; also the safe choice while a Valkey release stands up)
+  3. the Valkey release service (`valkey`), when `valkey.enabled` and Bitnami is
+     disabled
+
+Because Bitnami wins when both are enabled, enabling Valkey never moves the
+app on its own: set `celery.brokerUrl` explicitly (or disable `redis`) to cut
+over. Celery uses the broker only for transient task messages, so no data
+needs to be migrated.
+*/}}
+{{- define "aqueduct.celery.brokerUrl" -}}
+{{- .Values.celery.brokerUrl | default (printf "redis://%s:6379/0" (ternary "valkey" "redis-master" (and .Values.valkey.enabled (not .Values.redis.enabled)))) -}}
 {{- end -}}

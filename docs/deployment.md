@@ -106,6 +106,72 @@ cnpg:
 
 The app auto-derives the CNPG connection (no `database.*` overrides needed).
 
+## Message broker (Redis / Valkey)
+
+Celery uses a Redis-compatible broker. The chart ships with two optional
+backends, controlled independently:
+
+- **Bitnami `redis` subchart** (`redis.enabled`, default `true`) — the legacy
+  default. The app connects to it automatically.
+- **Valkey release** (`valkey.enabled`, default `false`) — the
+  [Valkey](https://github.com/valkey-io/valkey-helm) chart, a drop-in Redis fork.
+
+Only one backend needs to run in steady state, but both can be enabled at the
+same time to migrate with no app downtime.
+
+### Where the app connects
+
+The Celery broker URL is set by `celery.brokerUrl` in `values.yaml`. When left
+blank, the chart resolves it as follows:
+
+1. If `redis.enabled` is `true` → `redis://redis-master:6379/0` (the Bitnami
+   subchart service).
+2. Else if `valkey.enabled` is `true` → `redis://valkey:6379/0` (the Valkey
+   release service).
+
+Because Bitnami wins when both are enabled, **enabling Valkey never moves the
+app on its own**. You cut over by setting `redis.enabled: false` (or by setting
+`celery.brokerUrl` explicitly).
+
+The broker holds only transient Celery task messages (the Bitnami subchart runs
+with `persistence.enabled: false`), so there is no data to migrate — drain
+pending tasks before cutting over.
+
+### Migrating from Bitnami Redis to Valkey
+
+1. Deploy with both backends enabled. The app keeps running against Bitnami;
+   Valkey starts up empty alongside it.
+   ```yaml
+   redis:
+     enabled: true              # keep the source running during migration
+   valkey:
+     enabled: true
+   ```
+2. Wait for the Valkey pod to become ready:
+   `kubectl get pod -l app.kubernetes.io/name=valkey`.
+3. Cut over by disabling Bitnami (a `helm upgrade` is enough — the app then
+   auto-derives `redis://valkey:6379/0`):
+   ```yaml
+   redis:
+     enabled: false
+   valkey:
+     enabled: true
+   ```
+4. Verify the app works (enqueue a request, watch the Celery worker pick it up),
+   then remove the `redis:` block entirely if desired.
+
+### Fresh Valkey deployment (no Bitnami)
+
+```yaml
+redis:
+  enabled: false
+valkey:
+  enabled: true
+```
+
+The app auto-derives the Valkey connection (no `celery.brokerUrl` override
+needed).
+
 ## Notes
 
 - User and admin management will be covered in the User Guide.

@@ -48,7 +48,12 @@ oidc:
 
 
 celery:
-  brokerUrl: "redis://redis-master:6379/0"
+  # Celery broker URL. Leave empty to auto-derive from the enabled broker
+  # backend: the Bitnami `redis` subchart (redis://redis-master:6379/0) when
+  # `redis` is enabled, or the Valkey release (redis://valkey:6379/0) when
+  # `valkey.enabled` is true and `redis` is disabled. Set explicitly to pin the
+  # app to a specific backend while both run side-by-side.
+  brokerUrl: ""
   workerConcurrency: 1
   requestRetentionDays: 7
   schedule: "0 4 * * *"
@@ -194,6 +199,7 @@ cnpg:
         password: "password"
 
 redis:
+  enabled: true
   fullnameOverride: "redis"
   architecture: standalone
   image:
@@ -203,6 +209,22 @@ redis:
   master:
     persistence:
       enabled: false
+
+# Valkey release (https://github.com/valkey-io/valkey-helm), a drop-in Redis
+# fork and alternative to the Bitnami `redis` subchart above. Opt-in: disabled
+# by default. Can be enabled alongside `redis` to run side-by-side during
+# migration. Because Bitnami redis wins when both are enabled, enabling Valkey
+# never moves the app on its own: disable `redis` (or set `celery.brokerUrl`
+# explicitly) to cut over. Celery uses the broker only for transient task
+# messages, so no data needs to be migrated — drain pending tasks before
+# cutting over.
+valkey:
+  enabled: false
+  fullnameOverride: "valkey"
+  auth:
+    enabled: false
+  dataStorage:
+    enabled: false
 
 tika:
   enabled: true

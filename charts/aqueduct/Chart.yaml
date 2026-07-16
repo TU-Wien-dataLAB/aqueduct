@@ -27,9 +27,15 @@ dependencies:
   - name: postgresql
     version: 16.7.4
     repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
   - name: redis
     version: 21.1.7
     repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
+  - name: valkey
+    version: 0.10.0
+    repository: https://valkey.io/valkey-helm/
+    condition: valkey.enabled
   - name: tika
     version: 3.2.2
     repository: https://apache.jfrog.io/artifactory/tika

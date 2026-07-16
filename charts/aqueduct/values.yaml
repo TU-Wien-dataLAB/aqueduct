@@ -69,6 +69,25 @@ tos:
 
 logLevel: "WARNING"
 
+# PostgreSQL connection for the Aqueduct app. Independent of which backend
+# deploys the database, so the Bitnami subchart and a CNPG cluster can coexist
+# during migration. Leave `host`/`name`/`username`/`password` empty to auto-derive
+# them from the enabled backend (CNPG cluster when `cnpg.enabled`, else the
+# Bitnami `postgresql` subchart). Set `host` explicitly to pin the app to a
+# specific backend while both run side by side.
+database:
+  host: ""
+  port: "5432"
+  name: ""
+  username: ""
+  # Credentials: provide `password` directly, OR reference an `existingSecret`.
+  # When CNPG is enabled and both are empty, the password is read from the
+  # operator-created `<cluster>-app` Secret.
+  password: ""
+  existingSecret: ""
+  secretKeys:
+    password: "password"
+
 env:
   - name: DATABASE_ENGINE
     value: "django.db.backends.postgresql"
@@ -128,6 +147,51 @@ postgresql:
       requests:
         cpu: "8"
         memory: "24Gi"
+
+# CloudNativePG cluster (alternative to the Bitnami postgresql subchart).
+# Requires the CNPG operator to be installed in the cluster. Can be enabled
+# alongside `postgresql.enabled: true` so both databases run side by side while
+# data is migrated (see `bootstrapFromExternal` below and docs/deployment.md).
+# Because Bitnami wins when both are enabled, enabling CNPG never moves the app
+# on its own: set `database.host` (and credentials) to cut over once the clone
+# is ready.
+cnpg:
+  enabled: false
+  cluster:
+    nameOverride: ""       # defaults to {{ .Release.Name }}-postgres
+    imageName: "ghcr.io/cloudnative-pg/postgresql:17.2"
+    instances: 1
+    database: aqueduct      # bootstrap initdb database name
+    owner: aqueduct         # bootstrap initdb owner (app connects as this user)
+    storage:
+      size: 100Gi
+    resources: { }
+    # Arbitrary Cluster spec fields merged on top of the template (e.g.
+    # postgresql.parameters, monitoring, affinity, backup, walArchive).
+    spec: { }
+  # Migrate data automatically by bootstrapping the CNPG cluster from an existing
+  # PostgreSQL instance (e.g. the Bitnami subchart) via pg_basebackup, instead of
+  # running initdb. CNPG clones the source at creation time and then promotes the
+  # clone to a primary, so no separate dump/restore job is needed. The source must
+  # allow replication connections (wal_level >= replica, a pg_hba `replication`
+  # rule, and a user with REPLICATION privilege, e.g. the `postgres` superuser).
+  # Only takes effect on first creation (the Cluster must not yet exist).
+  bootstrapFromExternal:
+    enabled: false
+    name: bitnami          # internal name referenced by pg_basebackup.source
+    connection:
+      # Defaults to the Bitnami subchart connection when blank.
+      host: ""            # defaults to global.postgresql.fullnameOverride
+      port: ""            # defaults to global.postgresql.service.ports.postgresql
+      database: ""        # db to connect to for the backup, defaults to "postgres"
+      username: ""        # needs REPLICATION privilege, defaults to "postgres"
+      # Source password: set `password` (plaintext; a Secret is auto-created) OR
+      # reference an `existingSecret`. For the Bitnami subchart this is typically
+      # the `postgres-password` in the `<release>-postgresql` Secret.
+      password: ""
+      existingSecret: ""
+      secretKeys:
+        password: "password"
 
 redis:
   fullnameOverride: "redis"

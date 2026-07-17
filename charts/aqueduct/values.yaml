@@ -48,6 +48,10 @@ oidc:
 
 
 celery:
+  # Extra environment variables appended to the celery worker container only.
+  workerExtraEnv: []
+  # Extra environment variables appended to the celery beat sidecar container only.
+  beatExtraEnv: []
   # Celery broker URL. Leave empty to auto-derive from the enabled broker
   # backend: the Bitnami `redis` subchart (redis://redis-master:6379/0) when
   # `redis` is enabled, or the Valkey release (redis://valkey:6379/0) when
@@ -98,6 +102,12 @@ env:
     value: "django.db.backends.postgresql"
   # - name: DATABASE_ENGINE
   #   value: "django.db.backends.sqlite3"
+
+# Extra environment variables appended to the web (Django/daphne) container
+# only. Use this to set per-container values such as the PostgreSQL pool size,
+# which should differ between the web server, celery worker, and celery beat.
+web:
+  extraEnv: []
 
 settingsPy:
   extra: |

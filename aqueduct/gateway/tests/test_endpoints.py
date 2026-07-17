@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
@@ -1262,6 +1263,18 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
 
 class TokenLimitTest(ChatCompletionsBase):
+    def setUp(self):
+        super().setUp()
+        # Rate-limit counts now live in the cache (LocMemCache under test), which
+        # is shared in-process across tests within the same window. Clear it so
+        # bucket counts from a previous test in the same minute/hour/day don't
+        # bleed into this one (DB transaction rollback no longer resets them).
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
     def _setup_limits(self, kind: str, field: str, value: int):
         """
         Set a rate limit for the given kind ('org', 'team', 'user') and field.
@@ -1499,10 +1512,7 @@ class TokenLimitTest(ChatCompletionsBase):
             limit_desc="user output_tokens_per_minute",
         )
 
-    @patch(
-        "gateway.views.decorators.get_all_model_request_limit_multipliers",
-        return_value={"gpt-4.1-nano": 2.0},
-    )
+    @patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=2.0)
     def test_per_model_request_limit_multiplier_budget(self, mock_multipliers):
         """
         Tests that per-model multipliers act as a budget cost.
@@ -1513,9 +1523,6 @@ class TokenLimitTest(ChatCompletionsBase):
         """
         # Set request limit to 3
         self._setup_limits("org", "requests_per_minute", 3)
-
-        # Clear cached request counts from fixture setup
-        Request.objects.all().delete()
 
         # Requests 1-6 should succeed (weighted cost up to 2.5 < 3)
         for i in range(6):
@@ -1534,10 +1541,7 @@ class TokenLimitTest(ChatCompletionsBase):
             f"Expected 429 Too Many Requests, got {response7.status_code}: {response7.content}",
         )
 
-    @patch(
-        "gateway.views.decorators.get_all_model_request_limit_multipliers",
-        return_value={"gpt-4.1-nano": 0.5},
-    )
+    @patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=0.5)
     def test_per_model_expensive_multiplier_limits_requests(self, mock_multipliers):
         """
         Tests that a model with multiplier < 1 costs more budget per request.
@@ -1550,9 +1554,6 @@ class TokenLimitTest(ChatCompletionsBase):
         # Set request limit to 3
         self._setup_limits("org", "requests_per_minute", 3)
 
-        # Clear cached request counts from fixture setup
-        Request.objects.all().delete()
-
         # First request: weighted = 0 < 3
         response1 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
         self.assertEqual(response1.status_code, 200)
@@ -1564,6 +1565,35 @@ class TokenLimitTest(ChatCompletionsBase):
         # Third request: weighted = 4.0 >= 3
         response3 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
         self.assertEqual(response3.status_code, 429)
+
+    def test_check_limits_uses_no_request_table_sql(self):
+        """A rate-limited (429) request issues no SQL against ``management_request``.
+
+        ``check_limits`` now reads from the cache, not the ``Request`` table. A
+        blocked request returns 429 before ``log_request`` runs, so it must not
+        touch ``management_request`` at all (no aggregate SELECT, no INSERT).
+        """
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self._setup_limits("org", "requests_per_minute", 1)
+        # First request consumes the minute bucket (and creates its Request row).
+        first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(first.status_code, 200)
+
+        # Capture SQL during the second (blocked) request.
+        with CaptureQueriesContext(connection) as ctx:
+            blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        request_table_queries = [
+            q["sql"] for q in ctx.captured_queries if "management_request" in q["sql"]
+        ]
+        self.assertEqual(
+            request_table_queries,
+            [],
+            "check_limits must not query the Request table; found: "
+            + " | ".join(request_table_queries),
+        )
 
 
 @override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH="router.yaml")

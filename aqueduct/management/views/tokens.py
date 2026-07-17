@@ -14,6 +14,7 @@ from django.views import View
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, TemplateView, UpdateView
 
+from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
 from management.models import LimitSet, ServiceAccount, Token
 from management.views.base import BaseAqueductView
@@ -39,11 +40,21 @@ class UserTokensView(BaseAqueductView, TemplateView):
         # Effective limits for user-owned tokens (UserProfile + Org fallback)
         user_limits: LimitSet = LimitSet.from_objects(profile, profile.org)
 
+        # Current rate-limit usage per token (shown under each list item). Each
+        # token operates under ``user_limits`` independently; the bars report
+        # that token's own consumed request budget. Fetch every user-token
+        # bucket in a single ``cache.get_many``.
+        per_token_usage = get_per_token_usage([token.id for token in tokens])
+        for token in tokens:
+            token.usage = per_token_usage[token.id]  # type: ignore[attr-defined]
+
         # Effective limits per service account (Team + Org fallback).
         # Computed inline from already-select_related data to avoid the
         # per-SA DB query that sa.token.get_limit() would trigger.
+        per_sa_token_usage = get_per_token_usage([sa.token.id for sa in service_accounts])
         for sa in service_accounts:
             sa.effective_limits = LimitSet.from_objects(sa.team, sa.team.org)  # type: ignore[attr-defined]
+            sa.usage = per_sa_token_usage[sa.token.id]  # type: ignore[attr-defined]
 
         context.update(
             {

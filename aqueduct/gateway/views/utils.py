@@ -16,6 +16,7 @@ from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from openai import AsyncStream
 
 from gateway.config import get_openai_client, get_router
+from gateway.rate_limiting import record_token_usage
 from management.models import Request, Usage
 
 log = logging.getLogger("aqueduct")
@@ -79,6 +80,10 @@ def _openai_stream(
         request_log.token_usage = token_usage
         request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
         await request_log.asave()
+        # Record token usage into the rate-limit buckets. Streaming requests
+        # defer recording to here (stream end) since token usage is only known
+        # once the upstream stream completes.
+        record_token_usage(request_log.token_id, request_log.token_usage)
         # Streaming is done, yield the [DONE] chunk
         yield "data: [DONE]\n\n"
 

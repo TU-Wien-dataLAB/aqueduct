@@ -180,6 +180,16 @@ LITELLM_ROUTER_CONFIG_FILE_PATH = os.environ.get("LITELLM_ROUTER_CONFIG_FILE_PAT
 AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST: list[str] = []
 AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST: list[str] = []
 
+# Rate limiting (cache-backed minute/hour/day buckets; see gateway/rate_limiting.py)
+AQUEDUCT_RATE_LIMIT_ENABLED = os.getenv("AQUEDUCT_RATE_LIMIT_ENABLED", "True").lower() == "true"
+AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS = int(
+    os.getenv("AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS", "5")
+)
+# Window multiplier defaults (applied when no object in the hierarchy sets one):
+# hourly/daily limits are derived from the per-minute limit x multiplier.
+AQUEDUCT_HOURLY_LIMIT_MULTIPLIER = int(os.getenv("AQUEDUCT_HOURLY_LIMIT_MULTIPLIER", "60"))
+AQUEDUCT_DAILY_LIMIT_MULTIPLIER = int(os.getenv("AQUEDUCT_DAILY_LIMIT_MULTIPLIER", "1440"))
+
 # External Files/Batches API endpoint (required)
 AQUEDUCT_FILES_API_URL = os.environ.get("AQUEDUCT_FILES_API_URL")
 AQUEDUCT_FILES_API_KEY = os.environ.get("AQUEDUCT_FILES_API_KEY", None)
@@ -374,7 +384,7 @@ CACHES = {
     }
 }
 
-if TESTING:
+if TESTING or DEBUG:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 # Password validation

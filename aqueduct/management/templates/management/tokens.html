@@ -18,55 +18,59 @@
         {% if tokens %}
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for token in tokens %}
-                    <li class="list-row flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                        <div class="flex items-start flex-grow mr-4 overflow-hidden min-w-0">
-                            <img src="{% static 'icons/key.svg' %}" alt="API Key" class="w-5 mr-2 mt-0.5 flex-shrink-0 [[data-theme=dark]_&]:invert">
-                            <div class="min-w-0">
-                                <div class="flex flex-wrap items-baseline gap-x-2">
-                                    <span class="font-medium truncate">{{ token.name }}</span>
-                                    <span class="text-sm opacity-50 flex-shrink-0">
-                                        Created: {{ token.created_at|date:"Y-m-d" }}
-                                    </span>
-                                    <span class="text-sm opacity-50 flex-shrink-0">
-                                        Key: <span class="font-mono text-xs">{{ token.key_preview }}</span>
-                                    </span>
-                                    <span class="text-sm opacity-50 flex-shrink-0">
-                                        {% if token.expires_at %}
-                                            Expires:
-                                            <span {% if token.expires_at <= now %}class="text-error font-semibold"{% endif %}>
-                                                {{ token.expires_at|date:"Y-m-d H:i" }} {{ tz |default:'UTC' }}
-                                                {% if token.is_expired %}
-                                                    (Expired)
-                                                {% endif %}
-                                            </span>
-                                        {% else %}
-                                            Expires: Never
-                                        {% endif %}
-                                    </span>
-                                </div>
-                                {# Effective limits (UserProfile + Org fallback) #}
-                                <div class="mt-1">
-                                    {% include 'management/_limits_compact.html' with limit_object=user_limits %}
+                    <li class="list-row flex flex-col gap-2">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <div class="flex items-start flex-grow mr-4 overflow-hidden min-w-0">
+                                <img src="{% static 'icons/key.svg' %}" alt="API Key" class="w-5 mr-2 mt-0.5 flex-shrink-0 [[data-theme=dark]_&]:invert">
+                                <div class="min-w-0">
+                                    <div class="flex flex-wrap items-baseline gap-x-2">
+                                        <span class="font-medium truncate">{{ token.name }}</span>
+                                        <span class="text-sm opacity-50 flex-shrink-0">
+                                            Created: {{ token.created_at|date:"Y-m-d" }}
+                                        </span>
+                                        <span class="text-sm opacity-50 flex-shrink-0">
+                                            Key: <span class="font-mono text-xs">{{ token.key_preview }}</span>
+                                        </span>
+                                        <span class="text-sm opacity-50 flex-shrink-0">
+                                            {% if token.expires_at %}
+                                                Expires:
+                                                <span {% if token.expires_at <= now %}class="text-error font-semibold"{% endif %}>
+                                                    {{ token.expires_at|date:"Y-m-d H:i" }} {{ tz |default:'UTC' }}
+                                                    {% if token.is_expired %}
+                                                        (Expired)
+                                                    {% endif %}
+                                                </span>
+                                            {% else %}
+                                                Expires: Never
+                                            {% endif %}
+                                        </span>
+                                    </div>
+                                    {# Effective limits (UserProfile + Org fallback) #}
+                                    <div class="mt-1">
+                                        {% include 'management/_limits_compact.html' with limit_object=user_limits %}
+                                    </div>
                                 </div>
                             </div>
+                            <div class="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
+                                <form action="{% url 'token_regenerate' token.id %}" method="post" class="inline">
+                                    {% csrf_token %}
+                                    <button type="submit"
+                                            class="btn btn-sm btn-square btn-warning"
+                                            title="Regenerate API Key {{ token.name }}"
+                                            onclick="return confirm('Are you sure you want to regenerate the API key {{ token.name|escapejs }}? This will invalidate the current API key immediately.');">
+                                        <img src="{% static 'icons/update.svg' %}" alt="Regenerate" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                    </button>
+                                </form>
+                                <a href="{% url 'token_edit' token.id %}" class="btn btn-info btn-sm btn-square" title="Edit {{ token.name }}">
+                                    <img src="{% static 'icons/edit.svg' %}" alt="Edit" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                </a>
+                                <a href="{% url 'token_delete' token.id %}" class="btn btn-error btn-sm btn-square" title="Delete {{ token.name }}">
+                                    <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                                </a>
+                            </div>
                         </div>
-                        <div class="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
-                            <form action="{% url 'token_regenerate' token.id %}" method="post" class="inline">
-                                {% csrf_token %}
-                                <button type="submit"
-                                        class="btn btn-sm btn-square btn-warning"
-                                        title="Regenerate API Key {{ token.name }}"
-                                        onclick="return confirm('Are you sure you want to regenerate the API key {{ token.name|escapejs }}? This will invalidate the current API key immediately.');">
-                                    <img src="{% static 'icons/update.svg' %}" alt="Regenerate" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                                </button>
-                            </form>
-                            <a href="{% url 'token_edit' token.id %}" class="btn btn-info btn-sm btn-square" title="Edit {{ token.name }}">
-                                <img src="{% static 'icons/edit.svg' %}" alt="Edit" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                            </a>
-                            <a href="{% url 'token_delete' token.id %}" class="btn btn-error btn-sm btn-square" title="Delete {{ token.name }}">
-                                <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                            </a>
-                        </div>
+                        {# Per-window (min/hour/day) request usage for this token #}
+                        {% include 'management/_rate_usage.html' with usage=token.usage limits=user_limits %}
                     </li>
                 {% endfor %}
             </ul>
@@ -80,25 +84,29 @@
         {% if service_accounts %}
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for sa in service_accounts %}
-                    <li class="list-row flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                        <div class="flex items-start flex-grow mr-4 overflow-hidden min-w-0">
-                            <img src="{% static 'icons/key.svg' %}" alt="Service Account" class="w-5 mr-2 mt-0.5 flex-shrink-0 [[data-theme=dark]_&]:invert">
-                            <div class="min-w-0">
-                                <div class="flex flex-wrap items-baseline gap-x-2">
-                                    <span class="font-medium truncate">{{ sa.name }}</span>
-                                    <span class="text-sm opacity-50 flex-shrink-0">
-                                        Team: {{ sa.team.name }}
-                                    </span>
-                                    <span class="text-sm opacity-50 flex-shrink-0">
-                                        Key: {{ sa.token.key_preview }}
-                                    </span>
-                                </div>
-                                {# Per-SA effective limits (Team + Org fallback) #}
-                                <div class="mt-1">
-                                    {% include 'management/_limits_compact.html' with limit_object=sa.effective_limits %}
+                    <li class="list-row flex flex-col gap-2">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <div class="flex items-start flex-grow mr-4 overflow-hidden min-w-0">
+                                <img src="{% static 'icons/key.svg' %}" alt="Service Account" class="w-5 mr-2 mt-0.5 flex-shrink-0 [[data-theme=dark]_&]:invert">
+                                <div class="min-w-0">
+                                    <div class="flex flex-wrap items-baseline gap-x-2">
+                                        <span class="font-medium truncate">{{ sa.name }}</span>
+                                        <span class="text-sm opacity-50 flex-shrink-0">
+                                            Team: {{ sa.team.name }}
+                                        </span>
+                                        <span class="text-sm opacity-50 flex-shrink-0">
+                                            Key: {{ sa.token.key_preview }}
+                                        </span>
+                                    </div>
+                                    {# Per-SA effective limits (Team + Org fallback) #}
+                                    <div class="mt-1">
+                                        {% include 'management/_limits_compact.html' with limit_object=sa.effective_limits %}
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                        {# Per-window (min/hour/day) request usage for this service account #}
+                        {% include 'management/_rate_usage.html' with usage=sa.usage limits=sa.effective_limits %}
                     </li>
                 {% endfor %}
             </ul>

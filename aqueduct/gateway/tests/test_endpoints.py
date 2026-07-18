@@ -1533,6 +1533,9 @@ class TokenLimitTest(ChatCompletionsBase):
             429,
             f"Expected 429 Too Many Requests, got {response7.status_code}: {response7.content}",
         )
+        self.assertEqual(
+            response7.json()["error"]["message"], "Rate limit exceeded. Request limit (6/min)."
+        )
 
     @patch(
         "gateway.views.decorators.get_all_model_request_limit_multipliers",
@@ -1564,6 +1567,9 @@ class TokenLimitTest(ChatCompletionsBase):
         # Third request: weighted = 4.0 >= 3
         response3 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
         self.assertEqual(response3.status_code, 429)
+        self.assertEqual(
+            response3.json()["error"]["message"], "Rate limit exceeded. Request limit (1.5/min)."
+        )
 
 
 @override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH="router.yaml")

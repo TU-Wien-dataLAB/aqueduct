@@ -335,7 +335,12 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                     limits.requests_per_minute is not None
                     and weighted_request_count >= limits.requests_per_minute
                 ):
-                    exceeded.append(f"Request limit ({limits.requests_per_minute}/min)")
+                    request_limit = float(limits.requests_per_minute)
+                    pydantic_model: dict[str, Any] | None = kwargs.get("pydantic_model")
+                    model = pydantic_model.get("model") if pydantic_model else None
+                    if model:
+                        request_limit *= multipliers.get(resolve_model_alias(model), 1.0)
+                    exceeded.append(f"Request limit ({request_limit:g}/min)")
 
                 if (
                     limits.input_tokens_per_minute is not None

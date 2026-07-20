@@ -52,9 +52,24 @@ Decorator = Callable[[AsyncView], AsyncView]
 
 
 def token_authenticated(token_auth_only: bool) -> Decorator:
+    """
+    Retrieve user's token from the database and add it to the decorated view's kwargs.
+
+    Also register the time when the request came in, as "request_start" in kwargs;
+    this value can later be used to measure the total time it took to process the request.
+
+    Args:
+        token_auth_only: if `True`, decorated view is only accessible with token
+            authentication, i.e. token has to be sent in the request header, otherwise
+            authentication fails.
+            If `False`, authentication with other backends is also accepted.
+    """
+
     def decorator(view_func: AsyncView) -> AsyncView:
         @wraps(view_func)
         async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
+            kwargs["request_start"] = time.monotonic()
+
             unauthorized_response = error_response("Authentication Required", status=401)
             # Authentication Check
             if not (await request.auser()).is_authenticated:
@@ -398,11 +413,15 @@ def log_request(view_func: AsyncView) -> AsyncView:
         await request_log.asave()
         log.debug("Initial request log object created.")
 
-        start_time = time.monotonic()
+        response_start_time = time.monotonic()
         result: HttpResponse | StreamingHttpResponse = await view_func(request, *args, **kwargs)
         end_time = time.monotonic()
 
-        request_log.response_time_ms = int((end_time - start_time) * 1000)
+        assert "request_start" in kwargs, (
+            "`log_request` decorator can only be used with the `token_authenticated` decorator"
+        )
+        request_log.processing_time_ms = int((response_start_time - kwargs["request_start"]) * 1000)
+        request_log.response_time_ms = int((end_time - response_start_time) * 1000)
         request_log.status_code = result.status_code
 
         await request_log.asave()

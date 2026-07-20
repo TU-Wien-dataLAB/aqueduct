@@ -34,8 +34,8 @@ from .utils import _get_token_usage, _openai_stream
 @check_limits
 @ensure_usage
 @resolve_alias
-@log_request
 @check_model_availability
+@log_request
 @catch_router_exceptions
 async def completions(
     request: ASGIRequest,

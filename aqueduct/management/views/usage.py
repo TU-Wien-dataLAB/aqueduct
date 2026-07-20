@@ -192,7 +192,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
 
     def _get_timeseries(
         self, reqs: QuerySet[Request], selected_span: str, span_cfg: dict
-    ) -> (datetime.datetime, list[tuple[int, int]]):
+    ) -> tuple[datetime.datetime, list[tuple[int, int]]]:
         """Get the start time and the request count per time bucket of the timeseries."""
         now = timezone.now()
         start_time = now - span_cfg["delta"]
@@ -210,7 +210,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
 
     def _get_top_items(
         self, reqs: QuerySet[Request], selected_org: Org | None, selected_token: Token | None
-    ) -> dict[str, Any]:
+    ) -> QuerySet[Request, dict[str, Any]]:
         """Annotate the `Request` queryset and get the top-level entities as dicts"""
         if selected_org is None:
             # Top orgs sorted by request count - only available for global admins.

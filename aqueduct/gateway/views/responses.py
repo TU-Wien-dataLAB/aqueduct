@@ -42,9 +42,9 @@ from .utils import (
 @check_limits
 @tos_accepted
 @resolve_alias
-@log_request
 @check_model_availability
 @check_tool_availability
+@log_request
 @catch_router_exceptions
 async def create_response(
     request: ASGIRequest,
@@ -88,8 +88,8 @@ async def create_response(
 @require_http_methods(["GET", "DELETE"])
 @token_authenticated(token_auth_only=True)
 @tos_accepted
-@log_request
 @validate_response_id
+@log_request
 @catch_router_exceptions
 async def response(
     request: ASGIRequest, response_id: str, token: Token, *args: Any, **kwargs: Any
@@ -120,8 +120,8 @@ async def response(
 @require_GET
 @token_authenticated(token_auth_only=True)
 @tos_accepted
-@log_request
 @validate_response_id
+@log_request
 @catch_router_exceptions
 async def get_response_input_items(
     request: ASGIRequest, response_id: str, token: Token, *args: Any, **kwargs: Any

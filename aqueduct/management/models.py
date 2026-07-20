@@ -688,7 +688,13 @@ class Request(models.Model):
         null=True, blank=True, help_text="HTTP status code returned by the endpoint"
     )
     response_time_ms = models.PositiveIntegerField(
-        null=True, blank=True, help_text="Time taken to respond, in milliseconds"
+        null=True, blank=True, help_text="Time taken by the API to respond, in milliseconds"
+    )
+    processing_time_ms = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Aqueduct overhead, or the processing time of the request before it is passed "
+        "to the API, in milliseconds",
     )
     user_agent = models.CharField(
         max_length=256, blank=True, help_text="User agent string of the client making the request"

@@ -76,8 +76,9 @@ def _openai_stream(
             except Exception as e:
                 yield f"data: {e!s}\n\n"
 
+        end_time = time.monotonic()
         request_log.token_usage = token_usage
-        request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
+        request_log.response_time_ms = int((end_time - start_time) * 1000)
         await request_log.asave()
         # Streaming is done, yield the [DONE] chunk
         yield "data: [DONE]\n\n"

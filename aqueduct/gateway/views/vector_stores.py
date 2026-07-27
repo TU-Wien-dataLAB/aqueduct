@@ -161,8 +161,8 @@ async def vector_stores(
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(VectorStoreUpdateParams))
-@log_request
 @require_files_api_client
+@log_request
 @catch_router_exceptions
 async def vector_store(
     request: ASGIRequest,
@@ -257,8 +257,8 @@ async def vector_store(
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(VectorStoreSearchParams))
-@log_request
 @require_files_api_client
+@log_request
 @catch_router_exceptions
 async def vector_store_search(
     request: ASGIRequest,

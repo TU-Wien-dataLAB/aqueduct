@@ -539,13 +539,12 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
                 client = get_files_api_client()
             except ValueError as e:
                 raise ValueError(f"Files API not configured: {e}") from e
-            response = await client.files.content(file_obj.id)
-            return response.content
         except FileObject.DoesNotExist:
             raise
         except Exception as e:
             raise ValueError(f"Failed to read file with id {file_id}: {e}") from e
         else:
+            response = await client.files.content(file_obj.id)
             return response.content
     else:
         raise RuntimeError("Neither 'file_data' nor 'file_id' are given.")
@@ -953,7 +952,7 @@ async def _validate_mcp_tool(
     server_url = tool.get("server_url")
     if not server_url:
         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-            log.exception("MCP server not found - %s", server_name)
+            log.error("MCP server not found - %s", server_name)
             return error_response(f"MCP server not found - {server_name}", status=404)
         return None
 
@@ -969,7 +968,7 @@ async def _validate_mcp_tool(
 
     if not server_config:
         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-            log.exception("MCP server not found - %s", server_name)
+            log.error("MCP server not found - %s", server_name)
             return error_response(f"MCP server not found - {server_name}", status=404)
         return None
 

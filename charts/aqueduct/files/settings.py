@@ -426,5 +426,7 @@ LOGGING = {
 
 if TESTING:
     logger = logging.getLogger("aqueduct")
-    logging.disable(logging.NOTSET)
-    logger.setLevel(logging.DEBUG)
+    logging.disable(logging.ERROR)
+    logger.setLevel(logging.CRITICAL)
+    # logging.disable(logging.NOTSET)
+    # logger.setLevel(logging.DEBUG)

@@ -112,10 +112,7 @@ curl https://your-aqueduct-domain.com/files/{file_id} \
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com", api_key="YOUR_AQUEDUCT_TOKEN")
 
 # Upload file
 with open("data.jsonl", "rb") as f:

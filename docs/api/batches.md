@@ -101,16 +101,11 @@ curl -X POST https://your-aqueduct-domain.com/batches/{batch_id}/cancel \
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com", api_key="YOUR_AQUEDUCT_TOKEN")
 
 # Create batch
 batch = client.batches.create(
-    input_file_id="file-id",
-    completion_window="24h",
-    endpoint="/v1/chat/completions",
+    input_file_id="file-id", completion_window="24h", endpoint="/v1/chat/completions"
 )
 print(batch.id, batch.status)
 

@@ -30,14 +30,10 @@ curl https://your-aqueduct-domain.com/models \
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com", api_key="YOUR_AQUEDUCT_TOKEN")
 
 models = client.models.list()
 print(models.data)
-
 ```
 
 ## Sample Response

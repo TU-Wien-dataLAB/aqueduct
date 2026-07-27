@@ -134,6 +134,7 @@ async def batches(
 @csrf_exempt
 @require_http_methods(["GET"])
 @token_authenticated(token_auth_only=True)
+@tos_accepted
 @log_request
 @catch_router_exceptions
 async def batch(
@@ -192,6 +193,7 @@ async def batch(
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=False)
+@tos_accepted
 @log_request
 @catch_router_exceptions
 async def batch_cancel(

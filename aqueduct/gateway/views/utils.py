@@ -22,11 +22,12 @@ log = logging.getLogger("aqueduct")
 class RawJsonResponse:
     """A wrapper for data that can be turned into a JSONResponse."""
 
-    def __init__(self, data: dict[str, Any], **kwargs: Any) -> None:
+    def __init__(self, data: dict[str, Any], status_code: int = 200, **kwargs: Any) -> None:
         if not isinstance(data, dict):
             raise TypeError("RawJsonResponse data has to be a dict")
 
-        self.data = data
+        self.content = data
+        self.status_code = status_code
         self.kwargs = kwargs
 
 
@@ -35,17 +36,19 @@ class RawStreamingResponse:
 
     def __init__(
         self,
-        stream: AsyncIterator[Any],
+        streaming_content: AsyncIterator[Any],
         request_log: Request,
         content_type: str = "text/event-stream",
+        status_code: int = 200,
         **kwargs: Any,
     ) -> None:
-        if not isinstance(stream, AsyncIterator):
-            raise TypeError("RawStreamResponse stream has to be async iterable")
+        if not isinstance(streaming_content, AsyncIterator):
+            raise TypeError("RawStreamResponse streaming_content has to be async iterable")
 
-        self.stream = stream
+        self.streaming_content = streaming_content
         self.request_log = request_log
         self.content_type = content_type
+        self.status_code = status_code
         self.kwargs = kwargs
 
 

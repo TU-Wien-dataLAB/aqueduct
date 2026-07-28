@@ -28,10 +28,12 @@ class HTTPResponseMiddleware:
         response = self.get_response(request)
 
         if isinstance(response, RawJsonResponse):
-            return JsonResponse(response.data, **response.kwargs)
+            return JsonResponse(response.content, **response.kwargs)
 
         if isinstance(response, RawStreamingResponse):
-            streaming_content = _openai_stream(response.stream, request_log=response.request_log)
+            streaming_content = _openai_stream(
+                response.streaming_content, request_log=response.request_log
+            )
             return StreamingHttpResponse(streaming_content=streaming_content, **response.kwargs)
 
         return response

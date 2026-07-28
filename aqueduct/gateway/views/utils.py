@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Generator
 from contextlib import contextmanager
 from typing import Any
 
@@ -11,14 +11,42 @@ import openai
 from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
-from litellm import TextCompletionStreamWrapper
-from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-from openai import AsyncStream
+from pydantic import BaseModel
 
 from gateway.config import get_openai_client, get_router
 from management.models import Request, Usage
 
 log = logging.getLogger("aqueduct")
+
+
+class RawJsonResponse:
+    """A wrapper for data that can be turned into a JSONResponse."""
+
+    def __init__(self, data: dict[str, Any], **kwargs: Any) -> None:
+        if not isinstance(data, dict):
+            raise TypeError("RawJsonResponse data has to be a dict")
+
+        self.data = data
+        self.kwargs = kwargs
+
+
+class RawStreamingResponse:
+    """A wrapper for streaming data that can be turned into a StreamingHttpResponse."""
+
+    def __init__(
+        self,
+        stream: AsyncIterator[Any],
+        request_log: Request,
+        content_type: str = "text/event-stream",
+        **kwargs: Any,
+    ) -> None:
+        if not isinstance(stream, AsyncIterator):
+            raise TypeError("RawStreamResponse stream has to be async iterable")
+
+        self.stream = stream
+        self.request_log = request_log
+        self.content_type = content_type
+        self.kwargs = kwargs
 
 
 def _get_token_usage(content: bytes | dict[str, Any]) -> Usage:
@@ -54,8 +82,7 @@ def _get_token_usage(content: bytes | dict[str, Any]) -> Usage:
 
 
 def _openai_stream(
-    stream: CustomStreamWrapper | TextCompletionStreamWrapper | AsyncStream[Any],
-    request_log: Request,
+    stream: AsyncIterator[BaseModel], request_log: Request
 ) -> AsyncGenerator[str, None]:
     start_time = time.monotonic()
 

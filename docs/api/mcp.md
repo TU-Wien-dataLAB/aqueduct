@@ -77,11 +77,7 @@ async def main():
 
     async with (
         httpx.AsyncClient(headers=headers) as client,
-        streamable_http_client(url, http_client=client) as (
-            read_stream,
-            write_stream,
-            _,
-        ),
+        streamable_http_client(url, http_client=client) as (read_stream, write_stream, _),
     ):
         # Create a session
         async with ClientSession(read_stream, write_stream) as session:
@@ -95,7 +91,6 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
 ```
 
 For more information about the Model Context Protocol,

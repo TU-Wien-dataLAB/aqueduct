@@ -56,10 +56,7 @@ curl https://your-aqueduct-domain.com/audio/speech \
 from pathlib import Path
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com/v1",
-    api_key="YOUR_AQUEDUCT_TOKEN"
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com/v1", api_key="YOUR_AQUEDUCT_TOKEN")
 
 speech_file_path = Path("/tmp") / "speech.mp3"
 

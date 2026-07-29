@@ -97,15 +97,12 @@ curl https://your-aqueduct-domain.com/v1/responses \
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com/v1",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com/v1", api_key="YOUR_AQUEDUCT_TOKEN")
 
 response = client.responses.create(
     model="your-model-name",
     input=[{"role": "user", "content": "Hello, how are you?"}],
-    max_output_tokens=50
+    max_output_tokens=50,
 )
 
 print(response.output)
@@ -116,10 +113,7 @@ print(response.output)
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com/v1",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com/v1", api_key="YOUR_AQUEDUCT_TOKEN")
 
 tools = [
     {
@@ -127,24 +121,24 @@ tools = [
         "name": "get_current_weather",
         "description": "Get the current weather in a given location",
         "parameters": {
-          "type": "object",
-          "properties": {
-              "location": {
-                  "type": "string",
-                  "description": "The city and state, e.g. San Francisco, CA",
-              },
-              "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
-          },
-          "required": ["location", "unit"],
-        }
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "The city and state, e.g. San Francisco, CA",
+                },
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+            },
+            "required": ["location", "unit"],
+        },
     }
 ]
 
 response = client.responses.create(
-  model="your-model-name",
-  tools=tools,
-  input="What is the weather like in Boston today?",
-  tool_choice="auto"
+    model="your-model-name",
+    tools=tools,
+    input="What is the weather like in Boston today?",
+    tool_choice="auto",
 )
 
 print(response)
@@ -155,10 +149,7 @@ print(response)
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com/v1",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com/v1", api_key="YOUR_AQUEDUCT_TOKEN")
 
 # Use an MCP tool from a configured server
 response = client.responses.create(
@@ -169,9 +160,9 @@ response = client.responses.create(
             "type": "mcp",
             "name": "search_web",
             "server_label": "search",  # Must be configured and accessible to token
-            "description": "Search the web for information"
+            "description": "Search the web for information",
         }
-    ]
+    ],
 )
 ```
 

@@ -140,7 +140,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
     deployment: litellm.Deployment | None = router.get_deployment(model_id=model)
 
     if deployment is None:
-        log.exception("Model '%s' not found in router deployments", model)
+        log.error("Model '%s' not found in router deployments", model)
         raise openai.NotFoundError(
             message=f"Model '{model}' not found!",
             response=httpx.Response(

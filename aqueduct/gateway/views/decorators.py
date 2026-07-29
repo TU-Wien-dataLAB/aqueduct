@@ -958,7 +958,7 @@ async def _validate_mcp_tool(
     server_url = tool.get("server_url")
     if not server_url:
         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-            log.exception("MCP server not found - %s", server_name)
+            log.error("MCP server not found - %s", server_name)
             return error_response(f"MCP server not found - {server_name}", status=404)
         return None
 
@@ -974,7 +974,7 @@ async def _validate_mcp_tool(
 
     if not server_config:
         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-            log.exception("MCP server not found - %s", server_name)
+            log.error("MCP server not found - %s", server_name)
             return error_response(f"MCP server not found - {server_name}", status=404)
         return None
 

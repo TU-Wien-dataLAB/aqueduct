@@ -350,7 +350,12 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                     limits.requests_per_minute is not None
                     and weighted_request_count >= limits.requests_per_minute
                 ):
-                    exceeded.append(f"Request limit ({limits.requests_per_minute}/min)")
+                    request_limit = float(limits.requests_per_minute)
+                    pydantic_model: dict[str, Any] | None = kwargs.get("pydantic_model")
+                    model = pydantic_model.get("model") if pydantic_model else None
+                    if model:
+                        request_limit *= multipliers.get(resolve_model_alias(model), 1.0)
+                    exceeded.append(f"Request limit ({request_limit:g}/min)")
 
                 if (
                     limits.input_tokens_per_minute is not None
@@ -953,7 +958,7 @@ async def _validate_mcp_tool(
     server_url = tool.get("server_url")
     if not server_url:
         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-            log.exception("MCP server not found - %s", server_name)
+            log.error("MCP server not found - %s", server_name)
             return error_response(f"MCP server not found - {server_name}", status=404)
         return None
 
@@ -969,7 +974,7 @@ async def _validate_mcp_tool(
 
     if not server_config:
         if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-            log.exception("MCP server not found - %s", server_name)
+            log.error("MCP server not found - %s", server_name)
             return error_response(f"MCP server not found - {server_name}", status=404)
         return None
 

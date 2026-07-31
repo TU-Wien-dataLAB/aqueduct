@@ -21,7 +21,7 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Sum
-from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.urls import reverse
 from django.utils import timezone
 from mcp.types import JSONRPCMessage
@@ -41,12 +41,12 @@ from gateway.config import (
     resolve_model_alias,
 )
 from gateway.views.errors import error_response
-from gateway.views.utils import get_response_from_cache, in_wildcard
+from gateway.views.utils import RawJsonResponse, get_response_from_cache, in_wildcard
 from management.models import FileObject, Request, Token, VectorStore
 
 log = logging.getLogger("aqueduct")
 
-ViewResult = HttpResponse | StreamingHttpResponse
+ViewResult = HttpResponse | StreamingHttpResponse | RawJsonResponse
 AsyncView = Callable[..., Coroutine[Any, Any, ViewResult]]
 Decorator = Callable[[AsyncView], AsyncView]
 
@@ -419,7 +419,7 @@ def log_request(view_func: AsyncView) -> AsyncView:
         log.debug("Initial request log object created.")
 
         response_start_time = time.monotonic()
-        result: HttpResponse | StreamingHttpResponse = await view_func(request, *args, **kwargs)
+        result: ViewResult = await view_func(request, *args, **kwargs)
         end_time = time.monotonic()
 
         assert "request_start" in kwargs, (
@@ -650,7 +650,7 @@ def catch_router_exceptions(view_func: AsyncView) -> AsyncView:
         s = re.sub(r"Lite-?[lL][lL][mM]", "Aqueduct", s)  # uppercase
         return re.sub(r"lite-?[lL][lL][mM]", "aqueduct", s)  # lowercase
 
-    def _exception_response(e: Exception, status: int) -> HttpResponse:
+    def _exception_response(e: Exception, status: int) -> RawJsonResponse:
         """Convert an openai/litellm exception to an OpenAI-compatible JsonResponse.
 
         The openai SDK parses ``code``, ``param``, and ``type`` from the
@@ -784,15 +784,14 @@ def normalize_reasoning_fields(view_func: AsyncView) -> AsyncView:
 
             result.streaming_content = normalized_stream()
 
-        elif isinstance(result, JsonResponse):
-            content = json.loads(result.content)
+        elif isinstance(result, RawJsonResponse):
+            content = result.content
             choices = content.get("choices", [])
             for choice in choices:
                 message = choice.get("message", {})
                 if message:
                     _normalize_choice_message(message)
-
-            result = JsonResponse(content, status=result.status_code)
+            result = RawJsonResponse(content, **result.kwargs)
 
         return result
 

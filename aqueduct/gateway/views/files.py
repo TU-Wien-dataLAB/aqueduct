@@ -6,7 +6,7 @@ from typing import Any, Literal, Optional
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Sum
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -26,6 +26,7 @@ from .decorators import (
     tos_accepted,
 )
 from .errors import error_response
+from .utils import RawJsonResponse
 
 
 class FilesCreateParams(BaseModel):
@@ -142,7 +143,7 @@ async def files(
     file_preview: str | None = None,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     try:
         client = get_files_api_client()
     except ValueError:
@@ -165,7 +166,7 @@ async def files(
         serialized_files = [
             file.model.model_dump(exclude_none=True, exclude_unset=True) async for file in qs
         ]
-        return JsonResponse(
+        return RawJsonResponse(
             {"object": "list", "data": serialized_files, "has_more": False}, status=200
         )
 
@@ -245,7 +246,7 @@ async def files(
     # Return response with upstream ID
     response_data = file_obj.model.model_dump(exclude_none=True, exclude_unset=True)
 
-    return JsonResponse(response_data, status=200)
+    return RawJsonResponse(response_data, status=200)
 
 
 @csrf_exempt
@@ -256,7 +257,7 @@ async def files(
 @catch_router_exceptions
 async def file(
     request: ASGIRequest, token: Token, file_id: str, *args: Any, **kwargs: Any
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     Retrieve or delete a specific file.
 
@@ -287,7 +288,7 @@ async def file(
 
         # Return response with upstream ID (same as file_obj.id)
         response_data = remote_file.model_dump()
-        return JsonResponse(response_data, status=200)
+        return RawJsonResponse(response_data, status=200)
 
     await file_obj.adelete_upstream(client)
 
@@ -296,7 +297,7 @@ async def file(
 
     # Return response with upstream ID
     response_data = {"id": file_id, "object": "file", "deleted": True}
-    return JsonResponse(response_data, status=200)
+    return RawJsonResponse(response_data, status=200)
 
 
 @csrf_exempt
@@ -307,7 +308,7 @@ async def file(
 @catch_router_exceptions
 async def file_content(
     request: ASGIRequest, token: Token, file_id: str, *args: Any, **kwargs: Any
-) -> HttpResponse | JsonResponse:
+) -> HttpResponse | RawJsonResponse:
     """
     Retrieve the content of a specific file.
 

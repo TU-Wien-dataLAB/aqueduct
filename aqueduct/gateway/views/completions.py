@@ -2,7 +2,7 @@ from typing import Any
 
 import openai
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from litellm import TextCompletionStreamWrapper
@@ -23,7 +23,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import _get_token_usage, _openai_stream
+from .utils import RawJsonResponse, _get_token_usage, _openai_stream
 
 
 @csrf_exempt
@@ -43,7 +43,7 @@ async def completions(
     request_log: Request,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse | StreamingHttpResponse:
+) -> RawJsonResponse | StreamingHttpResponse:
     router = get_router()
     completion: (
         TextCompletionResponse | TextCompletionStreamWrapper
@@ -56,7 +56,7 @@ async def completions(
     if isinstance(completion, TextCompletionResponse):
         data = completion.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)
-        return JsonResponse(data=data, status=200)
+        return RawJsonResponse(data=data, status=200)
     raise NotImplementedError(
         f"Completion for response type {type(completion)} is not implemented."
     )

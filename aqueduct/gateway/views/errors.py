@@ -1,5 +1,6 @@
-from django.http import JsonResponse
 from openai.types import ErrorObject
+
+from gateway.views.utils import RawJsonResponse
 
 
 def error_response(
@@ -8,12 +9,12 @@ def error_response(
     param: str | None = None,
     code: str | None = None,
     status: int = 400,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """Return an OpenAI-compatible error response."""
     if error_type is None:
         error_type = _status_to_error_type(status)
     error = ErrorObject(message=message, type=error_type, param=param, code=code)
-    return JsonResponse({"error": error.model_dump(exclude_none=True)}, status=status)
+    return RawJsonResponse({"error": error.model_dump(exclude_none=True)}, status=status)
 
 
 def _status_to_error_type(status: int) -> str:

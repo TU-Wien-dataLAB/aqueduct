@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING, Any
 
 import openai
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from pydantic import TypeAdapter
@@ -21,7 +20,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import _get_token_usage
+from .utils import RawJsonResponse, _get_token_usage
 
 if TYPE_CHECKING:
     from litellm.types.utils import EmbeddingResponse
@@ -44,9 +43,9 @@ async def embeddings(
     request_log: Request,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     router = get_router()
     embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
     data = embedding.model_dump(exclude_none=True, exclude_unset=True)
     request_log.token_usage = _get_token_usage(data)
-    return JsonResponse(data=data, status=200)
+    return RawJsonResponse(data=data, status=200)

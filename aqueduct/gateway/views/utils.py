@@ -22,34 +22,31 @@ log = logging.getLogger("aqueduct")
 class RawJsonResponse:
     """A wrapper for data that can be turned into a JSONResponse."""
 
-    def __init__(self, data: dict[str, Any], status_code: int = 200, **kwargs: Any) -> None:
+    def __init__(self, data: dict[str, Any], **kwargs: Any) -> None:
         if not isinstance(data, dict):
             raise TypeError("RawJsonResponse data has to be a dict")
 
         self.content = data
-        self.status_code = status_code
-        self.kwargs = kwargs
+        self.kwargs = kwargs or {}
+        # The following mimics the JsonResponse behaviour (argument called "status"
+        # is assigned to the "status_code" attribute)
+        self.status_code = self.kwargs.get("status", 200)
+        self.headers = self.kwargs.get("headers", {})
 
 
 class RawStreamingResponse:
     """A wrapper for streaming data that can be turned into a StreamingHttpResponse."""
 
     def __init__(
-        self,
-        streaming_content: AsyncIterator[Any],
-        request_log: Request,
-        content_type: str = "text/event-stream",
-        status_code: int = 200,
-        **kwargs: Any,
+        self, streaming_content: AsyncIterator[Any], request_log: Request, **kwargs: Any
     ) -> None:
         if not isinstance(streaming_content, AsyncIterator):
             raise TypeError("RawStreamResponse streaming_content has to be async iterable")
 
         self.streaming_content = streaming_content
         self.request_log = request_log
-        self.content_type = content_type
-        self.status_code = status_code
-        self.kwargs = kwargs
+        self.kwargs = kwargs or {}
+        self.content_type = self.kwargs.get("content_type", "text/event-stream")
 
 
 def _get_token_usage(content: bytes | dict[str, Any]) -> Usage:

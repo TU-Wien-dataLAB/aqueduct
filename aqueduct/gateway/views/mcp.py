@@ -19,6 +19,8 @@ from mcp.shared.message import SessionMessage
 from mcp.types import CONNECTION_CLOSED, ErrorData, JSONRPCError, JSONRPCMessage, JSONRPCRequest
 from pydantic import TypeAdapter
 
+from gateway.views.utils import RawJsonResponse
+
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
@@ -490,7 +492,7 @@ class MCPSessionManager:
 
 def parse_session_message(
     received_message: SessionMessage | Exception,
-    reqeust_id: str | int,
+    request_id: str | int,
     session_id: str,
     json: bool = False,
 ) -> dict[str, Any] | str:
@@ -499,7 +501,7 @@ def parse_session_message(
         log.error("Session %s returned exception: %s", session_id, received_message)
         jsonrpc_message = JSONRPCError(
             jsonrpc="2.0",
-            id=reqeust_id,
+            id=request_id,
             error=ErrorData(code=CONNECTION_CLOSED, message=str(received_message)),
         )
     else:
@@ -515,7 +517,7 @@ def parse_session_message(
 
 def _validate_session(
     session: ManagedMCPSession | None, session_id: str | None, name: str
-) -> JsonResponse | None:
+) -> RawJsonResponse | None:
     if not session:
         log.warning("Session %s not found for MCP server '%s'", session_id, name)
         return error_response("Session not found", status=404)
@@ -593,7 +595,7 @@ async def _ensure_session_manager_started() -> None:
 
 async def handle_get_request(
     name: str, request_id: str | int, session_id: str
-) -> JsonResponse | StreamingHttpResponse:
+) -> RawJsonResponse | StreamingHttpResponse:
     """Return SSE stream for an existing session.
 
     See: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#listening-for-messages-from-the-server
@@ -621,7 +623,7 @@ async def handle_post_request(
     request_id: str | int,
     session_id: str | None,
     is_initialize: bool,
-) -> JsonResponse:
+) -> JsonResponse | RawJsonResponse:
     """Send a message to MCP session or initialize new session when it is an initialization request.
 
     See: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#sending-messages-to-the-server
@@ -721,7 +723,7 @@ async def mcp_server(
     is_initialize: bool = False,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse | StreamingHttpResponse:
+) -> JsonResponse | RawJsonResponse | StreamingHttpResponse:
     """
     Handles GET, POST and DELETE requests for /mcp-servers/{name}/mcp path.
     """

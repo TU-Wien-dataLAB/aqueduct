@@ -2,7 +2,6 @@ import logging
 from typing import Any
 
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from litellm import BadRequestError
@@ -21,7 +20,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import _get_token_usage, oai_client_from_body
+from .utils import RawJsonResponse, _get_token_usage, oai_client_from_body
 
 log = logging.getLogger("aqueduct")
 
@@ -42,7 +41,7 @@ async def image_generation(
     request_log: Request,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     if pydantic_model.get("stream"):
         # LiteLLM cannot parse a Stream response, so we don't support streaming for now
         raise BadRequestError(
@@ -76,4 +75,4 @@ async def image_generation(
     data = resp.model_dump(exclude_unset=True)
     request_log.token_usage = _get_token_usage(data)
 
-    return JsonResponse(data)
+    return RawJsonResponse(data)

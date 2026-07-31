@@ -2,7 +2,7 @@ from typing import Any
 
 import openai
 from django.core.handlers.asgi import ASGIRequest
-from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from openai.types.audio.transcription_create_params import (
@@ -22,7 +22,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import _get_token_usage, _openai_stream, oai_client_from_body
+from .utils import RawJsonResponse, _get_token_usage, _openai_stream, oai_client_from_body
 
 
 class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
@@ -47,7 +47,7 @@ async def transcriptions(
     request_log: Request,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse | HttpResponse | StreamingHttpResponse:
+) -> RawJsonResponse | HttpResponse | StreamingHttpResponse:
     client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay
 
@@ -62,7 +62,7 @@ async def transcriptions(
     ):
         data = transcription.model_dump(exclude_none=True, exclude_unset=True)
         request_log.token_usage = _get_token_usage(data)
-        return JsonResponse(data=data, status=200)
+        return RawJsonResponse(data=data, status=200)
     if isinstance(transcription, str):
         # Text-based formats (VTT, SRT, text) return plain strings
         return HttpResponse(

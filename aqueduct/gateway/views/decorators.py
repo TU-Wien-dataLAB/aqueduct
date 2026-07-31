@@ -891,7 +891,7 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
 def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
-        session_id = request.headers.get("Mcp-Session-Id")
+        session_id = request.headers.get("mcp-session-id")
         kwargs["session_id"] = session_id
 
         if request.method != "POST":

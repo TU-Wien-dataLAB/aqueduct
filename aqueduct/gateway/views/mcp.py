@@ -690,7 +690,7 @@ async def handle_post_request(
         if operation_registered:
             session.register_operation_done()
 
-    response.headers["mcp-session-id"] = session_id if session_id is not None else ""
+    response.headers[MCP_SESSION_ID] = session_id if session_id is not None else ""
     return response
 
 

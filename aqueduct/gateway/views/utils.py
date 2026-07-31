@@ -11,6 +11,7 @@ import openai
 from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
+from django.http.response import ResponseHeaders
 from pydantic import BaseModel
 
 from gateway.config import get_openai_client, get_router
@@ -28,10 +29,15 @@ class RawJsonResponse:
 
         self.content = data
         self.kwargs = kwargs or {}
-        # The following mimics the JsonResponse behaviour (argument called "status"
+        # The following mimics the BaseHttpResponse behaviour (argument called "status"
         # is assigned to the "status_code" attribute)
         self.status_code = self.kwargs.get("status", 200)
-        self.headers = self.kwargs.get("headers", {})
+        # Just to be on the safe side, make header keys case-insensitive:
+        self.headers = ResponseHeaders(self.kwargs.get("headers", {}))
+        self.content_type = self.kwargs.get("content_type", "application/json")
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} status_code={self.status_code}"
 
 
 class RawStreamingResponse:
@@ -46,7 +52,15 @@ class RawStreamingResponse:
         self.streaming_content = streaming_content
         self.request_log = request_log
         self.kwargs = kwargs or {}
+        # The following mimics the BaseHttpResponse behaviour (argument called "status"
+        # is assigned to the "status_code" attribute)
+        self.status_code = self.kwargs.get("status", 200)
+        # Just to be on the safe side, make header keys case-insensitive:
+        self.headers = ResponseHeaders(self.kwargs.get("headers", {}))
         self.content_type = self.kwargs.get("content_type", "text/event-stream")
+
+    def __str__(self) -> str:
+        return f"<{self.__class__.__name__} status_code={self.status_code}"
 
 
 def _get_token_usage(content: bytes | dict[str, Any]) -> Usage:

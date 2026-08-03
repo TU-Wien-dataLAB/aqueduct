@@ -1,73 +1,143 @@
-{% extends 'management/base.html' %}
+{% extends "management/base.html" %}
 {% load static %}
 
-{% block header %}{{ title }}{% endblock %}
+{% block title %}Models{% endblock %}
 
 {% block content %}
-    <div class="container mx-auto px-4 py-6">
-        <h1 class="text-3xl font-bold mb-6">{{ title }}</h1>
-        <div class="mb-1 flex items-center">
-            <span class="font-medium text-sm text-base mr-2">Gateway URL:</span>
-            <pre id="endpoint-url-{{ endpoint.slug }}"
-                 class="bg-base-200 rounded px-2 py-1 text-sm font-mono overflow-x-auto whitespace-nowrap mr-2">{{ request.scheme }}://{{ request.get_host }}/{{ endpoint.slug }}</pre>
+<div class="container mx-auto p-6">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold mb-2">Models</h1>
+        <p class="text-lg text-base-content/70">
+            AI models available through the Aqueduct gateway.
+        </p>
+        <div class="mt-3 flex items-center gap-2">
+            <span class="text-sm text-base-content/60">Gateway URL:</span>
+            <pre class="bg-base-200 rounded px-2 py-1 text-sm font-mono overflow-x-auto whitespace-nowrap">{{ site_host }}</pre>
             <button type="button"
-                    class="btn btn-xs btn-soft"
-                    onclick="navigator.clipboard.writeText(document.getElementById('endpoint-url-{{ endpoint.slug }}').textContent).then(() => {
-                            this.textContent = 'Copied!';
-                            this.classList.add('btn-success');
-                            setTimeout(() => { this.textContent = 'Copy'; this.classList.remove('btn-success'); }, 1200);
-                            });"
-                    title="Copy URL to clipboard"
-            >Copy
+                    class="btn btn-xs btn-ghost"
+                    onclick="navigator.clipboard.writeText('{{ site_host }}')"
+                    title="Copy gateway URL">
+                <span class="h-3.5 w-3.5 inline-flex">
+                    <img src="{% static 'icons/copy.svg' %}" alt="Copy" class="w-3.5 h-3.5 [[data-theme=dark]_&]:invert">
+                </span>
             </button>
         </div>
-
-        {% if model_list %}
-            <div class="overflow-x-auto">
-                <table class="table table-sm w-full">
-                    <thead>
-                    <tr class="bg-base-200">
-                        <th>Model Name</th>
-                        <th>Aliases</th>
-                        <th>Supports Vision</th>
-                        <th>Default TPM</th>
-                        <th>Default RPM</th>
-                        <th>Timeout</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {% for model in model_list %}
-                        <tr>
-                            <td class="font-mono">
-                                {{ model.model_name }}
-                                {% if model.model_info.request_limit_multiplier and model.model_info.request_limit_multiplier != 1 %}
-                                    <span class="badge badge-sm badge-soft badge-success ml-1">{{ model.model_info.request_limit_multiplier }}x Limits</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if model.model_info.aliases %}
-                                    {% for alias in model.model_info.aliases %}
-                                        <span class="badge badge-sm badge-soft badge-primary mr-1 mb-1">{{ alias }}</span>
-                                    {% endfor %}
-                                {% else %}
-                                    <span class="text-gray-400 text-sm">-</span>
-                                {% endif %}
-                            </td>
-                            <td>{% if model.model_info.supports_vision %} Yes {% endif %}</td>
-                            <td>{{ model.litellm_params.tpm }}</td>
-                            <td>{{ model.litellm_params.rpm }}</td>
-                            <td>{% if model.litellm_params.timeout %}{{ model.litellm_params.timeout }} second{{ model.litellm_params.timeout | pluralize }}{% endif %}</td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <div class="alert alert-info shadow-lg">
-                <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
-                     class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
-                <span>No models found.</span>
-            </div>
-        {% endif %}
     </div>
+
+    {% if model_list %}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for model in model_list %}
+        <div class="card bg-base-100 border border-base-300 hover:border-primary/50 transition-all duration-200">
+            <div class="card-body">
+                <div class="flex items-start gap-3">
+                    <img src="{% static 'icons/model.svg' %}" alt="{{ model.model_name }}"
+                         class="h-10 w-10 flex-shrink-0 mt-1 [[data-theme=dark]_&]:invert">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <h2 class="card-title text-lg">
+                                {{ model.model_name }}
+                            </h2>
+                            {% if model.model_info.request_limit_multiplier and model.model_info.request_limit_multiplier != 1 %}
+                            <span class="badge badge-soft badge-success badge-sm">{{ model.model_info.request_limit_multiplier }}x Limits</span>
+                            {% endif %}
+                        </div>
+                        <div class="flex flex-wrap items-center gap-1.5 mt-1">
+                            {% if model.model_info.aliases %}
+                            <span class="text-xs text-base-content/50">Aliases:</span>
+                            {% for alias in model.model_info.aliases %}
+                            <span class="badge badge-soft badge-primary badge-sm">{{ alias }}</span>
+                            {% endfor %}
+                            {% endif %}
+                            {% if model.model_info.supports_vision %}
+                            <span class="badge badge-soft badge-accent badge-sm">Vision</span>
+                            {% endif %}
+                        </div>
+                        {% with mode=model.model_info.mode|default:"chat" %}
+                        {% if mode != "chat" %}
+                        <div class="flex items-center gap-1.5 mt-2">
+                            <span class="status status-md
+                                {% if mode == "embedding" %}status-info
+                                {% elif mode == "audio_speech" %}status-secondary
+                                {% elif mode == "audio_transcriptions" %}status-accent
+                                {% elif mode == "image_generations" %}status-warning
+                                {% endif %}"></span>
+                            <span class="text-xs text-base-content/60">
+                                {% if mode == "embedding" %}Embedding
+                                {% elif mode == "audio_speech" %}Text-to-Speech
+                                {% elif mode == "audio_transcriptions" %}Speech-to-Text
+                                {% elif mode == "image_generations" %}Image Generation
+                                {% endif %}
+                            </span>
+                        </div>
+                        {% endif %}
+                        {% endwith %}
+                    </div>
+                </div>
+
+                <div class="flex items-start justify-between mt-auto pt-4 border-t border-base-300">
+                    <details class="bg-base-200 rounded-lg group w-3/4">
+                        <summary class="flex items-center gap-2 px-3 py-2 text-sm font-medium cursor-pointer list-none select-none">
+                            <svg class="w-4 h-4 transition-transform duration-200 group-open:rotate-90" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                            Provider Settings
+                        </summary>
+                        <div class="px-3 pb-3 text-sm space-y-1">
+                            <div class="flex gap-4">
+                                <span class="text-base-content/60">TPM:</span>
+                                <span class="font-mono">{{ model.litellm_params.tpm|default:"—" }}</span>
+                            </div>
+                            <div class="flex gap-4">
+                                <span class="text-base-content/60">RPM:</span>
+                                <span class="font-mono">{{ model.litellm_params.rpm|default:"—" }}</span>
+                            </div>
+                            <div class="flex gap-4">
+                                <span class="text-base-content/60">Timeout:</span>
+                                <span class="font-mono">{% if model.litellm_params.timeout %}{{ model.litellm_params.timeout }}s{% else %}—{% endif %}</span>
+                            </div>
+                        </div>
+                    </details>
+                    <div class="tooltip tooltip-left" data-tip="Copy model name">
+                        <button class="btn btn-ghost btn-sm btn-square" onclick="navigator.clipboard.writeText('{{ model.model_name }}')">
+                            <span class="h-4 w-4 inline-flex">
+                                <img src="{% static 'icons/copy.svg' %}" alt="Copy" class="w-4 h-4 [[data-theme=dark]_&]:invert">
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="flex flex-col items-center justify-center py-16">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/30 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+        <h3 class="text-xl font-semibold text-base-content/70 mb-2">No Models Available</h3>
+        <p class="text-base-content/50 text-center max-w-md">
+            No models are currently configured. Please check your router configuration file.
+        </p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const successIconSrc = "{% static 'icons/check.svg' %}";
+    const copyIconSrc = "{% static 'icons/copy.svg' %}";
+
+    document.querySelectorAll('button').forEach(button => {
+        if (button.onclick && button.onclick.toString().includes('clipboard')) {
+            button.addEventListener('click', function() {
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<span class="h-4 w-4 inline-flex"><img src="' + successIconSrc + '" alt="Copied" class="w-4 h-4 [[data-theme=dark]_&]:invert"></span>';
+                setTimeout(() => {
+                    this.innerHTML = originalHTML;
+                }, 2000);
+            });
+        }
+    });
+});
+</script>
 {% endblock %}

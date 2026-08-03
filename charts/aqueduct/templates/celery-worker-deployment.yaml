@@ -40,6 +40,9 @@ spec:
           command: [ "python", "-m", "celery", "-A", "aqueduct", "worker", "--loglevel=info" ]
           env:
             {{- include "aqueduct.env" . | nindent 12 }}
+            {{- with .Values.celery.workerExtraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           resources:
             {{- toYaml .Values.celery.workerDeployment.resources | nindent 12 }}
           volumeMounts:

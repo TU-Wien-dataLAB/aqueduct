@@ -1,6 +1,6 @@
 [project]
 name = "aqueduct"
-version = "0.1.16"
+version = "0.1.18"
 description = "A simple yet fully-featured AI gateway built on top of the LiteLLM Router SDK with MCP server support."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -11,7 +11,7 @@ dependencies = [
     "django>=5.2.7",
     "django-celery-beat>=2.8.1",
     "django-cors-headers>=4.7.0",
-    "django-silk>=5.4.0",
+    "django-silk>=5.5.0",
     "django-tos>=1.1.0",
     "httpx>=0.28.1, <1",
     "litellm==1.85.2",
@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 postgresql = [
-    "psycopg2-binary>=2.9.10",
+    "psycopg[binary,pool]>=3.3.4",
 ]
 vllm = [
     "vllm==0.8.4",

@@ -14,8 +14,8 @@ class ServiceAccountForm(forms.ModelForm):
         widget=forms.DateTimeInput(
             attrs={"type": "datetime-local", "class": "input"}, format="%Y-%m-%dT%H:%M"
         ),
-        label="Token Expiration Date (optional)",
-        help_text="Set an expiration date for the service account token (optional).",
+        label="API Key Expiration Date (optional)",
+        help_text="Set an expiration date for the service account API key (optional).",
     )
 
     class Meta:
@@ -132,12 +132,15 @@ class TokenCreateForm(forms.ModelForm):
         model = Token
         fields: ClassVar[list] = ["name", "expires_at"]
         widgets: ClassVar[dict] = {
-            "name": forms.TextInput(attrs={"placeholder": "Enter token name"}),
+            "name": forms.TextInput(attrs={"placeholder": "Enter API key name"}),
             "expires_at": forms.DateTimeInput(
                 attrs={"type": "datetime-local", "class": "input"}, format="%Y-%m-%dT%H:%M"
             ),
         }
-        labels: ClassVar[dict] = {"name": "Token Name", "expires_at": "Expiration Date (optional)"}
+        labels: ClassVar[dict] = {
+            "name": "API Key Name",
+            "expires_at": "Expiration Date (optional)",
+        }
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user", None)
@@ -155,7 +158,7 @@ class TokenCreateForm(forms.ModelForm):
         if self.instance.pk:
             token_count = token_count.exclude(pk=self.instance.pk)
         if token_count.count() >= max_tokens:
-            raise ValidationError(f"You can only have {max_tokens} tokens.")
+            raise ValidationError(f"You can only have {max_tokens} API keys.")
 
         expires_at = cleaned_data.get("expires_at")
         if expires_at and expires_at <= timezone.now():

@@ -15,7 +15,7 @@ from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, TemplateView, UpdateView
 
 from management.forms import TokenCreateForm
-from management.models import ServiceAccount, Token
+from management.models import LimitSet, ServiceAccount, Token
 from management.views.base import BaseAqueductView
 
 
@@ -29,10 +29,21 @@ class UserTokensView(BaseAqueductView, TemplateView):
 
         tokens = Token.objects.filter(user=user, service_account__isnull=True)
         teams = profile.teams.all()
-        service_accounts = ServiceAccount.objects.filter(team__in=teams)
+        service_accounts = ServiceAccount.objects.filter(team__in=teams).select_related(
+            "team__org", "token"
+        )
 
         max_tokens = getattr(settings, "MAX_USER_TOKENS", 3)
         can_add_token = tokens.count() < max_tokens
+
+        # Effective limits for user-owned tokens (UserProfile + Org fallback)
+        user_limits: LimitSet = LimitSet.from_objects(profile, profile.org)
+
+        # Effective limits per service account (Team + Org fallback).
+        # Computed inline from already-select_related data to avoid the
+        # per-SA DB query that sa.token.get_limit() would trigger.
+        for sa in service_accounts:
+            sa.effective_limits = LimitSet.from_objects(sa.team, sa.team.org)  # type: ignore[attr-defined]
 
         context.update(
             {
@@ -40,6 +51,7 @@ class UserTokensView(BaseAqueductView, TemplateView):
                 "service_accounts": service_accounts,
                 "can_add_token": can_add_token,
                 "max_tokens": max_tokens,
+                "user_limits": user_limits,
             }
         )
         return context
@@ -75,14 +87,14 @@ class TokenCreateView(BaseAqueductView, CreateView):
         self.object.save()
 
         # Use the returned secret_key in the success message
-        messages.success(self.request, f"Token '{self.object.name}' created successfully.")
+        messages.success(self.request, f"API key '{self.object.name}' created successfully.")
         messages.info(self.request, f"{secret_key}", extra_tags="token-regenerated-key")
 
         return redirect(self.get_success_url())
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        context["view_title"] = "Create New Token"
+        context["view_title"] = "Create New API Key"
 
         now = timezone.now().replace(second=0, microsecond=0)
         context["now"] = now.strftime("%Y-%m-%dT%H:%M")
@@ -104,7 +116,7 @@ class TokenEditView(BaseAqueductView, UpdateView):
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        context["view_title"] = "Edit Token"
+        context["view_title"] = "Edit API Key"
         context["cancel_url"] = self.get_success_url()
         return context
 
@@ -122,12 +134,12 @@ class TokenDeleteView(BaseAqueductView, DeleteView):
     def form_valid(self, form) -> HttpResponse:
         token_name = self.object.name
         response = super().form_valid(form)
-        messages.success(self.request, f"Token '{token_name}' deleted successfully.")
+        messages.success(self.request, f"API key '{token_name}' deleted successfully.")
         return response
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        context["object_type_name"] = "Token"
+        context["object_type_name"] = "API Key"
         context["object_name"] = str(self.object)
         context["cancel_url"] = self.get_success_url()
         return context
@@ -183,7 +195,7 @@ class TokenRegenerateView(BaseAqueductView, View):
                 new_key = token.regenerate_key()  # Assumes regenerate_key() saves the token
                 messages.success(
                     request,
-                    f"Token '{token_name}' has been regenerated. The new key is displayed below. "
+                    f"API key '{token_name}' has been regenerated. The new key is displayed below. "
                     f"Please update any clients using the old key.",
                 )
                 messages.info(

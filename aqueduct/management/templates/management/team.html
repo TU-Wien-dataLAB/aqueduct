@@ -14,7 +14,13 @@
         {% if is_team_admin %}
             <div class="space-x-2">
                 <a href="{% url 'team_edit' id=team.id %}" class="btn btn-sm btn-outline">Edit Team</a>
-                <a href="{% url 'service_account_create' id=team.id %}" class="btn btn-sm btn-primary">Add Service Account</a>
+                {% if can_add_service_account %}
+                    <a href="{% url 'service_account_create' id=team.id %}" class="btn btn-sm btn-primary">Add Service Account</a>
+                {% else %}
+                    <div class="tooltip tooltip-left" data-tip="This team has reached the maximum of {{ max_service_accounts }} service accounts. Delete an existing service account to add a new one.">
+                        <button class="btn btn-sm btn-primary" disabled>Add Service Account</button>
+                    </div>
+                {% endif %}
             </div>
         {% endif %}
     </div>
@@ -36,7 +42,7 @@
 
     {# --- Service Accounts Section --- #}
     <div class="mb-8">
-        <h2 class="text-xl font-semibold mb-2">Service Accounts</h2>
+        <h2 class="text-xl font-semibold mb-2">Service Accounts ({{ service_accounts.count }}/{{ max_service_accounts }})</h2>
         {% if service_accounts %}
             <ul class="list bg-base-100 rounded-box shadow-md">
                 {% for sa in service_accounts %}
@@ -50,7 +56,7 @@
                                 Owner: {{ sa.token.user.email|default:"(No Owner)" }}
                             </span>
                             <span class="text-sm opacity-50 flex-shrink-0 ml-2">
-                                Token: <span class="font-mono text-xs">{{ sa.token.key_preview }}</span> {# Show preview #}
+                                API Key: <span class="font-mono text-xs">{{ sa.token.key_preview }}</span> {# Show preview #}
                             </span>
                         </div>
 
@@ -70,8 +76,8 @@
                                         {% csrf_token %}
                                         <button type="submit"
                                                 class="btn btn-sm btn-square btn-warning"
-                                                title="Regenerate Token for {{ sa.name }}"
-                                                onclick="return confirm('Are you sure you want to regenerate the token for service account {{ sa.name|escapejs }}? This will invalidate the current token immediately.');">
+                                                title="Regenerate API Key for {{ sa.name }}"
+                                                onclick="return confirm('Are you sure you want to regenerate the API key for service account {{ sa.name|escapejs }}? This will invalidate the current API key immediately.');">
                                             <img src="{% static 'icons/update.svg' %}" alt="Regenerate" class="w-4 h-4 [[data-theme=dark]_&]:invert">
                                         </button>
                                     </form>
@@ -112,7 +118,7 @@
                             <img src="{% static 'icons/user-circle.svg' %}" alt="" class="w-5 mr-2 flex-shrink-0 [[data-theme=dark]_&]:invert">
                             <span class="font-medium truncate mr-2">{{ member.profile.user.email }}</span>
                             <span class="text-sm opacity-50 flex-shrink-0">
-                                {{ member.profile.user.custom_auth_tokens.count }} Token{{ member.profile.user.custom_auth_tokens.count|pluralize }}
+                                {{ member.profile.user.custom_auth_tokens.count }} API Key{{ member.profile.user.custom_auth_tokens.count|pluralize }}
                             </span>
                             <span class="ml-2">
                                 {% if member.group == 'admin' %}

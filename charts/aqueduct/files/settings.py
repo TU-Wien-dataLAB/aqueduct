@@ -15,6 +15,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
@@ -327,14 +328,23 @@ ASGI_APPLICATION = "aqueduct.asgi.application"
 DATABASE_ENGINE = os.getenv("DATABASE_ENGINE", "django.db.backends.sqlite3")
 
 # 2. Set up DATABASES based on the engine
-DATABASES = {"default": {"ENGINE": DATABASE_ENGINE}}
+DATABASES: dict[str, Any] = {"default": {"ENGINE": DATABASE_ENGINE}}
 
 # 3. If it's SQLite, fill in the NAME for the file
 if DATABASE_ENGINE == "django.db.backends.sqlite3":
     DATABASES["default"]["NAME"] = str(BASE_DIR / "db.sqlite3")
     if TESTING:
-        DATABASES["default"]["TEST"] = {"NAME": str(BASE_DIR / "db_test.sqlite3")}  # type: ignore[assignment]
+        DATABASES["default"]["TEST"] = {"NAME": str(BASE_DIR / "db_test.sqlite3")}
 elif DATABASE_ENGINE == "django.db.backends.postgresql":
+    # The following parameters are passed to `psycopg_pool.ConnectionPool`.
+    # See https://www.psycopg.org/psycopg3/docs/api/pool.html#the-connectionpool-class
+    # for details. The times are in seconds.
+    POSTGRESQL_POOL_MIN_SIZE = int(os.getenv("POSTGRESQL_POOL_MIN_SIZE", 4))
+    POSTGRESQL_POOL_MAX_SIZE = int(os.getenv("POSTGRESQL_POOL_MAX_SIZE", 20))
+    POSTGRESQL_POOL_TIMEOUT = int(os.getenv("POSTGRESQL_POOL_TIMEOUT", 30))
+    POSTGRESQL_POOL_MAX_WAITING = int(os.getenv("POSTGRESQL_POOL_MAX_WAITING", 0))
+    POSTGRESQL_POOL_MAX_IDLE = int(os.getenv("POSTGRESQL_POOL_MAX_IDLE", 10 * 60))
+    POSTGRESQL_POOL_NUM_WORKERS = int(os.getenv("POSTGRESQL_POOL_NUM_WORKERS", 3))
     DATABASES["default"].update(
         {
             "NAME": os.getenv("POSTGRES_DB", "aqueduct"),
@@ -342,6 +352,16 @@ elif DATABASE_ENGINE == "django.db.backends.postgresql":
             "PASSWORD": os.getenv("POSTGRES_PASSWORD", "aqueduct"),
             "HOST": os.getenv("POSTGRES_HOST", "localhost"),
             "PORT": os.getenv("POSTGRES_PORT", "5432"),
+            "OPTIONS": {
+                "pool": {
+                    "min_size": POSTGRESQL_POOL_MIN_SIZE,
+                    "max_size": POSTGRESQL_POOL_MAX_SIZE,
+                    "timeout": POSTGRESQL_POOL_TIMEOUT,
+                    "max_waiting": POSTGRESQL_POOL_MAX_WAITING,
+                    "max_idle": POSTGRESQL_POOL_MAX_IDLE,
+                    "num_workers": POSTGRESQL_POOL_NUM_WORKERS,
+                }
+            },
         }
     )
 else:

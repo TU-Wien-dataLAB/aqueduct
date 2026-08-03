@@ -13,7 +13,7 @@ from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 
 from gateway.views.decorators import token_authenticated
 from management.models import Org, Token, UserProfile
@@ -74,7 +74,7 @@ async def generate_test_token(request: ASGIRequest, *args: Any, **kwargs: Any) -
 
 
 @csrf_exempt
-@require_POST
+@require_http_methods(["DELETE"])
 @token_authenticated(token_auth_only=True)
 async def cleanup_test_token(
     request: ASGIRequest, token: Token, *args: Any, **kwargs: Any

@@ -1,0 +1,65 @@
+{{- if .Values.cnpg.enabled }}
+{{- $cluster := .Values.cnpg.cluster }}
+{{- $mig := .Values.cnpg.bootstrapFromExternal }}
+{{- if and $mig.enabled $mig.connection.password (not $mig.connection.existingSecret) }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "aqueduct.cnpg.sourcePasswordSecret" . }}
+  labels:
+    app.kubernetes.io/name: aqueduct
+    app.kubernetes.io/instance: {{ .Release.Name }}
+type: kubernetes.io/basic-auth
+stringData:
+  {{ $mig.connection.secretKeys.password | default "password" }}: {{ $mig.connection.password | quote }}
+{{- end }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "aqueduct.cnpg.clusterName" . }}
+  labels:
+    app.kubernetes.io/name: aqueduct
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+spec:
+  imageName: {{ $cluster.imageName | quote }}
+  instances: {{ $cluster.instances | default 1 }}
+  enableSuperuserAccess: false
+  bootstrap:
+    {{- if $mig.enabled }}
+    pg_basebackup:
+      source: {{ $mig.name | quote }}
+      database: {{ $cluster.database | default "aqueduct" | quote }}
+      owner: {{ $cluster.owner | default "aqueduct" | quote }}
+    {{- else }}
+    initdb:
+      database: {{ $cluster.database | default "aqueduct" | quote }}
+      owner: {{ $cluster.owner | default "aqueduct" | quote }}
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+    {{- end }}
+  {{- if $mig.enabled }}
+  externalClusters:
+    - name: {{ $mig.name | quote }}
+      connectionParameters:
+        host: {{ $mig.connection.host | default .Values.global.postgresql.fullnameOverride | quote }}
+        port: {{ $mig.connection.port | default .Values.global.postgresql.service.ports.postgresql | quote }}
+        user: {{ $mig.connection.username | default "postgres" | quote }}
+        dbname: {{ $mig.connection.database | default "postgres" | quote }}
+      password:
+        name: {{ include "aqueduct.cnpg.sourcePasswordSecret" . }}
+        key: {{ $mig.connection.secretKeys.password | default "password" }}
+  {{- end }}
+  storage:
+    size: {{ $cluster.storage.size | default "100Gi" | quote }}
+    resizeInUseVolumes: true
+  resources:
+    {{- toYaml $cluster.resources | nindent 4 }}
+  {{- with $cluster.spec }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

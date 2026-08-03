@@ -76,7 +76,7 @@ class GatewayUser(HttpUser):
         or crashes, the user-related objects will stay in the db.
         """
         try:
-            resp = self.client.post(
+            resp = self.client.delete(
                 "aqueduct/management/test-auth/cleanup-token/", headers=self.headers
             )
             if resp.ok:

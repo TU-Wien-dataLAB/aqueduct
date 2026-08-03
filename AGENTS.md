@@ -9,6 +9,10 @@
 - `management`: Core data/domain + UI app (orgs, users, tokens, usage/request tracking, shared gateway-related models, and frontend/admin surfaces).
 - `gateway`: API gateway app (endpoint views, auth/routing/integration logic, and most integration tests).
 
+## Seeding Dev Data
+- Use `cd aqueduct && uv run python manage.py shell` to insert records via the Django ORM (e.g. `Model.objects.bulk_create(...)`)
+- Inserted data must satisfy the same constraints the views enforce: for example, `Request.model` values must appear in `model_list` of the router config referenced by `LITELLM_ROUTER_CONFIG_FILE_PATH` (check `.env`), and FK-based org/team/token scoping must match the viewer's permissions
+
 ## Build/Lint/Test Commands
 - **Run tests**: `cd aqueduct && uv run python manage.py test` or `cd aqueduct && uv run python manage.py test <app_name>.tests.<TestClass>` (run full suite before finishing major/cross-cutting work)
 - **Run single test**: `cd aqueduct && uv run python manage.py test <app_name>.tests.<TestClass>.test_method` (prefer targeted tests during active development)

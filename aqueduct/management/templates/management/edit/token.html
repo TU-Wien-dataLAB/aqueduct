@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="max-w-lg mx-auto mt-8">
-    <h1 class="text-3xl font-bold mb-6">{{ view_title|default:"Edit Token" }}</h1>
+    <h1 class="text-3xl font-bold mb-6">{{ view_title|default:"Edit API Key" }}</h1>
 
     <form method="post" class="card bg-base-100 shadow-xl">
         {% csrf_token %}
@@ -33,7 +33,7 @@
                        required="{{ form.name.field.required|yesno:'required,' }}"
                        class="input input-bordered w-full {% if form.name.errors %}input-error{% endif %}"
                        value="{{ form.name.value|default:'' }}"
-                       placeholder="{{ form.name.field.widget.attrs.placeholder|default:'Enter token name' }}">
+                       placeholder="{{ form.name.field.widget.attrs.placeholder|default:'Enter API key name' }}">
                 {% if form.name.errors %}
                     <label class="label">
                         <span class="label-text-alt text-error">{{ form.name.errors|striptags }}</span>

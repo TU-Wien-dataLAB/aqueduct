@@ -15,7 +15,7 @@
             {% endif %}
         </div>
     </div>
-    <div class="flex items-center space-x-4 mb-6">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-6">
         {% if is_global_admin %}
             <label for="org-select" class="font-medium">Organization:</label>
             <select
@@ -43,14 +43,61 @@
         <div id="span-tabs" class="tabs tabs-box">
             {% for sp in span_choices %}
                 <a
-                        class="tab{% if sp == selected_span %} tab-active{% endif %}"
+                        class="tab{% if sp == selected_span and selected_span != 'custom' %} tab-active{% endif %}"
                         data-span="{{ sp }}"
                 >
                     {{ sp }}
                 </a>
             {% endfor %}
+            <a
+                    class="tab{% if selected_span == 'custom' %} tab-active{% endif %}"
+                    data-span="custom"
+            >
+                Custom
+            </a>
         </div>
+
+        <div id="custom-range" class="flex items-center gap-2{% if selected_span != 'custom' %} hidden{% endif %}">
+            <input
+                id="custom-start"
+                type="datetime-local"
+                lang="de"
+                max="{{ now_utc_iso }}"
+                class="input input-bordered input-sm"
+                value="{{ custom_start }}"
+                placeholder="YYYY-MM-DD HH:MM"
+            />
+            <span class="text-base-content/50">to</span>
+            <input
+                id="custom-end"
+                type="datetime-local"
+                lang="de"
+                max="{{ now_utc_iso }}"
+                class="input input-bordered input-sm"
+                value="{{ custom_end }}"
+                placeholder="YYYY-MM-DD HH:MM"
+            />
+            <button id="custom-apply" class="btn btn-sm btn-outline">Apply</button>
+            {% if selected_span == "custom" %}
+                <button id="custom-clear" class="btn btn-sm btn-ghost" title="Reset to default range">✕</button>
+            {% endif %}
+            <span class="text-xs text-base-content/50">UTC</span>
+        </div>
+        {% if custom_error %}
+            <div class="alert alert-error py-2 px-3 text-sm w-full" role="alert">
+                <span>{{ custom_error }}</span>
+            </div>
+        {% endif %}
     </div>
+
+    {% if retention_warning %}
+    <div class="alert alert-warning mb-4">
+        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+        </svg>
+        <span>The selected time frame exceeds the data retention period of {{ retention_days }} days. Data older than {{ retention_days }} days may be incomplete.</span>
+    </div>
+    {% endif %}
 
     <!-- STATS BAR -->
     <div class="stats stats-vertical md:stats-horizontal shadow bg-base-100 rounded-box mb-4 w-full">
@@ -208,7 +255,103 @@
         const chartHeight = perModel.length * 30 + 20;
         document.getElementById("model-bar-chart").style.height = `${chartHeight}px`;
         const selectedSpan = "{{ selected_span }}";
-        const color = window.getComputedStyle(document.body).getPropertyValue('--color-primary')
+        const color = window.getComputedStyle(document.body).getPropertyValue('--color-primary');
+
+        // ── Custom range helpers ───────────────────────────────────────
+        // All input values are interpreted as UTC (server is UTC-naive).
+        const startEl = document.getElementById("custom-start");
+        const endEl = document.getElementById("custom-end");
+        const applyBtn = document.getElementById("custom-apply");
+        const customRangeEl = document.getElementById("custom-range");
+        const nowUtc = new Date().toISOString().slice(0, 16); // "YYYY-MM-DDTHH:MM" UTC
+
+        /** Format a Date as "YYYY-MM-DDTHH:MM" in UTC. */
+        function fmtUtc(d) {
+            return d.toISOString().slice(0, 16);
+        }
+
+        /** Parse a "YYYY-MM-DDTHH:MM" string as UTC into a Date. */
+        function parseUtcAsDate(s) {
+            if (!s) return null;
+            // Append ":00Z" to make the string explicitly UTC.
+            return new Date(s.length === 16 ? s + ":00Z" : s);
+        }
+
+        /**
+         * Validate the current custom range and update the UI:
+         *   - show / hide the inline error
+         *   - enable / disable the Apply button
+         * Returns true if the range is valid.
+         */
+        function validateCustomRange() {
+            const s = startEl.value;
+            const e = endEl.value;
+            let err = null;
+            if (!s || !e) {
+                err = "Please pick a start and end time.";
+            } else {
+                const sDate = parseUtcAsDate(s);
+                const eDate = parseUtcAsDate(e);
+                if (sDate && eDate) {
+                    if (sDate >= eDate) {
+                        err = "Start must be before end.";
+                    } else if (eDate > new Date()) {
+                        err = "End time is in the future.";
+                    } else if ((eDate - sDate) < 60_000) {
+                        err = "Range must be at least 1 minute.";
+                    }
+                } else {
+                    err = "Invalid date format.";
+                }
+            }
+
+            // Inject / remove an inline error under the inputs (idempotent).
+            let errEl = document.getElementById("custom-range-error");
+            if (err) {
+                if (!errEl) {
+                    errEl = document.createElement("div");
+                    errEl.id = "custom-range-error";
+                    errEl.className = "text-error text-xs mt-1";
+                    errEl.setAttribute("role", "alert");
+                    startEl.parentElement.appendChild(errEl);
+                }
+                errEl.textContent = err;
+            } else if (errEl) {
+                errEl.remove();
+            }
+
+            if (applyBtn) applyBtn.disabled = !!err;
+            return !err;
+        }
+
+        /** Auto-fill the empty counterpart on change. */
+        function autofillCompanion(changedId) {
+            if (changedId === "custom-start" && startEl.value && !endEl.value) {
+                endEl.value = nowUtc;
+            } else if (changedId === "custom-end" && endEl.value && !startEl.value) {
+                // end - 1 day, in UTC.
+                const e = parseUtcAsDate(endEl.value);
+                if (e) {
+                    e.setUTCDate(e.getUTCDate() - 1);
+                    startEl.value = fmtUtc(e);
+                }
+            }
+        }
+
+        function applyCustomRange() {
+            // Auto-fill any empty counterpart before validating.
+            autofillCompanion("custom-start");
+            autofillCompanion("custom-end");
+            if (!validateCustomRange()) return;
+            const start = startEl.value;
+            const end = endEl.value;
+            if (!start || !end) return;
+            const params = new URLSearchParams(window.location.search);
+            params.set("span", "custom");
+            params.set("start", start);
+            params.set("end", end);
+            window.location.search = params.toString();
+        }
 
         function onOrgChange() {
             const sel = document.getElementById("org-select");
@@ -226,6 +369,8 @@
         function onSpanChange(span) {
             const params = new URLSearchParams(window.location.search);
             params.set("span", span);
+            params.delete("start");
+            params.delete("end");
             window.location.search = params.toString();
         }
 
@@ -237,14 +382,57 @@
                         .querySelectorAll("#span-tabs .tab")
                         .forEach((t) => t.classList.remove("tab-active"));
                     tab.classList.add("tab-active");
-                    onSpanChange(tab.dataset.span);
+                    if (tab.dataset.span === "custom") {
+                        // Reveal the custom-range controls without navigating.
+                        customRangeEl.classList.remove("hidden");
+                        if (startEl.value || endEl.value) {
+                            applyBtn?.focus();
+                        } else {
+                            startEl.focus();
+                        }
+                    } else {
+                        onSpanChange(tab.dataset.span);
+                    }
                 });
             });
+
+            // custom range apply button
+            if (applyBtn) {
+                applyBtn.addEventListener("click", applyCustomRange);
+            }
+
+            // custom range clear button
+            const clearBtn = document.getElementById("custom-clear");
+            if (clearBtn) {
+                clearBtn.addEventListener("click", () => {
+                    const params = new URLSearchParams(window.location.search);
+                    params.delete("span");
+                    params.delete("start");
+                    params.delete("end");
+                    window.location.search = params.toString();
+                });
+            }
+
+            // change / input on custom range: auto-fill companion + validate
+            ["custom-start", "custom-end"].forEach((id) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener("change", () => {
+                    autofillCompanion(id);
+                    validateCustomRange();
+                });
+                el.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter") applyCustomRange();
+                });
+            });
+
+            // Initial validation in case the server already flagged an error.
+            validateCustomRange();
 
             // initialize ECharts for the selected time span
             const chart = echarts.init(document.getElementById("usage-chart"), null, {renderer: "svg"});
             chart.setOption({
-                useUTC: selectedSpan === '1w',
+                useUTC: selectedSpan === '1w' || selectedSpan === '1m' || selectedSpan === 'custom',
                 tooltip: {trigger: "axis"},
                 xAxis: {
                     type: "time",

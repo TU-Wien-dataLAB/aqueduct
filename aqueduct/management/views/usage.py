@@ -317,7 +317,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
 
     def _get_top_items(
         self, reqs: QuerySet[Request], selected_org: Org | None, selected_token: Token | None
-    ) -> dict[str, Any]:
+    ) -> QuerySet[Request, dict[str, Any]]:
         """Annotate the `Request` queryset and get the top-level entities as dicts"""
         if selected_org is None:
             # Top orgs sorted by request count - only available for global admins.

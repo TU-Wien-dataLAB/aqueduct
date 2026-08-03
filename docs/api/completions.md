@@ -60,16 +60,10 @@ curl https://your-aqueduct-domain.com/completions \
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com", api_key="YOUR_AQUEDUCT_TOKEN")
 
 response = client.completions.create(
-    model="your-model-name",
-    prompt="Once upon a time",
-    max_tokens=50,
-    temperature=0.7,
+    model="your-model-name", prompt="Once upon a time", max_tokens=50, temperature=0.7
 )
 print(response.choices[0].text)
 ```

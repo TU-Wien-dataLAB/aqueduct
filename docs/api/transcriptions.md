@@ -55,18 +55,12 @@ curl https://your-aqueduct-domain.com/audio/transcriptions \
 from pathlib import Path
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com/v1",
-    api_key="YOUR_AQUEDUCT_TOKEN"
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com/v1", api_key="YOUR_AQUEDUCT_TOKEN")
 
 audio_file = Path("/path/to/audio.mp3")
 
 transcription = client.audio.transcriptions.create(
-    model="whisper-1",
-    file=audio_file,
-    language="en",
-    response_format="verbose_json"
+    model="whisper-1", file=audio_file, language="en", response_format="verbose_json"
 )
 
 print(transcription.text)

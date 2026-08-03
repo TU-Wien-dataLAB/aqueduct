@@ -332,10 +332,7 @@ curl https://your-aqueduct-domain.com/vector_stores/{vector_store_id}/file_batch
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com", api_key="YOUR_AQUEDUCT_TOKEN")
 
 # Create a vector store
 vector_store = client.vector_stores.create(name="Support FAQ")
@@ -343,8 +340,7 @@ print(f"Created vector store: {vector_store.id}")
 
 # Create with files attached
 vector_store_with_files = client.vector_stores.create(
-    name="Documentation",
-    file_ids=["file_abc123", "file_def456"]
+    name="Documentation", file_ids=["file_abc123", "file_def456"]
 )
 print(f"Created vector store with files: {vector_store_with_files.id}")
 
@@ -363,49 +359,34 @@ vs = client.vector_stores.update(
     vector_store.id,
     name="Updated Product Documentation",
     description="Comprehensive product documentation",
-    metadata={"category": "support"}
+    metadata={"category": "support"},
 )
 print(f"Updated name: {vs.name}")
 
 # Search a vector store
 results = client.vector_stores.search(
-    vector_store.id,
-    query="How do I reset my password?",
-    max_num_results=10,
-    rewrite_query=True
+    vector_store.id, query="How do I reset my password?", max_num_results=10, rewrite_query=True
 )
 print(f"Search query: {results.search_query}")
 for result in results.data:
     print(f"  File: {result.filename} (score: {result.score})")
 
 # Add a file to a vector store
-vs_file = client.vector_stores.files.create(
-    vector_store.id,
-    file_id="file_abc123"
-)
+vs_file = client.vector_stores.files.create(vector_store.id, file_id="file_abc123")
 print(f"Added file with status: {vs_file.status}")
 
 # List files in a vector store
-files = client.vector_stores.files.list(
-    vector_store.id,
-    limit=20,
-    filter="completed"
-)
+files = client.vector_stores.files.list(vector_store.id, limit=20, filter="completed")
 for file in files.data:
     print(f"{file.id}: status={file.status}")
 
 # Retrieve a file in a vector store
-vs_file = client.vector_stores.files.retrieve(
-    vector_store.id,
-    vs_file.id
-)
+vs_file = client.vector_stores.files.retrieve(vector_store.id, vs_file.id)
 print(f"File status: {vs_file.status}, usage_bytes: {vs_file.usage_bytes}")
 
 # Update file attributes
 vs_file = client.vector_stores.files.update(
-    vector_store.id,
-    vs_file.id,
-    attributes={"category": "finance", "priority": "high"}
+    vector_store.id, vs_file.id, attributes={"category": "finance", "priority": "high"}
 )
 print(f"Updated file attributes: {vs_file.attributes}")
 
@@ -413,52 +394,34 @@ print(f"Updated file attributes: {vs_file.attributes}")
 batch = client.vector_stores.file_batches.create(
     vector_store.id,
     files=[
-        {
-            "file_id": "file_abc123",
-            "attributes": {"category": "getting-started"}
-        },
+        {"file_id": "file_abc123", "attributes": {"category": "getting-started"}},
         {
             "file_id": "file_def456",
             "chunking_strategy": {
                 "type": "static",
-                "static": {
-                    "max_chunk_size_tokens": 1200,
-                    "chunk_overlap_tokens": 200
-                }
-            }
-        }
-    ]
+                "static": {"max_chunk_size_tokens": 1200, "chunk_overlap_tokens": 200},
+            },
+        },
+    ],
 )
 print(f"Batch status: {batch.status}")
 print(f"File counts: {batch.file_counts}")
 
 # Retrieve batch status
-batch = client.vector_stores.file_batches.retrieve(
-    vector_store.id,
-    batch.id
-)
+batch = client.vector_stores.file_batches.retrieve(vector_store.id, batch.id)
 print(f"Batch file_counts: {batch.file_counts}")
 
 # Cancel a batch
-batch = client.vector_stores.file_batches.cancel(
-    vector_store.id,
-    batch.id
-)
+batch = client.vector_stores.file_batches.cancel(vector_store.id, batch.id)
 print(f"Batch cancelled: {batch.status}")
 
 # List files in a batch
-batch_files = client.vector_stores.file_batches.list_files(
-    vector_store.id,
-    batch.id
-)
+batch_files = client.vector_stores.file_batches.list_files(vector_store.id, batch.id)
 for file in batch_files.data:
     print(f"Batch file: {file.id}")
 
 # Delete a file from vector store
-client.vector_stores.files.delete(
-    vector_store.id,
-    vs_file.id
-)
+client.vector_stores.files.delete(vector_store.id, vs_file.id)
 print("File deleted from vector store")
 
 # Delete a vector store

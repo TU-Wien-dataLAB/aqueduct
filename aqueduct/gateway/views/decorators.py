@@ -544,13 +544,12 @@ async def file_to_bytes(token: Token | None, file: FileFile) -> bytes:
                 client = get_files_api_client()
             except ValueError as e:
                 raise ValueError(f"Files API not configured: {e}") from e
-            response = await client.files.content(file_obj.id)
-            return response.content
         except FileObject.DoesNotExist:
             raise
         except Exception as e:
             raise ValueError(f"Failed to read file with id {file_id}: {e}") from e
         else:
+            response = await client.files.content(file_obj.id)
             return response.content
     else:
         raise RuntimeError("Neither 'file_data' nor 'file_id' are given.")

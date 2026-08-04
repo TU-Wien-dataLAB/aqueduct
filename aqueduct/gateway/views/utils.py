@@ -148,7 +148,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
                 status_code=404,
             ),
             body=None,
-        ) from None
+        )
 
     model_relay, _provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
     return client, model_relay

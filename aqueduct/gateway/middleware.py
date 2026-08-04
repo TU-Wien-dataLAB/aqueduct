@@ -6,7 +6,7 @@ from django.http import JsonResponse, StreamingHttpResponse
 from gateway.views.utils import RawJsonResponse, RawStreamingResponse, _openai_stream
 
 
-class HTTPResponseMiddleware:
+class HttpResponseMiddleware:
     """
     Transform raw responses from the gateway views into valid HTTPResponses.
 

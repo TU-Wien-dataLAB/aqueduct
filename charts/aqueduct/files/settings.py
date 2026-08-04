@@ -73,7 +73,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "mozilla_django_oidc.middleware.SessionRefresh",
-    "gateway.middleware.HTTPResponseMiddleware",
+    "gateway.middleware.HttpResponseMiddleware",
 ]
 
 AUTHENTICATION_BACKENDS = (
@@ -445,7 +445,5 @@ LOGGING = {
 
 if TESTING:
     logger = logging.getLogger("aqueduct")
-    logging.disable(logging.ERROR)
-    logger.setLevel(logging.CRITICAL)
-    # logging.disable(logging.NOTSET)
-    # logger.setLevel(logging.DEBUG)
+    logging.disable(logging.NOTSET)
+    logger.setLevel(logging.DEBUG)

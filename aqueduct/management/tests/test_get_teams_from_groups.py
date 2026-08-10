@@ -8,9 +8,7 @@ from management.models import Org
 User = get_user_model()
 
 
-def sample_team_names(
-    group: str, groups: list[str] | None = None
-) -> tuple[str, str] | None:
+def sample_team_names(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
     if group.startswith("E"):
         team_name = group.split("-", maxsplit=1)[0]
         return (team_name, group)

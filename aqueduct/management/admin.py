@@ -233,8 +233,7 @@ def sync_oauth_team_names_action(modeladmin, request, queryset):
                         teams_to_update.append((team, new_team_name))
             else:
                 log.error(
-                    "OAUTH_TEAM_NAMES_FUNCTION must return "
-                    "tuple[str, str] | None for group '%s'",
+                    "OAUTH_TEAM_NAMES_FUNCTION must return tuple[str, str] | None for group '%s'",
                     original_group,
                 )
                 teams_skipped.append((team, "Invalid return type"))

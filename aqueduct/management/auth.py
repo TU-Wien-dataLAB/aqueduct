@@ -54,9 +54,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             return []
 
-        func = getattr(
-            settings, "OAUTH_TEAM_NAMES_FUNCTION", lambda group, groups=None: None
-        )
+        func = getattr(settings, "OAUTH_TEAM_NAMES_FUNCTION", lambda group, groups=None: None)
 
         team_mappings = []
         groups = claims.get("groups", [])
@@ -68,9 +66,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
                 result = func(group, groups)
             except Exception as e:
                 log.exception(
-                    "Error calling OAUTH_TEAM_NAMES_FUNCTION for group '%s': %s",
-                    group,
-                    e,
+                    "Error calling OAUTH_TEAM_NAMES_FUNCTION for group '%s': %s", group, e
                 )
                 continue
 

@@ -12,9 +12,7 @@ from management.models import Org, Team, TeamMembership, UserProfile
 User = get_user_model()
 
 
-def sample_team_names(
-    group: str, groups: list[str] | None = None
-) -> tuple[str, str] | None:
+def sample_team_names(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
     """
     Sample implementation that filters groups starting with 'E'
     and extracts team names (removes suffix after dash).

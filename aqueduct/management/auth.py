@@ -15,19 +15,19 @@ log = logging.getLogger("aqueduct")
 def default_org_name_from_groups(groups: list[str]) -> str | None:
     """
     Default implementation to extract organization name, which returns the first group in the list.
-    Override this or set ORG_NAME_FROM_OIDC_GROUPS_FUNCTION in settings.
+    Override this or set ORG_NAME_FROM_OIDC_FUNCTION in settings.
     """
     if not groups:
         return None
     return groups[0]
 
 
-def get_org_name_from_groups(claims) -> str | None:
+def get_org_name(claims) -> str | None:
     """
     Extracts the organization name from the user's groups.
     """
-    if hasattr(settings, "ORG_NAME_FROM_OIDC_GROUPS_FUNCTION"):
-        return settings.ORG_NAME_FROM_OIDC_GROUPS_FUNCTION(claims)
+    if hasattr(settings, "ORG_NAME_FROM_OIDC_FUNCTION"):
+        return settings.ORG_NAME_FROM_OIDC_FUNCTION(claims)
     return default_org_name_from_groups(claims)
 
 
@@ -36,7 +36,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         return claims.get("groups", settings.OIDC_DEFAULT_GROUPS)
 
     def _org(self, claims) -> Org | None:
-        org_name = get_org_name_from_groups(claims)
+        org_name = get_org_name(claims)
         if not org_name:
             return None  # Authentication fails if no org can be determined
         org, _created = Org.objects.get_or_create(name=org_name)

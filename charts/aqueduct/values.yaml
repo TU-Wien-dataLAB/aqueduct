@@ -113,7 +113,7 @@ settingsPy:
   extra: |
     # You can add/override settings here
     # OIDC_DEFAULT_GROUPS = ["default"]
-    # ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
+    # ORG_NAME_FROM_OIDC_FUNCTION = lambda x: "default"
     # ADMIN_GROUP = "default"
 
 # Router configuration for litellm router

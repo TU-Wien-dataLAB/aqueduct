@@ -126,7 +126,7 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
 
 
 OIDC_DEFAULT_GROUPS = ["default"]
-ORG_NAME_FROM_OIDC_GROUPS_FUNCTION = lambda x: "default"
+ORG_NAME_FROM_OIDC_FUNCTION = lambda x: "default"
 ADMIN_GROUP = "default"  # all users are admins
 
 # OAuth Group Management Settings

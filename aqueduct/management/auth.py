@@ -22,21 +22,21 @@ def default_org_name_from_groups(groups: list[str]) -> str | None:
     return groups[0]
 
 
-def get_org_name_from_groups(groups) -> str | None:
+def get_org_name_from_groups(claims) -> str | None:
     """
     Extracts the organization name from the user's groups.
     """
     if hasattr(settings, "ORG_NAME_FROM_OIDC_GROUPS_FUNCTION"):
-        return settings.ORG_NAME_FROM_OIDC_GROUPS_FUNCTION(groups)
-    return default_org_name_from_groups(groups)
+        return settings.ORG_NAME_FROM_OIDC_GROUPS_FUNCTION(claims)
+    return default_org_name_from_groups(claims)
 
 
 class OIDCBackend(OIDCAuthenticationBackend):
     def _groups(self, claims) -> list[str]:
         return claims.get("groups", settings.OIDC_DEFAULT_GROUPS)
 
-    def _org(self, groups: list[str]) -> Org | None:
-        org_name = get_org_name_from_groups(groups)
+    def _org(self, claims) -> Org | None:
+        org_name = get_org_name_from_groups(claims)
         if not org_name:
             return None  # Authentication fails if no org can be determined
         org, _created = Org.objects.get_or_create(name=org_name)
@@ -200,7 +200,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
     def create_user(self, claims) -> User | None:
         groups = self._groups(claims)
-        org = self._org(groups)
+        org = self._org(claims)
         if not org:
             return None  # Authentication fails if no org can be determined
 
@@ -232,7 +232,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
     def update_user(self, user, claims) -> User:
         """Update existing user with new claims, if necessary save, and return user"""
         groups = self._groups(claims)
-        org = self._org(groups)
+        org = self._org(claims)
 
         try:
             profile = UserProfile.objects.get(user=user)

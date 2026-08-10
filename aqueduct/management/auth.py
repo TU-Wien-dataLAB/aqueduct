@@ -42,10 +42,10 @@ class OIDCBackend(OIDCAuthenticationBackend):
         org, _created = Org.objects.get_or_create(name=org_name)
         return org
 
-    def _get_teams_from_groups(self, groups: list[str]) -> list[tuple[str, str]]:
+    def _get_teams(self, claims) -> list[tuple[str, str]]:
         """
-        Get list of (team_name, original_group_name) tuples to create/join from OAuth groups.
-        Calls OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION setting for each group.
+        Get list of (team_name, original_group_name) tuples to create/join from OAuth claims.
+        Calls OAUTH_TEAM_NAMES_FUNCTION setting for each group in claims.
         Returns empty list on error or if feature is disabled.
 
         Returns:
@@ -55,9 +55,11 @@ class OIDCBackend(OIDCAuthenticationBackend):
             return []
 
         func = getattr(
-            settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", lambda group, groups=None: None
+            settings, "OAUTH_TEAM_NAMES_FUNCTION", lambda group, groups=None: None
         )
+
         team_mappings = []
+        groups = claims.get("groups", [])
         if not groups:
             return team_mappings
 
@@ -66,7 +68,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
                 result = func(group, groups)
             except Exception as e:
                 log.exception(
-                    "Error calling OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION for group '%s': %s",
+                    "Error calling OAUTH_TEAM_NAMES_FUNCTION for group '%s': %s",
                     group,
                     e,
                 )
@@ -74,16 +76,16 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
             if not isinstance(result, tuple) or len(result) != 2:  # noqa: PLR2004
                 continue
-            team_name, original_name = result
-            if not (team_name and isinstance(team_name, str) and original_name):
+            team_name, original_group_name = result
+            if not (team_name and isinstance(team_name, str) and original_group_name):
                 continue
-            team_mappings.append((team_name.strip(), original_name.strip()))
+            team_mappings.append((team_name.strip(), original_group_name.strip()))
 
         return team_mappings
 
-    def _sync_teams(self, user: User, profile: UserProfile, groups: list[str]) -> None:
+    def _sync_teams(self, user: User, profile: UserProfile, claims: dict) -> None:
         """
-        Synchronize team membership based on OAuth groups.
+        Synchronize team membership based on OAuth claims.
 
         - Creates teams if ENABLE_OAUTH_GROUP_CREATION=True and team doesn't exist
         - Adds user to teams via TeamMembership
@@ -95,12 +97,11 @@ class OIDCBackend(OIDCAuthenticationBackend):
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             return
 
-        team_mappings = self._get_teams_from_groups(groups)
+        team_mappings = self._get_teams(claims)
         if not team_mappings:
             return
 
         org = profile.org
-
         with transaction.atomic():
             existing_memberships = set(
                 TeamMembership.objects.filter(user_profile=profile).values_list(
@@ -224,8 +225,8 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
         log.info("Created user '%s' (%s)", user.email, profile.group)
 
-        # Sync team membership from OAuth groups
-        self._sync_teams(user, profile, groups)
+        # Sync team membership from OAuth claims
+        self._sync_teams(user, profile, claims)
 
         return user
 
@@ -261,7 +262,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
         log.info("Updated user '%s' (%s)", user.email, profile.group)
 
-        # Sync team membership from OAuth groups
-        self._sync_teams(user, profile, groups)
+        # Sync team membership from OAuth claims
+        self._sync_teams(user, profile, claims)
 
         return user

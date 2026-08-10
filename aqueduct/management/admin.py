@@ -184,10 +184,10 @@ def sync_oauth_team_names_action(modeladmin, request, queryset):
     Admin action to sync team names from OAuth group mappings.
     Only affects OAuth-managed teams (those with oauth_group_name set).
     """
-    func = getattr(settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", None)
+    func = getattr(settings, "OAUTH_TEAM_NAMES_FUNCTION", None)
     if not func:
         modeladmin.message_user(
-            request, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION not configured", level=messages.WARNING
+            request, "OAUTH_TEAM_NAMES_FUNCTION not configured", level=messages.WARNING
         )
         return
 
@@ -233,7 +233,7 @@ def sync_oauth_team_names_action(modeladmin, request, queryset):
                         teams_to_update.append((team, new_team_name))
             else:
                 log.error(
-                    "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION must return "
+                    "OAUTH_TEAM_NAMES_FUNCTION must return "
                     "tuple[str, str] | None for group '%s'",
                     original_group,
                 )
@@ -472,7 +472,7 @@ class TeamAdmin(admin.ModelAdmin):
                     {
                         "fields": ("name", "description", "org"),
                         "description": "This team is managed by OAuth synchronization. "
-                        "To update the team name, modify the OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION "
+                        "To update the team name, modify the OAUTH_TEAM_NAMES_FUNCTION "
                         "setting and use the 'Sync OAuth team names' action above.",
                     },
                 ),

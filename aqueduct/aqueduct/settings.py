@@ -137,7 +137,7 @@ ENABLE_OAUTH_GROUP_CREATION = os.getenv("ENABLE_OAUTH_GROUP_CREATION", "True").l
 ENABLE_OAUTH_GROUP_REMOVAL = os.getenv("ENABLE_OAUTH_GROUP_REMOVAL", "True").lower() == "true"
 
 
-def default_oauth_team_names_from_groups(
+def default_oauth_team_names(
     group: str, groups: list[str] | None = None
 ) -> tuple[str, str] | None:
     """
@@ -160,7 +160,7 @@ def default_oauth_team_names_from_groups(
     return None
 
 
-OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION = default_oauth_team_names_from_groups
+OAUTH_TEAM_NAMES_FUNCTION = default_oauth_team_names
 
 EXTRA_NAV_LINKS = {
     "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",

@@ -32,9 +32,6 @@ def get_org_name_from_groups(groups) -> str | None:
 
 
 class OIDCBackend(OIDCAuthenticationBackend):
-    def _groups(self, claims) -> list[str]:
-        return claims.get("groups", settings.OIDC_DEFAULT_GROUPS)
-
     def _org(self, groups: list[str]) -> Org | None:
         org_name = get_org_name_from_groups(groups)
         if not org_name:
@@ -199,7 +196,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
                     )
 
     def create_user(self, claims) -> User | None:
-        groups = self._groups(claims)
+        groups = claims.get("groups", settings.OIDC_DEFAULT_GROUPS)
         org = self._org(groups)
         if not org:
             return None  # Authentication fails if no org can be determined
@@ -231,7 +228,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
     def update_user(self, user, claims) -> User:
         """Update existing user with new claims, if necessary save, and return user"""
-        groups = self._groups(claims)
+        groups = claims.get("groups", settings.OIDC_DEFAULT_GROUPS)
         org = self._org(groups)
 
         try:

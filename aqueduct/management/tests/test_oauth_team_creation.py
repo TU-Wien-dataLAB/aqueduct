@@ -2,6 +2,8 @@
 Tests for OAuth team creation and membership management.
 """
 
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TestCase, override_settings
@@ -588,3 +590,124 @@ class OAuthTeamIntegrationTestCase(TestCase):
         self.assertEqual(memberships.count(), 2)
         team_names = {m.team.name for m in memberships}
         self.assertEqual(team_names, {"E123", "E456"})
+
+
+@override_settings(
+    OIDC_DEFAULT_GROUPS=["default"], OIDC_RP_SIGN_ALGO="HS256", OIDC_RP_IDP_SIGN_KEY="test-key"
+)
+class GroupsExtractionTestCase(TestCase):
+    """Test groups extraction from claims in create_user and update_user."""
+
+    def setUp(self):
+        self.backend = OIDCBackend()
+        self.org = Org.objects.create(name="test-org")
+        self.user_group, _ = Group.objects.get_or_create(name="user")
+
+    def test_groups_extracted_from_claims(self):
+        """Test that groups are correctly extracted from claims."""
+        claims = {"email": "test@example.com", "groups": ["group1", "group2", "group3"]}
+
+        with patch.object(OIDCBackend, "_org", return_value=self.org):
+            user = User.objects.create_user(username="testuser", email="test@example.com")
+            user.groups.add(self.user_group)
+
+            with patch(
+                "mozilla_django_oidc.auth.OIDCAuthenticationBackend.create_user", return_value=user
+            ):
+                result_user = self.backend.create_user(claims)
+
+        self.assertIsNotNone(result_user)
+        profile = UserProfile.objects.get(user=result_user)
+        self.assertEqual(profile.org, self.org)
+
+    def test_default_groups_used_when_claims_missing_groups(self):
+        """Test that OIDC_DEFAULT_GROUPS is used when claims don't have groups key."""
+        claims = {"email": "test@example.com"}
+
+        with patch.object(OIDCBackend, "_org", return_value=self.org) as mock_org:
+            user = User.objects.create_user(username="testuser", email="test@example.com")
+            user.groups.add(self.user_group)
+
+            with patch(
+                "mozilla_django_oidc.auth.OIDCAuthenticationBackend.create_user", return_value=user
+            ):
+                self.backend.create_user(claims)
+
+            mock_org.assert_called_once_with(["default"])
+
+    def test_empty_groups_list_in_claims(self):
+        """Test handling of empty groups list in claims."""
+        claims = {"email": "test@example.com", "groups": []}
+
+        with patch.object(OIDCBackend, "_org", return_value=self.org) as mock_org:
+            user = User.objects.create_user(username="testuser", email="test@example.com")
+            user.groups.add(self.user_group)
+
+            with patch(
+                "mozilla_django_oidc.auth.OIDCAuthenticationBackend.create_user", return_value=user
+            ):
+                self.backend.create_user(claims)
+
+            mock_org.assert_called_once_with([])
+
+    def test_groups_extracted_in_update_user(self):
+        """Test that groups are correctly extracted in update_user."""
+        claims = {"email": "test@example.com", "groups": ["updated-group1", "updated-group2"]}
+
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        UserProfile.objects.create(user=user, org=self.org)
+
+        with patch.object(OIDCBackend, "_org", return_value=self.org) as mock_org:
+            self.backend.update_user(user, claims)
+            mock_org.assert_called_once_with(["updated-group1", "updated-group2"])
+
+    def test_default_groups_used_in_update_user(self):
+        """Test that default groups are used in update_user when claims missing groups."""
+        claims = {"email": "test@example.com"}
+
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        UserProfile.objects.create(user=user, org=self.org)
+
+        with patch.object(OIDCBackend, "_org", return_value=self.org) as mock_org:
+            self.backend.update_user(user, claims)
+            mock_org.assert_called_once_with(["default"])
+
+    @override_settings(ADMIN_GROUP="admin-group")
+    def test_admin_group_detection_from_extracted_groups(self):
+        """Test that admin status is set based on extracted groups."""
+        claims = {"email": "admin@example.com", "groups": ["admin-group", "user-group"]}
+
+        with patch.object(OIDCBackend, "_org", return_value=self.org):
+            user = User.objects.create_user(username="adminuser", email="admin@example.com")
+            user.groups.add(self.user_group)
+
+            with patch(
+                "mozilla_django_oidc.auth.OIDCAuthenticationBackend.create_user", return_value=user
+            ):
+                result_user = self.backend.create_user(claims)
+
+        self.assertTrue(result_user.is_staff)
+        self.assertTrue(result_user.is_superuser)
+        profile = UserProfile.objects.get(user=result_user)
+        self.assertEqual(profile.group, "admin")
+
+    @override_settings(ADMIN_GROUP="admin-group")
+    def test_non_admin_when_admin_group_not_in_extracted_groups(self):
+        """Test that user is not admin when admin-group is not in extracted groups."""
+        claims = {"email": "user@example.com", "groups": ["user-group", "other-group"]}
+
+        with patch.object(OIDCBackend, "_org", return_value=self.org):
+            user = User.objects.create_user(username="testuser", email="user@example.com")
+            user.groups.add(self.user_group)
+
+            with patch(
+                "mozilla_django_oidc.auth.OIDCAuthenticationBackend.create_user", return_value=user
+            ):
+                result_user = self.backend.create_user(claims)
+
+        self.assertFalse(result_user.is_staff)
+        self.assertFalse(result_user.is_superuser)
+        profile = UserProfile.objects.get(user=result_user)
+        self.assertEqual(profile.group, "user")

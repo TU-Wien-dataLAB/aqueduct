@@ -73,7 +73,7 @@ class OAuthTeamCreationTestCase(TestCase):
     def test_rename_team_when_mapping_changes(self):
         """Test that existing OAuth teams are renamed (not duplicated) when mapping changes."""
 
-        # Helper: keeps full group name as team name (opposite of sample_team_names_from_groups)
+        # Helper: keeps full group name as team name (opposite of sample_team_names)
         def team_names_keep_full(group: str, groups: list[str] | None = None):
             if group.startswith("E"):
                 return (group, group)

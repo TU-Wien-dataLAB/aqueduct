@@ -12,23 +12,23 @@ User = get_user_model()
 log = logging.getLogger("aqueduct")
 
 
-def default_org_name_from_groups(groups: list[str]) -> str | None:
+def default_org_name(claims) -> str | None:
     """
-    Default implementation to extract organization name, which returns the first group in the list.
-    Override this or set ORG_NAME_FROM_OIDC_FUNCTION in settings.
+    Default implementation to extract organization name from claims.
+    Returns the first group in the claims['groups'] list.
     """
-    if not groups:
-        return None
-    return groups[0]
+    if groups := claims.get("groups"):
+        return groups[0]
+    return None
 
 
 def get_org_name(claims) -> str | None:
     """
-    Extracts the organization name from the user's groups.
+    Extracts the organization name from the OIDC claims payload.
     """
     if hasattr(settings, "ORG_NAME_FROM_OIDC_FUNCTION"):
         return settings.ORG_NAME_FROM_OIDC_FUNCTION(claims)
-    return default_org_name_from_groups(claims)
+    return default_org_name(claims)
 
 
 class OIDCBackend(OIDCAuthenticationBackend):
@@ -36,8 +36,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         return claims.get("groups", settings.OIDC_DEFAULT_GROUPS)
 
     def _org(self, claims) -> Org | None:
-        org_name = get_org_name(claims)
-        if not org_name:
+        if not (org_name := get_org_name(claims)):
             return None  # Authentication fails if no org can be determined
         org, _created = Org.objects.get_or_create(name=org_name)
         return org

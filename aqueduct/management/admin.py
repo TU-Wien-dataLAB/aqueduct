@@ -263,45 +263,45 @@ def sync_oauth_team_names_action(modeladmin, request, queryset: QuerySet[Team]):
 
     try:
         new_mapping = _get_new_mapping()
-    except (OAuthConfigurationError, OAuthFunctionError) as e:
+    except (OAuthConfigurationError, OAuthFunctionError, Exception) as e:
         modeladmin.message_user(request, str(e), level=messages.ERROR)
         return
 
     result = _classify_teams_for_sync(oauth_teams, new_mapping)
 
+    message, level = None, None
+
     if result.teams_to_delete:
-        modeladmin.message_user(
-            request,
+        message = (
             f"Warning: {len(result.teams_to_delete)} team(s) would be deleted. "
-            "Deletion is not performed automatically. "
-            "Please delete these teams manually if needed.",
-            level=messages.WARNING,
+            f"Deletion is not performed automatically. "
+            f"Please delete these teams manually if needed."
         )
+        level = messages.WARNING
 
     if result.teams_to_update:
         for team, new_name in result.teams_to_update:
             team.name = new_name
+
         Team.objects.bulk_update([t for t, _ in result.teams_to_update], ["name"])
 
-    if result.teams_to_update:
-        modeladmin.message_user(
-            request,
-            f"Successfully updated {len(result.teams_to_update)} team(s)",
-            level=messages.SUCCESS,
-        )
+        message = f"Successfully updated {len(result.teams_to_update)} team(s)"
+        level = messages.SUCCESS
 
     if result.teams_skipped:
         max_display = 5
         skip_details = "; ".join(
             f"{team.name}: {reason}" for team, reason in result.teams_skipped[:max_display]
         )
+
         if len(result.teams_skipped) > max_display:
             skip_details += f" and {len(result.teams_skipped) - max_display} more"
-        modeladmin.message_user(
-            request,
-            f"Skipped {len(result.teams_skipped)} team(s): {skip_details}",
-            level=messages.WARNING,
-        )
+
+        message = f"Skipped {len(result.teams_skipped)} team(s): {skip_details}"
+        level = messages.WARNING
+
+    if message and level:
+        modeladmin.message_user(request, message, level=level)
 
 
 @admin.action(description="Reload from upstream")

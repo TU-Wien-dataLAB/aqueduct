@@ -146,8 +146,7 @@ def default_oauth_team_names(claims) -> list[tuple[str, str]]:
         claims: The full OAuth claims dict containing 'groups' and other user info
 
     Returns:
-        List of tuples: [(transformed_team_name, original_group_name), ...]
-        or empty list to skip team creation
+        List of (team_name, original_group_name) tuples, or empty list if none.
 
     Example:
         def my_transform(claims) -> list[tuple[str, str]]:

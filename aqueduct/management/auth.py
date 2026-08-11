@@ -44,14 +44,13 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
     def _get_teams(self, claims) -> list[tuple[str, str]]:
         """
-        Get list of (team_name, original_group_name) tuples to create/join from OAuth claims.
+        Get list of (team_name, original_group_name) tuples from OAuth claims.
         Calls OAUTH_TEAM_NAMES_FUNCTION setting with the full claims dict.
-        The function should return a list of (team_name, original_group_name) tuples,
-        or empty list to skip team creation.
 
         Returns:
-            List of tuples: [(transformed_team_name, original_oauth_group_name), ...]
+            List of (team_name, original_group_name) tuples, or empty list if none.
         """
+
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             return []
 

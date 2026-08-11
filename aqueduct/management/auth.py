@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -12,14 +13,11 @@ User = get_user_model()
 log = logging.getLogger("aqueduct")
 
 
-def default_org_name(claims) -> str | None:
+def default_org_name() -> Literal["default"]:
     """
-    Default implementation to extract organization name from claims.
-    Returns the first group in the claims['groups'] list.
+    Returns the default organization name.
     """
-    if groups := claims.get("groups"):
-        return groups[0]
-    return None
+    return "default"
 
 
 def get_org_name(claims) -> str | None:
@@ -28,7 +26,7 @@ def get_org_name(claims) -> str | None:
     """
     if hasattr(settings, "ORG_NAME_FROM_OIDC_FUNCTION"):
         return settings.ORG_NAME_FROM_OIDC_FUNCTION(claims)
-    return default_org_name(claims)
+    return default_org_name()
 
 
 class OIDCBackend(OIDCAuthenticationBackend):

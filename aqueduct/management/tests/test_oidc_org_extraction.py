@@ -4,32 +4,20 @@ from management.auth import OIDCBackend, default_org_name, get_org_name
 from management.models import Org
 
 
+def _extract_org_from_first_group(claims: dict) -> str | None:
+    """Test helper to extract org name from the first group in claims."""
+    if groups := claims.get("groups"):
+        return groups[0]
+    return None
+
+
 class DefaultOrgNameTestCase(TestCase):
-    """Test the default_org_name function."""
+    """Test the default_org_name function returns a constant literal value."""
 
-    def test_returns_first_group(self):
-        """Test that default_org_name returns the first group."""
-        claims = {"groups": ["org-alpha", "org-beta", "org-gamma"]}
-        result = default_org_name(claims)
-        self.assertEqual(result, "org-alpha")
-
-    def test_returns_none_when_no_groups(self):
-        """Test that default_org_name returns None when groups key is missing."""
-        claims = {"email": "test@example.com", "name": "Test User"}
-        result = default_org_name(claims)
-        self.assertIsNone(result)
-
-    def test_returns_none_when_groups_is_empty_list(self):
-        """Test that default_org_name returns None when groups is empty."""
-        claims = {"groups": []}
-        result = default_org_name(claims)
-        self.assertIsNone(result)
-
-    def test_returns_none_when_groups_is_none(self):
-        """Test that default_org_name returns None when groups is None."""
-        claims = {"groups": None}
-        result = default_org_name(claims)
-        self.assertIsNone(result)
+    def test_returns_default_literal(self):
+        """Test that default_org_name returns the constant string 'default'."""
+        result = default_org_name()
+        self.assertEqual(result, "default")
 
 
 class GetOrgNameTestCase(TestCase):
@@ -66,7 +54,7 @@ class GetOrgNameTestCase(TestCase):
 @override_settings(
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
-    ORG_NAME_FROM_OIDC_FUNCTION=default_org_name,
+    ORG_NAME_FROM_OIDC_FUNCTION=_extract_org_from_first_group,
 )
 class OIDCBackendOrgTestCase(TestCase):
     """Test the OIDCBackend._org() method."""
@@ -122,7 +110,7 @@ class OIDCBackendOrgTestCase(TestCase):
 @override_settings(
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
-    ORG_NAME_FROM_OIDC_FUNCTION=default_org_name,
+    ORG_NAME_FROM_OIDC_FUNCTION=_extract_org_from_first_group,
 )
 class OIDCBackendOrgIntegrationTestCase(TestCase):
     """Integration tests for org creation in authentication flow."""

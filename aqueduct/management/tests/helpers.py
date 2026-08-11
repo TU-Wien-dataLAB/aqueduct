@@ -25,11 +25,7 @@ def team_names_keep_full(claims) -> list[tuple[str, str]]:
     Example: {'groups': ['E123-Students']} -> [('E123-Students', 'E123-Students')]
     """
     groups = claims.get("groups") or []
-    result = []
-    for group in groups:
-        if group.startswith("E"):
-            result.append((group, group))
-    return result
+    return [(group, group) for group in groups if group.startswith("E")]
 
 
 def team_names_with_prefix(claims) -> list[tuple[str, str]]:
@@ -38,11 +34,7 @@ def team_names_with_prefix(claims) -> list[tuple[str, str]]:
     Example: {'groups': ['E123-Students']} -> [('Team-E123-Students', 'E123-Students')]
     """
     groups = claims.get("groups") or []
-    result = []
-    for group in groups:
-        if group.startswith("E"):
-            result.append((f"Team-{group}", group))
-    return result
+    return [(f"Team-{group}", group) for group in groups if group.startswith("E")]
 
 
 def team_names_strip_suffix(claims) -> list[tuple[str, str]]:
@@ -51,11 +43,7 @@ def team_names_strip_suffix(claims) -> list[tuple[str, str]]:
     Example: {'groups': ['E123-Students']} -> [('E123', 'E123-Students')]
     """
     groups = claims.get("groups") or []
-    result = []
-    for group in groups:
-        if group.startswith("E"):
-            result.append((group.split("-", maxsplit=1)[0], group))
-    return result
+    return [(group.split("-", maxsplit=1)[0], group) for group in groups if group.startswith("E")]
 
 
 def team_names_empty(claims) -> list[tuple[str, str]]:
@@ -63,16 +51,3 @@ def team_names_empty(claims) -> list[tuple[str, str]]:
     Sample function that returns empty list (causes deletion).
     """
     return []
-
-
-def custom_filter_team_names(claims) -> list[tuple[str, str]]:
-    """
-    Custom filter that only allows specific group names.
-    Example: {'groups': ['E123', 'E456', 'E789']} -> [('E123', 'E123'), ('E456', 'E456')]
-    """
-    groups = claims.get("groups") or []
-    result = []
-    for group in groups:
-        if group in {"E123", "E456"}:
-            result.append((group, group))
-    return result

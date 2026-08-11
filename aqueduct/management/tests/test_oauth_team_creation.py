@@ -8,13 +8,16 @@ from django.test import TestCase, override_settings
 
 from management.auth import OIDCBackend
 from management.models import Org, Team, TeamMembership, UserProfile
-from management.tests.helpers import (
-    custom_filter_team_names,
-    sample_team_names,
-    team_names_keep_full,
-)
+from management.tests.helpers import sample_team_names, team_names_keep_full
 
 User = get_user_model()
+
+
+def custom_filter_team_names(claims) -> list[tuple[str, str]]:
+    """
+    Custom filter that only allows specific group names.
+    """
+    return [("E123", "E123"), ("E456", "E456")]
 
 
 @override_settings(

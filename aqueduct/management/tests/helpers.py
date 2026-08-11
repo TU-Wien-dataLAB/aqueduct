@@ -1,8 +1,3 @@
-"""
-Shared test helpers for management app tests.
-"""
-
-
 def sample_team_names(claims) -> list[tuple[str, str]]:
     """
     Sample implementation that filters groups starting with 'E'

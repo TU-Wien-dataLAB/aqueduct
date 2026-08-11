@@ -11,33 +11,9 @@ from django.test import RequestFactory, TestCase, override_settings
 
 from management.admin import TeamAdmin, sync_oauth_team_names_action
 from management.models import Org, Team
+from management.tests.helpers import team_names_empty, team_names_strip_suffix
 
 User = get_user_model()
-
-
-def team_names_with_prefix(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-    """
-    Sample function that adds 'Team-' prefix to group names.
-    """
-    if group.startswith("E"):
-        return (f"Team-{group}", group)
-    return None
-
-
-def team_names_strip_suffix(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-    """
-    Sample function that strips suffix after dash.
-    """
-    if group.startswith("E"):
-        return (group.split("-", maxsplit=1)[0], group)
-    return None
-
-
-def team_names_empty(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-    """
-    Sample function that returns None for all groups (causes deletion).
-    """
-    return None
 
 
 @override_settings(

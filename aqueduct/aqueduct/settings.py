@@ -13,7 +13,6 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import logging
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -132,32 +131,35 @@ ADMIN_GROUP = "default"  # all users are admins
 # OAuth Group Management Settings
 # Controls automatic team creation and membership management from OAuth groups
 
-ENABLE_OAUTH_GROUP_MANAGEMENT = os.getenv("ENABLE_OAUTH_GROUP_MANAGEMENT", "False").lower() == "true"
+ENABLE_OAUTH_GROUP_MANAGEMENT = (
+    os.getenv("ENABLE_OAUTH_GROUP_MANAGEMENT", "False").lower() == "true"
+)
 ENABLE_OAUTH_GROUP_CREATION = os.getenv("ENABLE_OAUTH_GROUP_CREATION", "True").lower() == "true"
 ENABLE_OAUTH_GROUP_REMOVAL = os.getenv("ENABLE_OAUTH_GROUP_REMOVAL", "True").lower() == "true"
 
 
-def default_oauth_team_names(
-    group: str, groups: list[str] | None = None
-) -> tuple[str, str] | None:
+def default_oauth_team_names(claims) -> list[tuple[str, str]]:
     """
-    Default function to transform a single OAuth group name to a team name.
+    Default function to transform OAuth claims to team mappings.
 
     Args:
-        group: The specific OAuth group name to transform
-        groups: Full list of user's groups for context (optional)
+        claims: The full OAuth claims dict containing 'groups' and other user info
 
     Returns:
-        Tuple of (transformed_team_name, original_group_name) or None to skip this group
+        List of tuples: [(transformed_team_name, original_group_name), ...]
+        or empty list to skip team creation
 
     Example:
-        def my_transform(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-            if group.startswith("E"):
-                team_name = group.split("-")[0]
-                return (team_name, group)
-            return None
+        def my_transform(claims) -> list[tuple[str, str]]:
+            groups = claims.get('groups', [])
+            result = []
+            for group in groups:
+                if group.startswith('E'):
+                    team_name = group.split('-')[0]
+                    result.append((team_name, group))
+            return result
     """
-    return None
+    return []
 
 
 OAUTH_TEAM_NAMES_FUNCTION = default_oauth_team_names

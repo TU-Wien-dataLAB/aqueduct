@@ -4,15 +4,9 @@ from django.test import TestCase, override_settings
 
 from management.auth import OIDCBackend
 from management.models import Org
+from management.tests.helpers import sample_team_names
 
 User = get_user_model()
-
-
-def sample_team_names(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-    if group.startswith("E"):
-        team_name = group.split("-", maxsplit=1)[0]
-        return (team_name, group)
-    return None
 
 
 @override_settings(

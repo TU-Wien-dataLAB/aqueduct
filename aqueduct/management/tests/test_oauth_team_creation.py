@@ -8,21 +8,13 @@ from django.test import TestCase, override_settings
 
 from management.auth import OIDCBackend
 from management.models import Org, Team, TeamMembership, UserProfile
+from management.tests.helpers import (
+    custom_filter_team_names,
+    sample_team_names,
+    team_names_keep_full,
+)
 
 User = get_user_model()
-
-
-def sample_team_names(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-    """
-    Sample implementation that filters groups starting with 'E'
-    and extracts team names (removes suffix after dash).
-    Returns tuple of (team_name, original_group_name) or None to skip.
-    Example: 'E123-Students' -> ('E123', 'E123-Students')
-    """
-    if group.startswith("E"):
-        team_name = group.split("-", maxsplit=1)[0]
-        return (team_name, group)
-    return None
 
 
 @override_settings(
@@ -71,12 +63,6 @@ class OAuthTeamCreationTestCase(TestCase):
     def test_rename_team_when_mapping_changes(self):
         """Test that existing OAuth teams are renamed (not duplicated) when mapping changes."""
 
-        # Helper: keeps full group name as team name (opposite of sample_team_names)
-        def team_names_keep_full(group: str, groups: list[str] | None = None):
-            if group.startswith("E"):
-                return (group, group)
-            return None
-
         claims = {"email": "test@example.com", "groups": ["E123-Students"]}
 
         # Step 1: Create team with old mapping (strips suffix: "E123-Students" -> "E123")
@@ -110,11 +96,6 @@ class OAuthTeamCreationTestCase(TestCase):
 
     def test_name_collision_prevents_rename(self):
         """Test that rename is skipped when target name already exists."""
-
-        def team_names_keep_full(group: str, groups: list[str] | None = None):
-            if group.startswith("E"):
-                return (group, group)
-            return None
 
         # Create team with old mapping name
         old_team = Team.objects.create(name="E123", org=self.org, oauth_group_name="E123-Students")
@@ -432,7 +413,7 @@ class OAuthTeamEdgeCasesTestCase(TestCase):
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=lambda group, groups=None: None,
+    OAUTH_TEAM_NAMES_FUNCTION=lambda claims: [],
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )
@@ -460,12 +441,7 @@ class OAuthTeamSettingsTestCase(TestCase):
     def test_custom_filter_function(self):
         """Test custom filter function."""
 
-        def custom_filter(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-            if group in {"E123", "E456"}:
-                return (group, group)
-            return None
-
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=custom_filter):
+        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=custom_filter_team_names):
             backend = OIDCBackend()
             claims = {"email": "test@example.com", "groups": ["E123", "E456", "E789"]}
 

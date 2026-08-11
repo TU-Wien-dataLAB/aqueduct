@@ -198,48 +198,67 @@ def sync_oauth_team_names_action(modeladmin, request, queryset):
         modeladmin.message_user(request, "No OAuth-managed teams selected", level=messages.INFO)
         return
 
-    teams_to_update = []
-    teams_to_delete = []
-    teams_skipped = []
-
     all_oauth_groups = list(
         Team.objects.exclude(oauth_group_name="")
         .values_list("oauth_group_name", flat=True)
         .distinct()
     )
+    claims = {"groups": all_oauth_groups}
+
+    try:
+        result = func(claims)
+    except Exception as e:
+        log.exception("Error calling OAUTH_TEAM_NAMES_FUNCTION: %s", e)
+        modeladmin.message_user(
+            request, f"Error calling OAUTH_TEAM_NAMES_FUNCTION: {e}", level=messages.ERROR
+        )
+        return
+
+    if result is None:
+        modeladmin.message_user(
+            request, "OAUTH_TEAM_NAMES_FUNCTION returned None", level=messages.WARNING
+        )
+        return
+
+    if not isinstance(result, list):
+        log.error("OAUTH_TEAM_NAMES_FUNCTION must return a list of tuples")
+        modeladmin.message_user(
+            request, "OAUTH_TEAM_NAMES_FUNCTION must return a list of tuples", level=messages.ERROR
+        )
+        return
+
+    # Build mapping from original_group_name -> new_team_name
+    new_mapping = {}
+    for item in result:
+        if isinstance(item, tuple) and len(item) == 2:  # noqa: PLR2004
+            team_name, original_group_name = item
+            new_mapping[original_group_name.strip()] = team_name.strip()
+
+    teams_to_update = []
+    teams_to_delete = []
+    teams_skipped = []
 
     max_skipped_display = 5
 
     for team in oauth_teams:
         original_group = team.oauth_group_name
-        try:
-            result = func(original_group, all_oauth_groups)
-            if result is None:
-                teams_to_delete.append(team)
-            elif isinstance(result, tuple) and len(result) == 2:  # noqa: PLR2004 (tuple length for (name, original_group))
-                new_team_name, _ = result
-                new_team_name = new_team_name.strip()
-                if new_team_name == team.name:
-                    teams_skipped.append((team, "Name unchanged"))
-                else:
-                    existing = Team.objects.filter(name=new_team_name, org=team.org).exclude(
-                        pk=team.pk
-                    )
-                    if existing.exists():
-                        teams_skipped.append(
-                            (team, f"Name collision: '{new_team_name}' already exists")
-                        )
-                    else:
-                        teams_to_update.append((team, new_team_name))
-            else:
-                log.error(
-                    "OAUTH_TEAM_NAMES_FUNCTION must return tuple[str, str] | None for group '%s'",
-                    original_group,
-                )
-                teams_skipped.append((team, "Invalid return type"))
-        except Exception as e:
-            log.exception("Error processing team '%s': %s", team.name, e)
-            teams_skipped.append((team, f"Error: {e}"))
+
+        if original_group not in new_mapping:
+            teams_to_delete.append(team)
+            continue
+
+        new_team_name = new_mapping[original_group]
+        if new_team_name == team.name:
+            teams_skipped.append((team, "Name unchanged"))
+            continue
+
+        collision_teams = Team.objects.filter(name=new_team_name, org=team.org).exclude(pk=team.pk)
+
+        if collision_teams.exists():
+            teams_skipped.append((team, f"Name collision: '{new_team_name}' already exists"))
+            continue
+
+        teams_to_update.append((team, new_team_name))
 
     if teams_to_delete:
         modeladmin.message_user(

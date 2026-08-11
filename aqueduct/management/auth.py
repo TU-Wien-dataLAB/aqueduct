@@ -45,8 +45,9 @@ class OIDCBackend(OIDCAuthenticationBackend):
     def _get_teams(self, claims) -> list[tuple[str, str]]:
         """
         Get list of (team_name, original_group_name) tuples to create/join from OAuth claims.
-        Calls OAUTH_TEAM_NAMES_FUNCTION setting for each group in claims.
-        Returns empty list on error or if feature is disabled.
+        Calls OAUTH_TEAM_NAMES_FUNCTION setting with the full claims dict.
+        The function should return a list of (team_name, original_group_name) tuples,
+        or None/empty list to skip team creation.
 
         Returns:
             List of tuples: [(transformed_team_name, original_oauth_group_name), ...]
@@ -54,25 +55,26 @@ class OIDCBackend(OIDCAuthenticationBackend):
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             return []
 
-        func = getattr(settings, "OAUTH_TEAM_NAMES_FUNCTION", lambda group, groups=None: None)
+        func = getattr(settings, "OAUTH_TEAM_NAMES_FUNCTION", lambda claims: None)
+
+        try:
+            result = func(claims)
+        except Exception as e:
+            log.exception("Error calling OAUTH_TEAM_NAMES_FUNCTION: %s", e)
+            return []
+
+        if result is None:
+            return []
+
+        if not isinstance(result, list):
+            log.error("OAUTH_TEAM_NAMES_FUNCTION must return a list of tuples")
+            return []
 
         team_mappings = []
-        groups = claims.get("groups", [])
-        if not groups:
-            return team_mappings
-
-        for group in groups:
-            try:
-                result = func(group, groups)
-            except Exception as e:
-                log.exception(
-                    "Error calling OAUTH_TEAM_NAMES_FUNCTION for group '%s': %s", group, e
-                )
+        for item in result:
+            if not isinstance(item, tuple) or len(item) != 2:  # noqa: PLR2004
                 continue
-
-            if not isinstance(result, tuple) or len(result) != 2:  # noqa: PLR2004
-                continue
-            team_name, original_group_name = result
+            team_name, original_group_name = item
             if not (team_name and isinstance(team_name, str) and original_group_name):
                 continue
             team_mappings.append((team_name.strip(), original_group_name.strip()))

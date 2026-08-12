@@ -194,7 +194,7 @@ requires-dist = [
     { name = "django-celery-beat", specifier = ">=2.8.1" },
     { name = "django-cors-headers", specifier = ">=4.7.0" },
     { name = "django-silk", specifier = ">=5.5.0" },
-    { name = "django-tos", specifier = ">=1.1.0" },
+    { name = "django-tos", specifier = ">=1.1.0,<1.2" },
     { name = "httpx", specifier = ">=0.28.1,<1" },
     { name = "litellm", specifier = "==1.85.2" },
     { name = "mcp", specifier = "==1.25.0" },

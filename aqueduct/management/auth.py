@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -12,32 +13,28 @@ User = get_user_model()
 log = logging.getLogger("aqueduct")
 
 
-def default_org_name_from_groups(groups: list[str]) -> str | None:
+def default_org_name() -> Literal["default"]:
     """
-    Default implementation to extract organization name, which returns the first group in the list.
-    Override this or set ORG_NAME_FROM_OIDC_GROUPS_FUNCTION in settings.
+    Returns the default organization name.
     """
-    if not groups:
-        return None
-    return groups[0]
+    return "default"
 
 
-def get_org_name_from_groups(groups) -> str | None:
+def get_org_name(claims) -> str | None:
     """
-    Extracts the organization name from the user's groups.
+    Extracts the organization name from the OIDC claims payload.
     """
-    if hasattr(settings, "ORG_NAME_FROM_OIDC_GROUPS_FUNCTION"):
-        return settings.ORG_NAME_FROM_OIDC_GROUPS_FUNCTION(groups)
-    return default_org_name_from_groups(groups)
+    if hasattr(settings, "ORG_NAME_FROM_OIDC_FUNCTION"):
+        return settings.ORG_NAME_FROM_OIDC_FUNCTION(claims)
+    return default_org_name()
 
 
 class OIDCBackend(OIDCAuthenticationBackend):
     def _groups(self, claims) -> list[str]:
         return claims.get("groups", settings.OIDC_DEFAULT_GROUPS)
 
-    def _org(self, groups: list[str]) -> Org | None:
-        org_name = get_org_name_from_groups(groups)
-        if not org_name:
+    def _org(self, claims) -> Org | None:
+        if not (org_name := get_org_name(claims)):
             return None  # Authentication fails if no org can be determined
         org, _created = Org.objects.get_or_create(name=org_name)
         return org
@@ -213,7 +210,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
     def create_user(self, claims) -> User | None:
         groups = self._groups(claims)
-        org = self._org(groups)
+        org = self._org(claims)
         if not org:
             return None  # Authentication fails if no org can be determined
 
@@ -245,7 +242,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
     def update_user(self, user, claims) -> User:
         """Update existing user with new claims, if necessary save, and return user"""
         groups = self._groups(claims)
-        org = self._org(groups)
+        org = self._org(claims)
 
         try:
             profile = UserProfile.objects.get(user=user)

@@ -44,39 +44,54 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
     def _get_teams(self, claims) -> list[tuple[str, str]]:
         """
-        Get list of (team_name, original_group_name) tuples from OAuth claims.
-        Calls OAUTH_TEAM_NAMES_FUNCTION setting with the full claims dict.
+        Get list of (display_team_name, team_name) tuples from OAuth claims.
+
+        Two-step process
+        1. OAUTH_TEAM_NAMES_FUNCTION: Extract team names from claims.
+        2. OAUTH_DISPLAY_TEAM_NAMES_FUNCTION: Map team names to display team names.
 
         Returns:
-            List of (team_name, original_group_name) tuples, or empty list if none.
+            List of (display_team_name, team_name) tuples, or empty list if none.
         """
 
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             return []
 
-        func = getattr(settings, "OAUTH_TEAM_NAMES_FUNCTION", lambda claims: None)
+        extract_func = getattr(settings, "OAUTH_TEAM_NAMES_FUNCTION", lambda claims: None)
 
         try:
-            result = func(claims)
+            team_names = extract_func(claims)
         except Exception as e:
             log.exception("Error calling OAUTH_TEAM_NAMES_FUNCTION: %s", e)
+            return []
+
+        if team_names is None or not isinstance(team_names, list):
+            log.error("OAUTH_TEAM_NAMES_FUNCTION must return a list of strings")
+            return []
+
+        map_func = getattr(settings, "OAUTH_DISPLAY_TEAM_NAMES_FUNCTION", lambda names: None)
+
+        try:
+            result = map_func(team_names)
+        except Exception as e:
+            log.exception("Error calling OAUTH_DISPLAY_TEAM_NAMES_FUNCTION: %s", e)
             return []
 
         if result is None:
             return []
 
         if not isinstance(result, list):
-            log.error("OAUTH_TEAM_NAMES_FUNCTION must return a list of tuples")
+            log.error("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION must return a list of tuples")
             return []
 
         team_mappings = []
         for item in result:
             if not isinstance(item, tuple) or len(item) != 2:  # noqa: PLR2004
                 continue
-            team_name, original_group_name = item
-            if not (team_name and isinstance(team_name, str) and original_group_name):
+            display_team_name, team_name = item
+            if not (display_team_name and isinstance(display_team_name, str) and team_name):
                 continue
-            team_mappings.append((team_name.strip(), original_group_name.strip()))
+            team_mappings.append((display_team_name.strip(), team_name.strip()))
 
         return team_mappings
 

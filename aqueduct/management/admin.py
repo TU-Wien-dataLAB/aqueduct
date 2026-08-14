@@ -10,12 +10,12 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
+from django.core.exceptions import ImproperlyConfigured
 from django.db.models import Q, QuerySet
 from django.urls import reverse
 from django.utils.html import format_html
 
 from gateway.config import get_files_api_client, get_router_config
-from management.exceptions import OAuthConfigurationError, OAuthFunctionError
 from management.models import (
     Batch,
     FileObject,
@@ -189,32 +189,31 @@ def delete_tos_cache(modeladmin, request, queryset):
 
 
 def _get_new_mapping() -> dict[str, str]:
-    if not (func := getattr(settings, "OAUTH_TEAM_NAMES_FUNCTION", None)):
-        raise OAuthConfigurationError("OAUTH_TEAM_NAMES_FUNCTION not configured")
-
     all_oauth_groups = list(
         Team.objects.exclude(oauth_group_name="")
         .values_list("oauth_group_name", flat=True)
         .distinct()
     )
-    claims = {"groups": all_oauth_groups}
+
+    if not (func := getattr(settings, "OAUTH_DISPLAY_TEAM_NAMES_FUNCTION", None)):
+        raise ImproperlyConfigured("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION not configured")
 
     try:
-        result = func(claims)
+        result = func(all_oauth_groups)
     except Exception as e:
-        raise OAuthFunctionError(f"Error calling OAUTH_TEAM_NAMES_FUNCTION: {e}") from e
+        raise ImproperlyConfigured(f"Error calling OAUTH_DISPLAY_TEAM_NAMES_FUNCTION: {e}") from e
 
     if result is None:
-        raise OAuthConfigurationError("OAUTH_TEAM_NAMES_FUNCTION returned None")
+        raise ImproperlyConfigured("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION returned None")
 
     if not isinstance(result, list):
-        raise OAuthConfigurationError("OAUTH_TEAM_NAMES_FUNCTION must return a list of tuples")
+        raise ImproperlyConfigured("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION must return a list of tuples")
 
     new_mapping = {}
     for item in result:
         if isinstance(item, tuple) and len(item) == 2:  # noqa: PLR2004
-            team_name, original_group_name = item
-            new_mapping[original_group_name.strip()] = team_name.strip()
+            display_team_name, team_name = item
+            new_mapping[team_name.strip()] = display_team_name.strip()
 
     return new_mapping
 
@@ -263,7 +262,7 @@ def sync_oauth_team_names_action(modeladmin, request, queryset: QuerySet[Team]):
 
     try:
         new_mapping = _get_new_mapping()
-    except (OAuthConfigurationError, OAuthFunctionError, Exception) as e:
+    except Exception as e:
         modeladmin.message_user(request, str(e), level=messages.ERROR)
         return
 

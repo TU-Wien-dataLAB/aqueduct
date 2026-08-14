@@ -8,22 +8,35 @@ from django.test import TestCase, override_settings
 
 from management.auth import OIDCBackend
 from management.models import Org, Team, TeamMembership, UserProfile
-from management.tests.helpers import sample_team_names, team_names_keep_full
+from management.tests.helpers import (
+    extract_teams_keep_full,
+    map_team_names_keep_full,
+    sample_extract_teams,
+    sample_map_team_names,
+)
 
 User = get_user_model()
 
 
-def custom_filter_team_names(claims) -> list[tuple[str, str]]:
+def custom_extract_teams(claims) -> list[str]:
     """
     Custom filter that only allows specific group names.
     """
-    return [("E123", "E123"), ("E456", "E456")]
+    return ["E123", "E456"]
+
+
+def custom_map_team_names(team_names: list[str]) -> list[tuple[str, str]]:
+    """
+    Map team names keeping them as-is.
+    """
+    return [(name, name) for name in team_names]
 
 
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=sample_team_names,
+    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )
@@ -84,7 +97,10 @@ class OAuthTeamCreationTestCase(TestCase):
         user2.groups.add(self.user_group)
         profile2 = UserProfile.objects.create(user=user2, org=self.org)
 
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=team_names_keep_full):
+        with override_settings(
+            OAUTH_TEAM_NAMES_FUNCTION=extract_teams_keep_full,
+            OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_keep_full,
+        ):
             self.backend._sync_teams(user2, profile2, claims)
 
         # Should rename existing team, not create a duplicate
@@ -112,7 +128,10 @@ class OAuthTeamCreationTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=team_names_keep_full):
+        with override_settings(
+            OAUTH_TEAM_NAMES_FUNCTION=extract_teams_keep_full,
+            OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_keep_full,
+        ):
             self.backend._sync_teams(user, profile, claims)
 
         # Should NOT rename old_team (name collision with blocker)
@@ -186,7 +205,8 @@ class OAuthTeamCreationTestCase(TestCase):
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=sample_team_names,
+    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )
@@ -329,7 +349,8 @@ class OAuthTeamMembershipTestCase(TestCase):
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=sample_team_names,
+    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )
@@ -417,6 +438,7 @@ class OAuthTeamEdgeCasesTestCase(TestCase):
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
     OAUTH_TEAM_NAMES_FUNCTION=lambda claims: [],
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=lambda names: [],
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )
@@ -444,7 +466,10 @@ class OAuthTeamSettingsTestCase(TestCase):
     def test_custom_filter_function(self):
         """Test custom filter function."""
 
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=custom_filter_team_names):
+        with override_settings(
+            OAUTH_TEAM_NAMES_FUNCTION=custom_extract_teams,
+            OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=custom_map_team_names,
+        ):
             backend = OIDCBackend()
             claims = {"email": "test@example.com", "groups": ["E123", "E456", "E789"]}
 
@@ -507,7 +532,8 @@ class OAuthTeamSettingsTestCase(TestCase):
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=sample_team_names,
+    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )

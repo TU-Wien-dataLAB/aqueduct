@@ -138,30 +138,47 @@ ENABLE_OAUTH_GROUP_CREATION = os.getenv("ENABLE_OAUTH_GROUP_CREATION", "True").l
 ENABLE_OAUTH_GROUP_REMOVAL = os.getenv("ENABLE_OAUTH_GROUP_REMOVAL", "True").lower() == "true"
 
 
-def default_oauth_team_names(claims) -> list[tuple[str, str]]:
+def default_oauth_team_names(claims) -> list[str]:
     """
-    Default function to transform OAuth claims to team mappings.
+    Default function to extract team names from OAuth claims.
 
     Args:
-        claims: The full OAuth claims dict containing 'groups' and other user info
+        claims: The full OAuth claims dict.
 
     Returns:
-        List of (team_name, original_group_name) tuples, or empty list if none.
+        List of team names, or empty list if none.
 
     Example:
-        def my_transform(claims) -> list[tuple[str, str]]:
-            groups = claims.get('groups', [])
+        def my_extract_team_names(claims) -> list[str]:
+            team_names = claims.get('groups', [])
+            return [team_name for team_name in team_names if team_name.startswith('E')]
+    """
+    return []
+
+
+def default_oauth_display_team_names(team_names: list[str]) -> list[tuple[str, str]]:
+    """
+    Default function to map team names to display team names.
+
+    Args:
+        team_names: List of team names.
+
+    Returns:
+        List of (display_team_name, team_name) tuples, or empty list if none.
+
+    Example:
+        def my_display_team_names(team_names) -> list[tuple[str, str]]:
             result = []
-            for group in groups:
-                if group.startswith('E'):
-                    team_name = group.split('-')[0]
-                    result.append((team_name, group))
+            for team_name in team_names:
+                display_team_name = team_name.split('-')[0]
+                result.append((display_team_name, team_name))
             return result
     """
     return []
 
 
 OAUTH_TEAM_NAMES_FUNCTION = default_oauth_team_names
+OAUTH_DISPLAY_TEAM_NAMES_FUNCTION = default_oauth_display_team_names
 
 EXTRA_NAV_LINKS = {
     "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",

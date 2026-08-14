@@ -4,7 +4,7 @@ from django.test import TestCase, override_settings
 
 from management.auth import OIDCBackend
 from management.models import Org
-from management.tests.helpers import sample_team_names
+from management.tests.helpers import sample_extract_teams, sample_map_team_names
 
 User = get_user_model()
 
@@ -12,7 +12,8 @@ User = get_user_model()
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=sample_team_names,
+    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )

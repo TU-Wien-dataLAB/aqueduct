@@ -11,7 +11,7 @@ from django.test import RequestFactory, TestCase, override_settings
 
 from management.admin import TeamAdmin, sync_oauth_team_names_action
 from management.models import Org, Team
-from management.tests.helpers import team_names_empty, team_names_strip_suffix
+from management.tests.helpers import map_team_names_empty, map_team_names_strip_suffix
 
 User = get_user_model()
 
@@ -44,7 +44,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123-Students")
@@ -58,7 +58,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123-Students")
@@ -71,7 +71,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="")
@@ -84,7 +84,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123")
@@ -99,7 +99,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
 
         with (
             patch.object(self.modeladmin, "message_user") as mock_msg,
-            override_settings(OAUTH_TEAM_NAMES_FUNCTION=team_names_empty),
+            override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_empty),
         ):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
@@ -122,7 +122,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.filter(pk=team1.pk)
 
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team1.refresh_from_db()
@@ -138,7 +138,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=None):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=None):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123")
@@ -153,7 +153,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         self.assertEqual(Team.objects.get(oauth_group_name="E123-Students").name, "E123")

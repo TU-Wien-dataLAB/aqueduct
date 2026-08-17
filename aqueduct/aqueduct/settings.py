@@ -138,7 +138,7 @@ ENABLE_OAUTH_GROUP_CREATION = os.getenv("ENABLE_OAUTH_GROUP_CREATION", "True").l
 ENABLE_OAUTH_GROUP_REMOVAL = os.getenv("ENABLE_OAUTH_GROUP_REMOVAL", "True").lower() == "true"
 
 
-def default_oauth_team_names(claims) -> list[str]:
+def default_oauth_team_names(claims: dict[str, Any]) -> list[str]:
     """
     Default function to extract team names from OAuth claims.
 

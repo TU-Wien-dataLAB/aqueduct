@@ -74,9 +74,6 @@ class OIDCBackend(OIDCAuthenticationBackend):
             log.exception("Error calling OAUTH_DISPLAY_TEAM_NAMES_FUNCTION: %s", e)
             return []
 
-        if result is None:
-            return []
-
         if not isinstance(result, list):
             log.error("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION must return a list of tuples")
             return []

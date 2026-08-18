@@ -174,7 +174,7 @@ def default_oauth_display_team_names(team_names: list[str]) -> list[tuple[str, s
                 result.append((display_team_name, team_name))
             return result
     """
-    return []
+    return [(t, t) for t in team_names]
 
 
 OAUTH_TEAM_NAMES_FUNCTION = default_oauth_team_names

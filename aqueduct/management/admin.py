@@ -203,9 +203,6 @@ def _get_new_mapping() -> dict[str, str]:
     except Exception as e:
         raise ImproperlyConfigured(f"Error calling OAUTH_DISPLAY_TEAM_NAMES_FUNCTION: {e}") from e
 
-    if result is None:
-        raise ImproperlyConfigured("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION returned None")
-
     if not isinstance(result, list):
         raise ImproperlyConfigured("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION must return a list of tuples")
 

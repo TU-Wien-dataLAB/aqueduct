@@ -11,33 +11,9 @@ from django.test import RequestFactory, TestCase, override_settings
 
 from management.admin import TeamAdmin, sync_oauth_team_names_action
 from management.models import Org, Team
+from management.tests.helpers import map_team_names_empty, map_team_names_strip_suffix
 
 User = get_user_model()
-
-
-def team_names_with_prefix(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-    """
-    Sample function that adds 'Team-' prefix to group names.
-    """
-    if group.startswith("E"):
-        return (f"Team-{group}", group)
-    return None
-
-
-def team_names_strip_suffix(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-    """
-    Sample function that strips suffix after dash.
-    """
-    if group.startswith("E"):
-        return (group.split("-", maxsplit=1)[0], group)
-    return None
-
-
-def team_names_empty(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-    """
-    Sample function that returns None for all groups (causes deletion).
-    """
-    return None
 
 
 @override_settings(
@@ -68,7 +44,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123-Students")
@@ -82,7 +58,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123-Students")
@@ -95,7 +71,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="")
@@ -108,7 +84,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123")
@@ -123,7 +99,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
 
         with (
             patch.object(self.modeladmin, "message_user") as mock_msg,
-            override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_empty),
+            override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_empty),
         ):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
@@ -146,7 +122,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.filter(pk=team1.pk)
 
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team1.refresh_from_db()
@@ -162,7 +138,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=None):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=None):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123")
@@ -177,7 +153,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_strip_suffix):
+        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         self.assertEqual(Team.objects.get(oauth_group_name="E123-Students").name, "E123")

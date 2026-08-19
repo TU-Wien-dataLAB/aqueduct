@@ -8,29 +8,40 @@ from django.test import TestCase, override_settings
 
 from management.auth import OIDCBackend
 from management.models import Org, Team, TeamMembership, UserProfile
+from management.tests.helpers import (
+    extract_teams_keep_full,
+    map_team_names_keep_full,
+    sample_extract_teams,
+    sample_map_team_names,
+)
 
 User = get_user_model()
 
 
-def sample_team_names_from_groups(
-    group: str, groups: list[str] | None = None
-) -> tuple[str, str] | None:
+def custom_extract_teams(claims) -> list[str]:
     """
-    Sample implementation that filters groups starting with 'E'
-    and extracts team names (removes suffix after dash).
-    Returns tuple of (team_name, original_group_name) or None to skip.
-    Example: 'E123-Students' -> ('E123', 'E123-Students')
+    Custom filter that only allows specific group names.
     """
-    if group.startswith("E"):
-        team_name = group.split("-", maxsplit=1)[0]
-        return (team_name, group)
-    return None
+    return ["E123", "E456"]
+
+
+def custom_map_team_names(team_names: list[str]) -> list[tuple[str, str]]:
+    """
+    Map team names keeping them as-is.
+    """
+    return [(name, name) for name in team_names]
+
+
+def sync_teams(backend, user, profile, claims):
+    """Sync teams from claims using the active team-name extraction."""
+    backend._sync_team_membership(user, profile, backend._get_team_names(claims))
 
 
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=sample_team_names_from_groups,
+    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )
@@ -53,9 +64,9 @@ class OAuthTeamCreationTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
-        self.assertEqual(Team.objects.count(), 2)
+        self.assertEqual(Team.objects.filter(org=self.org).count(), 2)
         self.assertTrue(Team.objects.filter(name="E123", org=self.org).exists())
         self.assertTrue(Team.objects.filter(name="E456", org=self.org).exists())
         self.assertFalse(Team.objects.filter(name="Other-Group", org=self.org).exists())
@@ -73,22 +84,16 @@ class OAuthTeamCreationTestCase(TestCase):
     def test_rename_team_when_mapping_changes(self):
         """Test that existing OAuth teams are renamed (not duplicated) when mapping changes."""
 
-        # Helper: keeps full group name as team name (opposite of sample_team_names_from_groups)
-        def team_names_keep_full(group: str, groups: list[str] | None = None):
-            if group.startswith("E"):
-                return (group, group)
-            return None
-
         claims = {"email": "test@example.com", "groups": ["E123-Students"]}
 
         # Step 1: Create team with old mapping (strips suffix: "E123-Students" -> "E123")
         user1 = User.objects.create_user(username="user1", email="user1@example.com")
         user1.groups.add(self.user_group)
         profile1 = UserProfile.objects.create(user=user1, org=self.org)
-        self.backend._sync_teams(user1, profile1, claims["groups"])
+        sync_teams(self.backend, user1, profile1, claims)
 
-        self.assertEqual(Team.objects.count(), 1)
-        team = Team.objects.get(oauth_group_name="E123-Students")
+        self.assertEqual(Team.objects.filter(org=self.org).count(), 1)
+        team = Team.objects.get(oauth_group_name="E123-Students", org=self.org)
         self.assertEqual(team.name, "E123")
 
         # Step 2: New user logs in with new mapping
@@ -97,11 +102,15 @@ class OAuthTeamCreationTestCase(TestCase):
         user2.groups.add(self.user_group)
         profile2 = UserProfile.objects.create(user=user2, org=self.org)
 
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_keep_full):
-            self.backend._sync_teams(user2, profile2, claims["groups"])
+        with override_settings(
+            OAUTH_TEAM_NAMES_FUNCTION=extract_teams_keep_full,
+            OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_keep_full,
+        ):
+            backend = OIDCBackend()
+            sync_teams(backend, user2, profile2, claims)
 
         # Should rename existing team, not create a duplicate
-        self.assertEqual(Team.objects.count(), 1)
+        self.assertEqual(Team.objects.filter(org=self.org).count(), 1)
         team.refresh_from_db()
         self.assertEqual(team.name, "E123-Students")
         self.assertEqual(team.oauth_group_name, "E123-Students")
@@ -112,11 +121,6 @@ class OAuthTeamCreationTestCase(TestCase):
 
     def test_name_collision_prevents_rename(self):
         """Test that rename is skipped when target name already exists."""
-
-        def team_names_keep_full(group: str, groups: list[str] | None = None):
-            if group.startswith("E"):
-                return (group, group)
-            return None
 
         # Create team with old mapping name
         old_team = Team.objects.create(name="E123", org=self.org, oauth_group_name="E123-Students")
@@ -130,8 +134,12 @@ class OAuthTeamCreationTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=team_names_keep_full):
-            self.backend._sync_teams(user, profile, claims["groups"])
+        with override_settings(
+            OAUTH_TEAM_NAMES_FUNCTION=extract_teams_keep_full,
+            OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_keep_full,
+        ):
+            backend = OIDCBackend()
+            sync_teams(backend, user, profile, claims)
 
         # Should NOT rename old_team (name collision with blocker)
         old_team.refresh_from_db()
@@ -151,11 +159,11 @@ class OAuthTeamCreationTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
-        self.assertEqual(Team.objects.count(), 1)
-        self.assertEqual(TeamMembership.objects.count(), 1)
-        self.assertEqual(TeamMembership.objects.first().team, team)
+        self.assertEqual(Team.objects.filter(org=self.org).count(), 1)
+        self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 1)
+        self.assertEqual(TeamMembership.objects.filter(user_profile=profile).first().team, team)
         self.assertEqual(team.oauth_group_name, "")
         self.assertFalse(team.managed_by_oauth)
 
@@ -169,10 +177,10 @@ class OAuthTeamCreationTestCase(TestCase):
             user.groups.add(self.user_group)
             profile = UserProfile.objects.create(user=user, org=self.org)
 
-            backend._sync_teams(user, profile, claims["groups"])
+            sync_teams(backend, user, profile, claims)
 
-            self.assertEqual(Team.objects.count(), 0)
-            self.assertEqual(TeamMembership.objects.count(), 0)
+            self.assertEqual(Team.objects.filter(org=self.org).count(), 0)
+            self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 0)
 
     def test_empty_groups_list(self):
         """Test handling of empty groups list."""
@@ -182,10 +190,10 @@ class OAuthTeamCreationTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
-        self.assertEqual(Team.objects.count(), 0)
-        self.assertEqual(TeamMembership.objects.count(), 0)
+        self.assertEqual(Team.objects.filter(org=self.org).count(), 0)
+        self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 0)
 
     def test_none_groups(self):
         """Test handling of None groups."""
@@ -195,16 +203,17 @@ class OAuthTeamCreationTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
-        self.assertEqual(Team.objects.count(), 0)
-        self.assertEqual(TeamMembership.objects.count(), 0)
+        self.assertEqual(Team.objects.filter(org=self.org).count(), 0)
+        self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 0)
 
 
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=sample_team_names_from_groups,
+    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )
@@ -224,7 +233,7 @@ class OAuthTeamMembershipTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
         memberships = TeamMembership.objects.filter(user_profile=profile)
         self.assertEqual(memberships.count(), 2)
@@ -243,13 +252,13 @@ class OAuthTeamMembershipTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        initial_groups = ["E123-Students", "E456-Staff"]
-        self.backend._sync_teams(user, profile, initial_groups)
+        initial_groups = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
+        sync_teams(self.backend, user, profile, initial_groups)
 
         self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 2)
 
-        updated_groups = ["E123-Students"]
-        self.backend._sync_teams(user, profile, updated_groups)
+        updated_groups = {"email": "test@example.com", "groups": ["E123-Students"]}
+        sync_teams(self.backend, user, profile, updated_groups)
 
         memberships = TeamMembership.objects.filter(user_profile=profile)
         self.assertEqual(memberships.count(), 1)
@@ -261,8 +270,8 @@ class OAuthTeamMembershipTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        initial_groups = ["E123-Students", "E456-Staff"]
-        self.backend._sync_teams(user, profile, initial_groups)
+        initial_groups = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
+        sync_teams(self.backend, user, profile, initial_groups)
 
         self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 2)
         team1 = Team.objects.get(name="E123", org=self.org)
@@ -271,8 +280,9 @@ class OAuthTeamMembershipTestCase(TestCase):
         self.assertTrue(team2.managed_by_oauth)
 
         with override_settings(ENABLE_OAUTH_GROUP_REMOVAL=False):
-            updated_groups = ["E123-Students"]
-            self.backend._sync_teams(user, profile, updated_groups)
+            backend = OIDCBackend()
+            updated_groups = {"email": "test@example.com", "groups": ["E123-Students"]}
+            sync_teams(backend, user, profile, updated_groups)
 
             memberships = TeamMembership.objects.filter(user_profile=profile)
             self.assertEqual(memberships.count(), 1)
@@ -295,8 +305,8 @@ class OAuthTeamMembershipTestCase(TestCase):
 
         self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 2)
 
-        updated_groups = ["E123-Students", "OtherGroup"]
-        self.backend._sync_teams(user, profile, updated_groups)
+        updated_groups = {"email": "test@example.com", "groups": ["E123-Students", "OtherGroup"]}
+        sync_teams(self.backend, user, profile, updated_groups)
 
         memberships = TeamMembership.objects.filter(user_profile=profile)
         team_names = {m.team.name for m in memberships}
@@ -312,12 +322,12 @@ class OAuthTeamMembershipTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims_initial["groups"])
+        sync_teams(self.backend, user, profile, claims_initial)
         self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 1)
 
         claims_updated = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
 
-        self.backend._sync_teams(user, profile, claims_updated["groups"])
+        sync_teams(self.backend, user, profile, claims_updated)
 
         memberships = TeamMembership.objects.filter(user_profile=profile)
         self.assertEqual(memberships.count(), 2)
@@ -334,7 +344,7 @@ class OAuthTeamMembershipTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
         team = Team.objects.filter(name="E123").first()
         self.assertIsNotNone(team)
@@ -347,7 +357,8 @@ class OAuthTeamMembershipTestCase(TestCase):
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=sample_team_names_from_groups,
+    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )
@@ -372,8 +383,8 @@ class OAuthTeamEdgeCasesTestCase(TestCase):
         user2.groups.add(self.user_group)
         profile2 = UserProfile.objects.create(user=user2, org=self.other_org)
 
-        self.backend._sync_teams(user1, profile1, claims["groups"])
-        self.backend._sync_teams(user2, profile2, claims["groups"])
+        sync_teams(self.backend, user1, profile1, claims)
+        sync_teams(self.backend, user2, profile2, claims)
 
         self.assertEqual(Team.objects.filter(name="E123").count(), 2)
 
@@ -395,10 +406,10 @@ class OAuthTeamEdgeCasesTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
-        self.assertEqual(Team.objects.count(), 3)
-        team_names = {t.name for t in Team.objects.all()}
+        self.assertEqual(Team.objects.filter(org=self.org).count(), 3)
+        team_names = {t.name for t in Team.objects.filter(org=self.org)}
         self.assertEqual(team_names, {"E123", "E456_Test", "E789.Test"})
 
     def test_very_long_team_names(self):
@@ -411,7 +422,7 @@ class OAuthTeamEdgeCasesTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
         team = Team.objects.first()
         self.assertIsNotNone(team)
@@ -424,17 +435,18 @@ class OAuthTeamEdgeCasesTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
-        self.assertEqual(Team.objects.count(), 2)
-        team_names = {t.name for t in Team.objects.all()}
+        self.assertEqual(Team.objects.filter(org=self.org).count(), 2)
+        team_names = {t.name for t in Team.objects.filter(org=self.org)}
         self.assertEqual(team_names, {"E123", "E456"})
 
 
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=lambda group, groups=None: None,
+    OAUTH_TEAM_NAMES_FUNCTION=lambda claims: [],
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=lambda names: [],
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )
@@ -454,20 +466,18 @@ class OAuthTeamSettingsTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
-        self.assertEqual(Team.objects.count(), 0)
-        self.assertEqual(TeamMembership.objects.count(), 0)
+        self.assertEqual(Team.objects.filter(org=self.org).count(), 0)
+        self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 0)
 
     def test_custom_filter_function(self):
         """Test custom filter function."""
 
-        def custom_filter(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-            if group in {"E123", "E456"}:
-                return (group, group)
-            return None
-
-        with override_settings(OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=custom_filter):
+        with override_settings(
+            OAUTH_TEAM_NAMES_FUNCTION=custom_extract_teams,
+            OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=custom_map_team_names,
+        ):
             backend = OIDCBackend()
             claims = {"email": "test@example.com", "groups": ["E123", "E456", "E789"]}
 
@@ -475,10 +485,10 @@ class OAuthTeamSettingsTestCase(TestCase):
             user.groups.add(self.user_group)
             profile = UserProfile.objects.create(user=user, org=self.org)
 
-            backend._sync_teams(user, profile, claims["groups"])
+            sync_teams(backend, user, profile, claims)
 
-            self.assertEqual(Team.objects.count(), 2)
-            team_names = {t.name for t in Team.objects.all()}
+            self.assertEqual(Team.objects.filter(org=self.org).count(), 2)
+            team_names = {t.name for t in Team.objects.filter(org=self.org)}
             self.assertEqual(team_names, {"E123", "E456"})
 
     def test_enabled_flag_false(self):
@@ -491,10 +501,10 @@ class OAuthTeamSettingsTestCase(TestCase):
             user.groups.add(self.user_group)
             profile = UserProfile.objects.create(user=user, org=self.org)
 
-            backend._sync_teams(user, profile, claims["groups"])
+            sync_teams(backend, user, profile, claims)
 
-            self.assertEqual(Team.objects.count(), 0)
-            self.assertEqual(TeamMembership.objects.count(), 0)
+            self.assertEqual(Team.objects.filter(org=self.org).count(), 0)
+            self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 0)
 
     def test_creation_disabled_flag(self):
         """Test that teams are not created when ENABLE_OAUTH_GROUP_CREATION=False."""
@@ -505,10 +515,10 @@ class OAuthTeamSettingsTestCase(TestCase):
             user.groups.add(self.user_group)
             profile = UserProfile.objects.create(user=user, org=self.org)
 
-            self.backend._sync_teams(user, profile, claims["groups"])
+            sync_teams(self.backend, user, profile, claims)
 
-            self.assertEqual(Team.objects.count(), 0)
-            self.assertEqual(TeamMembership.objects.count(), 0)
+            self.assertEqual(Team.objects.filter(org=self.org).count(), 0)
+            self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 0)
 
     def test_manual_team_not_affected_by_oauth_sync(self):
         """Test that manually created teams without oauth_group_name are not affected."""
@@ -520,7 +530,7 @@ class OAuthTeamSettingsTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        self.backend._sync_teams(user, profile, claims["groups"])
+        sync_teams(self.backend, user, profile, claims)
 
         manual_team.refresh_from_db()
         self.assertEqual(manual_team.oauth_group_name, "")
@@ -530,7 +540,8 @@ class OAuthTeamSettingsTestCase(TestCase):
 @override_settings(
     ENABLE_OAUTH_GROUP_MANAGEMENT=True,
     ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION=sample_team_names_from_groups,
+    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
+    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
     OIDC_RP_SIGN_ALGO="HS256",
     OIDC_RP_IDP_SIGN_KEY="test-key",
 )
@@ -574,7 +585,7 @@ class OAuthTeamIntegrationTestCase(TestCase):
 
         initial_claims = {"email": "test@example.com", "groups": ["E123-Students"]}
 
-        self.backend._sync_teams(user, profile, initial_claims["groups"])
+        sync_teams(self.backend, user, profile, initial_claims)
         self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 1)
 
         updated_claims = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}

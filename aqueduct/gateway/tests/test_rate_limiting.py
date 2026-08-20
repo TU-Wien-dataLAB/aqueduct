@@ -86,7 +86,20 @@ class CheckAndReserveTest(RateLimitingBase):
                 self.assertTrue(allowed, f"request {i + 1} should be allowed")
             allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model="gpt-4.1-nano")
         self.assertFalse(allowed)
-        self.assertEqual(exceeded, ["Request limit (3/min)"])
+        # Message shows the effective capacity for this model: 3 x 2.0 = 6.
+        self.assertEqual(exceeded, ["Request limit (6/min)"])
+
+    def test_scaled_request_limit_in_message_for_cheap_model(self):
+        """A multiplier < 1 (each request costs more budget) shows a fractional limit."""
+        limits = LimitSet(requests_per_minute=3)
+        with patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=0.5):
+            for _ in range(2):
+                allowed, _ = check_and_reserve(limits, TOKEN_ID, model="expensive")
+                self.assertTrue(allowed)  # buckets 0 then 2.0 < 3
+            allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model="expensive")
+        self.assertFalse(allowed)  # bucket 4.0 >= 3
+        # 3 x 0.5 = 1.5 formatted with :g.
+        self.assertEqual(exceeded, ["Request limit (1.5/min)"])
 
     def test_mixed_model_weighted_budget_accumulates(self):
         limits = LimitSet(requests_per_minute=3)
@@ -104,10 +117,10 @@ class CheckAndReserveTest(RateLimitingBase):
             # cheap again: bucket 2.5 (<3) allowed -> bucket 3.0
             allowed, _ = check_and_reserve(limits, TOKEN_ID, model="cheap")
             self.assertTrue(allowed)
-            # cheap again: bucket 3.0 (>=3) blocked
+            # cheap again: bucket 3.0 (>=3) blocked -> message scaled by cheap's 2.0
             allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model="cheap")
         self.assertFalse(allowed)
-        self.assertEqual(exceeded, ["Request limit (3/min)"])
+        self.assertEqual(exceeded, ["Request limit (6/min)"])
 
     def test_input_token_limit_blocks(self):
         limits = LimitSet(input_tokens_per_minute=100)

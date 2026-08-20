@@ -95,19 +95,28 @@ def _evaluate(
     windows: list[tuple[str, int, int | None, int | None, int | None]],
     buckets: dict[str, dict[str, float]],
     keys: list[str],
+    request_multiplier: float,
 ) -> list[str]:
     """Return exceeded-message list, reporting only the finest exceeded window per metric.
 
     ``windows`` is finest-first (min, hour, day); for each metric we stop at the
     first (finest) window whose limit is exceeded and do not report coarser ones
     for that metric.
+
+    The request-limit message reports ``limit x request_multiplier`` (the effective
+    request capacity for the request's model), formatted with ``:g`` to match the
+    historical "Request limit (6/min)" shape for models with a weighted multiplier.
+    Input/output token limits are reported unscaled.
     """
     messages: list[str] = []
     for field, label in _METRICS:
         for (name, _secs, rpm, itpm, otpm), key in zip(windows, keys, strict=True):
             limit = {"req": rpm, "in": itpm, "out": otpm}[field]
             if limit is not None and buckets[key][field] >= limit:
-                messages.append(f"{label} ({limit}/{_SUFFIX[name]})")
+                if field == "req":
+                    messages.append(f"{label} ({limit * request_multiplier:g}/{_SUFFIX[name]})")
+                else:
+                    messages.append(f"{label} ({limit}/{_SUFFIX[name]})")
                 break  # finest exceeded window for this metric; skip coarser windows
     return messages
 
@@ -119,6 +128,7 @@ def check_and_reserve(limits: LimitSet, token_id: int, model: str | None) -> tup
     fail open (allow the request) to avoid latency spikes — no worse than today's
     read races.
     """
+
     windows = limits.windows()
     if not any(
         rpm is not None or itpm is not None or otpm is not None
@@ -126,9 +136,14 @@ def check_and_reserve(limits: LimitSet, token_id: int, model: str | None) -> tup
     ):
         return True, []
 
+    # The model's request-limit multiplier drives both the reservation delta
+    # (each request consumes 1/multiplier of budget) and the request limit shown in
+    # a 429 message (base limit x multiplier = effective capacity for this model).
+    request_multiplier = get_model_request_limit_multiplier(model) if model else 1.0
+    delta = 1.0 / request_multiplier
+
     now = timezone.now()
     keys = [_bucket_key(token_id, name, now) for name, _secs, *_rest in windows]
-    delta = 1.0 / get_model_request_limit_multiplier(model) if model else 1.0
 
     with _cache_lock(_lock_key(token_id), settings.AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS) as got:
         if not got:
@@ -138,7 +153,7 @@ def check_and_reserve(limits: LimitSet, token_id: int, model: str | None) -> tup
         raw = cache.get_many(keys)
         buckets = {k: (raw.get(k) or _new_bucket()) for k in keys}
 
-        exceeded = _evaluate(windows, buckets, keys)
+        exceeded = _evaluate(windows, buckets, keys, request_multiplier)
         if exceeded:
             return False, exceeded
 

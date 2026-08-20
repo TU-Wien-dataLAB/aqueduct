@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('management', '0009_team_oauth_group_name_alter_request_model'),
+        ('management', '0010_request_processing_time_ms_and_more'),
     ]
 
     operations = [

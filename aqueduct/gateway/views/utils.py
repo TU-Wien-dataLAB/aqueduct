@@ -77,8 +77,9 @@ def _openai_stream(
             except Exception as e:
                 yield f"data: {e!s}\n\n"
 
+        end_time = time.monotonic()
         request_log.token_usage = token_usage
-        request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
+        request_log.response_time_ms = int((end_time - start_time) * 1000)
         await request_log.asave()
         # Record token usage into the rate-limit buckets. Streaming requests
         # defer recording to here (stream end) since token usage is only known
@@ -144,7 +145,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
     deployment: litellm.Deployment | None = router.get_deployment(model_id=model)
 
     if deployment is None:
-        log.exception("Model '%s' not found in router deployments", model)
+        log.error("Model '%s' not found in router deployments", model)
         raise openai.NotFoundError(
             message=f"Model '{model}' not found!",
             response=httpx.Response(
@@ -152,7 +153,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
                 status_code=404,
             ),
             body=None,
-        ) from None
+        )
 
     model_relay, _provider, _, _ = litellm.get_llm_provider(deployment.litellm_params.model)
     return client, model_relay

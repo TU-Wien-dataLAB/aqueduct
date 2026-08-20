@@ -637,6 +637,14 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             0,
             f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}",
         )
+        self.assertIsNotNone(
+            req.processing_time_ms, "Processing time should be recorded even for streaming timeout"
+        )
+        self.assertGreater(
+            req.processing_time_ms,
+            0,
+            f"Processing time should be > 0 for streaming timeout, got {req.processing_time_ms}",
+        )
         # Access token_id instead of token to avoid async issues
         self.assertIsNotNone(req.token_id, "Token should be recorded for streaming timeout")
         self.assertEqual(
@@ -650,7 +658,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
     async def test_chat_completion_streaming(self):
         """
         Sends a streaming chat completion request to the vLLM server using the Django test client.
-        After the request, checks that the database contains one request,
+        After the request, checks that the database contains one request including response times,
         the endpoint matches, and input/output tokens are > 0.
         """
         response = await self._send_chat_completion_streaming(self.MESSAGES)
@@ -678,6 +686,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertIn(
             self.url, req.path, "Request endpoint should be for chat completion (streaming)."
         )
+        self.assertIsNotNone(req.response_time_ms)
+        self.assertIsNotNone(req.processing_time_ms)
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0 (streaming)")
@@ -738,6 +748,14 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             req.response_time_ms,
             0,
             f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}",
+        )
+        self.assertIsNotNone(
+            req.processing_time_ms, "Processing time should be recorded even for streaming timeout"
+        )
+        self.assertGreater(
+            req.processing_time_ms,
+            0,
+            f"Processing time should be > 0 for streaming timeout, got {req.processing_time_ms}",
         )
         # Access token_id instead of token to avoid async issues
         self.assertIsNotNone(req.token_id, "Token should be recorded for streaming timeout")
@@ -1011,6 +1029,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             req.path,
             "Request endpoint should be for chat completion (streaming schema generation).",
         )
+        self.assertIsNotNone(req.response_time_ms)
+        self.assertIsNotNone(req.processing_time_ms)
         self.assertIsNotNone(req.input_tokens)
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(
@@ -1540,6 +1560,9 @@ class TokenLimitTest(ChatCompletionsBase):
             429,
             f"Expected 429 Too Many Requests, got {response7.status_code}: {response7.content}",
         )
+        self.assertEqual(
+            response7.json()["error"]["message"], "Rate limit exceeded. Request limit (6/min)."
+        )
 
     @patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=0.5)
     def test_per_model_expensive_multiplier_limits_requests(self, mock_multipliers):
@@ -1565,6 +1588,9 @@ class TokenLimitTest(ChatCompletionsBase):
         # Third request: weighted = 4.0 >= 3
         response3 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
         self.assertEqual(response3.status_code, 429)
+        self.assertEqual(
+            response3.json()["error"]["message"], "Rate limit exceeded. Request limit (1.5/min)."
+        )
 
     def test_check_limits_uses_no_request_table_sql(self):
         """A rate-limited (429) request issues no SQL against ``management_request``.

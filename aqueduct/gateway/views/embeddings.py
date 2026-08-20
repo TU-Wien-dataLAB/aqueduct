@@ -35,8 +35,8 @@ if TYPE_CHECKING:
 @check_limits
 @ensure_usage
 @resolve_alias
-@log_request
 @check_model_availability
+@log_request
 @catch_router_exceptions
 async def embeddings(
     request: ASGIRequest,

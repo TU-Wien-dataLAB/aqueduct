@@ -48,14 +48,10 @@ curl https://your-aqueduct-domain.com/embeddings \
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com", api_key="YOUR_AQUEDUCT_TOKEN")
 
 response = client.embeddings.create(
-    model="your-embedding-model-name",
-    input="The quick brown fox jumps over the lazy dog.",
+    model="your-embedding-model-name", input="The quick brown fox jumps over the lazy dog."
 )
 print(response.data[0].embedding)
 ```

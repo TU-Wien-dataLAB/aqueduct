@@ -19,6 +19,7 @@ from .decorators import (
     parse_body,
     resolve_alias,
     token_authenticated,
+    tos_accepted,
 )
 from .utils import _get_token_usage, oai_client_from_body
 
@@ -28,11 +29,12 @@ log = logging.getLogger("aqueduct")
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
+@tos_accepted
 @parse_body(model=TypeAdapter(ImageGenerateParams, config=ConfigDict(extra="forbid")))
 @check_limits
 @resolve_alias
-@log_request
 @check_model_availability
+@log_request
 @catch_router_exceptions
 async def image_generation(
     request: ASGIRequest,

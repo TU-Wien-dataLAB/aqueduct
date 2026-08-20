@@ -251,6 +251,7 @@ async def files(
 @csrf_exempt
 @require_http_methods(["GET", "DELETE"])
 @token_authenticated(token_auth_only=True)
+@tos_accepted
 @log_request
 @catch_router_exceptions
 async def file(
@@ -301,6 +302,7 @@ async def file(
 @csrf_exempt
 @require_GET
 @token_authenticated(token_auth_only=True)
+@tos_accepted
 @log_request
 @catch_router_exceptions
 async def file_content(

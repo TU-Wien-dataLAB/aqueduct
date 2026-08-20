@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import ClassVar
 
@@ -9,13 +10,13 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
+from django.core.exceptions import ImproperlyConfigured
 from django.db.models import Q, QuerySet
 from django.urls import reverse
 from django.utils.html import format_html
 
 from gateway.config import get_files_api_client, get_router_config
-
-from .models import (
+from management.models import (
     Batch,
     FileObject,
     Org,
@@ -31,6 +32,15 @@ from .models import (
 )
 
 log = logging.getLogger("aqueduct")
+
+
+@dataclass
+class TeamSyncResult:
+    """Result of classifying teams for OAuth sync."""
+
+    teams_to_update: list[tuple[Team, str]]
+    teams_to_delete: list[Team]
+    teams_skipped: list[tuple[Team, str]]
 
 
 def format_unix_timestamp(timestamp: int | None) -> str:
@@ -180,103 +190,116 @@ def delete_tos_cache(modeladmin, request, queryset):
         cache.delete(f"django:tos:agreed:{user.id}", version=key_version)
 
 
-@admin.action(description="Sync OAuth team names")
-def sync_oauth_team_names_action(modeladmin, request, queryset):
-    """
-    Admin action to sync team names from OAuth group mappings.
-    Only affects OAuth-managed teams (those with oauth_group_name set).
-    """
-    func = getattr(settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", None)
-    if not func:
-        modeladmin.message_user(
-            request, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION not configured", level=messages.WARNING
-        )
-        return
-
-    # Only process OAuth-managed teams
-    oauth_teams = queryset.exclude(oauth_group_name="")
-
-    if not oauth_teams.exists():
-        modeladmin.message_user(request, "No OAuth-managed teams selected", level=messages.INFO)
-        return
-
-    teams_to_update = []
-    teams_to_delete = []
-    teams_skipped = []
-
+def _get_new_mapping() -> dict[str, str]:
     all_oauth_groups = list(
         Team.objects.exclude(oauth_group_name="")
         .values_list("oauth_group_name", flat=True)
         .distinct()
     )
 
-    max_skipped_display = 5
+    if not (func := getattr(settings, "OAUTH_DISPLAY_TEAM_NAMES_FUNCTION", None)):
+        raise ImproperlyConfigured("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION not configured")
+
+    try:
+        result = func(all_oauth_groups)
+    except Exception as e:
+        raise ImproperlyConfigured(f"Error calling OAUTH_DISPLAY_TEAM_NAMES_FUNCTION: {e}") from e
+
+    if not isinstance(result, list):
+        raise ImproperlyConfigured("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION must return a list of tuples")
+
+    new_mapping = {}
+    for item in result:
+        if isinstance(item, tuple) and len(item) == 2:  # noqa: PLR2004
+            display_team_name, team_name = item
+            new_mapping[team_name.strip()] = display_team_name.strip()
+
+    return new_mapping
+
+
+def _classify_teams_for_sync(
+    oauth_teams: QuerySet[Team], new_mapping: dict[str, str]
+) -> TeamSyncResult:
+    """Classify teams into update/delete/skip categories."""
+    teams_to_update: list[tuple[Team, str]] = []
+    teams_to_delete: list[Team] = []
+    teams_skipped: list[tuple[Team, str]] = []
 
     for team in oauth_teams:
         original_group = team.oauth_group_name
-        try:
-            result = func(original_group, all_oauth_groups)
-            if result is None:
-                teams_to_delete.append(team)
-            elif isinstance(result, tuple) and len(result) == 2:  # noqa: PLR2004 (tuple length for (name, original_group))
-                new_team_name, _ = result
-                new_team_name = new_team_name.strip()
-                if new_team_name == team.name:
-                    teams_skipped.append((team, "Name unchanged"))
-                else:
-                    existing = Team.objects.filter(name=new_team_name, org=team.org).exclude(
-                        pk=team.pk
-                    )
-                    if existing.exists():
-                        teams_skipped.append(
-                            (team, f"Name collision: '{new_team_name}' already exists")
-                        )
-                    else:
-                        teams_to_update.append((team, new_team_name))
-            else:
-                log.error(
-                    "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION must return "
-                    "tuple[str, str] | None for group '%s'",
-                    original_group,
-                )
-                teams_skipped.append((team, "Invalid return type"))
-        except Exception as e:
-            log.exception("Error processing team '%s': %s", team.name, e)
-            teams_skipped.append((team, f"Error: {e}"))
 
-    if teams_to_delete:
-        modeladmin.message_user(
-            request,
-            f"Warning: {len(teams_to_delete)} team(s) would be deleted. "
-            "Deletion is not performed automatically. "
-            "Please delete these teams manually if needed.",
-            level=messages.WARNING,
+        if not (new_team_name := new_mapping.get(original_group)):
+            teams_to_delete.append(team)
+            continue
+
+        if new_team_name == team.name:
+            teams_skipped.append((team, "Name unchanged"))
+            continue
+
+        collision = Team.objects.filter(name=new_team_name, org=team.org).exclude(pk=team.pk)
+        if collision.exists():
+            teams_skipped.append((team, f"Name collision: '{new_team_name}' already exists"))
+            continue
+
+        teams_to_update.append((team, new_team_name))
+
+    return TeamSyncResult(teams_to_update, teams_to_delete, teams_skipped)
+
+
+@admin.action(description="Sync OAuth team names")
+def sync_oauth_team_names_action(modeladmin, request, queryset: QuerySet[Team]):
+    """
+    Admin action to sync team names from OAuth group mappings.
+    Only affects OAuth-managed teams (those with oauth_group_name set).
+    """
+
+    # Only process OAuth-managed teams
+    oauth_teams = queryset.exclude(oauth_group_name="")
+    if not oauth_teams.exists():
+        modeladmin.message_user(request, "No OAuth-managed teams selected", level=messages.INFO)
+        return
+
+    try:
+        new_mapping = _get_new_mapping()
+    except Exception as e:
+        modeladmin.message_user(request, str(e), level=messages.ERROR)
+        return
+
+    result = _classify_teams_for_sync(oauth_teams, new_mapping)
+
+    message, level = None, None
+
+    if result.teams_to_delete:
+        message = (
+            f"Warning: {len(result.teams_to_delete)} team(s) would be deleted. "
+            f"Deletion is not performed automatically. "
+            f"Please delete these teams manually if needed."
         )
+        level = messages.WARNING
 
-    for team, new_name in teams_to_update:
-        team.name = new_name
+    if result.teams_to_update:
+        for team, new_name in result.teams_to_update:
+            team.name = new_name
 
-    if teams_to_update:
-        Team.objects.bulk_update([t for t, _ in teams_to_update], ["name"])
+        Team.objects.bulk_update([t for t, _ in result.teams_to_update], ["name"])
 
-    updated_count = len(teams_to_update)
-    skipped_count = len(teams_skipped)
+        message = f"Successfully updated {len(result.teams_to_update)} team(s)"
+        level = messages.SUCCESS
 
-    # Report results
-    if updated_count > 0:
-        modeladmin.message_user(
-            request, f"Successfully updated {updated_count} team(s)", level=messages.SUCCESS
-        )
-
-    if skipped_count > 0:
+    if result.teams_skipped:
+        max_display = 5
         skip_details = "; ".join(
-            [f"{team.name}: {reason}" for team, reason in teams_skipped[:max_skipped_display]]
+            f"{team.name}: {reason}" for team, reason in result.teams_skipped[:max_display]
         )
-        if len(teams_skipped) > max_skipped_display:
-            skip_details += f" and {len(teams_skipped) - max_skipped_display} more"  # type: ignore[operator]
-        modeladmin.message_user(
-            request, f"Skipped {skipped_count} team(s): {skip_details}", level=messages.WARNING
-        )
+
+        if len(result.teams_skipped) > max_display:
+            skip_details += f" and {len(result.teams_skipped) - max_display} more"
+
+        message = f"Skipped {len(result.teams_skipped)} team(s): {skip_details}"
+        level = messages.WARNING
+
+    if message and level:
+        modeladmin.message_user(request, message, level=level)
 
 
 @admin.action(description="Reload from upstream")
@@ -478,7 +501,7 @@ class TeamAdmin(admin.ModelAdmin):
                     {
                         "fields": ("name", "description", "org"),
                         "description": "This team is managed by OAuth synchronization. "
-                        "To update the team name, modify the OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION "
+                        "To update the team name, modify the OAUTH_TEAM_NAMES_FUNCTION "
                         "setting and use the 'Sync OAuth team names' action above.",
                     },
                 ),
@@ -561,6 +584,7 @@ class RequestAdmin(admin.ModelAdmin):
         "output_tokens",
         "status_code",
         "response_time_ms",
+        "processing_time_ms",
         "model",
         "token__name",
         "user_id",

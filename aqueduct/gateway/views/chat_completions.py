@@ -37,9 +37,9 @@ from .utils import _get_token_usage, _openai_stream
 @process_file_content
 @ensure_usage
 @resolve_alias
-@log_request
 @check_model_availability
 @normalize_reasoning_fields
+@log_request
 @catch_router_exceptions
 async def chat_completions(
     request: ASGIRequest,

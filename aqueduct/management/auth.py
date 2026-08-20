@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -12,78 +13,109 @@ User = get_user_model()
 log = logging.getLogger("aqueduct")
 
 
-def default_org_name_from_groups(groups: list[str]) -> str | None:
+def default_org_name() -> Literal["default"]:
     """
-    Default implementation to extract organization name, which returns the first group in the list.
-    Override this or set ORG_NAME_FROM_OIDC_GROUPS_FUNCTION in settings.
+    Returns the default organization name.
     """
-    if not groups:
-        return None
-    return groups[0]
+    return "default"
 
 
-def get_org_name_from_groups(groups) -> str | None:
+def get_org_name(claims) -> str | None:
     """
-    Extracts the organization name from the user's groups.
+    Extracts the organization name from the OIDC claims payload.
     """
-    if hasattr(settings, "ORG_NAME_FROM_OIDC_GROUPS_FUNCTION"):
-        return settings.ORG_NAME_FROM_OIDC_GROUPS_FUNCTION(groups)
-    return default_org_name_from_groups(groups)
+    if hasattr(settings, "ORG_NAME_FROM_OIDC_FUNCTION"):
+        return settings.ORG_NAME_FROM_OIDC_FUNCTION(claims)
+    return default_org_name()
 
 
 class OIDCBackend(OIDCAuthenticationBackend):
-    def _groups(self, claims) -> list[str]:
-        return claims.get("groups", settings.OIDC_DEFAULT_GROUPS)
-
-    def _org(self, groups: list[str]) -> Org | None:
-        org_name = get_org_name_from_groups(groups)
-        if not org_name:
+    def _org(self, claims) -> Org | None:
+        if not (org_name := get_org_name(claims)):
             return None  # Authentication fails if no org can be determined
         org, _created = Org.objects.get_or_create(name=org_name)
         return org
 
-    def _get_teams_from_groups(self, groups: list[str]) -> list[tuple[str, str]]:
+    def _get_team_names(self, claims) -> list[str]:
         """
-        Get list of (team_name, original_group_name) tuples to create/join from OAuth groups.
-        Calls OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION setting for each group.
-        Returns empty list on error or if feature is disabled.
+        Extract the raw team (group) names from OAuth claims.
 
         Returns:
-            List of tuples: [(transformed_team_name, original_oauth_group_name), ...]
+            List of team names, or empty list if none/extraction fails.
         """
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             return []
 
-        func = getattr(
-            settings, "OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION", lambda group, groups=None: None
-        )
+        extract_func = getattr(settings, "OAUTH_TEAM_NAMES_FUNCTION", lambda claims: None)
+
+        try:
+            team_names = extract_func(claims)
+        except Exception as e:
+            log.exception("Error calling OAUTH_TEAM_NAMES_FUNCTION: %s", e)
+            return []
+
+        if not isinstance(team_names, list):
+            log.error("OAUTH_TEAM_NAMES_FUNCTION must return a list of strings")
+            return []
+
+        return team_names
+
+    def _get_teams(self, team_names: list[str]) -> list[tuple[str, str]]:
+        """
+        Map raw team names to (display_team_name, team_name) tuples.
+
+        Delegates to settings.OAUTH_DISPLAY_TEAM_NAMES_FUNCTION, which maps each
+        extracted team name to its display team name.
+
+        Returns:
+            List of (display_team_name, team_name) tuples, or empty list if none.
+        """
+        map_func = getattr(settings, "OAUTH_DISPLAY_TEAM_NAMES_FUNCTION", lambda names: None)
+
+        try:
+            result = map_func(team_names)
+        except Exception as e:
+            log.exception("Error calling OAUTH_DISPLAY_TEAM_NAMES_FUNCTION: %s", e)
+            return []
+
+        if not isinstance(result, list):
+            log.error("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION must return a list of tuples")
+            return []
+
         team_mappings = []
-        if not groups:
-            return team_mappings
-
-        for group in groups:
-            try:
-                result = func(group, groups)
-            except Exception as e:
-                log.exception(
-                    "Error calling OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION for group '%s': %s",
-                    group,
-                    e,
-                )
+        for item in result:
+            if not isinstance(item, tuple) or len(item) != 2:  # noqa: PLR2004
                 continue
-
-            if not isinstance(result, tuple) or len(result) != 2:  # noqa: PLR2004
+            display_team_name, team_name = item
+            if not (display_team_name and isinstance(display_team_name, str) and team_name):
                 continue
-            team_name, original_name = result
-            if not (team_name and isinstance(team_name, str) and original_name):
-                continue
-            team_mappings.append((team_name.strip(), original_name.strip()))
+            team_mappings.append((display_team_name.strip(), team_name.strip()))
 
         return team_mappings
 
-    def _sync_teams(self, user: User, profile: UserProfile, groups: list[str]) -> None:
+    def _update_user_role(self, user: User, profile: UserProfile, team_names: list[str]):
         """
-        Synchronize team membership based on OAuth groups.
+        Sync the user's role from the raw OAuth team (group) names.
+
+        A user is an admin if their raw team name appears in settings.ADMIN_GROUP.
+        Otherwise they fall back to the regular 'user' role. Staff/superuser
+        flags on the Django User are derived from admin status.
+
+        Note: admin determination uses the raw team/group name extracted from
+        the claims (same as team sync), not the display team name.
+        """
+        is_admin = bool(getattr(settings, "ADMIN_GROUP", None) in team_names)
+
+        profile.group = "admin" if is_admin else "user"
+        profile.save()
+
+        user.is_staff = is_admin
+        user.is_superuser = is_admin
+        user.save()
+
+    def _sync_team_membership(self, user: User, profile: UserProfile, team_names: list[str]):
+        """
+        Synchronize team membership based on OAuth claims.
 
         - Creates teams if ENABLE_OAUTH_GROUP_CREATION=True and team doesn't exist
         - Adds user to teams via TeamMembership
@@ -95,12 +127,12 @@ class OIDCBackend(OIDCAuthenticationBackend):
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             return
 
-        team_mappings = self._get_teams_from_groups(groups)
-        if not team_mappings:
+        if not team_names:
             return
 
-        org = profile.org
+        team_mappings = self._get_teams(team_names=team_names)
 
+        org = profile.org
         with transaction.atomic():
             existing_memberships = set(
                 TeamMembership.objects.filter(user_profile=profile).values_list(
@@ -199,69 +231,37 @@ class OIDCBackend(OIDCAuthenticationBackend):
                     )
 
     def create_user(self, claims) -> User | None:
-        groups = self._groups(claims)
-        org = self._org(groups)
+        org = self._org(claims)
         if not org:
             return None  # Authentication fails if no org can be determined
 
         user = super().create_user(claims)
         profile = UserProfile.objects.create(user=user, org=org)
 
-        # Check if user is admin
-        if hasattr(settings, "ADMIN_GROUP"):
-            is_admin = settings.ADMIN_GROUP in groups
-        else:
-            is_admin = False
-        user.is_staff = is_admin
-        user.is_superuser = is_admin
-        if is_admin:
-            profile.group = "admin"
-        else:
-            profile.group = "user"
+        team_names = self._get_team_names(claims)
 
-        user.save()
-        profile.save()
+        self._update_user_role(user, profile, team_names)
 
         log.info("Created user '%s' (%s)", user.email, profile.group)
 
-        # Sync team membership from OAuth groups
-        self._sync_teams(user, profile, groups)
+        self._sync_team_membership(user, profile, team_names)
 
         return user
 
     def update_user(self, user, claims) -> User:
         """Update existing user with new claims, if necessary save, and return user"""
-        groups = self._groups(claims)
-        org = self._org(groups)
+        org = self._org(claims)
+        if not org:
+            return user  # Authentication fails if no org can be determined
 
-        try:
-            profile = UserProfile.objects.get(user=user)
-            if profile.org != org:
-                profile.org = org
-                profile.save()
-        except UserProfile.DoesNotExist:
-            profile = UserProfile.objects.create(user=user, org=org)
+        profile, _ = UserProfile.objects.update_or_create(user=user, defaults={"org": org})
 
-        # Check if user is admin
-        if hasattr(settings, "ADMIN_GROUP"):
-            is_admin = settings.ADMIN_GROUP in groups
-        else:
-            is_admin = False
+        team_names = self._get_team_names(claims)
 
-        if is_admin:
-            profile.group = "admin"
-        elif user.is_superuser:
-            # If user was admin make them "user"
-            profile.group = "user"
-
-        user.is_staff = is_admin
-        user.is_superuser = is_admin
-        user.save()
-        profile.save()
+        self._update_user_role(user, profile, team_names)
 
         log.info("Updated user '%s' (%s)", user.email, profile.group)
 
-        # Sync team membership from OAuth groups
-        self._sync_teams(user, profile, groups)
+        self._sync_team_membership(user, profile, team_names)
 
         return user

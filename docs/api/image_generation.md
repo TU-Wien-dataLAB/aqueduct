@@ -62,16 +62,10 @@ curl https://your-aqueduct-domain.com/images/generations \
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com/v1",
-    api_key="YOUR_AQUEDUCT_TOKEN"
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com/v1", api_key="YOUR_AQUEDUCT_TOKEN")
 
 response = client.images.generate(
-    model="dall-e-3",
-    prompt="A cute baby sea otter",
-    n=1,
-    size="1024x1024"
+    model="dall-e-3", prompt="A cute baby sea otter", n=1, size="1024x1024"
 )
 
 print(response.data[0].url)

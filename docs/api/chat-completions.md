@@ -82,17 +82,14 @@ curl https://your-aqueduct-domain.com/chat/completions \
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com", api_key="YOUR_AQUEDUCT_TOKEN")
 
 response = client.chat.completions.create(
     model="your-model-name",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Write me a short poem!"}
-    ]
+        {"role": "user", "content": "Write me a short poem!"},
+    ],
 )
 print(response.choices[0].message.content)
 ```
@@ -122,10 +119,7 @@ curl https://your-aqueduct-domain.com/chat/completions \
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    api_key="YOUR_AQUEDUCT_TOKEN",
-    base_url="https://your-aqueduct-domain.com/v1",
-)
+client = OpenAI(api_key="YOUR_AQUEDUCT_TOKEN", base_url="https://your-aqueduct-domain.com/v1")
 
 image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
 
@@ -222,10 +216,7 @@ curl "https://your-aqueduct-domain.com/chat/completions" \
 import base64
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://your-aqueduct-domain.com",
-    api_key="YOUR_AQUEDUCT_TOKEN",
-)
+client = OpenAI(base_url="https://your-aqueduct-domain.com", api_key="YOUR_AQUEDUCT_TOKEN")
 
 with open("sample.pdf", "rb") as f:
     data = f.read()
@@ -243,14 +234,11 @@ completion = client.chat.completions.create(
                     "file": {
                         "filename": "sample.pdf",
                         "file_data": f"data:application/pdf;base64,{base64_string}",
-                    }
+                    },
                 },
-                {
-                    "type": "text",
-                    "text": "What is the main topic of this document?",
-                }
+                {"type": "text", "text": "What is the main topic of this document?"},
             ],
-        },
+        }
     ],
 )
 

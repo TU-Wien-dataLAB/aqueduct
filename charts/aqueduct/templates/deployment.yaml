@@ -40,6 +40,9 @@ spec:
             - containerPort: 8000
           env:
             {{- include "aqueduct.env" . | nindent 12 }}
+            {{- with .Values.web.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           volumeMounts:
             - name: settings-py
               mountPath: /app/aqueduct/aqueduct/settings.py
@@ -78,6 +81,9 @@ spec:
           command: [ "python", "-m", "celery", "-A", "aqueduct", "beat", "-l", "INFO" ]
           env:
             {{- include "aqueduct.env" . | nindent 12 }}
+            {{- with .Values.celery.beatExtraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           volumeMounts:
             - name: settings-py
               mountPath: /app/aqueduct/aqueduct/settings.py

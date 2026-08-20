@@ -42,11 +42,11 @@ OAuth team management automatically syncs user team memberships based on OAuth g
 | `ENABLE_OAUTH_GROUP_MANAGEMENT` | Master switch - when `False`, no team sync happens on login |
 | `ENABLE_OAUTH_GROUP_CREATION` | When `True`, teams are auto-created from OAuth groups; when `False`, users only join existing teams |
 | `ENABLE_OAUTH_GROUP_REMOVAL` | Controls removal from **non-OAuth** teams only. When `True` (default), users are removed from all teams not in their OAuth groups. When `False`, users stay in manually created teams but are **always** removed from OAuth-managed teams when they lose the corresponding OAuth group |
-| `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` | Custom logic to transform individual group names |
+| `OAUTH_TEAM_NAMES_FUNCTION` | Custom logic to transform individual group names |
 
 ### Function Signature
 
-The `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` should be a callable with this signature:
+The `OAUTH_TEAM_NAMES_FUNCTION` should be a callable with this signature:
 
 ```python
 def transform_group_name(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
@@ -83,7 +83,7 @@ The function is called once for each OAuth group, allowing you to:
 
 1. User logs in via OAuth
 2. OAuth groups are extracted from claims
-3. For each group, `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` is called with the group name and full groups list
+3. For each group, `OAUTH_TEAM_NAMES_FUNCTION` is called with the group name and full groups list
 4. Groups that return a tuple create teams; groups that return `None` are skipped
 5. Teams are created (if `ENABLE_OAUTH_GROUP_CREATION=True`) or reused
 6. User is added to teams via `TeamMembership`
@@ -103,7 +103,7 @@ Rate limits, descriptions, and exclusions remain editable for OAuth-managed team
 
 ### Syncing Team Names
 
-When you change the `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` logic, you can update existing team names using the admin action:
+When you change the `OAUTH_TEAM_NAMES_FUNCTION` logic, you can update existing team names using the admin action:
 
 1. Navigate to **Admin → Management → Teams**
 2. Select the teams you want to sync (or select all)
@@ -112,7 +112,7 @@ When you change the `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` logic, you can updat
 
 The action will:
 1. Read the stored `oauth_group_name` for each selected OAuth-managed team
-2. Re-apply the current `OAUTH_TEAM_NAMES_FROM_GROUPS_FUNCTION` mapping
+2. Re-apply the current `OAUTH_TEAM_NAMES_FUNCTION` mapping
 3. Update team names based on the mapping result
 4. Skip teams with name collisions or unchanged names
 5. Never affect manually created teams (those with empty `oauth_group_name`)

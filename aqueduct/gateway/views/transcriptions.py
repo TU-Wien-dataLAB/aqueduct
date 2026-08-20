@@ -38,8 +38,8 @@ class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
 @parse_body(model=TypeAdapter(TranscriptionCreateParams))
 @check_limits
 @resolve_alias
-@log_request
 @check_model_availability
+@log_request
 @catch_router_exceptions
 async def transcriptions(
     request: ASGIRequest,

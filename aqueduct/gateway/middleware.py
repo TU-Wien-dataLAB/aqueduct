@@ -28,7 +28,10 @@ class HttpResponseMiddleware:
         response = self.get_response(request)
 
         if isinstance(response, RawJsonResponse):
-            return JsonResponse(response.content, **response.kwargs)
+            # Merge headers from response.headers (may have been modified after init)
+            kwargs = response.kwargs.copy()
+            kwargs["headers"] = dict(response.headers)
+            return JsonResponse(response.content, **kwargs)
 
         if isinstance(response, RawStreamingResponse):
             streaming_content = _openai_stream(

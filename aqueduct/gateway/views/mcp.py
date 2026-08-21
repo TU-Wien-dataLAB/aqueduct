@@ -4,7 +4,7 @@ import uuid
 from collections.abc import AsyncGenerator, Callable
 from contextlib import suppress
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import anyio
 import httpx
@@ -507,12 +507,11 @@ def parse_session_message(
     else:
         jsonrpc_message = received_message.message
 
-    msg: dict[str, Any] | str
     if json:
-        msg = jsonrpc_message.model_dump_json(exclude_none=True)
-    else:
-        msg = jsonrpc_message.model_dump(exclude_none=True)
-    return msg
+        # the returned message is a str
+        return jsonrpc_message.model_dump_json(exclude_none=True)
+    # Else, the return type is dict[str, Any]
+    return jsonrpc_message.model_dump(exclude_none=True)
 
 
 def _validate_session(
@@ -676,16 +675,18 @@ async def handle_post_request(
             response_data = parse_session_message(
                 received_message, request_id, session_id_str, json=False
             )
-            response = JsonResponse(response_data)
+            response_data = cast("dict[str, Any]", response_data)
+            response = RawJsonResponse(response_data)
         else:
             # If the request was a notification, return 202
-            response = JsonResponse({"status": "accepted"}, status=202)
+            response = RawJsonResponse({"status": "accepted"}, status=202)
 
     except (ClosedResourceError, httpx.HTTPStatusError, MCPSessionError) as e:
         # Transport errors should be converted to JSON-RPC errors
         log.exception("Transport error for MCP server '%s': %s", name, e)
         session_error_response = parse_session_message(e, request_id, session_id_str, json=False)
-        response = JsonResponse(session_error_response, status=200)  # 200 for JSON-RPC errors
+        session_error_response = cast("dict[str, Any]", session_error_response)
+        response = RawJsonResponse(session_error_response, status=200)  # 200 for JSON-RPC errors
     finally:
         if operation_registered:
             session.register_operation_done()

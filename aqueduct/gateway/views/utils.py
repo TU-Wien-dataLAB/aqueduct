@@ -1,7 +1,6 @@
-import json
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Generator
+from collections.abc import AsyncIterator, Callable, Generator
 from contextlib import contextmanager
 from typing import Any
 
@@ -14,6 +13,9 @@ from django.core.handlers.asgi import ASGIRequest
 from django.http.response import ResponseHeaders
 from litellm.types.utils import ModelResponseStream
 from litellm.types.utils import Usage as UsageModel
+from openai import AsyncStream
+from openai.types.responses import ResponseCreatedEvent, ResponseStreamEvent
+from pydantic import BaseModel
 
 from gateway.config import get_openai_client, get_router
 from management.models import Request, Usage
@@ -70,7 +72,7 @@ class RawStreamingResponse:
         return f"<{self.__class__.__name__} status_code={self.status_code}>"
 
 
-def get_token_usage(data: dict[str, Any] | ModelResponseStream) -> Usage:
+def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
     """Retrieves token usage information from the raw response content.
 
     Note that if the response data does not match the expected format, or does
@@ -79,14 +81,19 @@ def get_token_usage(data: dict[str, Any] | ModelResponseStream) -> Usage:
 
     Args:
         data: The raw response content (or content's chunk for streaming responses)
-          as a dict or ModelResponseStream (for RawStreamingResponses).
+          as a dict or BaseModel subclass (for RawStreamingResponses).
     Returns:
         The :class:`Usage` object with the used input and output token counts.
     """
     # Handle responses API format (top-level usage or in response field)
-    usage = data.get("usage")
+    if isinstance(data, (dict, ModelResponseStream)):
+        # LiteLLM models implement `.get()` method, but the OpenAI ones - don't.
+        usage = data.get("usage")
+    else:
+        data = data.model_dump(exclude_none=True, exclude_unset=True)
+        usage = data.get("usage")
     if not usage and "response" in data:
-        usage = data["response"].get("usage", None)
+        usage = data["response"].get("usage")
     if isinstance(usage, (dict, UsageModel)):
         input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens", 0)
         output_tokens = usage.get("completion_tokens") or usage.get("output_tokens", 0)
@@ -165,7 +172,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
 class ResponseRegistrationWrapper:
     """Wraps streaming content to register response on first chunk."""
 
-    def __init__(self, streaming_content: AsyncGenerator[str, None], model: str, email: str):
+    def __init__(self, streaming_content: AsyncStream[ResponseStreamEvent], model: str, email: str):
         self.streaming_content = streaming_content
         self.model_name = model
         self.user_email = email
@@ -174,30 +181,18 @@ class ResponseRegistrationWrapper:
     def __aiter__(self) -> "ResponseRegistrationWrapper":
         return self
 
-    async def __anext__(self) -> str:
-        chunk: str = await self.streaming_content.__anext__()
-        if not self._registered and chunk:
-            response_id = self.extract_response_id_from_chunk(chunk)
+    async def __anext__(self) -> ResponseStreamEvent:
+        chunk: ResponseStreamEvent = await self.streaming_content.__anext__()
+        if (
+            not self._registered
+            and isinstance(chunk, ResponseCreatedEvent)
+            and chunk.type == "response.created"
+        ):
+            response_id: str | None = chunk.response.id
             if response_id:
                 register_response_in_cache(response_id, self.model_name, self.user_email)
                 self._registered = True
         return chunk
-
-    @staticmethod
-    def extract_response_id_from_chunk(chunk: str) -> str | None:
-        """Extract response ID from SSE chunk containing 'response.created' event."""
-        try:
-            # Parse SSE format: "data: {json}"
-            for line in chunk.split("\n"):
-                if line.startswith("data: ") and "response.created" in line:
-                    json_data: dict[str, Any] = json.loads(line.removeprefix("data: "))
-                    if json_data.get("type") == "response.created":
-                        response_data: dict[str, Any] = json_data.get("response", {})
-                        response_id: str | None = response_data.get("id")
-                        return response_id
-        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
-            return None
-        return None
 
 
 def register_response_in_cache(response_id: str | None, model: str, email: str) -> None:

@@ -5,7 +5,7 @@ from django.core.handlers.asgi import ASGIRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from openai import AsyncStream
-from openai.types.responses import Response
+from openai.types.responses import Response, ResponseStreamEvent
 from pydantic import TypeAdapter
 
 from management.models import Request, Token
@@ -26,6 +26,7 @@ from .errors import error_response
 from .utils import (
     RawJsonResponse,
     RawStreamingResponse,
+    ResponseRegistrationWrapper,
     delete_response_from_cache,
     get_response_from_cache,
     get_token_usage,
@@ -64,20 +65,17 @@ async def create_response(
     client, model_relay = oai_client_from_body(model, request)
     pydantic_model["model"] = model_relay
 
-    resp: Response | AsyncStream[Response] = await client.responses.create(**pydantic_model)
+    resp: Response | AsyncStream[ResponseStreamEvent] = await client.responses.create(
+        **pydantic_model
+    )
 
     if isinstance(resp, AsyncStream):
-        # TODO: register_response(resp, model=model, email=token.user.email)
-        return RawStreamingResponse(streaming_content=resp, request_log=request_log)
-        # The original response.streaming_content:
-        #     ResponseRegistrationWrapper
-        #       ->  streaming_content=_openai_stream(stream=resp, request_log=request_log),
-        #       ->  model=model, email=token.user.email
-        #
+        registered_resp = ResponseRegistrationWrapper(resp, model=model, email=token.user.email)
+        return RawStreamingResponse(streaming_content=registered_resp, request_log=request_log)
     if isinstance(resp, Response):
         register_response_in_cache(resp.id, model=model, email=token.user.email)
+        request_log.token_usage = get_token_usage(resp)
         data = resp.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = get_token_usage(data)
         return RawJsonResponse(data=data, status=200)
     raise NotImplementedError(f"Completion for response type {type(resp)} is not implemented.")
 

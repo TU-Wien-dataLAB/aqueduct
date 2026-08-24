@@ -10,7 +10,7 @@ import anyio
 import httpx
 from anyio import ClosedResourceError
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -622,7 +622,7 @@ async def handle_post_request(
     request_id: str | int,
     session_id: str | None,
     is_initialize: bool,
-) -> JsonResponse | RawJsonResponse:
+) -> RawJsonResponse:
     """Send a message to MCP session or initialize new session when it is an initialization request.
 
     See: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#sending-messages-to-the-server
@@ -695,7 +695,7 @@ async def handle_post_request(
     return response
 
 
-async def handle_delete_request(name: str, session_id: str | None = None) -> JsonResponse:
+async def handle_delete_request(name: str, session_id: str | None = None) -> RawJsonResponse:
     """Terminate MCP session.
 
     See: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#session-management
@@ -704,7 +704,7 @@ async def handle_delete_request(name: str, session_id: str | None = None) -> Jso
 
     log.info("MCP DELETE %s - Closing session %s", name, session_id)
     await session_manager.terminate_session(session_id)
-    return JsonResponse({"status": "session_terminated"})
+    return RawJsonResponse({"status": "session_terminated"})
 
 
 @csrf_exempt
@@ -724,7 +724,7 @@ async def mcp_server(
     is_initialize: bool = False,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse | RawJsonResponse | StreamingHttpResponse:
+) -> RawJsonResponse | StreamingHttpResponse:
     """
     Handles GET, POST and DELETE requests for /mcp-servers/{name}/mcp path.
     """

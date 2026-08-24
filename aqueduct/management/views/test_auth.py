@@ -10,12 +10,12 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.handlers.asgi import ASGIRequest
 from django.db import transaction
-from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 
 from gateway.views.decorators import token_authenticated
+from gateway.views.utils import RawJsonResponse
 from management.models import Org, Token, UserProfile
 
 User = get_user_model()
@@ -52,7 +52,7 @@ def _create_db_token() -> tuple[str, str]:
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
-async def generate_test_token(request: ASGIRequest, *args: Any, **kwargs: Any) -> JsonResponse:
+async def generate_test_token(request: ASGIRequest, *args: Any, **kwargs: Any) -> RawJsonResponse:
     """
     Generate a new `User` + `UserProfile` + `Token` for load testing.
 
@@ -60,17 +60,19 @@ async def generate_test_token(request: ASGIRequest, *args: Any, **kwargs: Any) -
     Only enabled when LOAD_TESTING=True to prevent abuse in production.
     """
     if not getattr(settings, "LOAD_TESTING", False):
-        return JsonResponse(
+        return RawJsonResponse(
             {"error": "Test token generation only available in load-testing mode"},
             status=HTTPStatus.FORBIDDEN,
         )
 
     try:
         token_value, username = await sync_to_async(_create_db_token)()
-        return JsonResponse({"token": token_value, "username": username}, status=HTTPStatus.CREATED)
+        return RawJsonResponse(
+            {"token": token_value, "username": username}, status=HTTPStatus.CREATED
+        )
     except Exception as e:
         log.exception("Failed to generate test token for load testing")
-        return JsonResponse({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        return RawJsonResponse({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
 @csrf_exempt
@@ -78,7 +80,7 @@ async def generate_test_token(request: ASGIRequest, *args: Any, **kwargs: Any) -
 @token_authenticated(token_auth_only=True)
 async def cleanup_test_token(
     request: ASGIRequest, token: Token, *args: Any, **kwargs: Any
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     Delete the test `User` and its related objects (particularly: `Token`) after load testing.
 
@@ -86,7 +88,7 @@ async def cleanup_test_token(
     Only enabled when LOAD_TESTING=True to prevent abuse in production.
     """
     if not getattr(settings, "LOAD_TESTING", False):
-        return JsonResponse(
+        return RawJsonResponse(
             {"error": "Test token generation only available in load-testing mode"},
             status=HTTPStatus.FORBIDDEN,
         )
@@ -94,7 +96,7 @@ async def cleanup_test_token(
     username = token.user.username
     if not username.startswith("loadtest-"):
         log.warning("Attempted to delete non-loadtest user via cleanup endpoint: %s", username)
-        return JsonResponse(
+        return RawJsonResponse(
             {"error": "Only loadtest users can be deleted via this endpoint"},
             status=HTTPStatus.FORBIDDEN,
         )
@@ -103,4 +105,4 @@ async def cleanup_test_token(
     await token.user.adelete()
 
     log.info("Cleaned up load test user: %s", username)
-    return JsonResponse({"deleted": True, "username": username})
+    return RawJsonResponse({"deleted": True, "username": username})

@@ -907,9 +907,6 @@ SNIPPET_CONSOLE_SECURITY_WARNING = (
     "There is no sandboxing."
 )
 
-# Starter claims object shown in the console's Test input field so admins can see
-# the shape expected. Methods org_name/team_names/user_group receive this object;
-# display_team_names receives the same payload (pass a list when testing it).
 TEST_PAYLOAD_EXAMPLE = {
     "email": "you@example.com",
     "sub": "1234",
@@ -969,7 +966,6 @@ class SnippetAdmin(admin.ModelAdmin):
         results = None
 
         if request.method != "POST":
-            # Pre-fill the Test input with a runnable claims example on first load.
             payload = json.dumps(TEST_PAYLOAD_EXAMPLE, indent=2)
 
         if request.method == "POST":
@@ -1003,12 +999,6 @@ class SnippetAdmin(admin.ModelAdmin):
 
     @staticmethod
     def _run_console(snippet, payload: Any) -> list[str]:
-        """Mirror the real auth flow: input is a claims object.
-
-        org_name / user_group take the claims directly; team_names derives a
-        list from the claims, and display_team_names then receives that list
-        (just like OIDCBackend wires them together).
-        """
         lines = []
 
         for method_name in ("org_name", "user_group"):
@@ -1027,14 +1017,15 @@ class SnippetAdmin(admin.ModelAdmin):
         else:
             lines.append(f"team_names(claims) -> {team_list!r}")
 
-        if team_list is None:
+        if not team_list:
             lines.append("display_team_names(team names) skipped: team_names() failed")
+            return lines
+
+        try:
+            mapping = snippet.display_team_names(team_list)
+        except Exception as e:
+            lines.append(f"display_team_names(team names) raised {e!r}")
         else:
-            try:
-                mapping = snippet.display_team_names(team_list)
-            except Exception as e:
-                lines.append(f"display_team_names(team names) raised {e!r}")
-            else:
-                lines.append(f"display_team_names(team names) -> {mapping!r}")
+            lines.append(f"display_team_names(team names) -> {mapping!r}")
 
         return lines

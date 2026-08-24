@@ -379,10 +379,6 @@ class Snippet(models.Model):
         return f"{self.name} ({self.get_type_display()})"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        # Enforce the "at most one active 'config' snippet" invariant at the model
-        # layer so it holds regardless of how a snippet is saved (admin form, ORM,
-        # shell, bulk import, etc.). Activating a config demotes every other
-        # currently active config, making this the only active one.
         if self.active and self.type == SnippetType.CONFIG:
             Snippet.objects.filter(type=SnippetType.CONFIG, active=True).exclude(pk=self.pk).update(
                 active=False

@@ -98,6 +98,10 @@ class OIDCBackend(OIDCAuthenticationBackend):
         if admin_group and admin_group in team_names:
             group = UserGroup.ADMIN
 
+        dev_admin_emails = getattr(settings, "DEV_ADMIN_EMAILS", [])
+        if user.email and user.email.lower() in dev_admin_emails:
+            group = UserGroup.ADMIN
+
         profile.group = group
         profile.save()
 

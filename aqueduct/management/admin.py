@@ -26,7 +26,6 @@ from management.models import (
     Request,
     ServiceAccount,
     Snippet,
-    SnippetType,
     Team,
     TeamMembership,
     Token,
@@ -902,31 +901,20 @@ class SnippetAdminForm(forms.ModelForm):
             raise forms.ValidationError(str(e)) from e
         return code
 
-    def clean(self) -> dict[str, Any]:
-        cleaned = super().clean()
-        if not cleaned.get("active"):
-            return cleaned
-
-        snippet_type = cleaned.get("type")
-        conflicts = Snippet.objects.filter(type=snippet_type, active=True)
-        if self.instance.pk:
-            conflicts = conflicts.exclude(pk=self.instance.pk)
-        if conflicts.exists() and snippet_type == SnippetType.CONFIG:
-            self._configs_to_deactivate = list(conflicts)
-        return cleaned
-
-    def save(self, commit: bool = True) -> Snippet:
-        if commit and (staled_instances := getattr(self, "_configs_to_deactivate", None)):
-            Snippet.objects.filter(pk__in=[instance.pk for instance in staled_instances]).update(
-                active=False
-            )
-        return super().save(commit)
-
 
 SNIPPET_CONSOLE_SECURITY_WARNING = (
     "This test console executes real server code as an authenticated superuser. "
     "There is no sandboxing."
 )
+
+# Starter claims object shown in the console's Test input field so admins can see
+# the shape expected. Methods org_name/team_names/user_group receive this object;
+# display_team_names receives the same payload (pass a list when testing it).
+TEST_PAYLOAD_EXAMPLE = {
+    "email": "you@example.com",
+    "sub": "1234",
+    "groups": ["E123-Students", "admins"],
+}
 
 
 @admin.register(Snippet)
@@ -980,6 +968,10 @@ class SnippetAdmin(admin.ModelAdmin):
         code, payload = "", ""
         results = None
 
+        if request.method != "POST":
+            # Pre-fill the Test input with a runnable claims example on first load.
+            payload = json.dumps(TEST_PAYLOAD_EXAMPLE, indent=2)
+
         if request.method == "POST":
             code = request.POST.get("code", "")
             payload = request.POST.get("payload", "")
@@ -1011,18 +1003,38 @@ class SnippetAdmin(admin.ModelAdmin):
 
     @staticmethod
     def _run_console(snippet, payload: Any) -> list[str]:
-        runs = (
-            ("org_name", payload, "claims"),
-            ("team_names", payload, "claims"),
-            ("display_team_names", payload, "team names"),
-            ("user_group", payload, "claims"),
-        )
+        """Mirror the real auth flow: input is a claims object.
+
+        org_name / user_group take the claims directly; team_names derives a
+        list from the claims, and display_team_names then receives that list
+        (just like OIDCBackend wires them together).
+        """
         lines = []
-        for method_name, arg, arg_label in runs:
+
+        for method_name in ("org_name", "user_group"):
             try:
-                output = getattr(snippet, method_name)(arg)
+                output = getattr(snippet, method_name)(payload)
             except Exception as e:
-                lines.append(f"{method_name}({arg_label}) raised {e!r}")
+                lines.append(f"{method_name}(claims) raised {e!r}")
             else:
-                lines.append(f"{method_name}({arg_label}) -> {output!r}")
+                lines.append(f"{method_name}(claims) -> {output!r}")
+
+        try:
+            team_list = snippet.team_names(payload)
+        except Exception as e:
+            lines.append(f"team_names(claims) raised {e!r}")
+            team_list = None
+        else:
+            lines.append(f"team_names(claims) -> {team_list!r}")
+
+        if team_list is None:
+            lines.append("display_team_names(team names) skipped: team_names() failed")
+        else:
+            try:
+                mapping = snippet.display_team_names(team_list)
+            except Exception as e:
+                lines.append(f"display_team_names(team names) raised {e!r}")
+            else:
+                lines.append(f"display_team_names(team names) -> {mapping!r}")
+
         return lines

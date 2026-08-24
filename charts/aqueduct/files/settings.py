@@ -137,6 +137,14 @@ ENABLE_OAUTH_GROUP_REMOVAL = os.getenv("ENABLE_OAUTH_GROUP_REMOVAL", "True").low
 
 ADMIN_GROUP = os.getenv("ADMIN_GROUP", "")
 
+# Dev/test convenience: emails that should be forced into the ADMIN group on
+# login, regardless of the config snippet / OAuth groups. Comma-separated.
+# Leave empty in production. Useful for local dex/SSO testing without seeding a
+# config snippet.
+DEV_ADMIN_EMAILS = [
+    e.strip().lower() for e in os.getenv("DEV_ADMIN_EMAILS", "").split(",") if e.strip()
+]
+
 EXTRA_NAV_LINKS = {
     "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",
     "Documentation": "https://tu-wien-datalab.github.io/aqueduct/",

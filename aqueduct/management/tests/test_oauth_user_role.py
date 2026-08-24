@@ -186,6 +186,46 @@ class UpdateUserRoleTestCase(TestCase):
         self.assertTrue(user.is_staff)
         self.assertTrue(user.is_superuser)
 
+    @override_settings(DEV_ADMIN_EMAILS=["you@example.com"])
+    def test_dev_auto_admin_email_forced_admin(self):
+        """Emails in DEV_ADMIN_EMAILS become admin with no snippet/groups."""
+        user, profile = self._make_user(email="you@example.com")
+
+        self.backend._update_user_role(user, profile, [], {})
+
+        profile.refresh_from_db()
+        user.refresh_from_db()
+        self.assertEqual(profile.group, "admin")
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.is_superuser)
+
+    @override_settings(DEV_ADMIN_EMAILS=["you@example.com"])
+    def test_dev_auto_admin_ignores_case(self):
+        """DEV_ADMIN_EMAILS matching is case-insensitive."""
+        # Note: _make_user sets the email as given on the user; OIDC delivers a
+        # mixed-case email but the user is the same account.
+        user, profile = self._make_user(email="YOU@EXAMPLE.com")
+
+        self.backend._update_user_role(user, profile, [], {})
+
+        profile.refresh_from_db()
+        user.refresh_from_db()
+        self.assertEqual(profile.group, "admin")
+        self.assertTrue(user.is_superuser)
+
+    @override_settings(DEV_ADMIN_EMAILS=["someone-else@example.com"])
+    def test_dev_auto_admin_email_mismatch_stays_user(self):
+        """An email not in DEV_ADMIN_EMAILS is not forced to admin."""
+        user, profile = self._make_user(email="you@example.com")
+
+        self.backend._update_user_role(user, profile, [], {})
+
+        profile.refresh_from_db()
+        user.refresh_from_db()
+        self.assertEqual(profile.group, "user")
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+
 
 @override_settings(**ROLE_SETTINGS)
 class UserRoleIntegrationTestCase(TestCase):

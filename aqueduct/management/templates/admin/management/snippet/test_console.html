@@ -17,17 +17,40 @@
       <fieldset class="module aligned">
         <div class="form-row">
           <label for="id_code">Snippet code:</label>
-          <textarea id="id_code" name="code" rows="16" class="vLargeTextField" style="font-family:monospace;">{{ code }}</textarea>
+          <textarea id="id_code" name="code" rows="40" class="vLargeTextField snippet-console-input snippet-console-code"
+            placeholder='class C(ConfigSnippet):
+    def org_name(self, claims):
+        return claims.get("org")'>{{ code }}</textarea>
           <div class="help">Python class subclassing <code>ConfigSnippet</code> (auto-injected, no import needed).</div>
+          <pre class="snippet-console-example"><span class="snippet-console-example-label">Example:</span>
+class C(ConfigSnippet):
+    def org_name(self, claims):
+        return claims.get("org")</pre>
         </div>
         <div class="form-row">
           <label for="id_payload">Test input (JSON):</label>
-          <textarea id="id_payload" name="payload" rows="6" class="vLargeTextField" style="font-family:monospace;">{{ payload }}</textarea>
+          <textarea id="id_payload" name="payload" rows="16" class="vLargeTextField snippet-console-input snippet-console-payload"
+            placeholder='{
+  "email": "you@example.com",
+  "sub": "1234",
+  "groups": ["E123-Students", "admins"]
+}'>{{ payload }}</textarea>
           <div class="help">
-            The payload is passed to every method. Use an object for
-            <code>org_name</code> / <code>team_names</code> / <code>user_group</code>
-            (claims) and a list of team names for <code>display_team_names</code>.
+            Paste a <strong>claims object</strong> (exactly what your IdP sends). It is
+            the only input you need — the console chains it through the methods like the
+            real login flow:
+            <ul style="margin:0.25rem 0 0 1.25rem;">
+              <li><code>org_name(claims)</code> and <code>user_group(claims)</code> receive the object directly.</li>
+              <li><code>team_names(claims)</code> extracts the group list from it.</li>
+              <li><code>display_team_names(...)</code> receives that extracted list (not your raw input).</li>
+            </ul>
           </div>
+          <pre class="snippet-console-example"><span class="snippet-console-example-label">Example claims to paste here:</span>
+{
+  "email": "you@example.com",
+  "sub": "1234",
+  "groups": ["E123-Students", "admins"]
+}</pre>
         </div>
       </fieldset>
       <div class="submit-row">

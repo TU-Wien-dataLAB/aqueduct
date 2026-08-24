@@ -112,6 +112,45 @@ class SnippetAdminFormTestCase(TestCase):
         )
         self.assertTrue(form.is_valid(), form.errors)
 
+    def test_orm_create_active_config_demotes_previous(self) -> None:
+        seed_active_config(SNIPPET_ORG_CUSTOM)
+        Snippet.objects.create(name="c2", type=SnippetType.CONFIG, active=True, code=VALID_CODE)
+
+        active = Snippet.objects.filter(type=SnippetType.CONFIG, active=True)
+        self.assertEqual(active.count(), 1)
+        self.assertEqual(active.get().name, "c2")
+
+    def test_updating_config_to_active_demotes_previous(self) -> None:
+        seed_active_config(SNIPPET_ORG_CUSTOM)
+        existing = Snippet.objects.create(
+            name="c2", type=SnippetType.CONFIG, active=False, code=VALID_CODE
+        )
+
+        existing.active = True
+        existing.save()
+
+        active = Snippet.objects.filter(type=SnippetType.CONFIG, active=True)
+        self.assertEqual(active.count(), 1)
+        self.assertEqual(active.get().name, "c2")
+
+    def test_activating_config_does_not_touch_active_plugins(self) -> None:
+        seed_active_config(SNIPPET_ORG_CUSTOM)
+        plugin = Snippet.objects.create(
+            name="p1", type=SnippetType.PLUGIN, active=True, code=VALID_CODE
+        )
+
+        config = Snippet.objects.create(
+            name="new-config", type=SnippetType.CONFIG, active=True, code=VALID_CODE
+        )
+
+        self.assertTrue(config.active)
+        # The newly-activated config demoted the old one (only 1 active config).
+        self.assertEqual(Snippet.objects.filter(type=SnippetType.CONFIG, active=True).count(), 1)
+        # Active plugins are left untouched.
+        plugin.refresh_from_db()
+        self.assertTrue(plugin.active)
+        self.assertEqual(Snippet.objects.filter(type=SnippetType.PLUGIN, active=True).count(), 1)
+
 
 class SnippetAdminAuthorizationTestCase(TestCase):
     def setUp(self):
@@ -158,6 +197,19 @@ class SnippetConsoleTestCase(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "Snippet test console")
         self.assertContains(resp, "executes real server code")
+
+    def test_get_prefills_example_payload(self):
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, 200)
+        # The Test input is pre-filled with a runnable claims example.
+        self.assertContains(resp, '"email"')
+        self.assertContains(resp, "you@example.com")
+        self.assertContains(resp, '"groups"')
+        self.assertContains(resp, "E123-Students")
+        # Dimmed on-page example blocks + large editor are present.
+        self.assertContains(resp, "Example claims to paste here")
+        self.assertContains(resp, "snippet-console-example")
+        self.assertContains(resp, "snippet-console-code")
 
     def test_runs_methods_against_payload(self):
         resp = self.client.post(

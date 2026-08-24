@@ -208,6 +208,12 @@ class Team(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Mode
         return bool(self.oauth_group_name)
 
 
+class UserGroup(models.TextChoices):
+    ADMIN = "admin", "Admin"
+    ORG_ADMIN = "org-admin", "Org Admin"
+    USER = "user", "User"
+
+
 class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Model):
     """
     Holds additional information related to the built-in Django User model.
@@ -235,19 +241,19 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
         return f"{self.user.email} (Profile - {self.org.name})"
 
     @property
-    def group(self) -> Literal["admin", "org-admin", "user"]:
-        g = self.user.groups
-        if g.filter(name="admin").exists():
-            return "admin"
-        if g.filter(name="org-admin").exists():
-            return "org-admin"
-        if g.filter(name="user").exists():
-            return "user"
+    def group(self) -> UserGroup:
+        groups = self.user.groups
+        if groups.filter(name=UserGroup.ADMIN).exists():
+            return UserGroup.ADMIN
+        if groups.filter(name=UserGroup.ORG_ADMIN).exists():
+            return UserGroup.ORG_ADMIN
+        if groups.filter(name=UserGroup.USER).exists():
+            return UserGroup.USER
         raise ValidationError("User has no group")
 
     @group.setter
-    def group(self, group: Literal["admin", "org-admin", "user"]) -> None:
-        if group not in ["admin", "org-admin", "user"]:
+    def group(self, group: str) -> None:
+        if group not in UserGroup.values:
             raise ValueError(f"Group {group} does not exist!")
 
         # Clear existing groups first
@@ -283,7 +289,7 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
     def is_admin(self) -> bool:
         """Checks if the user has the global 'admin' group."""
         try:
-            return self.group == "admin"
+            return self.group == UserGroup.ADMIN
         except ValidationError:  # Raised if user has no valid group assigned
             return False
 
@@ -295,17 +301,14 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
         2. Users with the 'org-admin' group are admins ONLY of their own organization.
         """
         try:
-            user_group = self.group  # Use the property to get the group name
-            if (
-                user_group == "admin"
-            ):  # Use admin group independent of super-user status to quickly debug in Admin UI.
+            user_group = self.group
+            if user_group == UserGroup.ADMIN:
                 return True
-            if user_group == "org-admin":
-                # Check if the profile's org matches the org being checked
+            if user_group == UserGroup.ORG_ADMIN:
                 return self.org == org_to_check
-        except ValidationError:  # Raised if user has no valid group
-            return False  # Or handle as an error depending on requirements
-        return False  # Default case (e.g., 'user' group)
+        except ValidationError:
+            return False
+        return False
 
     def is_team_admin(self, team_to_check: Team) -> bool:
         """
@@ -347,6 +350,33 @@ class TeamMembership(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_profile} in {self.team}{' (Admin)' if self.is_admin else ''}"
+
+
+class SnippetType(models.TextChoices):
+    CONFIG = "config", "config"
+    PLUGIN = "plugin", "plugin"
+
+
+class Snippet(models.Model):
+    name = models.CharField(
+        max_length=127, help_text="Human-readable name identifying this snippet."
+    )
+    type = models.CharField(max_length=20, choices=SnippetType.choices, default=SnippetType.CONFIG)
+    active = models.BooleanField(
+        default=False,
+        help_text="Whether this snippet is enabled. At most one 'config' snippet may "
+        "be active at a time.",
+    )
+    code = models.TextField(help_text="Python source of the snippet class.")
+    updated_at = models.DateTimeField(auto_now=True, help_text="Last modification time.")
+
+    class Meta:
+        ordering = ("name", "type")
+        verbose_name = "Snippet"
+        verbose_name_plural = "Snippets"
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.get_type_display()})"
 
 
 class ServiceAccount(models.Model):

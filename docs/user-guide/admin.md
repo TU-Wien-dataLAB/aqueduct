@@ -19,6 +19,79 @@ The Admin Panel is the Django Admin interface for the Aqueduct Gateway. It provi
 
 ![Admin Panel](../assets/user_guide/admin_panel.png)
 
+## Configuration Snippets
+
+Runtable OIDC/auth configuration (org extraction, OAuth team-mapping, and user
+roles) is provided by a **config snippet** — a Python class stored in the
+database, editable at runtime by **superusers** via **Admin → Management →
+Snippets**. Snippet code subclasses the auto-injected `ConfigSnippet` base class
+(no import needed) and overrides only the methods you need:
+
+```python
+class MyConfig(ConfigSnippet):
+    def org_name(self, claims):
+        # Optional: extract the organization name from OIDC claims.
+        # None fails closed (no org => no login). Default: "default".
+        groups = claims.get("groups") or []
+        return groups[0] if groups else None
+
+    def team_names(self, claims):
+        # Optional: extract raw team (group) names from OIDC claims.
+        groups = claims.get("groups") or []
+        return [g for g in groups if g.startswith("E")]
+
+    def display_team_names(self, team_names):
+        # Optional: map each raw group name to (display_team_name, team_name).
+        # Example: "E123-Students" -> ("E123", "E123-Students")
+        return [(t.split("-", 1)[0], t) for t in team_names]
+
+    def user_group(self, claims):
+        # Optional: return "admin" / "org-admin" / "user" from claims.
+        # "admin" sets is_staff/is_superuser. Default: "user".
+        return "user"
+```
+
+The four methods, signatures, and failure behavior:
+
+| Method | Signature | Failure behavior |
+|--------|-----------|------------------|
+| `org_name` | `(claims) -> str \| None` | fail closed (`None` ⇒ no login) |
+| `team_names` | `(claims) -> list[str]` | fail open (`[]`) |
+| `display_team_names` | `(team_names) -> list[(str, str)]` | identity mapping (names unchanged) |
+| `user_group` | `(claims) -> "admin" \| "org-admin" \| "user"` | fail open (`"user"`) |
+
+At most one `config` snippet may be active. With no active snippet, the default
+base class (today's out-of-the-box behavior: org `"default"`, no teams,
+`user` role) is used; in particular `display_team_names` defaults to an
+identity mapping that keeps each team's name unchanged. Saving a snippet that
+fails to validate (syntax errors,
+wrong method signatures, or a class that does not subclass `ConfigSnippet`) is
+rejected by the admin. Standard-library imports are permitted. The active
+snippet's code is cached and picked up on the next login; an edit/"test
+console" flow recompiles from the stored source (`updated_at` invalidates the
+cache).
+
+### Auto-admin via `ADMIN_GROUP`
+
+Set the `ADMIN_GROUP` environment variable to the name of a group whose members
+should automatically become admins (`is_staff` + `is_superuser`) on login —
+e.g. `ADMIN_GROUP=ds-ray-cluster`. Membership is checked against the group names
+extracted from claims by the active snippet's `team_names()` method (the same
+snippet-driven source used for team/org sync — not raw claims), and it is gated
+behind `ENABLE_OAUTH_GROUP_MANAGEMENT`. A user whose extracted group list
+contains that name is promoted to `admin` regardless of the snippet's
+`user_group()` result (or if there is no snippet), so they can manage admin data
+without manual edits. Leave `ADMIN_GROUP` empty (default) to disable this and
+rely solely on the snippet's `user_group`.
+
+> **Security:** a snippet is arbitrary Python executed on the server. Editing is
+> **superuser-only** and there is **no sandboxing**. A test console is available
+> on the Snippets changelist to run a snippet against a sample input before
+> saving it; it executes real server code and is superuser-only.
+
+`ADMIN_SUPER_USER` was a bootstrap-only escape hatch (removed): admin
+assignment comes solely from the snippet's `user_group`.
+
 ## Managing User Permissions
 
 Admins can manage the permissions of other users through the Django Admin interface. User permissions are controlled using Django's built-in groups. The main groups used in Aqueduct are:
@@ -28,6 +101,10 @@ Admins can manage the permissions of other users through the Django Admin interf
 - `admin`
 
 To grant a user admin privileges, you must assign them to the `admin` group and ensure that both the "staff" and "superuser" flags are set to `True` in the Django Admin. If you wish to promote a user to `org-admin`, change their group from `user` to `org-admin` and remove the `user` group from their group list.
+
+When users log in via OIDC, their group and staff/superuser flags are re-derived
+from the active config snippet's `user_group(claims)`, so manual admin edits may
+be overwritten on next login unless the snippet keeps them in an admin group.
 
 **Team admins** are managed differently: they are assigned through a many-to-many relationship between users and teams, which is handled in the Aqueduct UI. For more information, see the [Teams page](teams.md#team-detail-view).
 
@@ -42,52 +119,11 @@ OAuth team management automatically syncs user team memberships based on OAuth g
 | `ENABLE_OAUTH_GROUP_MANAGEMENT` | Master switch - when `False`, no team sync happens on login |
 | `ENABLE_OAUTH_GROUP_CREATION` | When `True`, teams are auto-created from OAuth groups; when `False`, users only join existing teams |
 | `ENABLE_OAUTH_GROUP_REMOVAL` | Controls removal from **non-OAuth** teams only. When `True` (default), users are removed from all teams not in their OAuth groups. When `False`, users stay in manually created teams but are **always** removed from OAuth-managed teams when they lose the corresponding OAuth group |
-| `OAUTH_TEAM_NAMES_FUNCTION` | Custom logic to transform individual group names |
 
-### Function Signature
-
-The `OAUTH_TEAM_NAMES_FUNCTION` should be a callable with this signature:
-
-```python
-def transform_group_name(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-    """
-    Transform a single OAuth group name to a team name.
-    
-    Args:
-        group: The specific OAuth group name to transform
-        groups: Full list of user's groups for context (optional)
-    
-    Returns:
-        Tuple of (transformed_team_name, original_group_name) or None to skip this group
-    """
-```
-
-**Example implementation:**
-
-```python
-def my_transform(group: str, groups: list[str] | None = None) -> tuple[str, str] | None:
-    """Transform groups starting with 'E' to team names."""
-    if group.startswith("E"):
-        # Strip suffix after dash: "E123-Students" -> "E123"
-        team_name = group.split("-")[0]
-        return (team_name, group)
-    return None  # Skip this group
-```
-
-The function is called once for each OAuth group, allowing you to:
-- Filter which groups become teams (return `None` to skip)
-- Transform group names (e.g., remove suffixes, add prefixes)
-- Access the full groups list for context-aware logic
-
-### How It Works
-
-1. User logs in via OAuth
-2. OAuth groups are extracted from claims
-3. For each group, `OAUTH_TEAM_NAMES_FUNCTION` is called with the group name and full groups list
-4. Groups that return a tuple create teams; groups that return `None` are skipped
-5. Teams are created (if `ENABLE_OAUTH_GROUP_CREATION=True`) or reused
-6. User is added to teams via `TeamMembership`
-7. User is removed from teams no longer in their OAuth groups (only if `ENABLE_OAUTH_GROUP_REMOVAL=True`)
+The team-name mapping logic is provided by the active **config snippet's**
+`team_names` / `display_team_names` methods (see
+[Configuration Snippets](#configuration-snippets)); it is no longer set in
+`settings.py`.
 
 ### Admin Panel
 
@@ -103,7 +139,7 @@ Rate limits, descriptions, and exclusions remain editable for OAuth-managed team
 
 ### Syncing Team Names
 
-When you change the `OAUTH_TEAM_NAMES_FUNCTION` logic, you can update existing team names using the admin action:
+When you change the `display_team_names` logic in the active config snippet, you can update existing team names using the admin action:
 
 1. Navigate to **Admin → Management → Teams**
 2. Select the teams you want to sync (or select all)
@@ -112,13 +148,13 @@ When you change the `OAUTH_TEAM_NAMES_FUNCTION` logic, you can update existing t
 
 The action will:
 1. Read the stored `oauth_group_name` for each selected OAuth-managed team
-2. Re-apply the current `OAUTH_TEAM_NAMES_FUNCTION` mapping
+2. Re-apply the current `display_team_names` mapping from the active config snippet
 3. Update team names based on the mapping result
 4. Skip teams with name collisions or unchanged names
 5. Never affect manually created teams (those with empty `oauth_group_name`)
 6. Show a warning if any teams would be deleted (deletion requires using the command-line)
 
-> **Note:** Team deletion is not performed via the admin action for safety. If the mapping returns `None` (indicating a team should be deleted), you'll see a warning message. To delete teams, use the command-line or delete them manually in the admin.
+> **Note:** Team deletion is not performed via the admin action for safety. If the mapping returns nothing for a team (indicating it should be deleted), you'll see a warning message. To delete teams, use the command-line or delete them manually in the admin.
 
 ## Managing Organizations
 

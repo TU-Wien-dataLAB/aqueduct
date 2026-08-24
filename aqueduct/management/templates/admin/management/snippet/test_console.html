@@ -1,0 +1,50 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'css/admin_custom.css' %}">
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module">
+    <p style="color:#b91c1c;font-weight:600;margin-bottom:1rem;">
+      <strong>Warning:</strong> {{ security_warning }} For this reason this console
+      (and snippet editing) is restricted to superusers.
+    </p>
+    <form method="post">{% csrf_token %}
+      <fieldset class="module aligned">
+        <div class="form-row">
+          <label for="id_code">Snippet code:</label>
+          <textarea id="id_code" name="code" rows="16" class="vLargeTextField" style="font-family:monospace;">{{ code }}</textarea>
+          <div class="help">Python class subclassing <code>ConfigSnippet</code> (auto-injected, no import needed).</div>
+        </div>
+        <div class="form-row">
+          <label for="id_payload">Test input (JSON):</label>
+          <textarea id="id_payload" name="payload" rows="6" class="vLargeTextField" style="font-family:monospace;">{{ payload }}</textarea>
+          <div class="help">
+            The payload is passed to every method. Use an object for
+            <code>org_name</code> / <code>team_names</code> / <code>user_group</code>
+            (claims) and a list of team names for <code>display_team_names</code>.
+          </div>
+        </div>
+      </fieldset>
+      <div class="submit-row">
+        <input type="submit" value="Run test" class="default">
+      </div>
+    </form>
+
+    {% if results %}
+      <fieldset class="module aligned">
+        <h2>Output</h2>
+        <ul style="margin:0.5rem 1.5rem 0;">
+          {% for line in results %}
+            <li style="font-family:monospace;margin-bottom:0.25rem;">{{ line }}</li>
+          {% endfor %}
+        </ul>
+      </fieldset>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -20,7 +20,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import RawJsonResponse, _get_token_usage
+from .utils import RawJsonResponse, get_token_usage
 
 if TYPE_CHECKING:
     from litellm.types.utils import EmbeddingResponse
@@ -47,5 +47,5 @@ async def embeddings(
     router = get_router()
     embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
     data = embedding.model_dump(exclude_none=True, exclude_unset=True)
-    request_log.token_usage = _get_token_usage(data)
+    request_log.token_usage = get_token_usage(data)
     return RawJsonResponse(data=data, status=200)

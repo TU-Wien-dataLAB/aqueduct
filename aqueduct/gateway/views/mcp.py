@@ -554,6 +554,7 @@ async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenera
             ),
         )
 
+        # TODO!!
         yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
         return
 
@@ -610,8 +611,8 @@ async def handle_get_request(
     log.info("MCP GET %s - SSE stream for existing session %s", name, session_id)
     headers = {"Cache-Control": "no-cache", "Connection": "keep-alive"}
     return StreamingHttpResponse(
-        streaming_content=_mcp_sse_stream(request_id, session_id),
-        content_type="text/event-stream",
+        streaming_content=_mcp_sse_stream(request_id, session_id),  # TODO!
+        request_log=None,  # TODO:
         headers=headers,
     )
 

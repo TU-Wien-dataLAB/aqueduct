@@ -2,7 +2,7 @@ from typing import Any
 
 import openai
 from django.core.handlers.asgi import ASGIRequest
-from django.http import HttpResponse, StreamingHttpResponse
+from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from openai.types.audio.transcription_create_params import (
@@ -22,7 +22,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import RawJsonResponse, _get_token_usage, _openai_stream, oai_client_from_body
+from .utils import RawJsonResponse, RawStreamingResponse, get_token_usage, oai_client_from_body
 
 
 class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
@@ -47,7 +47,7 @@ async def transcriptions(
     request_log: Request,
     *args: Any,
     **kwargs: Any,
-) -> RawJsonResponse | HttpResponse | StreamingHttpResponse:
+) -> RawJsonResponse | HttpResponse | RawStreamingResponse:
     client, model_relay = oai_client_from_body(pydantic_model.get("model"), request)
     pydantic_model["model"] = model_relay
 
@@ -61,7 +61,7 @@ async def transcriptions(
         ),
     ):
         data = transcription.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = _get_token_usage(data)
+        request_log.token_usage = get_token_usage(data)
         return RawJsonResponse(data=data, status=200)
     if isinstance(transcription, str):
         # Text-based formats (VTT, SRT, text) return plain strings
@@ -71,8 +71,5 @@ async def transcriptions(
             status=200,
         )
     if isinstance(transcription, openai.AsyncStream):
-        return StreamingHttpResponse(
-            streaming_content=_openai_stream(stream=transcription, request_log=request_log),
-            content_type="text/event-stream",
-        )
+        return RawStreamingResponse(streaming_content=transcription, request_log=request_log)
     raise RuntimeError(f"Received unexpected response type: {type(transcription)}")

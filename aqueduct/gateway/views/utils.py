@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Generator
 from contextlib import contextmanager
 from typing import Any
 
@@ -12,7 +12,8 @@ from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
 from django.http.response import ResponseHeaders
-from pydantic import BaseModel
+from litellm.types.utils import ModelResponseStream
+from litellm.types.utils import Usage as UsageModel
 
 from gateway.config import get_openai_client, get_router
 from management.models import Request, Usage
@@ -37,20 +38,26 @@ class RawJsonResponse:
         self.content_type = self.kwargs.get("content_type", "application/json")
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} status_code={self.status_code}"
+        return f"<{self.__class__.__name__} status_code={self.status_code}>"
 
 
 class RawStreamingResponse:
     """A wrapper for streaming data that can be turned into a StreamingHttpResponse."""
 
     def __init__(
-        self, streaming_content: AsyncIterator[Any], request_log: Request, **kwargs: Any
+        self,
+        streaming_content: AsyncIterator[Any],
+        request_log: Request,  # TODO: for mcp requests, there's no request log!
+        transforms: list[Callable[[ModelResponseStream], ModelResponseStream]]
+        | None = None,  # TODO: fix types
+        **kwargs: Any,
     ) -> None:
         if not isinstance(streaming_content, AsyncIterator):
             raise TypeError("RawStreamResponse streaming_content has to be async iterable")
 
         self.streaming_content = streaming_content
         self.request_log = request_log
+        self.transforms = transforms or []
         self.kwargs = kwargs or {}
         # The following mimics the BaseHttpResponse behaviour (argument called "status"
         # is assigned to the "status_code" attribute)
@@ -59,72 +66,32 @@ class RawStreamingResponse:
         self.headers = ResponseHeaders(self.kwargs.get("headers", {}))
         self.content_type = self.kwargs.get("content_type", "text/event-stream")
 
-    def __str__(self) -> str:
-        return f"<{self.__class__.__name__} status_code={self.status_code}"
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} status_code={self.status_code}>"
 
 
-def _get_token_usage(content: bytes | dict[str, Any]) -> Usage:
-    """Retrieves token usage information from the response content.
+def get_token_usage(data: dict[str, Any] | ModelResponseStream) -> Usage:
+    """Retrieves token usage information from the raw response content.
 
     Note that if the response data does not match the expected format, or does
     not contain the usage information, the returned token usage will be wrong,
     i.e. set to 0.
 
     Args:
-        content: The response content, either as a dict or as bytes.
+        data: The raw response content (or content's chunk for streaming responses)
+          as a dict or ModelResponseStream (for RawStreamingResponses).
     Returns:
         The :class:`Usage` object with the used input and output token counts.
     """
-
-    if isinstance(content, dict):
-        data = content
-    else:
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError:
-            return Usage(input_tokens=0, output_tokens=0)
-
     # Handle responses API format (top-level usage or in response field)
-    usage_dict = data.get("usage", None)
-    if not usage_dict and "response" in data:
-        usage_dict = data["response"].get("usage", None)
-    if isinstance(usage_dict, dict):
-        input_tokens = usage_dict.get("prompt_tokens") or usage_dict.get("input_tokens", 0)
-        output_tokens = usage_dict.get("completion_tokens") or usage_dict.get("output_tokens", 0)
+    usage = data.get("usage")
+    if not usage and "response" in data:
+        usage = data["response"].get("usage", None)
+    if isinstance(usage, (dict, UsageModel)):
+        input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens", 0)
+        output_tokens = usage.get("completion_tokens") or usage.get("output_tokens", 0)
         return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
     return Usage(input_tokens=0, output_tokens=0)
-
-
-def _openai_stream(
-    stream: AsyncIterator[BaseModel], request_log: Request
-) -> AsyncGenerator[str, None]:
-    start_time = time.monotonic()
-
-    async def _stream() -> AsyncGenerator[str, None]:
-        token_usage = Usage(0, 0)
-        async for chunk in stream:
-            chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
-
-            # Extract token usage from this chunk
-            chunk_usage = _get_token_usage(chunk_str.encode("utf-8"))
-
-            # Only update if we got actual usage data (non-zero tokens)
-            if chunk_usage.input_tokens > 0 or chunk_usage.output_tokens > 0:
-                token_usage = chunk_usage
-
-            try:
-                yield f"data: {chunk_str}\n\n"
-            except Exception as e:
-                yield f"data: {e!s}\n\n"
-
-        end_time = time.monotonic()
-        request_log.token_usage = token_usage
-        request_log.response_time_ms = int((end_time - start_time) * 1000)
-        await request_log.asave()
-        # Streaming is done, yield the [DONE] chunk
-        yield "data: [DONE]\n\n"
-
-    return _stream()
 
 
 @contextmanager

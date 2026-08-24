@@ -2,7 +2,6 @@ from typing import Any
 
 import openai
 from django.core.handlers.asgi import ASGIRequest
-from django.http import StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from litellm import TextCompletionStreamWrapper
@@ -23,7 +22,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import RawJsonResponse, _get_token_usage, _openai_stream
+from .utils import RawJsonResponse, RawStreamingResponse, get_token_usage
 
 
 @csrf_exempt
@@ -43,19 +42,16 @@ async def completions(
     request_log: Request,
     *args: Any,
     **kwargs: Any,
-) -> RawJsonResponse | StreamingHttpResponse:
+) -> RawJsonResponse | RawStreamingResponse:
     router = get_router()
     completion: (
         TextCompletionResponse | TextCompletionStreamWrapper
     ) = await router.atext_completion(**pydantic_model)
     if isinstance(completion, TextCompletionStreamWrapper):
-        return StreamingHttpResponse(
-            streaming_content=_openai_stream(stream=completion, request_log=request_log),
-            headers={"Content-Type": "text/event-stream"},
-        )
+        return RawStreamingResponse(streaming_content=completion, request_log=request_log)
     if isinstance(completion, TextCompletionResponse):
         data = completion.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = _get_token_usage(data)
+        request_log.token_usage = get_token_usage(data)
         return RawJsonResponse(data=data, status=200)
     raise NotImplementedError(
         f"Completion for response type {type(completion)} is not implemented."

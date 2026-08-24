@@ -20,7 +20,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import RawJsonResponse, _get_token_usage, oai_client_from_body
+from .utils import RawJsonResponse, get_token_usage, oai_client_from_body
 
 log = logging.getLogger("aqueduct")
 
@@ -73,6 +73,6 @@ async def image_generation(
         ) from err
 
     data = resp.model_dump(exclude_unset=True)
-    request_log.token_usage = _get_token_usage(data)
+    request_log.token_usage = get_token_usage(data)
 
     return RawJsonResponse(data)

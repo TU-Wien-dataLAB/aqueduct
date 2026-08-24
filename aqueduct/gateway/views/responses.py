@@ -2,7 +2,6 @@ from typing import Any
 
 import openai
 from django.core.handlers.asgi import ASGIRequest
-from django.http import StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from openai import AsyncStream
@@ -26,11 +25,10 @@ from .decorators import (
 from .errors import error_response
 from .utils import (
     RawJsonResponse,
-    ResponseRegistrationWrapper,
-    _get_token_usage,
-    _openai_stream,
+    RawStreamingResponse,
     delete_response_from_cache,
     get_response_from_cache,
+    get_token_usage,
     oai_client_from_body,
     register_response_in_cache,
 )
@@ -54,7 +52,7 @@ async def create_response(
     token: Token,
     *args: Any,
     **kwargs: Any,
-) -> RawJsonResponse | StreamingHttpResponse:
+) -> RawJsonResponse | RawStreamingResponse:
     """Handler for POST /v1/responses - Creates a new response via OpenAI's responses API
 
     This endpoint forwards requests to the OpenAI responses API, handling both streaming
@@ -69,18 +67,17 @@ async def create_response(
     resp: Response | AsyncStream[Response] = await client.responses.create(**pydantic_model)
 
     if isinstance(resp, AsyncStream):
-        return StreamingHttpResponse(
-            streaming_content=ResponseRegistrationWrapper(
-                streaming_content=_openai_stream(stream=resp, request_log=request_log),
-                model=model,
-                email=token.user.email,
-            ),
-            content_type="text/event-stream",
-        )
+        # TODO: register_response(resp, model=model, email=token.user.email)
+        return RawStreamingResponse(streaming_content=resp, request_log=request_log)
+        # The original response.streaming_content:
+        #     ResponseRegistrationWrapper
+        #       ->  streaming_content=_openai_stream(stream=resp, request_log=request_log),
+        #       ->  model=model, email=token.user.email
+        #
     if isinstance(resp, Response):
         register_response_in_cache(resp.id, model=model, email=token.user.email)
         data = resp.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = _get_token_usage(data)
+        request_log.token_usage = get_token_usage(data)
         return RawJsonResponse(data=data, status=200)
     raise NotImplementedError(f"Completion for response type {type(resp)} is not implemented.")
 

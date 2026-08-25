@@ -10,7 +10,6 @@ import anyio
 import httpx
 from anyio import ClosedResourceError
 from django.core.handlers.asgi import ASGIRequest
-from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -19,7 +18,7 @@ from mcp.shared.message import SessionMessage
 from mcp.types import CONNECTION_CLOSED, ErrorData, JSONRPCError, JSONRPCMessage, JSONRPCRequest
 from pydantic import TypeAdapter
 
-from gateway.views.utils import RawJsonResponse
+from gateway.views.utils import RawJsonResponse, RawStreamingResponse
 
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -346,7 +345,7 @@ class MCPSessionManager:
             self._cleanup_task = asyncio.create_task(self._cleanup_idle_sessions())
 
     async def _cleanup_idle_sessions(self, max_idle_seconds: int = 3600) -> None:
-        """Background task to cleanup idle sessions."""
+        """Background task to clean up idle sessions."""
         while True:
             await asyncio.sleep(60)
 
@@ -535,7 +534,7 @@ def _validate_session(
     return None
 
 
-async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenerator[str, None]:
+async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenerator[dict[str, Any]]:
     """Stream MCP messages via Server-Sent Events with lifecycle coordination."""
     log.info("SSE stream started for session %s", session_id)
     session = await session_manager.get_session_with_retry(session_id)
@@ -553,9 +552,7 @@ async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenera
                 message=f"Session not ready (state: {session.state.value if session else 'None'})",
             ),
         )
-
-        # TODO!!
-        yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
+        yield error_msg.model_dump(exclude_none=True)
         return
 
     # Register stream lifetime to coordinate with session termination
@@ -565,18 +562,18 @@ async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenera
     while True:
         try:
             message: SessionMessage | Exception = await session_manager.receive_message(session_id)
-            message_json = parse_session_message(message, request_id, session_id, json=True)
-            yield f"data: {message_json}\n\n"
+            parsed_msg = parse_session_message(message, request_id, session_id)
+            yield cast("dict[str, Any]", parsed_msg)
         except (ClosedResourceError, httpx.HTTPStatusError, MCPSessionError) as e:
             log.info("SSE stream for session %s ended: %s", session_id, e)
             # Send proper session end notification
-            end_msg = parse_session_message(e, request_id, session_id, json=True)
-            yield f"data: {end_msg}\n\n"
+            end_msg = parse_session_message(e, request_id, session_id)
+            yield cast("dict[str, Any]", end_msg)
             break  # Session is gone, stop the stream
         except Exception as e:
             log.exception("SSE stream for session %s unexpected error: %s", session_id, e)
-            error_data = parse_session_message(e, request_id, session_id, json=True)
-            yield f"data: {error_data}\n\n"
+            error_data = parse_session_message(e, request_id, session_id)
+            yield cast("dict[str, Any]", error_data)
             continue  # Keep streaming
         finally:
             # Signal that this operation is done
@@ -595,7 +592,7 @@ async def _ensure_session_manager_started() -> None:
 
 async def handle_get_request(
     name: str, request_id: str | int, session_id: str
-) -> RawJsonResponse | StreamingHttpResponse:
+) -> RawJsonResponse | RawStreamingResponse:
     """Return SSE stream for an existing session.
 
     See: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#listening-for-messages-from-the-server
@@ -610,10 +607,8 @@ async def handle_get_request(
 
     log.info("MCP GET %s - SSE stream for existing session %s", name, session_id)
     headers = {"Cache-Control": "no-cache", "Connection": "keep-alive"}
-    return StreamingHttpResponse(
-        streaming_content=_mcp_sse_stream(request_id, session_id),  # TODO!
-        request_log=None,  # TODO:
-        headers=headers,
+    return RawStreamingResponse(
+        streaming_content=_mcp_sse_stream(request_id, session_id), request_log=None, headers=headers
     )
 
 
@@ -725,7 +720,7 @@ async def mcp_server(
     is_initialize: bool = False,
     *args: Any,
     **kwargs: Any,
-) -> RawJsonResponse | StreamingHttpResponse:
+) -> RawJsonResponse | RawStreamingResponse:
     """
     Handles GET, POST and DELETE requests for /mcp-servers/{name}/mcp path.
     """

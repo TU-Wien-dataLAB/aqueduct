@@ -49,9 +49,8 @@ class RawStreamingResponse:
     def __init__(
         self,
         streaming_content: AsyncIterator[Any],
-        request_log: Request,  # TODO: for mcp requests, there's no request log!
-        transforms: list[Callable[[ModelResponseStream], ModelResponseStream]]
-        | None = None,  # TODO: fix types
+        request_log: Request | None,  # TODO: for mcp requests, there's no request log!
+        transforms: list[Callable[[ModelResponseStream], ModelResponseStream]] | None = None,
         **kwargs: Any,
     ) -> None:
         if not isinstance(streaming_content, AsyncIterator):

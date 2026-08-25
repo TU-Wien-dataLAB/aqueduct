@@ -27,6 +27,7 @@ from management.models import (
     Request,
     ServiceAccount,
     Snippet,
+    SnippetType,
     Team,
     TeamMembership,
     Token,
@@ -896,8 +897,9 @@ class SnippetAdminForm(forms.ModelForm):
 
     def clean_code(self) -> str:
         code = self.cleaned_data["code"]
+        require_subclass = self.cleaned_data.get("type") != SnippetType.PLUGIN
         try:
-            compile_snippet(code)
+            compile_snippet(code, require_subclass=require_subclass)
         except ValidationError as e:
             raise forms.ValidationError(str(e)) from e
         return code
@@ -908,11 +910,7 @@ SNIPPET_CONSOLE_SECURITY_WARNING = (
     "There is no sandboxing."
 )
 
-TEST_PAYLOAD_EXAMPLE = {
-    "email": "you@example.com",
-    "sub": "1234",
-    "groups": ["E123-Students", "admins"],
-}
+TEST_PAYLOAD_EXAMPLE = {"email": "you@example.com", "groups": ["E123-Students", "admins"]}
 
 
 @admin.register(Snippet)
@@ -994,7 +992,12 @@ class SnippetAdmin(admin.ModelAdmin):
                         self.message_user(request, f"Invalid JSON test input: {e}", messages.ERROR)
                 if parsed is not None:
                     results = self._run_console(snippet, parsed)
-                    self.message_user(request, "Test complete.", messages.SUCCESS)
+                    self.message_user(
+                        request,
+                        "Compilation succeeded. Output below shows method return values (no "
+                        "format validation).",
+                        messages.SUCCESS,
+                    )
 
         context = {
             **self.admin_site.each_context(request),
@@ -1028,7 +1031,7 @@ class SnippetAdmin(admin.ModelAdmin):
             lines.append(f"team_names(claims) -> {team_list!r}")
 
         if not team_list:
-            lines.append("display_team_names(team names) skipped: team_names() failed")
+            lines.append("display_team_names(team names) skipped: no team names")
             return lines
 
         try:

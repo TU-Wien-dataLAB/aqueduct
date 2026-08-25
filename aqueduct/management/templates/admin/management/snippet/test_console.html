@@ -4,6 +4,16 @@
 {% block extrastyle %}
   {{ block.super }}
   <link rel="stylesheet" href="{% static 'css/admin_custom.css' %}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
+  <style>
+    .CodeMirror {
+      border: 1px solid var(--border-color, #ccc);
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      height: auto;
+    }
+  </style>
 {% endblock %}
 
 {% block content %}
@@ -18,12 +28,12 @@
         <div class="form-row">
           <label for="id_code">Snippet code:</label>
           <textarea id="id_code" name="code" rows="40" class="vLargeTextField snippet-console-input snippet-console-code"
-            placeholder='class C(ConfigSnippet):
+            placeholder='class Test(ConfigSnippet):
     def org_name(self, claims):
         return claims.get("org")'>{{ code }}</textarea>
           <div class="help">Python class subclassing <code>ConfigSnippet</code> (auto-injected, no import needed).</div>
           <pre class="snippet-console-example"><span class="snippet-console-example-label">Example:</span>
-class C(ConfigSnippet):
+class Test(ConfigSnippet):
     def org_name(self, claims):
         return claims.get("org")</pre>
         </div>
@@ -32,7 +42,6 @@ class C(ConfigSnippet):
           <textarea id="id_payload" name="payload" rows="16" class="vLargeTextField snippet-console-input snippet-console-payload"
             placeholder='{
   "email": "you@example.com",
-  "sub": "1234",
   "groups": ["E123-Students", "admins"]
 }'>{{ payload }}</textarea>
           <div class="help">
@@ -45,12 +54,6 @@ class C(ConfigSnippet):
               <li><code>display_team_names(...)</code> receives that extracted list (not your raw input).</li>
             </ul>
           </div>
-          <pre class="snippet-console-example"><span class="snippet-console-example-label">Example claims to paste here:</span>
-{
-  "email": "you@example.com",
-  "sub": "1234",
-  "groups": ["E123-Students", "admins"]
-}</pre>
         </div>
       </fieldset>
       <div class="submit-row">
@@ -70,4 +73,36 @@ class C(ConfigSnippet):
     {% endif %}
   </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/matchbrackets.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/closebrackets.js"></script>
+<script>
+(function () {
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('textarea.snippet-console-code').forEach(function (ta) {
+      CodeMirror.fromTextArea(ta, {
+        lineNumbers: true,
+        mode: 'python',
+        indentUnit: 4,
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        viewportMargin: Infinity
+      });
+    });
+    document.querySelectorAll('textarea.snippet-console-payload').forEach(function (ta) {
+      CodeMirror.fromTextArea(ta, {
+        lineNumbers: true,
+        mode: {name: 'javascript', json: true},
+        indentUnit: 2,
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        viewportMargin: Infinity
+      });
+    });
+  });
+})();
+</script>
 {% endblock %}

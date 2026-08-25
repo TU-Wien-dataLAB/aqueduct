@@ -36,11 +36,14 @@ class ConfigSnippet:
         return DEFAULT_USER_GROUP
 
 
-def compile_snippet(code: str) -> ConfigSnippet:
+def compile_snippet(code: str, require_subclass: bool = True) -> ConfigSnippet | None:
     try:
         source = compile(code, "<snippet>", "exec")
     except SyntaxError as e:
         raise ValidationError(f"Syntax error: {e}") from e
+
+    if not require_subclass:
+        return None
 
     namespace: dict[str, Any] = {"ConfigSnippet": ConfigSnippet}
     try:
@@ -89,4 +92,8 @@ def _validate_signatures(cls: type) -> None:
 
 def get_config_snippet() -> ConfigSnippet:
     snippet = Snippet.objects.filter(type=SnippetType.CONFIG, active=True).first()
-    return compile_snippet(snippet.code) if snippet else ConfigSnippet()
+    if not snippet:
+        return ConfigSnippet()
+    compiled = compile_snippet(snippet.code)
+    assert compiled is not None  # config snippets always return an instance
+    return compiled

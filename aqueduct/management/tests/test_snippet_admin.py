@@ -115,6 +115,23 @@ class SnippetAdminFormTestCase(TestCase):
         )
         self.assertTrue(form.is_valid(), form.errors)
 
+    def test_plugin_does_not_require_config_snippet_subclass(self):
+        form = SnippetAdminForm(
+            data={
+                "name": "p",
+                "type": "plugin",
+                "active": True,
+                "code": "class Anything:\n    pass\n",
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_plugin_syntax_error_still_rejected(self):
+        form = SnippetAdminForm(
+            data={"name": "p", "type": "plugin", "active": True, "code": "def broken("}
+        )
+        self.assertFalse(form.is_valid())
+
     def test_orm_create_active_config_demotes_previous(self) -> None:
         seed_active_config(SNIPPET_ORG_CUSTOM)
         Snippet.objects.create(name="c2", type=SnippetType.CONFIG, active=True, code=VALID_CODE)
@@ -195,6 +212,16 @@ class SnippetAdminAuthorizationTestCase(TestCase):
         resp = self.client.get(self.changelist_url)
         self.assertEqual(resp.status_code, 403)
 
+    @override_settings(ADMIN_SUPERUSER_EMAILS=["someone-else@example.com"])
+    def test_admin_group_superuser_not_on_allowlist_forbidden(self):
+        # Simulate an account that is promoted to admin group (thus superuser)
+        # via admin-group login but is NOT on ADMIN_SUPERUSER_EMAILS.
+        # Being a superuser is necessary but NOT sufficient for the snippet admin.
+        user = User.objects.create_superuser(username="you", email="you@example.com", password="pw")
+        self.client.force_login(user)
+        resp = self.client.get(self.changelist_url)
+        self.assertEqual(resp.status_code, 403)
+
 
 @override_settings(ADMIN_SUPERUSER_EMAILS=[SUPERUSER_EMAIL])
 class SnippetConsoleTestCase(TestCase):
@@ -219,8 +246,7 @@ class SnippetConsoleTestCase(TestCase):
         self.assertContains(resp, "you@example.com")
         self.assertContains(resp, '"groups"')
         self.assertContains(resp, "E123-Students")
-        # Dimmed on-page example blocks + large editor are present.
-        self.assertContains(resp, "Example claims to paste here")
+        # Dimmed on-page code example + large editor are present.
         self.assertContains(resp, "snippet-console-example")
         self.assertContains(resp, "snippet-console-code")
 
@@ -230,7 +256,7 @@ class SnippetConsoleTestCase(TestCase):
             {"code": SNIPPET_ORG_FROM_FIRST_GROUP, "payload": json.dumps({"groups": ["acme"]})},
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "Test complete.")
+        self.assertContains(resp, "Compilation succeeded.")
         self.assertContains(resp, "org_name(claims)")
         self.assertContains(resp, "acme")
         self.assertContains(resp, "user_group(claims)")

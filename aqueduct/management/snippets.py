@@ -94,6 +94,4 @@ def get_config_snippet() -> ConfigSnippet:
     snippet = Snippet.objects.filter(type=SnippetType.CONFIG, active=True).first()
     if not snippet:
         return ConfigSnippet()
-    compiled = compile_snippet(snippet.code)
-    assert compiled is not None  # config snippets always return an instance
-    return compiled
+    return compile_snippet(snippet.code)

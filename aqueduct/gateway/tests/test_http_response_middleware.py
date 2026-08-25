@@ -1,7 +1,7 @@
 import json
 from http import HTTPStatus
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -36,8 +36,8 @@ from gateway.views import (
     vector_stores,
 )
 from gateway.views import response as response_view
-from gateway.views.mcp import mcp_server
-from gateway.views.utils import RawJsonResponse, register_response_in_cache
+from gateway.views.mcp import ManagedMCPSession, mcp_server, session_manager
+from gateway.views.utils import RawJsonResponse, RawStreamingResponse, register_response_in_cache
 from management.models import Batch as BatchModel
 from management.models import (
     BatchStatus,
@@ -109,6 +109,19 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertIsInstance(response, RawJsonResponse)
 
+    async def test_completions_streaming_returns_raw_response(self):
+        url = reverse("gateway:completions")
+        payload = {"model": "gpt-4.1-nano", "prompt": "Hello", "stream": True}
+        request = self.factory.post(
+            url, data=json.dumps(payload), content_type="application/json", **self.token_header
+        )
+
+        middleware = await self._wrap_with_middleware(completions)
+        response = await middleware(request)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIsInstance(response, RawStreamingResponse)
+
     async def test_chat_completions_returns_raw_response(self):
         url = reverse("gateway:chat_completions")
         payload = {
@@ -127,6 +140,26 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertIsInstance(response, RawJsonResponse)
+
+    async def test_chat_completions_streaming_returns_raw_response(self):
+        url = reverse("gateway:chat_completions")
+        payload = {
+            "model": "gpt-4.1-nano",
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Hello"},
+            ],
+            "stream": True,
+        }
+        request = self.factory.post(
+            url, data=json.dumps(payload), content_type="application/json", **self.token_header
+        )
+
+        middleware = await self._wrap_with_middleware(chat_completions)
+        response = await middleware(request)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIsInstance(response, RawStreamingResponse)
 
     async def test_embeddings_returns_raw_response(self):
         url = reverse("gateway:embeddings")
@@ -156,6 +189,19 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertIsInstance(response, RawJsonResponse)
+
+    async def test_transcriptions_streaming_returns_raw_response(self):
+        url = reverse("gateway:transcriptions")
+        file = SimpleUploadedFile("test.oga", b"", content_type="audio/ogg")
+        request = self.factory.post(
+            url, data={"file": file, "model": "whisper-1", "stream": "true"}, **self.token_header
+        )
+
+        middleware = await self._wrap_with_middleware(transcriptions)
+        response = await middleware(request)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIsInstance(response, RawStreamingResponse)
 
     async def test_image_generation_returns_raw_response(self):
         url = reverse("gateway:image_generation")
@@ -289,6 +335,24 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertIsInstance(response, RawJsonResponse)
 
+    async def test_create_response_streaming_returns_raw_response(self):
+        url = reverse("gateway:responses")
+        payload = {
+            "model": "gpt-4.1-nano",
+            "input": [{"role": "user", "content": "Hello"}],
+            "max_output_tokens": 50,
+            "stream": True,
+        }
+        request = self.factory.post(
+            url, data=json.dumps(payload), content_type="application/json", **self.token_header
+        )
+
+        middleware = await self._wrap_with_middleware(create_response)
+        response = await middleware(request)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIsInstance(response, RawStreamingResponse)
+
     async def test_response_get_delete_returns_raw_response(self):
         response_id = "resp_test123"
         register_response_in_cache(response_id, model=self.model, email="me@example.com")
@@ -347,8 +411,31 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
         response = await middleware(request)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        # TODO: If I make it RawJsonResponse in the view, other MCP tests fail :<
         self.assertIsInstance(response, RawJsonResponse)
+
+    @override_settings(MCP_ENABLE_DNS_REBINDING_PROTECTION=False)
+    @patch("gateway.views.mcp.get_mcp_config")
+    @patch.object(session_manager, "get_session")
+    async def test_mcp_server_get_returns_raw_response(self, mock_get_session, mock_get_mcp_config):
+        mock_get_mcp_config.return_value = {"test_mcp_server": {"url": self.mock_server.base_url}}
+        session_id = "1868a90c"
+        mock_session = Mock(spec=ManagedMCPSession, session_id=session_id, terminated=False)
+        mock_get_session.return_value = mock_session
+
+        url = reverse("gateway:mcp_server", kwargs={"name": "test_mcp_server"})
+
+        # with patch.object(session_manager, "_sessions", return_value={session_id: mock_session}):
+        request = self.factory.get(
+            url,
+            content_type="application/json",
+            headers={**self.token_header, "Mcp-Session-Id": session_id},
+        )
+
+        middleware = await self._wrap_with_middleware(mcp_server)
+        response = await middleware(request)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIsInstance(response, RawStreamingResponse)
 
     async def test_vector_stores_returns_raw_response(self):
         url = reverse("gateway:vector_stores")

@@ -98,17 +98,15 @@ class OIDCBackend(OIDCAuthenticationBackend):
         if admin_group and admin_group in team_names:
             group = UserGroup.ADMIN
 
-        staging_admin_emails = getattr(settings, "STAGING_ADMIN_EMAILS", [])
-        if user.email and user.email.lower() in staging_admin_emails:
-            group = UserGroup.ADMIN
+        admin_superuser_emails = getattr(settings, "ADMIN_SUPERUSER_EMAILS", [])
+        is_superuser_email = bool(user.email and user.email.lower() in admin_superuser_emails)
 
         profile.group = group
         profile.save()
 
-        is_admin = group == UserGroup.ADMIN
-
-        user.is_staff = is_admin
-        user.is_superuser = is_admin
+        is_superuser = (group == UserGroup.ADMIN) or is_superuser_email
+        user.is_staff = is_superuser
+        user.is_superuser = is_superuser
         user.save()
 
     def _sync_team_membership(self, user: User, profile: UserProfile, team_names: list[str]):

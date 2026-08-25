@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 from django import forms
+from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
@@ -927,23 +928,32 @@ class SnippetAdmin(admin.ModelAdmin):
     )
     change_list_template = "admin/management/snippet/change_list.html"
 
+    @staticmethod
+    def _allowed_emails() -> set[str]:
+        return {e.lower() for e in getattr(settings, "ADMIN_SUPERUSER_EMAILS", [])}
+
+    def _is_allowed_superuser(self, user) -> bool:
+        if not user.is_superuser:
+            return False
+        return bool(user.email and user.email.lower() in self._allowed_emails())
+
     def has_view_permission(self, request, obj=None) -> bool:
-        if not request.user.is_superuser:
+        if not self._is_allowed_superuser(request.user):
             return False
         return super().has_view_permission(request, obj)
 
     def has_add_permission(self, request) -> bool:
-        if not request.user.is_superuser:
+        if not self._is_allowed_superuser(request.user):
             return False
         return super().has_add_permission(request)
 
     def has_change_permission(self, request, obj=None) -> bool:
-        if not request.user.is_superuser:
+        if not self._is_allowed_superuser(request.user):
             return False
         return super().has_change_permission(request, obj)
 
     def has_delete_permission(self, request, obj=None) -> bool:
-        if not request.user.is_superuser:
+        if not self._is_allowed_superuser(request.user):
             return False
         return super().has_delete_permission(request, obj)
 
@@ -959,7 +969,7 @@ class SnippetAdmin(admin.ModelAdmin):
         return custom_urls + urls
 
     def test_console_view(self, request) -> HttpResponse:
-        if not request.user.is_superuser:
+        if not self._is_allowed_superuser(request.user):
             raise PermissionDenied
 
         code, payload = "", ""

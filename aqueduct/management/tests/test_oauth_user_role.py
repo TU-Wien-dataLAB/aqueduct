@@ -186,22 +186,23 @@ class UpdateUserRoleTestCase(TestCase):
         self.assertTrue(user.is_staff)
         self.assertTrue(user.is_superuser)
 
-    @override_settings(STAGING_ADMIN_EMAILS=["you@example.com"])
-    def test_dev_auto_admin_email_forced_admin(self):
-        """Emails in STAGING_ADMIN_EMAILS become admin with no snippet/groups."""
+    @override_settings(ADMIN_SUPERUSER_EMAILS=["you@example.com"])
+    def test_dev_auto_admin_email_forced_superuser_regardless_of_group(self):
+        """ADMIN_SUPERUSER_EMAILS emails become superuser even when their group is not admin."""
+        # No snippet / groups -> group stays 'user', but the allowlisted email is superuser.
         user, profile = self._make_user(email="you@example.com")
 
         self.backend._update_user_role(user, profile, [], {})
 
         profile.refresh_from_db()
         user.refresh_from_db()
-        self.assertEqual(profile.group, "admin")
+        self.assertEqual(profile.group, "user")
         self.assertTrue(user.is_staff)
         self.assertTrue(user.is_superuser)
 
-    @override_settings(STAGING_ADMIN_EMAILS=["you@example.com"])
+    @override_settings(ADMIN_SUPERUSER_EMAILS=["you@example.com"])
     def test_dev_auto_admin_ignores_case(self):
-        """STAGING_ADMIN_EMAILS matching is case-insensitive."""
+        """ADMIN_SUPERUSER_EMAILS matching is case-insensitive."""
         # Note: _make_user sets the email as given on the user; OIDC delivers a
         # mixed-case email but the user is the same account.
         user, profile = self._make_user(email="YOU@EXAMPLE.com")
@@ -210,12 +211,11 @@ class UpdateUserRoleTestCase(TestCase):
 
         profile.refresh_from_db()
         user.refresh_from_db()
-        self.assertEqual(profile.group, "admin")
         self.assertTrue(user.is_superuser)
 
-    @override_settings(STAGING_ADMIN_EMAILS=["someone-else@example.com"])
+    @override_settings(ADMIN_SUPERUSER_EMAILS=["someone-else@example.com"])
     def test_dev_auto_admin_email_mismatch_stays_user(self):
-        """An email not in STAGING_ADMIN_EMAILS is not forced to admin."""
+        """An email not in ADMIN_SUPERUSER_EMAILS is not made superuser (regardless of group)."""
         user, profile = self._make_user(email="you@example.com")
 
         self.backend._update_user_role(user, profile, [], {})

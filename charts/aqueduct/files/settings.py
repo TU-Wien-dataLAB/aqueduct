@@ -136,9 +136,8 @@ ENABLE_OAUTH_GROUP_CREATION = os.getenv("ENABLE_OAUTH_GROUP_CREATION", "True").l
 ENABLE_OAUTH_GROUP_REMOVAL = os.getenv("ENABLE_OAUTH_GROUP_REMOVAL", "True").lower() == "true"
 
 ADMIN_GROUP = os.getenv("ADMIN_GROUP", "")
-
-STAGING_ADMIN_EMAILS = [
-    e.strip().lower() for e in os.getenv("STAGING_ADMIN_EMAILS", "").split(",") if e.strip()
+ADMIN_SUPERUSER_EMAILS = [
+    e.strip().lower() for e in os.getenv("ADMIN_SUPERUSER_EMAILS", "").split(",") if e.strip()
 ]
 
 EXTRA_NAV_LINKS = {

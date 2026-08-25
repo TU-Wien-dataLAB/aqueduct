@@ -3,7 +3,7 @@
 import json
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from management.admin import SnippetAdminForm
@@ -16,6 +16,8 @@ from management.tests.helpers import (
 
 User = get_user_model()
 
+SUPERUSER_EMAIL = "you@example.com"
+
 VALID_CODE = """
 class C(ConfigSnippet):
     def org_name(self, claims):
@@ -23,6 +25,7 @@ class C(ConfigSnippet):
 """
 
 
+@override_settings(ADMIN_SUPERUSER_EMAILS=[SUPERUSER_EMAIL])
 class SnippetAdminFormTestCase(TestCase):
     def test_valid_code_passes(self):
         form = SnippetAdminForm(
@@ -152,10 +155,11 @@ class SnippetAdminFormTestCase(TestCase):
         self.assertEqual(Snippet.objects.filter(type=SnippetType.PLUGIN, active=True).count(), 1)
 
 
+@override_settings(ADMIN_SUPERUSER_EMAILS=[SUPERUSER_EMAIL])
 class SnippetAdminAuthorizationTestCase(TestCase):
     def setUp(self):
         self.superuser = User.objects.create_superuser(
-            username="admin", email="admin@example.com", password="pw"
+            username="admin", email=SUPERUSER_EMAIL, password="pw"
         )
         self.staff = User.objects.create_user(
             username="staff", email="staff@example.com", password="pw", is_staff=True
@@ -183,11 +187,20 @@ class SnippetAdminAuthorizationTestCase(TestCase):
         # Anonymous users are redirected to the login page (or 403), never 200.
         self.assertNotEqual(resp.status_code, 200)
 
+    def test_superuser_not_in_allowlist_forbidden_on_changelist(self):
+        other = User.objects.create_superuser(
+            username="other", email="other@example.com", password="pw"
+        )
+        self.client.force_login(other)
+        resp = self.client.get(self.changelist_url)
+        self.assertEqual(resp.status_code, 403)
 
+
+@override_settings(ADMIN_SUPERUSER_EMAILS=[SUPERUSER_EMAIL])
 class SnippetConsoleTestCase(TestCase):
     def setUp(self):
         self.superuser = User.objects.create_superuser(
-            username="admin", email="admin@example.com", password="pw"
+            username="admin", email=SUPERUSER_EMAIL, password="pw"
         )
         self.client.force_login(self.superuser)
         self.url = reverse("admin:management_snippet_test_console")

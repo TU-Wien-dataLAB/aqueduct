@@ -40,10 +40,9 @@ class UserTokensView(BaseAqueductView, TemplateView):
         # Effective limits for user-owned tokens (UserProfile + Org fallback)
         user_limits: LimitSet = LimitSet.from_objects(profile, profile.org)
 
-        # Current rate-limit usage per token (shown under each list item). Each
-        # token operates under ``user_limits`` independently; the bars report
-        # that token's own consumed request budget. Fetch every user-token
-        # bucket in a single ``cache.get_many``.
+        # Attach each token's current rate-limit usage (per minute/hour/day bucket)
+        # to the token object so templates can render it. All tokens are fetched in a
+        # single ``cache.get_many`` call to avoid one cache lookup per token.
         per_token_usage = get_per_token_usage([token.id for token in tokens])
         for token in tokens:
             token.usage = per_token_usage[token.id]  # type: ignore[attr-defined]

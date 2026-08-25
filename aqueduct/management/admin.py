@@ -663,7 +663,7 @@ class TokenAdmin(admin.ModelAdmin):
 
     def _usage_percent(self, token: Token, window_name: str, window_index: int) -> str:
         limits = self._token_limits(token)
-        # windows()[window_index] = (name, secs, rpm, itpm, otpm); [2] = requests-per-window.
+        # windows()[window_index] = (name, secs, rpm, itpm, otpm); [2] = requests-per-minute.
         limit = limits.windows()[window_index][2]
         used = self._usage_map().get(token.id, {}).get(window_name, {}).get("req", 0.0)
         if limit is None:

@@ -1,9 +1,9 @@
-"""Tests for the tokens list page — per-window request-usage progress bars.
+"""Tests for the tokens list page — per-window request-usage indicators.
 
 Covers the ``_rate_usage.html`` include driven by
-``gateway.rate_limiting.get_per_token_usage`` on ``UserTokensView``, rendered
-under each API key list item as two daisyUI linear ``progress`` bars
-(per hour / per day).
+``gateway.rate_limiting.get_per_token_usage`` on ``UserTokensView``: the usage
+values passed to the template (per hour / per day) and the HTML that renders
+them under each API key list item.
 """
 
 from typing import ClassVar
@@ -68,7 +68,7 @@ class TokensPageTest(TestCase):
         resp = self.client.get(reverse("tokens"))
 
         self.assertEqual(resp.status_code, 200)
-        # Two daisyUI linear progress bars are rendered (hour + day, side by side).
+        # The hour and day windows each render a progress bar with the used fill.
         self.assertTemplateUsed(resp, "management/_rate_usage.html")
         self.assertContains(resp, "progress-primary", count=2)
         # Bar fill values are clamped percentages of the derived caps.

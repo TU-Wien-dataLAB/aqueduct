@@ -9,7 +9,9 @@ from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import TransactionTestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from httpx import Request as HttpxRequest
 from httpx import Response
@@ -1599,9 +1601,6 @@ class TokenLimitTest(ChatCompletionsBase):
         blocked request returns 429 before ``log_request`` runs, so it must not
         touch ``management_request`` at all (no aggregate SELECT, no INSERT).
         """
-        from django.db import connection
-        from django.test.utils import CaptureQueriesContext
-
         self._setup_limits("org", "requests_per_minute", 1)
         # First request consumes the minute bucket (and creates its Request row).
         first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)

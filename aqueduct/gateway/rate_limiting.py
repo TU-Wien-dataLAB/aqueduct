@@ -78,14 +78,7 @@ def _ttl(window_seconds: int) -> int:
 
 
 def _cache_lock(lock_id: str, ttl: int) -> AbstractContextManager[bool]:
-    """Lazy import of ``cache_lock`` to avoid a circular import at module load.
-
-    ``gateway.views.utils`` lives in the ``gateway.views`` package whose ``__init__``
-    eagerly imports the view modules (which, in turn, import this module). Importing
-    it at module top-level would therefore create a load-order cycle. By the time
-    these functions run (request time) the app is fully loaded, so the import is a
-    cheap dict lookup.
-    """
+    """Lazy import of ``cache_lock`` to avoid a circular import at module load."""
     from gateway.views.utils import cache_lock
 
     return cache_lock(lock_id, ttl)
@@ -121,20 +114,30 @@ def _evaluate(
     return messages
 
 
+def has_any_limit(limits: LimitSet) -> bool:
+    """Return True if any window has any non-None limit.
+
+    Tokens with no limits at all skip the cache entirely (preserves the no-op
+    fast path). Because hour/day limits are derived from per-minute, this is True
+    iff at least one per-minute limit is set.
+    """
+    return any(
+        rpm is not None or itpm is not None or otpm is not None
+        for _name, _secs, rpm, itpm, otpm in limits.windows()
+    )
+
+
 def check_and_reserve(limits: LimitSet, token_id: int, model: str | None) -> tuple[bool, list[str]]:
     """Read all-window buckets, enforce limits, reserve the request slot in every window.
 
     Returns ``(allowed, exceeded_messages)``. On rare same-token lock contention we
-    fail open (allow the request) to avoid latency spikes — no worse than today's
-    read races.
+    fail open (allow the request) to avoid latency spikes — no worse than the read
+    races this replaces.
     """
+    if not has_any_limit(limits):
+        return True, []
 
     windows = limits.windows()
-    if not any(
-        rpm is not None or itpm is not None or otpm is not None
-        for _name, _secs, rpm, itpm, otpm in windows
-    ):
-        return True, []
 
     # The model's request-limit multiplier drives both the reservation delta
     # (each request consumes 1/multiplier of budget) and the request limit shown in
@@ -145,8 +148,10 @@ def check_and_reserve(limits: LimitSet, token_id: int, model: str | None) -> tup
     now = timezone.now()
     keys = [_bucket_key(token_id, name, now) for name, _secs, *_rest in windows]
 
-    with _cache_lock(_lock_key(token_id), settings.AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS) as got:
-        if not got:
+    with _cache_lock(
+        _lock_key(token_id), settings.AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS
+    ) as acquired:
+        if not acquired:
             log.warning("Rate-limit lock contention for token %s; failing open.", token_id)
             return True, []
 
@@ -178,8 +183,10 @@ def record_token_usage(token_id: int, usage: Usage) -> None:
     now = timezone.now()
     keys = [_bucket_key(token_id, name, now) for name, _secs in WINDOWS]
 
-    with _cache_lock(_lock_key(token_id), settings.AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS) as got:
-        if not got:
+    with _cache_lock(
+        _lock_key(token_id), settings.AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS
+    ) as acquired:
+        if not acquired:
             log.warning(
                 "Rate-limit lock contention for token %s while recording usage; skipping.", token_id
             )

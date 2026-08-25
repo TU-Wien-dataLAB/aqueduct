@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 import litellm
 import openai
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
@@ -84,7 +85,7 @@ def _openai_stream(
         # Record token usage into the rate-limit buckets. Streaming requests
         # defer recording to here (stream end) since token usage is only known
         # once the upstream stream completes.
-        record_token_usage(request_log.token_id, request_log.token_usage)
+        await sync_to_async(record_token_usage)(request_log.token_id, request_log.token_usage)
         # Streaming is done, yield the [DONE] chunk
         yield "data: [DONE]\n\n"
 

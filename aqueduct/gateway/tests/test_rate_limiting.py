@@ -362,9 +362,8 @@ class LimitSetResolutionTest(SimpleTestCase):
         self.assertEqual(windows[2][3], 5 * 1440)  # settings default daily mult
 
     def test_has_no_limit_fast_path(self):
-        # Re-import the helper used by the decorator to gate the cache call.
-        from gateway.views.decorators import _has_any_limit
+        from gateway.rate_limiting import has_any_limit
 
-        self.assertFalse(_has_any_limit(LimitSet()))
-        self.assertTrue(_has_any_limit(LimitSet(requests_per_minute=1)))
-        self.assertTrue(_has_any_limit(LimitSet(input_tokens_per_minute=1)))
+        self.assertFalse(has_any_limit(LimitSet()))
+        self.assertTrue(has_any_limit(LimitSet(requests_per_minute=1)))
+        self.assertTrue(has_any_limit(LimitSet(input_tokens_per_minute=1)))

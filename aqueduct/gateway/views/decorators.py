@@ -37,10 +37,10 @@ from gateway.config import (
     get_router,
     resolve_model_alias,
 )
-from gateway.rate_limiting import check_and_reserve, record_token_usage
+from gateway.rate_limiting import check_and_reserve, has_any_limit, record_token_usage
 from gateway.views.errors import error_response
 from gateway.views.utils import get_response_from_cache, in_wildcard
-from management.models import FileObject, LimitSet, Request, Token, VectorStore
+from management.models import FileObject, Request, Token, VectorStore
 
 log = logging.getLogger("aqueduct")
 
@@ -271,19 +271,6 @@ def ensure_usage(view_func: AsyncView) -> AsyncView:
     return wrapper
 
 
-def _has_any_limit(limits: LimitSet) -> bool:
-    """Return True if any window has any non-None limit.
-
-    Tokens with no limits at all skip the cache entirely (preserves the no-op
-    fast path). Because hour/day limits are derived from per-minute, this is True
-    iff at least one per-minute limit is set.
-    """
-    return any(
-        rpm is not None or itpm is not None or otpm is not None
-        for _name, _secs, rpm, itpm, otpm in limits.windows()
-    )
-
-
 def check_limits(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
@@ -297,7 +284,7 @@ def check_limits(view_func: AsyncView) -> AsyncView:
             limits = await sync_to_async(token.get_limit)()
             log.debug("Rate limits for Token %r (ID: %s): %s", token.name, token.id, limits)
 
-            if settings.AQUEDUCT_RATE_LIMIT_ENABLED and _has_any_limit(limits):
+            if settings.AQUEDUCT_RATE_LIMIT_ENABLED and has_any_limit(limits):
                 model = (kwargs.get("pydantic_model") or {}).get("model")
                 allowed, exceeded = await sync_to_async(check_and_reserve)(limits, token.id, model)
                 if not allowed:

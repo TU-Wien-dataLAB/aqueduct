@@ -1,6 +1,6 @@
 """Tests for the ``LimitMixin`` hourly/daily multiplier fields and validation.
 
-Covers §3.3/§4.2 of the cache-RPM plan:
+Covers:
 - ``LimitSet.from_objects`` resolves the two new fields (specific -> org -> None).
 - ``LimitSet.windows()`` applies settings defaults and scales per-minute limits.
 - Admin form fields for Org/Team/UserProfile accept and save the new fields.
@@ -15,6 +15,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 
+from management.admin import OrgAdminForm, TeamAdminForm, UserProfileAdminForm
 from management.models import LimitSet, Org, Team, UserProfile
 
 User = get_user_model()
@@ -115,8 +116,6 @@ class LimitValidationTest(TestCase):
         The form supplies the JSON exclusion fields, so full_clean() reaches
         clean() (a bare model.full_clean() would trip on the blank default []).
         """
-        from management.admin import OrgAdminForm
-
         form = OrgAdminForm(
             data={
                 "name": "OrgViaForm",
@@ -139,8 +138,6 @@ class AdminFormFieldsTest(TestCase):
     """The new fields are editable in the Django admin forms (lightweight check)."""
 
     def test_fields_present_in_admin_forms(self):
-        from management.admin import OrgAdminForm, TeamAdminForm, UserProfileAdminForm
-
         for form_class in (OrgAdminForm, TeamAdminForm, UserProfileAdminForm):
             fields = form_class.Meta.fields
             self.assertIn("hourly_limit_multiplier", fields)

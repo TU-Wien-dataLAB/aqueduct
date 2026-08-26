@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.middleware import AuthenticationMiddleware
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.http import HttpResponse, StreamingHttpResponse
 from django.test import AsyncRequestFactory, override_settings
 from django.urls import resolve, reverse
 
@@ -26,6 +27,7 @@ from gateway.views import (
     files,
     get_response_input_items,
     image_generation,
+    speech,
     transcriptions,
     vector_store,
     vector_store_file,
@@ -47,6 +49,7 @@ from management.models import (
     VectorStoreFile,
     VectorStoreStatus,
 )
+from mock_api.mock_configs import MockPlainTextConfig
 
 User = get_user_model()
 
@@ -175,6 +178,24 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertIsInstance(response, RawJsonResponse)
 
+    async def test_speech_returns_streaming_http_response(self):
+        """Speech view returns a regular StreamingHttpResponse, not a raw one."""
+        url = reverse("gateway:speech")
+        payload = {
+            "model": "gpt-4o-mini-tts",
+            "input": "Hello, this is a test of the text-to-speech system.",
+            "voice": "alloy",
+        }
+        request = self.factory.post(
+            url, data=payload, content_type="application/json", **self.token_header
+        )
+
+        middleware = await self._wrap_with_middleware(speech)
+        response = await middleware(request)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIsInstance(response, StreamingHttpResponse)
+
     async def test_transcriptions_returns_raw_response(self):
         url = reverse("gateway:transcriptions")
         file = SimpleUploadedFile("test.oga", b"", content_type="audio/ogg")
@@ -187,6 +208,25 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertIsInstance(response, RawJsonResponse)
+
+    async def test_transcriptions_text_format_returns_http_response(self):
+        """Transcriptions view with text-based format returns a regular HttpResponse"""
+        url = reverse("gateway:transcriptions")
+        file = SimpleUploadedFile("test.oga", b"", content_type="audio/ogg")
+        request = self.factory.post(
+            url,
+            data={"file": file, "model": "whisper-1", "response_format": "text"},
+            **self.token_header,
+        )
+
+        transcription = "Hello. This is a mock text transcription.\n"
+        mock_resp = MockPlainTextConfig(response_data=transcription)
+        with self.mock_server.patch_external_api(url, mock_resp):
+            middleware = await self._wrap_with_middleware(transcriptions)
+            response = await middleware(request)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIsInstance(response, HttpResponse)
 
     async def test_transcriptions_streaming_returns_raw_response(self):
         url = reverse("gateway:transcriptions")

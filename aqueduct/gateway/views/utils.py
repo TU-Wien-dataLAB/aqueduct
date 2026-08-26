@@ -32,12 +32,12 @@ class RawJsonResponse:
 
         self.content = data
         self.kwargs = kwargs or {}
+        self.content_type = self.kwargs.setdefault("content_type", "application/json")
+        # Just to be on the safe side, make header keys case-insensitive:
+        self.headers = ResponseHeaders(self.kwargs.setdefault("headers", {}))
         # The following mimics the BaseHttpResponse behaviour (argument called "status"
         # is assigned to the "status_code" attribute)
         self.status_code = self.kwargs.get("status", 200)
-        # Just to be on the safe side, make header keys case-insensitive:
-        self.headers = ResponseHeaders(self.kwargs.get("headers", {}))
-        self.content_type = self.kwargs.get("content_type", "application/json")
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} status_code={self.status_code}>"
@@ -60,12 +60,12 @@ class RawStreamingResponse:
         self.request_log = request_log
         self.transforms = transforms or []
         self.kwargs = kwargs or {}
+        self.content_type = self.kwargs.setdefault("content_type", "text/event-stream")
+        # Just to be on the safe side, make header keys case-insensitive:
+        self.headers = ResponseHeaders(self.kwargs.setdefault("headers", {}))
         # The following mimics the BaseHttpResponse behaviour (argument called "status"
         # is assigned to the "status_code" attribute)
         self.status_code = self.kwargs.get("status", 200)
-        # Just to be on the safe side, make header keys case-insensitive:
-        self.headers = ResponseHeaders(self.kwargs.get("headers", {}))
-        self.content_type = self.kwargs.get("content_type", "text/event-stream")
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} status_code={self.status_code}>"

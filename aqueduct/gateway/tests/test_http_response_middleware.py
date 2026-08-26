@@ -52,8 +52,6 @@ User = get_user_model()
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
-# TODO: models? and streaming responses
-
 
 @override_settings(
     OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/",

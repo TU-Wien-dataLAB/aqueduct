@@ -83,13 +83,13 @@ class HttpResponseMiddleware:
         if isinstance(response, RawJsonResponse):
             # Merge headers from response.headers (may have been modified after init)
             kwargs = response.kwargs.copy()
-            kwargs["headers"] = dict(response.headers)
+            kwargs["headers"].update(response.headers)
             return JsonResponse(response.content, **kwargs)
 
         if isinstance(response, RawStreamingResponse):
             # Merge headers from response.headers (may have been modified after init)
             kwargs = response.kwargs.copy()
-            kwargs["headers"] = dict(response.headers)
+            kwargs["headers"].update(response.headers)
 
             if request.path.startswith("/mcp-servers/"):  # what about is_initialize?
                 # MCP responses need special treatment... but this doesn't work still (TODO!)

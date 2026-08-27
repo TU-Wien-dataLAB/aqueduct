@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -14,13 +15,13 @@ log = logging.getLogger("aqueduct")
 
 
 class OIDCBackend(OIDCAuthenticationBackend):
-    def _org(self, claims) -> Org | None:
+    def _org(self, claims: dict[str, Any]) -> Org | None:
         if not (org_name := get_config_snippet().org_name(claims)):
             return None
         org, _ = Org.objects.get_or_create(name=org_name)
         return org
 
-    def _get_team_names(self, claims) -> list[str]:
+    def _get_team_names(self, claims: dict[str, Any]) -> list[str]:
         """
         Extract the raw team (group) names from OAuth claims.
 
@@ -77,7 +78,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         return team_mappings
 
     def _update_user_role(
-        self, user: User, profile: UserProfile, team_names: list[str], claims
+        self, user: User, profile: UserProfile, team_names: list[str], claims: dict[str, Any]
     ) -> None:
         snippet = get_config_snippet()
 
@@ -99,7 +100,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
             group = UserGroup.ADMIN
 
         admin_superuser_emails = getattr(settings, "ADMIN_SUPERUSER_EMAILS", [])
-        is_superuser_email = bool(user.email and user.email.lower() in admin_superuser_emails)
+        is_superuser_email = user.email and user.email.lower() in admin_superuser_emails
 
         profile.group = group
         profile.save()
@@ -226,7 +227,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
                         user.email,
                     )
 
-    def create_user(self, claims) -> User | None:
+    def create_user(self, claims: dict[str, Any]) -> User | None:
         org = self._org(claims)
         if not org:
             return None  # Authentication fails if no org can be determined
@@ -244,7 +245,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
         return user
 
-    def update_user(self, user, claims) -> User:
+    def update_user(self, user, claims: dict[str, Any]) -> User:
         """Update existing user with new claims, if necessary save, and return user"""
         org = self._org(claims)
         if not org:

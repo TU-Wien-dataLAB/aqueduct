@@ -36,7 +36,7 @@ from management.models import (
     VectorStoreFile,
     VectorStoreFileBatch,
 )
-from management.snippets import compile_snippet, get_config_snippet
+from management.snippets import ConfigSnippet, compile_snippet, get_config_snippet
 
 log = logging.getLogger("aqueduct")
 
@@ -905,11 +905,6 @@ class SnippetAdminForm(forms.ModelForm):
         return code
 
 
-SNIPPET_CONSOLE_SECURITY_WARNING = (
-    "This test console executes real server code as an authenticated superuser. "
-    "There is no sandboxing."
-)
-
 TEST_PAYLOAD_EXAMPLE = {"email": "you@example.com", "groups": ["E123-Students", "admins"]}
 
 
@@ -984,11 +979,12 @@ class SnippetAdmin(admin.ModelAdmin):
             except ValidationError as e:
                 self.message_user(request, f"Snippet failed to compile: {e}", messages.ERROR)
             else:
-                parsed = {}
+                parsed: dict | None = {}
                 if payload.strip():
                     try:
                         parsed = json.loads(payload)
                     except json.JSONDecodeError as e:
+                        parsed = None
                         self.message_user(request, f"Invalid JSON test input: {e}", messages.ERROR)
                 if parsed is not None:
                     results = self._run_console(snippet, parsed)
@@ -1002,7 +998,6 @@ class SnippetAdmin(admin.ModelAdmin):
         context = {
             **self.admin_site.each_context(request),
             "title": "Snippet test console",
-            "security_warning": SNIPPET_CONSOLE_SECURITY_WARNING,
             "code": code,
             "payload": payload,
             "results": results,
@@ -1011,7 +1006,7 @@ class SnippetAdmin(admin.ModelAdmin):
         return TemplateResponse(request, "admin/management/snippet/test_console.html", context)
 
     @staticmethod
-    def _run_console(snippet, payload: Any) -> list[str]:
+    def _run_console(snippet: ConfigSnippet, payload: Any) -> list[str]:
         lines = []
 
         for method_name in ("org_name", "user_group"):

@@ -7,6 +7,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from management.admin import SnippetAdminForm
+from management.auth import OIDCBackend
 from management.models import Snippet, SnippetType
 from management.tests.helpers import (
     SNIPPET_ORG_CUSTOM,
@@ -22,6 +23,12 @@ VALID_CODE = """
 class C(ConfigSnippet):
     def org_name(self, claims):
         return claims.get("org")
+"""
+
+SNIPPET_ALL_CLAIM_GROUPS = """
+class MyConfig(ConfigSnippet):
+    def team_names(self, claims):
+        return claims.get("groups") or []
 """
 
 
@@ -73,7 +80,15 @@ class SnippetAdminFormTestCase(TestCase):
         )
 
     def test_editing_active_config_kept_active_is_ok(self):
-        existing = seed_active_config(SNIPPET_ORG_CUSTOM)
+        # Start from a genuine multi-active state: bulk_create skips save(), so the
+        # model's auto-demotion does not fire and both configs are active.
+        existing = Snippet.objects.create(
+            name="c1", type=SnippetType.CONFIG, active=True, code=SNIPPET_ORG_CUSTOM
+        )
+        Snippet.objects.bulk_create(
+            [Snippet(name="c2", type=SnippetType.CONFIG, active=True, code=VALID_CODE)]
+        )
+        self.assertEqual(Snippet.objects.filter(type=SnippetType.CONFIG, active=True).count(), 2)
 
         form = SnippetAdminForm(
             data={"name": existing.name, "type": "config", "active": True, "code": VALID_CODE},
@@ -81,7 +96,10 @@ class SnippetAdminFormTestCase(TestCase):
         )
         self.assertTrue(form.is_valid(), form.errors)
         form.save()
+        # Keeping the edited config active demotes its active sibling: only one stays.
         self.assertEqual(Snippet.objects.filter(type=SnippetType.CONFIG, active=True).count(), 1)
+        existing.refresh_from_db()
+        self.assertTrue(existing.active)
 
     def test_inactive_config_allowed_alongside_active(self):
         seed_active_config(SNIPPET_ORG_CUSTOM)
@@ -155,8 +173,11 @@ class SnippetAdminFormTestCase(TestCase):
 
     def test_activating_config_does_not_touch_active_plugins(self) -> None:
         seed_active_config(SNIPPET_ORG_CUSTOM)
-        plugin = Snippet.objects.create(
+        plugin1 = Snippet.objects.create(
             name="p1", type=SnippetType.PLUGIN, active=True, code=VALID_CODE
+        )
+        plugin2 = Snippet.objects.create(
+            name="p2", type=SnippetType.PLUGIN, active=True, code=VALID_CODE
         )
 
         config = Snippet.objects.create(
@@ -166,10 +187,12 @@ class SnippetAdminFormTestCase(TestCase):
         self.assertTrue(config.active)
         # The newly-activated config demoted the old one (only 1 active config).
         self.assertEqual(Snippet.objects.filter(type=SnippetType.CONFIG, active=True).count(), 1)
-        # Active plugins are left untouched.
-        plugin.refresh_from_db()
-        self.assertTrue(plugin.active)
-        self.assertEqual(Snippet.objects.filter(type=SnippetType.PLUGIN, active=True).count(), 1)
+        # Active plugins are left untouched: both remain active.
+        plugin1.refresh_from_db()
+        plugin2.refresh_from_db()
+        self.assertTrue(plugin1.active)
+        self.assertTrue(plugin2.active)
+        self.assertEqual(Snippet.objects.filter(type=SnippetType.PLUGIN, active=True).count(), 2)
 
 
 @override_settings(ADMIN_SUPERUSER_EMAILS=[SUPERUSER_EMAIL])
@@ -213,11 +236,22 @@ class SnippetAdminAuthorizationTestCase(TestCase):
         self.assertEqual(resp.status_code, 403)
 
     @override_settings(ADMIN_SUPERUSER_EMAILS=["someone-else@example.com"])
-    def test_admin_group_superuser_not_on_allowlist_forbidden(self):
-        # Simulate an account that is promoted to admin group (thus superuser)
-        # via admin-group login but is NOT on ADMIN_SUPERUSER_EMAILS.
-        # Being a superuser is necessary but NOT sufficient for the snippet admin.
-        user = User.objects.create_superuser(username="you", email="you@example.com", password="pw")
+    def test_admin_group_superuser_requires_allowlisted_email(self):
+        # Drive a real OIDC login flow: the active snippet's team_names() surfaces the
+        # "admins" group, so ADMIN_GROUP promotes this user to superuser on login.
+        # Being a superuser alone is NOT sufficient — their email must also be on
+        # ADMIN_SUPERUSER_EMAILS to use the snippet admin.
+        seed_active_config(SNIPPET_ALL_CLAIM_GROUPS)
+        user = User.objects.create_user(username="you", email="you@example.com")
+        with override_settings(
+            ADMIN_GROUP="admins",
+            ENABLE_OAUTH_GROUP_MANAGEMENT=True,
+            OIDC_RP_SIGN_ALGO="HS256",
+            OIDC_RP_IDP_SIGN_KEY="test-key",
+        ):
+            OIDCBackend().update_user(user, {"groups": ["admins"]})
+        user.refresh_from_db()
+        self.assertTrue(user.is_superuser)  # promoted via admin-group membership
         self.client.force_login(user)
         resp = self.client.get(self.changelist_url)
         self.assertEqual(resp.status_code, 403)
@@ -237,6 +271,7 @@ class SnippetConsoleTestCase(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "Snippet test console")
         self.assertContains(resp, "executes real server code")
+        self.assertContains(resp, "restricted to superusers")
 
     def test_get_prefills_example_payload(self):
         resp = self.client.get(self.url)

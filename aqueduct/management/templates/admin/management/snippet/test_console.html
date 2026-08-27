@@ -4,14 +4,23 @@
 {% block extrastyle %}
   {{ block.super }}
   <link rel="stylesheet" href="{% static 'css/admin_custom.css' %}">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
   <style>
-    .CodeMirror {
+    .cm-host {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .cm-host-code {
+      height: 55vh;
+    }
+    .cm-host-payload {
+      height: 16rem;
+    }
+    .cm-editor {
+      height: 100%;
       border: 1px solid var(--border-color, #ccc);
       border-radius: 4px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 13px;
-      height: auto;
     }
   </style>
 {% endblock %}
@@ -20,7 +29,8 @@
 <div id="content-main">
   <div class="module">
     <p style="color:#b91c1c;font-weight:600;margin-bottom:1rem;">
-      <strong>Warning:</strong> {{ security_warning }} For this reason this console
+      <strong>Warning:</strong> This test console executes real server code as an
+      authenticated superuser. There is no sandboxing. For this reason this console
       (and snippet editing) is restricted to superusers.
     </p>
     <form method="post">{% csrf_token %}
@@ -74,35 +84,61 @@ class Test(ConfigSnippet):
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/python/python.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/javascript/javascript.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/matchbrackets.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/closebrackets.js"></script>
-<script>
-(function () {
-  document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('textarea.snippet-console-code').forEach(function (ta) {
-      CodeMirror.fromTextArea(ta, {
-        lineNumbers: true,
-        mode: 'python',
-        indentUnit: 4,
-        matchBrackets: true,
-        autoCloseBrackets: true,
-        viewportMargin: Infinity
+<!-- CodeMirror 6 (ES modules) via import map. Versions pinned to the exact
+     closure resolved by npm install codemirror@6.0.2 lang-python lang-json. -->
+<script type="importmap">
+{
+  "imports": {
+    "codemirror": "https://cdn.jsdelivr.net/npm/codemirror@6.0.2/dist/index.js",
+    "@codemirror/state": "https://cdn.jsdelivr.net/npm/@codemirror/state@6.7.1/dist/index.js",
+    "@codemirror/view": "https://cdn.jsdelivr.net/npm/@codemirror/view@6.43.9/dist/index.js",
+    "@codemirror/autocomplete": "https://cdn.jsdelivr.net/npm/@codemirror/autocomplete@6.20.3/dist/index.js",
+    "@codemirror/commands": "https://cdn.jsdelivr.net/npm/@codemirror/commands@6.11.0/dist/index.js",
+    "@codemirror/language": "https://cdn.jsdelivr.net/npm/@codemirror/language@6.12.4/dist/index.js",
+    "@codemirror/lint": "https://cdn.jsdelivr.net/npm/@codemirror/lint@6.9.7/dist/index.js",
+    "@codemirror/search": "https://cdn.jsdelivr.net/npm/@codemirror/search@6.7.1/dist/index.js",
+    "@codemirror/lang-python": "https://cdn.jsdelivr.net/npm/@codemirror/lang-python@6.2.1/dist/index.js",
+    "@codemirror/lang-json": "https://cdn.jsdelivr.net/npm/@codemirror/lang-json@6.0.2/dist/index.js",
+    "@lezer/common": "https://cdn.jsdelivr.net/npm/@lezer/common@1.5.2/dist/index.js",
+    "@lezer/highlight": "https://cdn.jsdelivr.net/npm/@lezer/highlight@1.2.3/dist/index.js",
+    "@lezer/lr": "https://cdn.jsdelivr.net/npm/@lezer/lr@1.4.10/dist/index.js",
+    "@lezer/python": "https://cdn.jsdelivr.net/npm/@lezer/python@1.1.19/dist/index.js",
+    "@lezer/json": "https://cdn.jsdelivr.net/npm/@lezer/json@1.0.3/dist/index.js",
+    "@marijn/find-cluster-break": "https://cdn.jsdelivr.net/npm/@marijn/find-cluster-break@1.0.4/src/index.js",
+    "style-mod": "https://cdn.jsdelivr.net/npm/style-mod@4.1.3/src/style-mod.js",
+    "w3c-keyname": "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
+    "crelt": "https://cdn.jsdelivr.net/npm/crelt@1.0.7/index.js"
+  }
+}
+</script>
+<script type="module">
+  import {EditorView, basicSetup} from "codemirror";
+  import {python} from "@codemirror/lang-python";
+  import {json} from "@codemirror/lang-json";
+
+  const editors = [];
+  function makeEditor(selector, lang, hostClass) {
+    document.querySelectorAll(selector).forEach(function (ta) {
+      const host = document.createElement("div");
+      host.className = "cm-host " + hostClass;
+      ta.parentNode.insertBefore(host, ta);
+      const view = new EditorView({
+        doc: ta.value,
+        extensions: [basicSetup, lang],
+        parent: host
       });
+      ta.hidden = true;
+      editors.push({ta: ta, view: view});
     });
-    document.querySelectorAll('textarea.snippet-console-payload').forEach(function (ta) {
-      CodeMirror.fromTextArea(ta, {
-        lineNumbers: true,
-        mode: {name: 'javascript', json: true},
-        indentUnit: 2,
-        matchBrackets: true,
-        autoCloseBrackets: true,
-        viewportMargin: Infinity
-      });
+  }
+  makeEditor("textarea.snippet-console-code", python(), "cm-host-code");
+  makeEditor("textarea.snippet-console-payload", json(), "cm-host-payload");
+
+  const form = document.querySelector("textarea.snippet-console-code").form;
+  form.addEventListener("submit", function () {
+    editors.forEach(function (item) {
+      item.ta.value = item.view.state.doc.toString();
     });
   });
-})();
 </script>
 {% endblock %}

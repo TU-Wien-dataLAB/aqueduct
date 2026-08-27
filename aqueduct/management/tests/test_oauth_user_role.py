@@ -187,7 +187,7 @@ class UpdateUserRoleTestCase(TestCase):
         self.assertTrue(user.is_superuser)
 
     @override_settings(ADMIN_SUPERUSER_EMAILS=["you@example.com"])
-    def test_dev_auto_admin_email_forced_superuser_regardless_of_group(self):
+    def test_admin_superuser_email_forced_superuser_regardless_of_group(self):
         """ADMIN_SUPERUSER_EMAILS emails become superuser even when their group is not admin."""
         # No snippet / groups -> group stays 'user', but the allowlisted email is superuser.
         user, profile = self._make_user(email="you@example.com")
@@ -201,7 +201,7 @@ class UpdateUserRoleTestCase(TestCase):
         self.assertTrue(user.is_superuser)
 
     @override_settings(ADMIN_SUPERUSER_EMAILS=["you@example.com"])
-    def test_dev_auto_admin_ignores_case(self):
+    def test_admin_superuser_email_ignores_case(self):
         """ADMIN_SUPERUSER_EMAILS matching is case-insensitive."""
         # Note: _make_user sets the email as given on the user; OIDC delivers a
         # mixed-case email but the user is the same account.
@@ -214,7 +214,7 @@ class UpdateUserRoleTestCase(TestCase):
         self.assertTrue(user.is_superuser)
 
     @override_settings(ADMIN_SUPERUSER_EMAILS=["someone-else@example.com"])
-    def test_dev_auto_admin_email_mismatch_stays_user(self):
+    def test_admin_superuser_email_mismatch_stays_user(self):
         """An email not in ADMIN_SUPERUSER_EMAILS is not made superuser (regardless of group)."""
         user, profile = self._make_user(email="you@example.com")
 

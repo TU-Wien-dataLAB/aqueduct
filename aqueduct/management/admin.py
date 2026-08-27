@@ -979,21 +979,19 @@ class SnippetAdmin(admin.ModelAdmin):
             except ValidationError as e:
                 self.message_user(request, f"Snippet failed to compile: {e}", messages.ERROR)
             else:
-                parsed: dict | None = {}
                 if payload.strip():
                     try:
                         parsed = json.loads(payload)
                     except json.JSONDecodeError as e:
-                        parsed = None
                         self.message_user(request, f"Invalid JSON test input: {e}", messages.ERROR)
-                if parsed is not None:
-                    results = self._run_console(snippet, parsed)
-                    self.message_user(
-                        request,
-                        "Compilation succeeded. Output below shows method return values (no "
-                        "format validation).",
-                        messages.SUCCESS,
-                    )
+                    else:
+                        results = self._run_console(snippet, parsed)
+                        self.message_user(
+                            request,
+                            "Compilation succeeded. Output below shows method return values (no "
+                            "format validation).",
+                            messages.SUCCESS,
+                        )
 
         context = {
             **self.admin_site.each_context(request),

@@ -2,7 +2,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable, Generator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 import litellm
@@ -21,6 +21,8 @@ from gateway.config import get_openai_client, get_router
 from management.models import Request, Usage
 
 log = logging.getLogger("aqueduct")
+
+T = TypeVar("T", bound=ModelResponseStream | dict[str, Any])
 
 
 class RawJsonResponse:
@@ -50,7 +52,7 @@ class RawStreamingResponse:
         self,
         streaming_content: AsyncIterator[Any],
         request_log: Request | None,
-        transforms: list[Callable[[ModelResponseStream], ModelResponseStream]] | None = None,
+        transforms: list[Callable[[T], T]] | None = None,
         **kwargs: Any,
     ) -> None:
         if not isinstance(streaming_content, AsyncIterator):

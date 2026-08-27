@@ -6,7 +6,7 @@ from functools import reduce
 from typing import Any, TypeVar
 
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from litellm.types.utils import ModelResponseStream
 
 from gateway.views.utils import RawJsonResponse, RawStreamingResponse, get_token_usage
@@ -15,6 +15,7 @@ from management.models import Usage
 log = logging.getLogger("aqueduct")
 
 
+ViewResult = HttpResponse | StreamingHttpResponse | RawJsonResponse | RawStreamingResponse
 T = TypeVar("T", bound=ModelResponseStream | dict[str, Any])
 
 
@@ -76,16 +77,15 @@ class HttpResponseMiddleware:
     Transform raw responses from the gateway views into valid HTTPResponses.
 
     This middleware should be applied after all data post-processing
-    middleware.
+    middleware. Note: expects ``get_response`` to be synchronous (views are
+    already wrapped by upstream middleware).
     """
 
-    def __init__(
-        self, get_response: Callable[[ASGIRequest], JsonResponse | StreamingHttpResponse]
-    ) -> None:
+    def __init__(self, get_response: Callable[[ASGIRequest], ViewResult]) -> None:
         self.get_response = get_response
 
-    def __call__(self, request: ASGIRequest) -> JsonResponse | StreamingHttpResponse:
-        """Transform a raw response from a gateway view into a valid HTTPResponse.
+    def __call__(self, request: ASGIRequest) -> JsonResponse | StreamingHttpResponse | HttpResponse:
+        """Transform a raw response from a gateway view into a valid HttpResponse.
 
         If the response is not an instance of ``RawJsonResponse``
         or ``RawStreamingResponse``, it is returned unchanged.

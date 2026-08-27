@@ -22,6 +22,13 @@ log = logging.getLogger("aqueduct")
 
 _T = TypeVar("_T")
 
+# Physical maxima used to validate the hourly/daily limit multipliers: an hour has
+# 60 minutes and a day has 1440 minutes (24 hours). A larger-window limit above
+# these is unreachable because the per-minute cap already bounds usage.
+MINUTES_PER_HOUR = 60
+HOURS_PER_DAY = 24
+MINUTES_PER_DAY = HOURS_PER_DAY * MINUTES_PER_HOUR
+
 
 # ── Legacy ID generators ──────────────────────────────────────────────
 # These are referenced by historical migrations (0004, 0005) and must remain
@@ -37,11 +44,20 @@ def generate_batch_id() -> str:
 
 @dataclasses.dataclass(frozen=True)  # frozen=True makes instances immutable
 class LimitSet:
-    """Represents a resolved set of rate limits."""
+    """Represents a resolved set of rate limits.
+
+    The per-minute limits are the primary caps. The hourly/daily limits are
+    derived from the per-minute limits via ``hourly_limit_multiplier`` /
+    ``daily_limit_multiplier`` ("how many minutes-worth of the per-minute rate
+    the larger window allows"). A ``None`` per-minute limit implies a ``None``
+    derived limit for that metric in every larger window.
+    """
 
     requests_per_minute: int | None = None
     input_tokens_per_minute: int | None = None
     output_tokens_per_minute: int | None = None
+    hourly_limit_multiplier: int | None = None
+    daily_limit_multiplier: int | None = None
 
     # Add future limit fields here with default None
 
@@ -52,6 +68,9 @@ class LimitSet:
         """
         Creates a LimitSet by resolving limits from a specific limiter
         (like Team or UserProfile) and a fallback Org limiter object.
+
+        Each field is resolved independently through the hierarchy
+        (specific -> org -> None), exactly like the per-minute fields.
 
         Args:
             specific_limiter: The object with the primary limits (e.g., Team, UserProfile).
@@ -78,7 +97,60 @@ class LimitSet:
             requests_per_minute=_resolve("requests_per_minute"),
             input_tokens_per_minute=_resolve("input_tokens_per_minute"),
             output_tokens_per_minute=_resolve("output_tokens_per_minute"),
+            hourly_limit_multiplier=_resolve("hourly_limit_multiplier"),
+            daily_limit_multiplier=_resolve("daily_limit_multiplier"),
         )
+
+    def _hourly_mult(self) -> int:
+        return (
+            settings.AQUEDUCT_HOURLY_LIMIT_MULTIPLIER
+            if self.hourly_limit_multiplier is None
+            else self.hourly_limit_multiplier
+        )
+
+    def _daily_mult(self) -> int:
+        return (
+            settings.AQUEDUCT_DAILY_LIMIT_MULTIPLIER
+            if self.daily_limit_multiplier is None
+            else self.daily_limit_multiplier
+        )
+
+    @staticmethod
+    def _scaled(base: int | None, mult: int) -> int | None:
+        return None if base is None else base * mult
+
+    def windows(self) -> list[tuple[str, int, int | None, int | None, int | None]]:
+        """Effective per-window limits.
+
+        Returns a list of ``(name, window_seconds, rpm, input_tokens, output_tokens)``,
+        finest window first (``min``, ``hour``, ``day``). Hour/day limits are derived
+        from the per-minute limits via the resolved multipliers; a ``None`` per-minute
+        limit yields a ``None`` derived limit for that metric.
+        """
+        h, d = self._hourly_mult(), self._daily_mult()
+        return [
+            (
+                "min",
+                60,
+                self.requests_per_minute,
+                self.input_tokens_per_minute,
+                self.output_tokens_per_minute,
+            ),
+            (
+                "hour",
+                3600,
+                self._scaled(self.requests_per_minute, h),
+                self._scaled(self.input_tokens_per_minute, h),
+                self._scaled(self.output_tokens_per_minute, h),
+            ),
+            (
+                "day",
+                86400,
+                self._scaled(self.requests_per_minute, d),
+                self._scaled(self.input_tokens_per_minute, d),
+                self._scaled(self.output_tokens_per_minute, d),
+            ),
+        ]
 
 
 class LimitMixin(models.Model):
@@ -102,9 +174,54 @@ class LimitMixin(models.Model):
         blank=True,
         help_text="Maximum output tokens allowed per minute. Null means use fallback or no limit.",
     )
+    hourly_limit_multiplier = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Hourly limit = per-minute limit x this. Null = fallback (default 60). "
+        "Valid range 1-60 (an hour has 60 minutes). Lower = stricter sustained cap.",
+    )
+    daily_limit_multiplier = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Daily limit = per-minute limit x this. Null = fallback (default 1440). "
+        "Valid range 1-1440 (a day has 1440 minutes). Lower = stricter sustained cap.",
+    )
 
     class Meta:
         abstract = True  # Important: Makes this a mixin, no DB table created
+
+    def clean(self) -> None:
+        """Validate the hourly/daily limit multipliers.
+
+        Because the per-minute window is the tightest, the most a token can do in
+        one hour is ``per_minute x 60`` and in one day ``per_minute x 1440``. A
+        larger-window limit above that is unreachable and therefore meaningless, so
+        the multipliers are bounded by the number of minutes in the window. The
+        lower bound ``1`` rejects ``0`` (which would make the derived limit ``0`` and
+        block every request).
+        """
+        super().clean()
+        errors: dict[str, str] = {}
+        if self.hourly_limit_multiplier is not None and not (
+            1 <= self.hourly_limit_multiplier <= MINUTES_PER_HOUR
+        ):
+            errors["hourly_limit_multiplier"] = "Must be between 1 and 60 (an hour has 60 minutes)."
+        if self.daily_limit_multiplier is not None and not (
+            1 <= self.daily_limit_multiplier <= MINUTES_PER_DAY
+        ):
+            errors["daily_limit_multiplier"] = (
+                "Must be between 1 and 1440 (a day has 1440 minutes)."
+            )
+        if (
+            self.hourly_limit_multiplier is not None
+            and self.daily_limit_multiplier is not None
+            and self.daily_limit_multiplier > HOURS_PER_DAY * self.hourly_limit_multiplier
+        ):
+            errors["daily_limit_multiplier"] = (
+                "Cannot exceed 24 x hourly_limit_multiplier (a day has 24 hours)."
+            )
+        if errors:
+            raise ValidationError(errors)
 
 
 class ModelExclusionMixin(models.Model):

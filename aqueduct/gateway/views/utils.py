@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 import litellm
 import openai
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
@@ -16,6 +17,7 @@ from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from openai import AsyncStream
 
 from gateway.config import get_openai_client, get_router
+from gateway.rate_limiting import record_token_usage
 from management.models import Request, Usage
 
 log = logging.getLogger("aqueduct")
@@ -80,6 +82,10 @@ def _openai_stream(
         request_log.token_usage = token_usage
         request_log.response_time_ms = int((end_time - start_time) * 1000)
         await request_log.asave()
+        # Record token usage into the rate-limit buckets. Streaming requests
+        # defer recording to here (stream end) since token usage is only known
+        # once the upstream stream completes.
+        await sync_to_async(record_token_usage)(request_log.token_id, request_log.token_usage)
         # Streaming is done, yield the [DONE] chunk
         yield "data: [DONE]\n\n"
 

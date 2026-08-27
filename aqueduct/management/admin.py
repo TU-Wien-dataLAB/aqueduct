@@ -12,13 +12,16 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import Q, QuerySet
+from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.html import format_html
 
 from gateway.config import get_files_api_client, get_router_config
+from gateway.rate_limiting import get_per_token_usage
 from management.models import (
     Batch,
     FileObject,
+    LimitSet,
     Org,
     Request,
     ServiceAccount,
@@ -130,6 +133,8 @@ class UserProfileAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm)
             "requests_per_minute",
             "input_tokens_per_minute",
             "output_tokens_per_minute",
+            "hourly_limit_multiplier",
+            "daily_limit_multiplier",
             "excluded_models",
             "merge_exclusion_lists",
             "excluded_mcp_servers",
@@ -405,6 +410,8 @@ class TeamAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
             "requests_per_minute",
             "input_tokens_per_minute",
             "output_tokens_per_minute",
+            "hourly_limit_multiplier",
+            "daily_limit_multiplier",
             "excluded_models",
             "merge_exclusion_lists",
             "excluded_mcp_servers",
@@ -443,6 +450,8 @@ class TeamAdmin(admin.ModelAdmin):
                     "requests_per_minute",
                     "input_tokens_per_minute",
                     "output_tokens_per_minute",
+                    "hourly_limit_multiplier",
+                    "daily_limit_multiplier",
                 )
             },
         ),
@@ -506,6 +515,8 @@ class TeamAdmin(admin.ModelAdmin):
                             "requests_per_minute",
                             "input_tokens_per_minute",
                             "output_tokens_per_minute",
+                            "hourly_limit_multiplier",
+                            "daily_limit_multiplier",
                         )
                     },
                 ),
@@ -544,6 +555,8 @@ class OrgAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
             "requests_per_minute",
             "input_tokens_per_minute",
             "output_tokens_per_minute",
+            "hourly_limit_multiplier",
+            "daily_limit_multiplier",
             "excluded_models",
             "merge_exclusion_lists",
             "excluded_mcp_servers",
@@ -597,9 +610,78 @@ class ServiceAccountAdmin(admin.ModelAdmin):
 
 @admin.register(Token)
 class TokenAdmin(admin.ModelAdmin):
-    list_display: ClassVar[tuple] = ("name", "expires_at", "user_link", "sa_link")
-    list_select_related: ClassVar[list] = ["user", "service_account", "service_account__team"]
+    list_display: ClassVar[tuple] = (
+        "name",
+        "expires_at",
+        "user_link",
+        "sa_link",
+        "hourly_usage",
+        "daily_usage",
+    )
+    list_select_related: ClassVar[list] = [
+        "user",
+        "service_account",
+        "service_account__team",
+        "user__profile__org",
+        "service_account__team__org",
+    ]
     list_filter: ClassVar[list] = ["service_account__team__name"]
+
+    def changelist_view(self, request, extra_context=None) -> HttpResponse:
+        # Stash the request so list_display methods can lazily build a single
+        # batched per-token usage map for the whole page (see ``_usage_map``).
+        self._request = request
+        return super().changelist_view(request, extra_context)
+
+    def _usage_map(self) -> dict[int, dict[str, dict[str, float]]]:
+        """Per-token current rate-limit usage, batch-fetched once per changelist render.
+
+        Mirrors ``gateway.rate_limiting.get_per_token_usage``: a single
+        ``cache.get_many`` over every ``(token, window)`` bucket. Cached on the
+        request object so the per-row ``list_display`` methods share one fetch.
+        """
+        request = self._request
+        usage_map = getattr(request, "_aqueduct_usage_map", None)
+        if usage_map is None:
+            token_ids = list(Token.objects.values_list("pk", flat=True))
+            usage_map = get_per_token_usage(token_ids) if token_ids else {}
+            request._aqueduct_usage_map = usage_map
+        return usage_map
+
+    def _token_limits(self, token: Token) -> LimitSet:
+        """Resolve the effective ``LimitSet`` from already-selected-related data.
+
+        Equivalent to ``token.get_limit()`` but reuses the prefetched
+        ``user__profile__org`` / ``service_account__team__org`` relations instead
+        of re-fetching the token (avoids an N+1 on the changelist).
+        """
+        if token.service_account:
+            team = token.service_account.team
+            return LimitSet.from_objects(team, team.org)
+        profile = token.user.profile
+        return LimitSet.from_objects(profile, profile.org)
+
+    def _usage_percent(self, token: Token, window_name: str, window_index: int) -> str:
+        limits = self._token_limits(token)
+        # windows()[window_index] = (name, secs, rpm, itpm, otpm); [2] = requests-per-minute.
+        limit = limits.windows()[window_index][2]
+        used = self._usage_map().get(token.id, {}).get(window_name, {}).get("req", 0.0)
+        if limit is None:
+            return "—"
+        pct = round(used / limit * 100) if limit else 0
+        return format_html(
+            '<span title="{} / {} requests">{}%</span>', f"{used:.0f}", f"{limit}", pct
+        )
+
+    def hourly_usage(self, token: Token) -> str:
+        return self._usage_percent(token, "hour", 1)
+
+    hourly_usage.short_description = "Hourly"
+
+    def daily_usage(self, token: Token) -> str:
+        return self._usage_percent(token, "day", 2)
+
+    daily_usage.short_description = "Daily"
 
     def sa_link(self, obj) -> str:
         if obj.service_account is None:

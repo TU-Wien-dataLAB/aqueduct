@@ -3,11 +3,11 @@ import logging
 import time
 from collections.abc import AsyncGenerator, Callable
 from functools import reduce
-from typing import Any
+from typing import Any, TypeVar
 
 from django.core.handlers.asgi import ASGIRequest
 from django.http import JsonResponse, StreamingHttpResponse
-from pydantic import BaseModel
+from litellm.types.utils import ModelResponseStream
 
 from gateway.views.utils import RawJsonResponse, RawStreamingResponse, get_token_usage
 from management.models import Usage
@@ -15,48 +15,60 @@ from management.models import Usage
 log = logging.getLogger("aqueduct")
 
 
-def _dump_to_json(chunk: BaseModel | dict[str, Any]) -> str:
-    """Convert the content chunk to a JSON string (suitable for StreamingHttpResponse)"""
-    if isinstance(chunk, BaseModel):
-        return chunk.model_dump_json(exclude_none=True, exclude_unset=True)
-    if isinstance(chunk, dict):
-        return json.dumps(chunk)
+T = TypeVar("T", bound=ModelResponseStream | dict[str, Any])
 
-    raise TypeError(f"Received unexpected streaming chunk type, {type(chunk)}!")
+
+def _apply_transforms(chunk: T, transforms: list[Callable[[T], T]]) -> T:
+    return reduce(lambda obj, tr: tr(obj), transforms, chunk)
 
 
 async def _openai_stream(response: RawStreamingResponse) -> AsyncGenerator[str, None]:
-    """Process streaming response with transforms and log token usage."""
+    """Post-process streaming response chunks with transforms, and log token usage and request time.
+
+    Note: the last yielded chunk, "data: [DONE]\n\n", is not MCP-compliant. Also,
+    MCP streaming responses do not have `request_log` attached. Use ``_mcp_stream()``
+    for post-processing of MCP streaming responses.
+    """
     token_usage = Usage(0, 0)
     start_time = time.monotonic()
     request_log = response.request_log
+    if request_log is None:
+        raise ValueError(f"Missing request_log for a streaming response: {RawStreamingResponse}!")
 
-    log.debug("Applying the following transforms to each chunk: %s", response.transforms)
+    log.debug(
+        "OpenAI stream. Applying the following transforms to each chunk: %s", response.transforms
+    )
     async for raw_chunk in response.streaming_content:
-        # Apply all registered transforms
-        chunk = reduce(lambda obj, tr: tr(obj), response.transforms, raw_chunk)
+        chunk = _apply_transforms(raw_chunk, response.transforms)
 
-        if request_log is not None:
-            # Retrieve token usage
-            chunk_usage = get_token_usage(chunk)
-            if chunk_usage.input_tokens > 0 or chunk_usage.output_tokens > 0:
-                token_usage = chunk_usage
+        chunk_usage = get_token_usage(chunk)
+        if chunk_usage.input_tokens > 0 or chunk_usage.output_tokens > 0:
+            token_usage = chunk_usage
 
-        chunk_str = _dump_to_json(chunk)
+        chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
 
         try:
             yield f"data: {chunk_str}\n\n"
         except Exception as e:
             yield f"data: {e!s}\n\n"
 
-    if request_log is not None:
-        end_time = time.monotonic()
-        request_log.token_usage = token_usage
-        request_log.response_time_ms = int((end_time - start_time) * 1000)
-        await request_log.asave()
+    end_time = time.monotonic()
+    request_log.token_usage = token_usage
+    request_log.response_time_ms = int((end_time - start_time) * 1000)
+    await request_log.asave()
 
-    # Streaming is done, yield the [DONE] chunk
     yield "data: [DONE]\n\n"
+
+
+async def _mcp_stream(response: RawStreamingResponse) -> AsyncGenerator[str]:
+    """MCP-compliant stream, with post-processing transforms applied to each chunk."""
+    log.debug(
+        "MCP stream. Applying the following transforms to each chunk: %s", response.transforms
+    )
+    async for raw_chunk in response.streaming_content:
+        chunk = _apply_transforms(raw_chunk, response.transforms)
+        chunk_str = json.dumps(chunk)
+        yield f"data: {chunk_str}\n\n"
 
 
 class HttpResponseMiddleware:
@@ -91,17 +103,9 @@ class HttpResponseMiddleware:
             kwargs = response.kwargs.copy()
             kwargs["headers"].update(response.headers)
 
-            if request.path.startswith("/mcp-servers/"):  # what about is_initialize?
-                # MCP responses need special treatment... but this doesn't work still (TODO!)
-                async def apply_transforms() -> AsyncGenerator[str]:
-                    async for raw_chunk in response.streaming_content:
-                        chunk = reduce(lambda obj, tr: tr(obj), response.transforms, raw_chunk)
-                        chunk_str = json.dumps(chunk)
-                        yield f"data: {chunk_str}\n\n"
-
-                streaming_content = apply_transforms()
+            if request.path.startswith("/mcp-servers/"):
+                streaming_content = _mcp_stream(response)
             else:
-                # for non-MCP responses
                 streaming_content = _openai_stream(response)
 
             return StreamingHttpResponse(streaming_content=streaming_content, **response.kwargs)

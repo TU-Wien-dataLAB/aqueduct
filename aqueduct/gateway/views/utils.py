@@ -49,7 +49,7 @@ class RawStreamingResponse:
     def __init__(
         self,
         streaming_content: AsyncIterator[Any],
-        request_log: Request | None,  # TODO: for mcp requests, there's no request log!
+        request_log: Request | None,
         transforms: list[Callable[[ModelResponseStream], ModelResponseStream]] | None = None,
         **kwargs: Any,
     ) -> None:

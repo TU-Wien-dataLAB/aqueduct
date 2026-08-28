@@ -86,19 +86,23 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
     Returns:
         The :class:`Usage` object with the used input and output token counts.
     """
-    # Handle responses API format (top-level usage or in response field)
     if isinstance(data, (dict, ModelResponseStream)):
         # LiteLLM models implement `.get()` method, but the OpenAI ones - don't.
         usage = data.get("usage")
+        if isinstance(usage, (dict, UsageModel)):
+            input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens", 0)
+            output_tokens = usage.get("completion_tokens") or usage.get("output_tokens", 0)
+            return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
     else:
-        data = data.model_dump(exclude_none=True, exclude_unset=True)
-        usage = data.get("usage")
-    if not usage and "response" in data:
-        usage = data["response"].get("usage")
-    if isinstance(usage, (dict, UsageModel)):
-        input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens", 0)
-        output_tokens = usage.get("completion_tokens") or usage.get("output_tokens", 0)
-        return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
+        # Handle responses API format (top-level usage or in response field)
+        usage = getattr(data, "usage", None)
+        if not usage and hasattr(data, "response"):
+            usage = getattr(data.response, "usage", None)
+        if usage:
+            input_tokens = usage.input_tokens
+            output_tokens = usage.output_tokens
+            return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
+
     return Usage(input_tokens=0, output_tokens=0)
 
 

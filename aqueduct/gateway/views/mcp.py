@@ -4,7 +4,7 @@ import uuid
 from collections.abc import AsyncGenerator, Callable
 from contextlib import suppress
 from enum import Enum
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import anyio
 import httpx
@@ -490,11 +490,8 @@ class MCPSessionManager:
 
 
 def parse_session_message(
-    received_message: SessionMessage | Exception,
-    request_id: str | int,
-    session_id: str,
-    json: bool = False,
-) -> dict[str, Any] | str:
+    received_message: SessionMessage | Exception, request_id: str | int, session_id: str
+) -> dict[str, Any]:
     jsonrpc_message: JSONRPCError | JSONRPCMessage
     if isinstance(received_message, Exception):
         log.error("Session %s returned exception: %s", session_id, received_message)
@@ -506,10 +503,6 @@ def parse_session_message(
     else:
         jsonrpc_message = received_message.message
 
-    if json:
-        # the returned message is a str
-        return jsonrpc_message.model_dump_json(exclude_none=True)
-    # Else, the return type is dict[str, Any]
     return jsonrpc_message.model_dump(exclude_none=True)
 
 
@@ -562,18 +555,15 @@ async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenera
     while True:
         try:
             message: SessionMessage | Exception = await session_manager.receive_message(session_id)
-            parsed_msg = parse_session_message(message, request_id, session_id)
-            yield cast("dict[str, Any]", parsed_msg)
+            yield parse_session_message(message, request_id, session_id)
         except (ClosedResourceError, httpx.HTTPStatusError, MCPSessionError) as e:
             log.info("SSE stream for session %s ended: %s", session_id, e)
             # Send proper session end notification
-            end_msg = parse_session_message(e, request_id, session_id)
-            yield cast("dict[str, Any]", end_msg)
+            yield parse_session_message(e, request_id, session_id)
             break  # Session is gone, stop the stream
         except Exception as e:
             log.exception("SSE stream for session %s unexpected error: %s", session_id, e)
-            error_data = parse_session_message(e, request_id, session_id)
-            yield cast("dict[str, Any]", error_data)
+            yield parse_session_message(e, request_id, session_id)
             continue  # Keep streaming
         finally:
             # Signal that this operation is done
@@ -668,10 +658,7 @@ async def handle_post_request(
         if isinstance(json_rpc_message.root, JSONRPCRequest):
             received_message = await session_manager.receive_message(session_id)
             session_id_str: str = session_id if session_id is not None else ""
-            response_data = parse_session_message(
-                received_message, request_id, session_id_str, json=False
-            )
-            response_data = cast("dict[str, Any]", response_data)
+            response_data = parse_session_message(received_message, request_id, session_id_str)
             response = RawJsonResponse(response_data)
         else:
             # If the request was a notification, return 202
@@ -680,8 +667,7 @@ async def handle_post_request(
     except (ClosedResourceError, httpx.HTTPStatusError, MCPSessionError) as e:
         # Transport errors should be converted to JSON-RPC errors
         log.exception("Transport error for MCP server '%s': %s", name, e)
-        session_error_response = parse_session_message(e, request_id, session_id_str, json=False)
-        session_error_response = cast("dict[str, Any]", session_error_response)
+        session_error_response = parse_session_message(e, request_id, session_id_str)
         response = RawJsonResponse(session_error_response, status=200)  # 200 for JSON-RPC errors
     finally:
         if operation_registered:

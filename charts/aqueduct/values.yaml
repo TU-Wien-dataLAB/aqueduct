@@ -52,11 +52,9 @@ celery:
   workerExtraEnv: []
   # Extra environment variables appended to the celery beat sidecar container only.
   beatExtraEnv: []
-  # Celery broker URL. Leave empty to auto-derive from the enabled broker
-  # backend: the Bitnami `redis` subchart (redis://redis-master:6379/0) when
-  # `redis` is enabled, or the Valkey release (redis://valkey:6379/0) when
-  # `valkey.enabled` is true and `redis` is disabled. Set explicitly to pin the
-  # app to a specific backend while both run side-by-side.
+  # Celery broker URL. Leave empty to auto-derive the Valkey release
+  # (redis://valkey:6379/0). Set explicitly to pin the app to an external
+  # broker instead.
   brokerUrl: ""
   workerConcurrency: 1
   requestRetentionDays: 7
@@ -78,20 +76,17 @@ tos:
 
 logLevel: "WARNING"
 
-# PostgreSQL connection for the Aqueduct app. Independent of which backend
-# deploys the database, so the Bitnami subchart and a CNPG cluster can coexist
-# during migration. Leave `host`/`name`/`username`/`password` empty to auto-derive
-# them from the enabled backend (CNPG cluster when `cnpg.enabled`, else the
-# Bitnami `postgresql` subchart). Set `host` explicitly to pin the app to a
-# specific backend while both run side by side.
+# PostgreSQL connection for the Aqueduct app. Leave `host`/`name`/`username`/
+# `password` empty to auto-derive them from the CNPG cluster (`cnpg.enabled`).
+# Set `host` explicitly to pin the app to an external PostgreSQL instance.
 database:
   host: ""
   port: "5432"
   name: ""
   username: ""
   # Credentials: provide `password` directly, OR reference an `existingSecret`.
-  # When CNPG is enabled and both are empty, the password is read from the
-  # operator-created `<cluster>-app` Secret.
+  # When both are empty, the password is read from the operator-created
+  # `<cluster>-app` Secret.
   password: ""
   existingSecret: ""
   secretKeys:
@@ -147,31 +142,11 @@ ingress:
   tls: false
   tlsSecretName: ""
 
-postgresql:
-  enabled: true
-  image:
-    repository: bitnamilegacy/postgresql
-  primary:
-    persistence:
-      enabled: true
-      size: 100Gi
-    resources:
-      limits:
-        cpu: "8"
-        memory: "24Gi"
-      requests:
-        cpu: "8"
-        memory: "24Gi"
-
-# CloudNativePG cluster (alternative to the Bitnami postgresql subchart).
-# Requires the CNPG operator to be installed in the cluster. Can be enabled
-# alongside `postgresql.enabled: true` so both databases run side by side while
-# data is migrated (see `bootstrapFromExternal` below and docs/deployment.md).
-# Because Bitnami wins when both are enabled, enabling CNPG never moves the app
-# on its own: set `database.host` (and credentials) to cut over once the clone
-# is ready.
+# CloudNativePG cluster (https://cloudnative-pg.io/). This is the only
+# PostgreSQL backend shipped by the chart and is enabled by default. It
+# requires the CNPG operator to be installed in the cluster.
 cnpg:
-  enabled: false
+  enabled: true
   cluster:
     nameOverride: ""       # defaults to {{ .Release.Name }}-postgres
     imageName: "ghcr.io/cloudnative-pg/postgresql:17.2"
@@ -185,51 +160,34 @@ cnpg:
     # postgresql.parameters, monitoring, affinity, backup, walArchive).
     spec: { }
   # Migrate data automatically by bootstrapping the CNPG cluster from an existing
-  # PostgreSQL instance (e.g. the Bitnami subchart) via pg_basebackup, instead of
-  # running initdb. CNPG clones the source at creation time and then promotes the
-  # clone to a primary, so no separate dump/restore job is needed. The source must
-  # allow replication connections (wal_level >= replica, a pg_hba `replication`
-  # rule, and a user with REPLICATION privilege, e.g. the `postgres` superuser).
-  # Only takes effect on first creation (the Cluster must not yet exist).
+  # PostgreSQL instance via pg_basebackup, instead of running initdb. CNPG clones
+  # the source at creation time and then promotes the clone to a primary, so no
+  # separate dump/restore job is needed. The source must allow replication
+  # connections (wal_level >= replica, a pg_hba `replication` rule, and a user
+  # with REPLICATION privilege, e.g. the `postgres` superuser). Only takes effect
+  # on first creation (the Cluster must not yet exist).
   bootstrapFromExternal:
     enabled: false
-    name: bitnami          # internal name referenced by pg_basebackup.source
+    name: external         # internal name referenced by pg_basebackup.source
     connection:
-      # Defaults to the Bitnami subchart connection when blank.
-      host: ""            # defaults to global.postgresql.fullnameOverride
-      port: ""            # defaults to global.postgresql.service.ports.postgresql
+      # host is required when bootstrapFromExternal.enabled is true.
+      host: ""
+      port: ""            # defaults to "5432" if blank
       database: ""        # db to connect to for the backup, defaults to "postgres"
       username: ""        # needs REPLICATION privilege, defaults to "postgres"
       # Source password: set `password` (plaintext; a Secret is auto-created) OR
-      # reference an `existingSecret`. For the Bitnami subchart this is typically
-      # the `postgres-password` in the `<release>-postgresql` Secret.
+      # reference an `existingSecret`.
       password: ""
       existingSecret: ""
       secretKeys:
         password: "password"
 
-redis:
-  enabled: true
-  fullnameOverride: "redis"
-  architecture: standalone
-  image:
-    repository: bitnamilegacy/redis
-  auth:
-    enabled: false
-  master:
-    persistence:
-      enabled: false
-
 # Valkey release (https://github.com/valkey-io/valkey-helm), a drop-in Redis
-# fork and alternative to the Bitnami `redis` subchart above. Opt-in: disabled
-# by default. Can be enabled alongside `redis` to run side-by-side during
-# migration. Because Bitnami redis wins when both are enabled, enabling Valkey
-# never moves the app on its own: disable `redis` (or set `celery.brokerUrl`
-# explicitly) to cut over. Celery uses the broker only for transient task
-# messages, so no data needs to be migrated — drain pending tasks before
-# cutting over.
+# fork. This is the only broker shipped by the chart and is enabled by default.
+# Celery uses the broker only for transient task messages; set
+# `celery.brokerUrl` to point at an external broker instead.
 valkey:
-  enabled: false
+  enabled: true
   fullnameOverride: "valkey"
   auth:
     enabled: false

@@ -141,19 +141,19 @@ Resolution order for each field:
 {{- end -}}
 
 {{- define "aqueduct.db.host" -}}
-{{- .Values.database.host | default (include "aqueduct.cnpg.host" .) -}}
+{{- .Values.database.host | default (ternary (include "aqueduct.cnpg.host" .) .Values.global.postgresql.fullnameOverride (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) -}}
 {{- end -}}
 
 {{- define "aqueduct.db.port" -}}
-{{- .Values.database.port | default "5432" -}}
+{{- .Values.database.port | default (ternary "5432" .Values.global.postgresql.service.ports.postgresql (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) | default "5432" -}}
 {{- end -}}
 
 {{- define "aqueduct.db.name" -}}
-{{- .Values.database.name | default (.Values.cnpg.cluster.database | default "aqueduct") -}}
+{{- .Values.database.name | default (ternary (.Values.cnpg.cluster.database | default "aqueduct") (.Values.global.postgresql.auth.database | default "aqueduct") (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) | default "aqueduct" -}}
 {{- end -}}
 
 {{- define "aqueduct.db.username" -}}
-{{- .Values.database.username | default (.Values.cnpg.cluster.owner | default "aqueduct") -}}
+{{- .Values.database.username | default (ternary (.Values.cnpg.cluster.owner | default "aqueduct") .Values.global.postgresql.auth.username (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) | default "aqueduct" -}}
 {{- end -}}
 
 {{/*
@@ -181,13 +181,18 @@ valueFrom:
   secretKeyRef:
     name: {{ $db.existingSecret }}
     key: {{ $db.secretKeys.password | default "password" }}
-{{- else if .Values.cnpg.enabled }}
+{{- else if and .Values.cnpg.enabled (not .Values.postgresql.enabled) }}
 valueFrom:
   secretKeyRef:
     name: {{ include "aqueduct.cnpg.clusterName" . }}-app
     key: password
+{{- else if .Values.global.postgresql.auth.existingSecret }}
+valueFrom:
+  secretKeyRef:
+    name: {{ .Values.global.postgresql.auth.existingSecret }}
+    key: {{ .Values.global.postgresql.auth.secretKeys.userPasswordKey | default "password" }}
 {{- else }}
-value: ""
+value: {{ .Values.global.postgresql.auth.password | quote }}
 {{- end }}
 {{- end -}}
 

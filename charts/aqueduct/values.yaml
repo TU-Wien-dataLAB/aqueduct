@@ -1,3 +1,21 @@
+global:
+  security:
+    allowInsecureImages: true # allow legacy containers until a new solution is found
+  postgresql:
+    fullnameOverride: "postgresql"
+    auth:
+      username: aqueduct
+      password: aqueduct
+      database: aqueduct
+      # existingSecret: ""
+      # secretKeys:
+      #   adminPasswordKey: ""
+      #   userPasswordKey: ""
+      #   replicationPasswordKey: ""
+    service:
+      ports:
+        postgresql: "5432"
+
 image:
   repository: ghcr.io/tu-wien-datalab/aqueduct
   tag: latest

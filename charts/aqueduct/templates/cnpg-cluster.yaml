@@ -46,7 +46,7 @@ spec:
   externalClusters:
     - name: {{ $mig.name | quote }}
       connectionParameters:
-        host: {{ required "cnpg.bootstrapFromExternal.connection.host is required when cnpg.bootstrapFromExternal.enabled is true" $mig.connection.host | quote }}
+        host: {{ $mig.connection.host | default "postgresql" | quote }}
         port: {{ $mig.connection.port | default "5432" | quote }}
         user: {{ $mig.connection.username | default "postgres" | quote }}
         dbname: {{ $mig.connection.database | default "postgres" | quote }}

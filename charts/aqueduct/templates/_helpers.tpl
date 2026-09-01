@@ -22,11 +22,9 @@ Usage:
   {{- end }}
 # Postgres configuration
 # The connection target is resolved by the `aqueduct.db.*` helpers below:
-# explicit `database.*` values win; otherwise the app stays on the Bitnami
-# `postgresql` subchart when it is enabled (current default, and the safe choice
-# while a CNPG cluster bootstraps side-by-side), and only auto-derives the CNPG
-# connection when Bitnami is disabled. Set `database.host` explicitly to cut over
-# to the CNPG cluster once its data is ready.
+# explicit `database.*` values win; otherwise the app auto-derives the CNPG
+# cluster connection. Set `database.host` explicitly to point at an external
+# PostgreSQL instance instead.
 - name: POSTGRES_DB
   value: {{ include "aqueduct.db.name" . | quote }}
 - name: POSTGRES_USER
@@ -124,18 +122,14 @@ Usage:
 {{/*
 PostgreSQL connection resolution helpers.
 
-These decouple where Aqueduct connects from which backend deploys the database,
-so the Bitnami subchart and a CNPG cluster can coexist during migration.
+These decouple where Aqueduct connects from which backend deploys the database.
+The CNPG cluster (when `cnpg.enabled`) is the only database backend shipped by
+this chart.
 
 Resolution order for each field:
-  1. explicit `database.*` value (use this to pin the app to a specific backend)
-  2. the Bitnami `postgresql` subchart, when `postgresql.enabled` (current
-     default; also the safe choice while a CNPG cluster bootstraps side-by-side)
-  3. the CNPG cluster, when `cnpg.enabled` and Bitnami is disabled
-  4. the Bitnami `global.postgresql.*` values (legacy default)
-
-Because Bitnami wins when both are enabled, enabling CNPG never moves the app
-on its own: set `database.host` (and credentials) explicitly to cut over.
+  1. explicit `database.*` value (use this to pin the app to an external
+     PostgreSQL instance)
+  2. the CNPG cluster, when `cnpg.enabled`
 */}}
 {{- define "aqueduct.cnpg.clusterName" -}}
 {{- .Values.cnpg.cluster.nameOverride | default (printf "%s-postgres" .Release.Name) -}}
@@ -147,25 +141,25 @@ on its own: set `database.host` (and credentials) explicitly to cut over.
 {{- end -}}
 
 {{- define "aqueduct.db.host" -}}
-{{- .Values.database.host | default (ternary (include "aqueduct.cnpg.host" .) .Values.global.postgresql.fullnameOverride (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) -}}
+{{- .Values.database.host | default (include "aqueduct.cnpg.host" .) -}}
 {{- end -}}
 
 {{- define "aqueduct.db.port" -}}
-{{- .Values.database.port | default (ternary "5432" .Values.global.postgresql.service.ports.postgresql (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) | default "5432" -}}
+{{- .Values.database.port | default "5432" -}}
 {{- end -}}
 
 {{- define "aqueduct.db.name" -}}
-{{- .Values.database.name | default (ternary (.Values.cnpg.cluster.database | default "aqueduct") (.Values.global.postgresql.auth.database | default "aqueduct") (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) | default "aqueduct" -}}
+{{- .Values.database.name | default (.Values.cnpg.cluster.database | default "aqueduct") -}}
 {{- end -}}
 
 {{- define "aqueduct.db.username" -}}
-{{- .Values.database.username | default (ternary (.Values.cnpg.cluster.owner | default "aqueduct") .Values.global.postgresql.auth.username (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) | default "aqueduct" -}}
+{{- .Values.database.username | default (.Values.cnpg.cluster.owner | default "aqueduct") -}}
 {{- end -}}
 
 {{/*
 Renders either `value: ...` or a `valueFrom: secretKeyRef: ...` block.
 Order: database.password -> database.existingSecret -> (CNPG <cluster>-app
-secret when CNPG-only, else Bitnami global.postgresql.auth).
+secret when CNPG-only).
 */}}
 {{/*
 Name of the Secret holding the source (external cluster) password, referenced
@@ -187,40 +181,22 @@ valueFrom:
   secretKeyRef:
     name: {{ $db.existingSecret }}
     key: {{ $db.secretKeys.password | default "password" }}
-{{- else if and .Values.cnpg.enabled (not .Values.postgresql.enabled) }}
+{{- else if .Values.cnpg.enabled }}
 valueFrom:
   secretKeyRef:
     name: {{ include "aqueduct.cnpg.clusterName" . }}-app
     key: password
-{{- else if .Values.global.postgresql.auth.existingSecret }}
-valueFrom:
-  secretKeyRef:
-    name: {{ .Values.global.postgresql.auth.existingSecret }}
-    key: {{ .Values.global.postgresql.auth.secretKeys.userPasswordKey | default "password" }}
 {{- else }}
-value: {{ .Values.global.postgresql.auth.password | quote }}
+value: ""
 {{- end }}
 {{- end -}}
 
 {{/*
-Celery broker (Redis/Valkey) connection resolution.
+Celery broker (Valkey) connection resolution.
 
-Mirrors the database helpers: decouples where the app connects from which
-backend deploys the broker, so the Bitnami `redis` subchart and a Valkey
-release can coexist during migration.
-
-Resolution order for the broker URL:
-  1. explicit `celery.brokerUrl` (use this to pin the app to a specific backend)
-  2. the Bitnami `redis` subchart service (`redis-master`), when `redis.enabled`
-     (current default; also the safe choice while a Valkey release stands up)
-  3. the Valkey release service (`valkey`), when `valkey.enabled` and Bitnami is
-     disabled
-
-Because Bitnami wins when both are enabled, enabling Valkey never moves the
-app on its own: set `celery.brokerUrl` explicitly (or disable `redis`) to cut
-over. Celery uses the broker only for transient task messages, so no data
-needs to be migrated.
+The Valkey release (when `valkey.enabled`) is the only broker shipped by this
+chart. Set `celery.brokerUrl` explicitly to point at an external broker.
 */}}
 {{- define "aqueduct.celery.brokerUrl" -}}
-{{- .Values.celery.brokerUrl | default (printf "redis://%s:6379/0" (ternary "valkey" "redis-master" (and .Values.valkey.enabled (not .Values.redis.enabled)))) -}}
+{{- .Values.celery.brokerUrl | default "redis://valkey:6379/0" -}}
 {{- end -}}

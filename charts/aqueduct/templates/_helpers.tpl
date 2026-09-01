@@ -141,19 +141,19 @@ Resolution order for each field:
 {{- end -}}
 
 {{- define "aqueduct.db.host" -}}
-{{- .Values.database.host | default (ternary (include "aqueduct.cnpg.host" .) .Values.global.postgresql.fullnameOverride (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) -}}
+{{- .Values.database.host | default (ternary (include "aqueduct.cnpg.host" .) .Values.global.postgresql.fullnameOverride .Values.cnpg.enabled) -}}
 {{- end -}}
 
 {{- define "aqueduct.db.port" -}}
-{{- .Values.database.port | default (ternary "5432" .Values.global.postgresql.service.ports.postgresql (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) | default "5432" -}}
+{{- .Values.database.port | default (ternary "5432" .Values.global.postgresql.service.ports.postgresql .Values.cnpg.enabled) | default "5432" -}}
 {{- end -}}
 
 {{- define "aqueduct.db.name" -}}
-{{- .Values.database.name | default (ternary (.Values.cnpg.cluster.database | default "aqueduct") (.Values.global.postgresql.auth.database | default "aqueduct") (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) | default "aqueduct" -}}
+{{- .Values.database.name | default (ternary (.Values.cnpg.cluster.database | default "aqueduct") (.Values.global.postgresql.auth.database | default "aqueduct") .Values.cnpg.enabled) | default "aqueduct" -}}
 {{- end -}}
 
 {{- define "aqueduct.db.username" -}}
-{{- .Values.database.username | default (ternary (.Values.cnpg.cluster.owner | default "aqueduct") .Values.global.postgresql.auth.username (and .Values.cnpg.enabled (not .Values.postgresql.enabled))) | default "aqueduct" -}}
+{{- .Values.database.username | default (ternary (.Values.cnpg.cluster.owner | default "aqueduct") .Values.global.postgresql.auth.username .Values.cnpg.enabled) | default "aqueduct" -}}
 {{- end -}}
 
 {{/*
@@ -181,7 +181,7 @@ valueFrom:
   secretKeyRef:
     name: {{ $db.existingSecret }}
     key: {{ $db.secretKeys.password | default "password" }}
-{{- else if and .Values.cnpg.enabled (not .Values.postgresql.enabled) }}
+{{- else if .Values.cnpg.enabled }}
 valueFrom:
   secretKeyRef:
     name: {{ include "aqueduct.cnpg.clusterName" . }}-app

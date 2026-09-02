@@ -1,6 +1,9 @@
 """
-Tests for OAuth team creation and membership management.
+Tests for OAuth team creation and membership management (driven by the active
+config snippet's team_names/display_team_names methods).
 """
+
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -9,27 +12,22 @@ from django.test import TestCase, override_settings
 from management.auth import OIDCBackend
 from management.models import Org, Team, TeamMembership, UserProfile
 from management.tests.helpers import (
-    extract_teams_keep_full,
-    map_team_names_keep_full,
-    sample_extract_teams,
-    sample_map_team_names,
+    SNIPPET_NO_TEAMS,
+    SNIPPET_TEAM_NAMES_AND_MAP,
+    SNIPPET_TEAM_NAMES_KEEP_FULL,
+    SNIPPET_TEAM_NAMES_PREFIX,
+    seed_active_config,
 )
 
 User = get_user_model()
 
-
-def custom_extract_teams(claims) -> list[str]:
-    """
-    Custom filter that only allows specific group names.
-    """
-    return ["E123", "E456"]
-
-
-def custom_map_team_names(team_names: list[str]) -> list[tuple[str, str]]:
-    """
-    Map team names keeping them as-is.
-    """
-    return [(name, name) for name in team_names]
+# Common OIDC/test settings; snippet functions are now seeded per test class.
+BASE_SETTINGS = {
+    "ENABLE_OAUTH_GROUP_MANAGEMENT": True,
+    "ENABLE_OAUTH_GROUP_CREATION": True,
+    "OIDC_RP_SIGN_ALGO": "HS256",
+    "OIDC_RP_IDP_SIGN_KEY": "test-key",
+}
 
 
 def sync_teams(backend, user, profile, claims):
@@ -37,18 +35,12 @@ def sync_teams(backend, user, profile, claims):
     backend._sync_team_membership(user, profile, backend._get_team_names(claims))
 
 
-@override_settings(
-    ENABLE_OAUTH_GROUP_MANAGEMENT=True,
-    ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
-    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
-    OIDC_RP_SIGN_ALGO="HS256",
-    OIDC_RP_IDP_SIGN_KEY="test-key",
-)
+@override_settings(**BASE_SETTINGS)
 class OAuthTeamCreationTestCase(TestCase):
     """Test team creation from OAuth groups."""
 
     def setUp(self):
+        seed_active_config(SNIPPET_TEAM_NAMES_AND_MAP)
         self.backend = OIDCBackend()
         self.org = Org.objects.create(name="test-org")
         self.user_group, _ = Group.objects.get_or_create(name="user")
@@ -98,16 +90,13 @@ class OAuthTeamCreationTestCase(TestCase):
 
         # Step 2: New user logs in with new mapping
         # (keeps full name: "E123-Students" -> "E123-Students")
+        seed_active_config(SNIPPET_TEAM_NAMES_KEEP_FULL)
         user2 = User.objects.create_user(username="user2", email="user2@example.com")
         user2.groups.add(self.user_group)
         profile2 = UserProfile.objects.create(user=user2, org=self.org)
 
-        with override_settings(
-            OAUTH_TEAM_NAMES_FUNCTION=extract_teams_keep_full,
-            OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_keep_full,
-        ):
-            backend = OIDCBackend()
-            sync_teams(backend, user2, profile2, claims)
+        backend = OIDCBackend()
+        sync_teams(backend, user2, profile2, claims)
 
         # Should rename existing team, not create a duplicate
         self.assertEqual(Team.objects.filter(org=self.org).count(), 1)
@@ -134,12 +123,9 @@ class OAuthTeamCreationTestCase(TestCase):
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
 
-        with override_settings(
-            OAUTH_TEAM_NAMES_FUNCTION=extract_teams_keep_full,
-            OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_keep_full,
-        ):
-            backend = OIDCBackend()
-            sync_teams(backend, user, profile, claims)
+        seed_active_config(SNIPPET_TEAM_NAMES_KEEP_FULL)
+        backend = OIDCBackend()
+        sync_teams(backend, user, profile, claims)
 
         # Should NOT rename old_team (name collision with blocker)
         old_team.refresh_from_db()
@@ -209,18 +195,12 @@ class OAuthTeamCreationTestCase(TestCase):
         self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 0)
 
 
-@override_settings(
-    ENABLE_OAUTH_GROUP_MANAGEMENT=True,
-    ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
-    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
-    OIDC_RP_SIGN_ALGO="HS256",
-    OIDC_RP_IDP_SIGN_KEY="test-key",
-)
+@override_settings(**BASE_SETTINGS)
 class OAuthTeamMembershipTestCase(TestCase):
     """Test OAuth team membership synchronization."""
 
     def setUp(self):
+        seed_active_config(SNIPPET_TEAM_NAMES_AND_MAP)
         self.backend = OIDCBackend()
         self.org = Org.objects.create(name="test-org")
         self.user_group, _ = Group.objects.get_or_create(name="user")
@@ -354,18 +334,12 @@ class OAuthTeamMembershipTestCase(TestCase):
         self.assertIsNone(team_in_other_org)
 
 
-@override_settings(
-    ENABLE_OAUTH_GROUP_MANAGEMENT=True,
-    ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
-    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
-    OIDC_RP_SIGN_ALGO="HS256",
-    OIDC_RP_IDP_SIGN_KEY="test-key",
-)
+@override_settings(**BASE_SETTINGS)
 class OAuthTeamEdgeCasesTestCase(TestCase):
     """Test OAuth team edge cases."""
 
     def setUp(self):
+        seed_active_config(SNIPPET_TEAM_NAMES_AND_MAP)
         self.backend = OIDCBackend()
         self.org = Org.objects.create(name="test-org")
         self.other_org = Org.objects.create(name="other-org")
@@ -442,24 +416,18 @@ class OAuthTeamEdgeCasesTestCase(TestCase):
         self.assertEqual(team_names, {"E123", "E456"})
 
 
-@override_settings(
-    ENABLE_OAUTH_GROUP_MANAGEMENT=True,
-    ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=lambda claims: [],
-    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=lambda names: [],
-    OIDC_RP_SIGN_ALGO="HS256",
-    OIDC_RP_IDP_SIGN_KEY="test-key",
-)
+@override_settings(**BASE_SETTINGS)
 class OAuthTeamSettingsTestCase(TestCase):
     """Test OAuth team settings behavior."""
 
     def setUp(self):
+        seed_active_config(SNIPPET_NO_TEAMS)
         self.backend = OIDCBackend()
         self.org = Org.objects.create(name="test-org")
         self.user_group, _ = Group.objects.get_or_create(name="user")
 
-    def test_default_function_creates_no_teams_or_memberships(self):
-        """Test that when the function returns None, no teams or memberships are created."""
+    def test_default_snippet_creates_no_teams_or_memberships(self):
+        """Test that an empty team_names/display mapping creates no teams."""
         claims = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
 
         user = User.objects.create_user(username="testuser", email="test@example.com")
@@ -471,25 +439,21 @@ class OAuthTeamSettingsTestCase(TestCase):
         self.assertEqual(Team.objects.filter(org=self.org).count(), 0)
         self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 0)
 
-    def test_custom_filter_function(self):
-        """Test custom filter function."""
+    def test_custom_filter_snippet(self):
+        """Test a snippet that always returns a fixed team name list."""
+        seed_active_config(SNIPPET_TEAM_NAMES_PREFIX)
+        backend = OIDCBackend()
+        claims = {"email": "test@example.com", "groups": ["E123", "E456", "E789"]}
 
-        with override_settings(
-            OAUTH_TEAM_NAMES_FUNCTION=custom_extract_teams,
-            OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=custom_map_team_names,
-        ):
-            backend = OIDCBackend()
-            claims = {"email": "test@example.com", "groups": ["E123", "E456", "E789"]}
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
 
-            user = User.objects.create_user(username="testuser", email="test@example.com")
-            user.groups.add(self.user_group)
-            profile = UserProfile.objects.create(user=user, org=self.org)
+        sync_teams(backend, user, profile, claims)
 
-            sync_teams(backend, user, profile, claims)
-
-            self.assertEqual(Team.objects.filter(org=self.org).count(), 2)
-            team_names = {t.name for t in Team.objects.filter(org=self.org)}
-            self.assertEqual(team_names, {"E123", "E456"})
+        self.assertEqual(Team.objects.filter(org=self.org).count(), 2)
+        team_names = {t.name for t in Team.objects.filter(org=self.org)}
+        self.assertEqual(team_names, {"E123", "E456"})
 
     def test_enabled_flag_false(self):
         """Test that no sync happens when ENABLE_OAUTH_GROUP_MANAGEMENT=False."""
@@ -537,26 +501,18 @@ class OAuthTeamSettingsTestCase(TestCase):
         self.assertFalse(manual_team.managed_by_oauth)
 
 
-@override_settings(
-    ENABLE_OAUTH_GROUP_MANAGEMENT=True,
-    ENABLE_OAUTH_GROUP_CREATION=True,
-    OAUTH_TEAM_NAMES_FUNCTION=sample_extract_teams,
-    OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=sample_map_team_names,
-    OIDC_RP_SIGN_ALGO="HS256",
-    OIDC_RP_IDP_SIGN_KEY="test-key",
-)
+@override_settings(**BASE_SETTINGS)
 class OAuthTeamIntegrationTestCase(TestCase):
     """Integration tests for OAuth team creation in create_user and update_user."""
 
     def setUp(self):
+        seed_active_config(SNIPPET_TEAM_NAMES_AND_MAP)
         self.backend = OIDCBackend()
         self.org = Org.objects.create(name="test-org")
         self.user_group, _ = Group.objects.get_or_create(name="user")
 
     def test_create_user_syncs_teams(self):
         """Test that create_user syncs teams from OAuth groups."""
-        from unittest.mock import patch
-
         claims = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
 
         with patch.object(OIDCBackend, "_org", return_value=self.org):

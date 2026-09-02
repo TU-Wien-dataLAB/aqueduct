@@ -37,6 +37,9 @@ jobs:
       - name: Ruff - check formatting
         run: ruff format --check
 
+      - name: Run mypy type check
+        run: cd aqueduct && uv run mypy
+
       - name: Gateway Tests
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

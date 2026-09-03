@@ -10,7 +10,6 @@ import anyio
 import httpx
 from anyio import ClosedResourceError
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -18,6 +17,8 @@ from mcp.client.streamable_http import StreamableHTTPTransport
 from mcp.shared.message import SessionMessage
 from mcp.types import CONNECTION_CLOSED, ErrorData, JSONRPCError, JSONRPCMessage, JSONRPCRequest
 from pydantic import TypeAdapter
+
+from gateway.views.utils import RawJsonResponse, RawStreamingResponse
 
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -344,7 +345,7 @@ class MCPSessionManager:
             self._cleanup_task = asyncio.create_task(self._cleanup_idle_sessions())
 
     async def _cleanup_idle_sessions(self, max_idle_seconds: int = 3600) -> None:
-        """Background task to cleanup idle sessions."""
+        """Background task to clean up idle sessions."""
         while True:
             await asyncio.sleep(60)
 
@@ -489,33 +490,21 @@ class MCPSessionManager:
 
 
 def parse_session_message(
-    received_message: SessionMessage | Exception,
-    reqeust_id: str | int,
-    session_id: str,
-    json: bool = False,
-) -> dict[str, Any] | str:
-    jsonrpc_message: JSONRPCError | JSONRPCMessage
+    received_message: SessionMessage | Exception, request_id: str | int, session_id: str
+) -> JSONRPCError | JSONRPCMessage:
     if isinstance(received_message, Exception):
         log.error("Session %s returned exception: %s", session_id, received_message)
-        jsonrpc_message = JSONRPCError(
+        return JSONRPCError(
             jsonrpc="2.0",
-            id=reqeust_id,
+            id=request_id,
             error=ErrorData(code=CONNECTION_CLOSED, message=str(received_message)),
         )
-    else:
-        jsonrpc_message = received_message.message
-
-    msg: dict[str, Any] | str
-    if json:
-        msg = jsonrpc_message.model_dump_json(exclude_none=True)
-    else:
-        msg = jsonrpc_message.model_dump(exclude_none=True)
-    return msg
+    return received_message.message
 
 
 def _validate_session(
     session: ManagedMCPSession | None, session_id: str | None, name: str
-) -> JsonResponse | None:
+) -> RawJsonResponse | None:
     if not session:
         log.warning("Session %s not found for MCP server '%s'", session_id, name)
         return error_response("Session not found", status=404)
@@ -534,7 +523,9 @@ def _validate_session(
     return None
 
 
-async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenerator[str, None]:
+async def _mcp_sse_stream(
+    request_id: str | int, session_id: str
+) -> AsyncGenerator[JSONRPCError | JSONRPCMessage]:
     """Stream MCP messages via Server-Sent Events with lifecycle coordination."""
     log.info("SSE stream started for session %s", session_id)
     session = await session_manager.get_session_with_retry(session_id)
@@ -552,8 +543,7 @@ async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenera
                 message=f"Session not ready (state: {session.state.value if session else 'None'})",
             ),
         )
-
-        yield f"data: {error_msg.model_dump_json(exclude_none=True)}\n\n"
+        yield error_msg
         return
 
     # Register stream lifetime to coordinate with session termination
@@ -563,18 +553,15 @@ async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenera
     while True:
         try:
             message: SessionMessage | Exception = await session_manager.receive_message(session_id)
-            message_json = parse_session_message(message, request_id, session_id, json=True)
-            yield f"data: {message_json}\n\n"
+            yield parse_session_message(message, request_id, session_id)
         except (ClosedResourceError, httpx.HTTPStatusError, MCPSessionError) as e:
             log.info("SSE stream for session %s ended: %s", session_id, e)
             # Send proper session end notification
-            end_msg = parse_session_message(e, request_id, session_id, json=True)
-            yield f"data: {end_msg}\n\n"
+            yield parse_session_message(e, request_id, session_id)
             break  # Session is gone, stop the stream
         except Exception as e:
             log.exception("SSE stream for session %s unexpected error: %s", session_id, e)
-            error_data = parse_session_message(e, request_id, session_id, json=True)
-            yield f"data: {error_data}\n\n"
+            yield parse_session_message(e, request_id, session_id)
             continue  # Keep streaming
         finally:
             # Signal that this operation is done
@@ -593,7 +580,7 @@ async def _ensure_session_manager_started() -> None:
 
 async def handle_get_request(
     name: str, request_id: str | int, session_id: str
-) -> JsonResponse | StreamingHttpResponse:
+) -> RawJsonResponse | RawStreamingResponse:
     """Return SSE stream for an existing session.
 
     See: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#listening-for-messages-from-the-server
@@ -608,10 +595,8 @@ async def handle_get_request(
 
     log.info("MCP GET %s - SSE stream for existing session %s", name, session_id)
     headers = {"Cache-Control": "no-cache", "Connection": "keep-alive"}
-    return StreamingHttpResponse(
-        streaming_content=_mcp_sse_stream(request_id, session_id),
-        content_type="text/event-stream",
-        headers=headers,
+    return RawStreamingResponse(
+        streaming_content=_mcp_sse_stream(request_id, session_id), request_log=None, headers=headers
     )
 
 
@@ -621,7 +606,7 @@ async def handle_post_request(
     request_id: str | int,
     session_id: str | None,
     is_initialize: bool,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """Send a message to MCP session or initialize new session when it is an initialization request.
 
     See: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#sending-messages-to-the-server
@@ -661,8 +646,9 @@ async def handle_post_request(
         session.register_operation_start()
         operation_registered = True
 
+    log.debug("Sending message to session %s", session_id)
+    session_id_str: str = session_id if session_id is not None else ""
     try:
-        log.debug("Sending message to session %s", session_id)
         session_message = SessionMessage(json_rpc_message)
         await session_manager.send_message(session_id, session_message)
 
@@ -670,29 +656,26 @@ async def handle_post_request(
         # Per MCP spec: "The server MUST NOT send a response to notifications"
         if isinstance(json_rpc_message.root, JSONRPCRequest):
             received_message = await session_manager.receive_message(session_id)
-            session_id_str: str = session_id if session_id is not None else ""
-            response_data = parse_session_message(
-                received_message, request_id, session_id_str, json=False
-            )
-            response = JsonResponse(response_data)
+            response_data = parse_session_message(received_message, request_id, session_id_str)
+            response = RawJsonResponse(response_data)
         else:
             # If the request was a notification, return 202
-            response = JsonResponse({"status": "accepted"}, status=202)
+            response = RawJsonResponse({"status": "accepted"}, status=202)
 
     except (ClosedResourceError, httpx.HTTPStatusError, MCPSessionError) as e:
         # Transport errors should be converted to JSON-RPC errors
         log.exception("Transport error for MCP server '%s': %s", name, e)
-        session_error_response = parse_session_message(e, request_id, session_id_str, json=False)
-        response = JsonResponse(session_error_response, status=200)  # 200 for JSON-RPC errors
+        session_error_response = parse_session_message(e, request_id, session_id_str)
+        response = RawJsonResponse(session_error_response, status=200)  # 200 for JSON-RPC errors
     finally:
         if operation_registered:
             session.register_operation_done()
 
-    response.headers["mcp-session-id"] = session_id if session_id is not None else ""
+    response.headers[MCP_SESSION_ID] = session_id if session_id is not None else ""
     return response
 
 
-async def handle_delete_request(name: str, session_id: str | None = None) -> JsonResponse:
+async def handle_delete_request(name: str, session_id: str | None = None) -> RawJsonResponse:
     """Terminate MCP session.
 
     See: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#session-management
@@ -701,7 +684,7 @@ async def handle_delete_request(name: str, session_id: str | None = None) -> Jso
 
     log.info("MCP DELETE %s - Closing session %s", name, session_id)
     await session_manager.terminate_session(session_id)
-    return JsonResponse({"status": "session_terminated"})
+    return RawJsonResponse({"status": "session_terminated"})
 
 
 @csrf_exempt
@@ -721,7 +704,7 @@ async def mcp_server(
     is_initialize: bool = False,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse | StreamingHttpResponse:
+) -> RawJsonResponse | RawStreamingResponse:
     """
     Handles GET, POST and DELETE requests for /mcp-servers/{name}/mcp path.
     """

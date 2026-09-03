@@ -177,6 +177,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
             cls.mcp_server_process = subprocess.Popen(
                 [
                     "npx",
+                    "--prefer-offline",  # only download when missing => tests can run offline
                     "-y",
                     "@modelcontextprotocol/server-everything@2025.11.25",
                     "streamableHttp",

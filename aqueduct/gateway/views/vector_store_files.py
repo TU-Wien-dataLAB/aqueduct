@@ -104,13 +104,8 @@ async def vector_store_files(
         remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
 
         # Return upstream data directly (IDs already match)
-        response_files = []
-        for remote_file in remote_files:
-            file_data = remote_file.model_dump(mode="json")
-            response_files.append(file_data)
-
         return RawJsonResponse(
-            {"object": "list", "data": response_files, "has_more": False}, status=200
+            {"object": "list", "data": remote_files, "has_more": False}, status=200
         )
 
     # POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
@@ -162,9 +157,7 @@ async def vector_store_files(
         return error_response(f"Vector store file limit reached ({max_files})", status=403)
 
     # Return upstream response directly (IDs already match)
-    response_data = remote_vs_file.model_dump(mode="json")
-
-    return RawJsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_vs_file, status=200)
 
 
 @csrf_exempt
@@ -220,9 +213,7 @@ async def vector_store_file(
             return error_response("Vector store file not found.", param="file_id", status=404)
 
         # Return upstream response directly (IDs already match)
-        response_data = remote_vs_file.model_dump(mode="json")
-
-        return RawJsonResponse(response_data, status=200)
+        return RawJsonResponse(remote_vs_file, status=200)
 
     if request.method == "POST":
         # Update file attributes
@@ -238,9 +229,7 @@ async def vector_store_file(
         remote_vs_file = await client.vector_stores.files.update(**update_kwargs)
 
         # Return upstream response directly (IDs already match)
-        response_data = remote_vs_file.model_dump(mode="json")
-
-        return RawJsonResponse(response_data, status=200)
+        return RawJsonResponse(remote_vs_file, status=200)
 
     await vs_file_obj.adelete_upstream(client)
 
@@ -300,6 +289,4 @@ async def vector_store_file_content(
     )
 
     # FileContentResponse and AsyncPage[FileContentResponse] are both Pydantic models
-    response_data = content_response.model_dump()
-
-    return RawJsonResponse(response_data)
+    return RawJsonResponse(content_response)

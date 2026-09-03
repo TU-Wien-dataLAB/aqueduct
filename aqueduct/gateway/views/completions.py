@@ -50,9 +50,8 @@ async def completions(
     if isinstance(completion, TextCompletionStreamWrapper):
         return RawStreamingResponse(streaming_content=completion, request_log=request_log)
     if isinstance(completion, TextCompletionResponse):
-        data = completion.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = get_token_usage(data)
-        return RawJsonResponse(data=data, status=200)
+        request_log.token_usage = get_token_usage(completion)
+        return RawJsonResponse(data=completion, status=200)
     raise NotImplementedError(
         f"Completion for response type {type(completion)} is not implemented."
     )

@@ -491,19 +491,15 @@ class MCPSessionManager:
 
 def parse_session_message(
     received_message: SessionMessage | Exception, request_id: str | int, session_id: str
-) -> dict[str, Any]:
-    jsonrpc_message: JSONRPCError | JSONRPCMessage
+) -> JSONRPCError | JSONRPCMessage:
     if isinstance(received_message, Exception):
         log.error("Session %s returned exception: %s", session_id, received_message)
-        jsonrpc_message = JSONRPCError(
+        return JSONRPCError(
             jsonrpc="2.0",
             id=request_id,
             error=ErrorData(code=CONNECTION_CLOSED, message=str(received_message)),
         )
-    else:
-        jsonrpc_message = received_message.message
-
-    return jsonrpc_message.model_dump(exclude_none=True)
+    return received_message.message
 
 
 def _validate_session(
@@ -527,7 +523,9 @@ def _validate_session(
     return None
 
 
-async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenerator[dict[str, Any]]:
+async def _mcp_sse_stream(
+    request_id: str | int, session_id: str
+) -> AsyncGenerator[JSONRPCError | JSONRPCMessage]:
     """Stream MCP messages via Server-Sent Events with lifecycle coordination."""
     log.info("SSE stream started for session %s", session_id)
     session = await session_manager.get_session_with_retry(session_id)
@@ -545,7 +543,7 @@ async def _mcp_sse_stream(request_id: str | int, session_id: str) -> AsyncGenera
                 message=f"Session not ready (state: {session.state.value if session else 'None'})",
             ),
         )
-        yield error_msg.model_dump(exclude_none=True)
+        yield error_msg
         return
 
     # Register stream lifetime to coordinate with session termination
@@ -648,8 +646,9 @@ async def handle_post_request(
         session.register_operation_start()
         operation_registered = True
 
+    log.debug("Sending message to session %s", session_id)
+    session_id_str: str = session_id if session_id is not None else ""
     try:
-        log.debug("Sending message to session %s", session_id)
         session_message = SessionMessage(json_rpc_message)
         await session_manager.send_message(session_id, session_message)
 
@@ -657,7 +656,6 @@ async def handle_post_request(
         # Per MCP spec: "The server MUST NOT send a response to notifications"
         if isinstance(json_rpc_message.root, JSONRPCRequest):
             received_message = await session_manager.receive_message(session_id)
-            session_id_str: str = session_id if session_id is not None else ""
             response_data = parse_session_message(received_message, request_id, session_id_str)
             response = RawJsonResponse(response_data)
         else:

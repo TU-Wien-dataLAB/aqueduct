@@ -60,9 +60,8 @@ async def transcriptions(
             openai.types.audio.transcription_verbose.TranscriptionVerbose,
         ),
     ):
-        data = transcription.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = get_token_usage(data)
-        return RawJsonResponse(data=data, status=200)
+        request_log.token_usage = get_token_usage(transcription)
+        return RawJsonResponse(data=transcription, status=200)
     if isinstance(transcription, str):
         # Text-based formats (VTT, SRT, text) return plain strings
         return HttpResponse(

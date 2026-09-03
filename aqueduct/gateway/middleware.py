@@ -1,13 +1,14 @@
-import json
 import logging
 import time
 from collections.abc import AsyncGenerator, Callable
 from functools import reduce
-from typing import Any, TypeVar
+from typing import TypeVar
 
 from django.core.handlers.asgi import ASGIRequest
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from litellm.types.utils import ModelResponseStream
+from mcp.types import JSONRPCMessage
+from pydantic import BaseModel
 
 from gateway.views.utils import RawJsonResponse, RawStreamingResponse, get_token_usage
 from management.models import Usage
@@ -16,7 +17,7 @@ log = logging.getLogger("aqueduct")
 
 
 ViewResult = HttpResponse | StreamingHttpResponse | RawJsonResponse | RawStreamingResponse
-T = TypeVar("T", bound=ModelResponseStream | dict[str, Any])
+T = TypeVar("T", bound=ModelResponseStream | JSONRPCMessage)
 
 
 def _apply_transforms(chunk: T, transforms: list[Callable[[T], T]]) -> T:
@@ -68,7 +69,7 @@ async def _mcp_stream(response: RawStreamingResponse) -> AsyncGenerator[str]:
     )
     async for raw_chunk in response.streaming_content:
         chunk = _apply_transforms(raw_chunk, response.transforms)
-        chunk_str = json.dumps(chunk)
+        chunk_str = chunk.model_dump_json(exclude_none=True)
         yield f"data: {chunk_str}\n\n"
 
 
@@ -96,6 +97,22 @@ class HttpResponseMiddleware:
             # Merge headers from response.headers (may have been modified after init)
             kwargs = response.kwargs.copy()
             kwargs["headers"].update(response.headers)
+
+            if isinstance(response.content, BaseModel):
+                response.content = response.content.model_dump(
+                    exclude_none=True, exclude_unset=True, mode="json"
+                )
+            else:
+                for k, v in response.content.items():
+                    if isinstance(v, BaseModel):
+                        # Content can be a dict containing models as values
+                        response.content[k] = v.model_dump()
+                    elif isinstance(v, (list, tuple)) and any(
+                        isinstance(item, BaseModel) for item in v
+                    ):
+                        # Content can be a dict containing a list of models
+                        response.content[k] = [item.model_dump() for item in v]
+
             return JsonResponse(response.content, **kwargs)
 
         if isinstance(response, RawStreamingResponse):

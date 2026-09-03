@@ -188,9 +188,7 @@ async def vector_store_file_batches(
         return error_response("File limit exceeded", status=403)
 
     # Return upstream response directly (IDs already match)
-    response_data = remote_batch.model_dump(mode="json")
-
-    return RawJsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_batch, status=200)
 
 
 @csrf_exempt
@@ -252,9 +250,7 @@ async def vector_store_file_batch(
         )
 
     # Return upstream response directly (IDs already match)
-    response_data = remote_batch.model_dump(mode="json")
-
-    return RawJsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_batch, status=200)
 
 
 @csrf_exempt
@@ -317,9 +313,7 @@ async def vector_store_file_batch_cancel(
     )
 
     # Return upstream response directly (IDs already match)
-    response_data = remote_batch.model_dump(mode="json")
-
-    return RawJsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_batch, status=200)
 
 
 @csrf_exempt
@@ -370,11 +364,4 @@ async def vector_store_file_batch_files(
 
     # Return upstream response directly (IDs already match)
     remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
-    response_files = []
-    for remote_file in remote_files:
-        file_data = remote_file.model_dump(mode="json")
-        response_files.append(file_data)
-
-    return RawJsonResponse(
-        {"object": "list", "data": response_files, "has_more": False}, status=200
-    )
+    return RawJsonResponse({"object": "list", "data": remote_files, "has_more": False}, status=200)

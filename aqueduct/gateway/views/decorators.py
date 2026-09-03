@@ -9,7 +9,7 @@ from collections.abc import Callable, Coroutine, Iterable
 from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import litellm
@@ -24,7 +24,7 @@ from django.db.models import Count, Sum
 from django.http import HttpResponse, StreamingHttpResponse
 from django.urls import reverse
 from django.utils import timezone
-from litellm.types.utils import ModelResponseStream
+from litellm.types.utils import ModelResponse, ModelResponseStream
 from mcp.types import JSONRPCMessage
 from openai.types.chat import ChatCompletionStreamOptionsParam
 from openai.types.chat.chat_completion_content_part_param import FileFile
@@ -769,13 +769,12 @@ def normalize_reasoning_fields(view_func: AsyncView) -> AsyncView:
             result.transforms.append(_normalized_stream)
 
         elif isinstance(result, RawJsonResponse):
-            content = result.content
+            content = cast("dict[str, Any] | ModelResponse", result.content)
             choices = content.get("choices", [])
             for choice in choices:
                 message = choice.get("message", {})
                 if message:
                     _normalize_reasoning_in_message(message)
-            result = RawJsonResponse(content, **result.kwargs)
 
         return result
 

@@ -11,8 +11,14 @@ from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
 from django.http.response import ResponseHeaders
-from litellm.types.utils import ModelResponseStream
+from litellm.types.utils import (
+    EmbeddingResponse,
+    ModelResponse,
+    ModelResponseStream,
+    TextCompletionResponse,
+)
 from litellm.types.utils import Usage as UsageModel
+from mcp.types import JSONRPCMessage
 from openai import AsyncStream
 from openai.types.responses import ResponseCreatedEvent, ResponseStreamEvent
 from pydantic import BaseModel
@@ -22,15 +28,15 @@ from management.models import Request, Usage
 
 log = logging.getLogger("aqueduct")
 
-T = TypeVar("T", bound=ModelResponseStream | dict[str, Any])
+T = TypeVar("T", bound=ModelResponseStream | JSONRPCMessage)
 
 
 class RawJsonResponse:
     """A wrapper for data that can be turned into a JSONResponse."""
 
-    def __init__(self, data: dict[str, Any], **kwargs: Any) -> None:
-        if not isinstance(data, dict):
-            raise TypeError("RawJsonResponse data has to be a dict")
+    def __init__(self, data: dict[str, Any] | BaseModel, **kwargs: Any) -> None:
+        if not isinstance(data, (dict, BaseModel)):
+            raise TypeError("RawJsonResponse data has to be a dict or a pydantic BaseModel")
 
         self.content = data
         self.kwargs = kwargs or {}
@@ -81,12 +87,14 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
     i.e. set to 0.
 
     Args:
-        data: The raw response content (or content's chunk for streaming responses)
-          as a dict or BaseModel subclass (for RawStreamingResponses).
+        data: The raw response content (or content's chunk for streaming responses),
+          expected to be a dict or BaseModel subclass.
     Returns:
         The :class:`Usage` object with the used input and output token counts.
     """
-    if isinstance(data, (dict, ModelResponseStream)):
+    if isinstance(
+        data, (dict, ModelResponse, ModelResponseStream, EmbeddingResponse, TextCompletionResponse)
+    ):
         # LiteLLM models implement `.get()` method, but the OpenAI ones - don't.
         usage = data.get("usage")
         if isinstance(usage, (dict, UsageModel)):
@@ -99,8 +107,11 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
         if not usage and hasattr(data, "response"):
             usage = getattr(data.response, "usage", None)
         if usage:
-            input_tokens = usage.input_tokens
-            output_tokens = usage.output_tokens
+            try:
+                input_tokens = usage.input_tokens
+                output_tokens = usage.output_tokens
+            except AttributeError:
+                input_tokens = output_tokens = 0
             return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
 
     return Usage(input_tokens=0, output_tokens=0)

@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock
 
 from django.contrib.auth import get_user_model
@@ -9,6 +8,8 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.test import AsyncRequestFactory, override_settings
 from litellm.types.utils import ModelResponseStream
 from litellm.types.utils import Usage as LitellmUsage
+from mcp import JSONRPCResponse
+from mcp.types import JSONRPCMessage
 
 from gateway.middleware import HttpResponseMiddleware
 from gateway.tests.utils.base import GatewayBatchesTestCase
@@ -59,13 +60,11 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
         """RawStreamingResponse for MCP paths should become StreamingHttpResponse."""
 
         async def streaming_content():
-            yield {"result": "mcp-data 1"}
-            yield {"result": "mcp-data 2"}
+            yield JSONRPCResponse(jsonrpc="2.0", id=0, result={"test": "yes"})
+            yield JSONRPCResponse(jsonrpc="2.0", id=0, result={"test": "yes"})
 
-        def transform(chunk: dict[str, Any]):
-            result = chunk["result"]
-            if isinstance(result, str):
-                chunk["result"] = result + " custom suffix"
+        def transform(chunk: JSONRPCMessage):
+            chunk.result["test"] = chunk.result["test"] + " custom suffix"
             return chunk
 
         raw_response = RawStreamingResponse(
@@ -92,7 +91,7 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
             chunk_text = chunk.decode("utf-8")
             self.assertTrue(chunk_text.startswith("data: "))
             content = json.loads(chunk_text.removeprefix("data: "))
-            self.assertTrue(content["result"].endswith(" custom suffix"))
+            self.assertTrue(content["result"]["test"].endswith(" custom suffix"))
 
     def test_passes_through_regular_response(self):
         """Non-raw responses should pass through unchanged."""

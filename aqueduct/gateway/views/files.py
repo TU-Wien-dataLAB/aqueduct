@@ -163,11 +163,9 @@ async def files(
                 .select_related("token")
             )
 
-        serialized_files = [
-            file.model.model_dump(exclude_none=True, exclude_unset=True) async for file in qs
-        ]
+        file_models = [file.model async for file in qs]
         return RawJsonResponse(
-            {"object": "list", "data": serialized_files, "has_more": False}, status=200
+            {"object": "list", "data": file_models, "has_more": False}, status=200
         )
 
     # POST /files
@@ -244,9 +242,7 @@ async def files(
     await file_obj.asave()
 
     # Return response with upstream ID
-    response_data = file_obj.model.model_dump(exclude_none=True, exclude_unset=True)
-
-    return RawJsonResponse(response_data, status=200)
+    return RawJsonResponse(file_obj.model, status=200)
 
 
 @csrf_exempt
@@ -287,8 +283,7 @@ async def file(
             return error_response("File not found upstream.", param="file_id", status=404)
 
         # Return response with upstream ID (same as file_obj.id)
-        response_data = remote_file.model_dump()
-        return RawJsonResponse(response_data, status=200)
+        return RawJsonResponse(remote_file, status=200)
 
     await file_obj.adelete_upstream(client)
 

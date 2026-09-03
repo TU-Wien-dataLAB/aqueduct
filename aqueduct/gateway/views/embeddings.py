@@ -46,6 +46,5 @@ async def embeddings(
 ) -> RawJsonResponse:
     router = get_router()
     embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
-    data = embedding.model_dump(exclude_none=True, exclude_unset=True)
-    request_log.token_usage = get_token_usage(data)
-    return RawJsonResponse(data=data, status=200)
+    request_log.token_usage = get_token_usage(embedding)
+    return RawJsonResponse(data=embedding, status=200)

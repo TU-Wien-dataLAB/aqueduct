@@ -75,8 +75,7 @@ async def create_response(
     if isinstance(resp, Response):
         register_response_in_cache(resp.id, model=model, email=token.user.email)
         request_log.token_usage = get_token_usage(resp)
-        data = resp.model_dump(exclude_none=True, exclude_unset=True)
-        return RawJsonResponse(data=data, status=200)
+        return RawJsonResponse(data=resp, status=200)
     raise NotImplementedError(f"Completion for response type {type(resp)} is not implemented.")
 
 
@@ -99,16 +98,14 @@ async def response(
 
     if request.method == "GET":
         get_resp = await client.responses.retrieve(response_id=response_id)
-        data = get_resp.model_dump(exclude_none=True, exclude_unset=True)
-        return RawJsonResponse(data=data, status=200)
+        return RawJsonResponse(data=get_resp, status=200)
     if request.method == "DELETE":
         delete_result = await client.responses.delete(response_id=response_id)  # type: ignore[func-returns-value]
         delete_response_from_cache(response_id=response_id)
         if delete_result is None:
             # BUG in openai python sdk: https://github.com/openai/openai-openapi/issues/490
             return RawJsonResponse({"deleted": True}, status=200)
-        data = delete_result.model_dump(exclude_none=True, exclude_unset=True)
-        return RawJsonResponse(data=data, status=200)
+        return RawJsonResponse(data=delete_result, status=200)
     raise AssertionError("Unreachable")
 
 
@@ -129,5 +126,4 @@ async def get_response_input_items(
     model: str = response["model"]
     client, _model_relay = oai_client_from_body(model, request)
     resp = await client.responses.input_items.list(response_id=response_id)
-    data = resp.model_dump(exclude_none=True, exclude_unset=True)
-    return RawJsonResponse(data=data, status=200)
+    return RawJsonResponse(data=resp, status=200)

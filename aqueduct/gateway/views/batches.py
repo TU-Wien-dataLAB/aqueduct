@@ -48,8 +48,7 @@ async def batches(
             batch_qs = Batch.objects.filter(token__user=token.user)
 
         batch_objects = [
-            b.model.model_dump()
-            async for b in batch_qs.order_by("-created_at").select_related("input_file")
+            b.model async for b in batch_qs.order_by("-created_at").select_related("input_file")
         ]
 
         return RawJsonResponse(
@@ -124,11 +123,8 @@ async def batches(
     )
     await batch_obj.asave()
 
-    # Return upstream response directly (IDs already match)
-    response_data = remote_batch.model_dump()
-    response_data["input_file_id"] = file_obj.id
-
-    return RawJsonResponse(response_data, status=200)
+    remote_batch.input_file_id = file_obj.id
+    return RawJsonResponse(remote_batch, status=200)
 
 
 @csrf_exempt
@@ -179,15 +175,14 @@ async def batch(
         remote_batch.error_file_id, token, client, batch_obj, "error_file"
     )
 
-    # Build response from upstream data, ensuring file IDs match our local records
-    response_data = remote_batch.model_dump()
-    response_data["input_file_id"] = batch_obj.input_file_id
+    # Ensure file IDs in the response data match our local records
+    remote_batch.input_file_id = batch_obj.input_file_id
     if output_file_obj:
-        response_data["output_file_id"] = output_file_obj.id
+        remote_batch.output_file_id = output_file_obj.id
     if error_file_obj:
-        response_data["error_file_id"] = error_file_obj.id
+        remote_batch.error_file_id = error_file_obj.id
 
-    return RawJsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_batch, status=200)
 
 
 @csrf_exempt
@@ -232,8 +227,7 @@ async def batch_cancel(
         batch_obj.cancelled_at = remote_batch.cancelled_at
     await batch_obj.asave()
 
-    # Build response from upstream data, ensuring file IDs match our local records
-    response_data = remote_batch.model_dump()
-    response_data["input_file_id"] = batch_obj.input_file_id
+    # Ensure file ID in the response data matches our local records
+    remote_batch.input_file_id = batch_obj.input_file_id
 
-    return RawJsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_batch, status=200)

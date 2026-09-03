@@ -54,9 +54,8 @@ async def chat_completions(
     if isinstance(chat_completion, CustomStreamWrapper):
         return RawStreamingResponse(streaming_content=chat_completion, request_log=request_log)
     if isinstance(chat_completion, ModelResponse):
-        data = chat_completion.model_dump(exclude_none=True, exclude_unset=True)
-        request_log.token_usage = get_token_usage(data)
-        return RawJsonResponse(data=data, status=200)
+        request_log.token_usage = get_token_usage(chat_completion)
+        return RawJsonResponse(data=chat_completion, status=200)
     raise NotImplementedError(
         f"Completion for response type {type(chat_completion)} is not implemented."
     )

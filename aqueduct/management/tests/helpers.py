@@ -1,3 +1,170 @@
+from management.models import Snippet, SnippetType
+
+
+def seed_active_config(code: str, name: str = "test-config") -> Snippet:
+    Snippet.objects.filter(type=SnippetType.CONFIG, active=True).update(active=False)
+    snippet, _ = Snippet.objects.update_or_create(
+        name=name, type=SnippetType.CONFIG, defaults={"active": True, "code": code}
+    )
+    return snippet
+
+
+SNIPPET_DEFAULT = """\
+class MyConfig(ConfigSnippet):
+    pass
+"""
+
+
+SNIPPET_ORG_FROM_FIRST_GROUP = """\
+class MyConfig(ConfigSnippet):
+    def org_name(self, claims):
+        groups = claims.get("groups") or []
+        return groups[0] if groups else None
+"""
+
+
+SNIPPET_ORG_CUSTOM = """\
+class MyConfig(ConfigSnippet):
+    def org_name(self, claims):
+        return claims.get("custom_org")
+"""
+
+
+SNIPPET_ORG_LAST_GROUP = """\
+class MyConfig(ConfigSnippet):
+    def org_name(self, claims):
+        return (claims.get("groups") or [""])[-1]
+"""
+
+
+SNIPPET_TEAM_NAMES_AND_MAP = """\
+class MyConfig(ConfigSnippet):
+    def org_name(self, claims):
+        return "default"
+
+    def team_names(self, claims):
+        groups = claims.get("groups") or []
+        return [g for g in groups if g.startswith("E")]
+
+    def display_team_names(self, team_names):
+        return [(t.split("-", maxsplit=1)[0], t) for t in team_names]
+"""
+
+
+SNIPPET_TEAM_NAMES_KEEP_FULL = """\
+class MyConfig(ConfigSnippet):
+    def org_name(self, claims):
+        return "default"
+
+    def team_names(self, claims):
+        groups = claims.get("groups") or []
+        return [g for g in groups if g.startswith("E")]
+
+    def display_team_names(self, team_names):
+        return [(t, t) for t in team_names]
+"""
+
+
+SNIPPET_TEAM_NAMES_PREFIX = """\
+class MyConfig(ConfigSnippet):
+    def team_names(self, claims):
+        return ["E123", "E456"]
+
+    def display_team_names(self, team_names):
+        return [(n, n) for n in team_names]
+"""
+
+
+SNIPPET_TEAM_NAMES_NON_LIST = """\
+class MyConfig(ConfigSnippet):
+    def team_names(self, claims):
+        return "not-a-list"
+"""
+
+
+SNIPPET_TEAM_NAMES_NONE = """\
+class MyConfig(ConfigSnippet):
+    def team_names(self, claims):
+        return None
+"""
+
+
+SNIPPET_TEAM_NAMES_RAISES = """\
+class MyConfig(ConfigSnippet):
+    def team_names(self, claims):
+        raise RuntimeError("boom")
+"""
+
+
+SNIPPET_DISPLAY_MAP_NONE = """\
+class MyConfig(ConfigSnippet):
+    def team_names(self, claims):
+        groups = claims.get("groups") or []
+        return [g for g in groups if g.startswith("E")]
+
+    def display_team_names(self, team_names):
+        return None
+"""
+
+
+SNIPPET_DISPLAY_MAP_NON_LIST = """\
+class MyConfig(ConfigSnippet):
+    def team_names(self, claims):
+        groups = claims.get("groups") or []
+        return [g for g in groups if g.startswith("E")]
+
+    def display_team_names(self, team_names):
+        return "nope"
+"""
+
+
+SNIPPET_DISPLAY_MAP_BAD_ENTRIES = """\
+class MyConfig(ConfigSnippet):
+    def team_names(self, claims):
+        groups = claims.get("groups") or []
+        return [g for g in groups if g.startswith("E")]
+
+    def display_team_names(self, team_names):
+        return [("E123", "E123-Students"), ("bad",), (None, "x"), 42]
+"""
+
+
+SNIPPET_NO_TEAMS = """\
+class MyConfig(ConfigSnippet):
+    def team_names(self, claims):
+        return []
+
+    def display_team_names(self, team_names):
+        return []
+"""
+
+
+SNIPPET_USER_GROUP_BASIC = """\
+class MyConfig(ConfigSnippet):
+    def user_group(self, claims):
+        groups = claims.get("groups") or []
+        if "E123-Students" in groups:
+            return "admin"
+        if "E456-OrgAdmins" in groups:
+            return "org-admin"
+        return "user"
+"""
+
+
+SNIPPET_USER_GROUP_INVALID = """\
+class MyConfig(ConfigSnippet):
+    def user_group(self, claims):
+        return "superadmin"
+"""
+
+
+SNIPPET_USER_GROUP_RAISES = """\
+class MyConfig(ConfigSnippet):
+    def user_group(self, claims):
+        raise RuntimeError("boom")
+"""
+
+
 def sample_extract_teams(claims) -> list[str]:
     """
     Sample implementation that extracts team names from claims.

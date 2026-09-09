@@ -1,18 +1,22 @@
 import asyncio
+import json
 import logging
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.db.models import Q, QuerySet
-from django.urls import reverse
+from django.http import HttpResponse
+from django.template.response import TemplateResponse
+from django.urls import path, reverse
+from django.urls.resolvers import URLPattern
 from django.utils.html import format_html
 
 from gateway.config import get_files_api_client, get_router_config
@@ -22,6 +26,8 @@ from management.models import (
     Org,
     Request,
     ServiceAccount,
+    Snippet,
+    SnippetType,
     Team,
     TeamMembership,
     Token,
@@ -30,6 +36,7 @@ from management.models import (
     VectorStoreFile,
     VectorStoreFileBatch,
 )
+from management.snippets import ConfigSnippet, compile_snippet, get_config_snippet
 
 log = logging.getLogger("aqueduct")
 
@@ -195,16 +202,15 @@ def _get_new_mapping() -> dict[str, str]:
         .distinct()
     )
 
-    if not (func := getattr(settings, "OAUTH_DISPLAY_TEAM_NAMES_FUNCTION", None)):
-        raise ImproperlyConfigured("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION not configured")
-
     try:
-        result = func(all_oauth_groups)
+        result = get_config_snippet().display_team_names(all_oauth_groups)
     except Exception as e:
-        raise ImproperlyConfigured(f"Error calling OAUTH_DISPLAY_TEAM_NAMES_FUNCTION: {e}") from e
+        raise ImproperlyConfigured(f"Error calling config snippet display_team_names(): {e}") from e
 
     if not isinstance(result, list):
-        raise ImproperlyConfigured("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION must return a list of tuples")
+        raise ImproperlyConfigured(
+            "Config snippet display_team_names() must return a list of tuples"
+        )
 
     new_mapping = {}
     for item in result:
@@ -495,8 +501,9 @@ class TeamAdmin(admin.ModelAdmin):
                     {
                         "fields": ("name", "description", "org"),
                         "description": "This team is managed by OAuth synchronization. "
-                        "To update the team name, modify the OAUTH_TEAM_NAMES_FUNCTION "
-                        "setting and use the 'Sync OAuth team names' action above.",
+                        "To update the team name, adjust the config snippet's "
+                        "display_team_names() method and use the 'Sync OAuth team names' "
+                        "action above.",
                     },
                 ),
                 (
@@ -881,3 +888,150 @@ class VectorStoreFileBatchAdmin(admin.ModelAdmin):
         return format_html('<a href="{}">{}</a>', link, obj.vector_store.name)
 
     vector_store_link.short_description = "Vector Store"
+
+
+class SnippetAdminForm(forms.ModelForm):
+    class Meta:
+        model = Snippet
+        fields = ("name", "type", "active", "code")
+
+    def clean_code(self) -> str:
+        code = self.cleaned_data["code"]
+        require_subclass = self.cleaned_data.get("type") != SnippetType.PLUGIN
+        try:
+            compile_snippet(code, require_subclass=require_subclass)
+        except ValidationError as e:
+            raise forms.ValidationError(str(e)) from e
+        return code
+
+
+TEST_PAYLOAD_EXAMPLE = {"email": "you@example.com", "groups": ["E123-Students", "admins"]}
+
+
+@admin.register(Snippet)
+class SnippetAdmin(admin.ModelAdmin):
+    form = SnippetAdminForm
+    list_display: ClassVar[tuple] = ("name", "type", "active", "updated_at")
+    list_filter: ClassVar[list] = ("type", "active")
+    search_fields: ClassVar[tuple] = ("name",)
+    readonly_fields: ClassVar[tuple] = ("updated_at",)
+    fieldsets: ClassVar[tuple] = (
+        (None, {"fields": ("name", "type", "active")}),
+        ("Code", {"fields": ("code",), "classes": ("wide",)}),
+    )
+    change_list_template = "admin/management/snippet/change_list.html"
+
+    @staticmethod
+    def _allowed_emails() -> set[str]:
+        return {e.lower() for e in getattr(settings, "ADMIN_SUPERUSER_EMAILS", [])}
+
+    def _is_allowed_superuser(self, user) -> bool:
+        if not user.is_superuser:
+            return False
+        return bool(user.email and user.email.lower() in self._allowed_emails())
+
+    def has_view_permission(self, request, obj=None) -> bool:
+        if not self._is_allowed_superuser(request.user):
+            return False
+        return super().has_view_permission(request, obj)
+
+    def has_add_permission(self, request) -> bool:
+        if not self._is_allowed_superuser(request.user):
+            return False
+        return super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        if not self._is_allowed_superuser(request.user):
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        if not self._is_allowed_superuser(request.user):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def get_urls(self) -> list[URLPattern]:
+        custom_urls = [
+            path(
+                "test-console/",
+                self.admin_site.admin_view(self.test_console_view),
+                name=f"{self.opts.app_label}_{self.opts.model_name}_test_console",
+            )
+        ]
+        urls = super().get_urls()
+        return custom_urls + urls
+
+    def test_console_view(self, request) -> HttpResponse:
+        if not self._is_allowed_superuser(request.user):
+            raise PermissionDenied
+
+        code, payload = "", ""
+        results = None
+
+        if request.method != "POST":
+            payload = json.dumps(TEST_PAYLOAD_EXAMPLE, indent=2)
+
+        if request.method == "POST":
+            code = request.POST.get("code", "")
+            payload = request.POST.get("payload", "")
+            try:
+                snippet = compile_snippet(code)
+            except ValidationError as e:
+                self.message_user(request, f"Snippet failed to compile: {e}", messages.ERROR)
+            else:
+                if payload.strip():
+                    try:
+                        parsed = json.loads(payload)
+                    except json.JSONDecodeError as e:
+                        self.message_user(request, f"Invalid JSON test input: {e}", messages.ERROR)
+                    else:
+                        results = self._run_console(snippet, parsed)
+                        self.message_user(
+                            request,
+                            "Compilation succeeded. Output below shows method return values (no "
+                            "format validation).",
+                            messages.SUCCESS,
+                        )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Snippet test console",
+            "code": code,
+            "payload": payload,
+            "results": results,
+        }
+        request.current_app = self.admin_site.name
+        return TemplateResponse(request, "admin/management/snippet/test_console.html", context)
+
+    @staticmethod
+    def _run_console(snippet: ConfigSnippet, payload: Any) -> list[str]:
+        lines = []
+
+        for method_name in ("org_name", "user_group"):
+            try:
+                output = getattr(snippet, method_name)(payload)
+            except Exception as e:
+                lines.append(f"{method_name}(claims) raised {e!r}")
+            else:
+                lines.append(f"{method_name}(claims) -> {output!r}")
+
+        try:
+            team_list = snippet.team_names(payload)
+        except Exception as e:
+            lines.append(f"team_names(claims) raised {e!r}")
+            team_list = None
+        else:
+            lines.append(f"team_names(claims) -> {team_list!r}")
+
+        if not team_list:
+            lines.append("display_team_names(team names) skipped: no team names")
+            return lines
+
+        try:
+            mapping = snippet.display_team_names(team_list)
+        except Exception as e:
+            lines.append(f"display_team_names(team names) raised {e!r}")
+        else:
+            lines.append(f"display_team_names(team names) -> {mapping!r}")
+
+        return lines

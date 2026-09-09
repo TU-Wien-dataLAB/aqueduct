@@ -1,15 +1,9 @@
 dependencies:
-- name: postgresql
-  repository: https://charts.bitnami.com/bitnami
-  version: 16.7.4
-- name: redis
-  repository: https://charts.bitnami.com/bitnami
-  version: 21.1.7
 - name: valkey
   repository: https://valkey.io/valkey-helm/
   version: 0.10.0
 - name: tika
   repository: https://apache.jfrog.io/artifactory/tika
   version: 3.2.2
-digest: sha256:59c500ddc5676374de0655323c9bde5c3169fbff7fe6558413aa0970bb303066
-generated: "2026-07-16T18:30:47.531448+02:00"
+digest: sha256:50d5fe91f8faeb88ba8a2eec3991dd7f948b0a591344b7d823905b7151af3bd3
+generated: "2026-09-01T12:55:37.322420138+02:00"

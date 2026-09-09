@@ -5,7 +5,7 @@ import logging
 import re
 import sys
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, Iterable
+from collections.abc import Callable, Coroutine, Iterable
 from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
@@ -21,9 +21,10 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Sum
-from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.urls import reverse
 from django.utils import timezone
+from litellm.types.utils import ModelResponse, ModelResponseStream
 from mcp.types import JSONRPCMessage
 from openai.types.chat import ChatCompletionStreamOptionsParam
 from openai.types.chat.chat_completion_content_part_param import FileFile
@@ -41,12 +42,17 @@ from gateway.config import (
     resolve_model_alias,
 )
 from gateway.views.errors import error_response
-from gateway.views.utils import get_response_from_cache, in_wildcard
+from gateway.views.utils import (
+    RawJsonResponse,
+    RawStreamingResponse,
+    get_response_from_cache,
+    in_wildcard,
+)
 from management.models import FileObject, Request, Token, VectorStore
 
 log = logging.getLogger("aqueduct")
 
-ViewResult = HttpResponse | StreamingHttpResponse
+ViewResult = HttpResponse | StreamingHttpResponse | RawJsonResponse | RawStreamingResponse
 AsyncView = Callable[..., Coroutine[Any, Any, ViewResult]]
 Decorator = Callable[[AsyncView], AsyncView]
 
@@ -419,7 +425,7 @@ def log_request(view_func: AsyncView) -> AsyncView:
         log.debug("Initial request log object created.")
 
         response_start_time = time.monotonic()
-        result: HttpResponse | StreamingHttpResponse = await view_func(request, *args, **kwargs)
+        result: ViewResult = await view_func(request, *args, **kwargs)
         end_time = time.monotonic()
 
         assert "request_start" in kwargs, (
@@ -650,7 +656,7 @@ def catch_router_exceptions(view_func: AsyncView) -> AsyncView:
         s = re.sub(r"Lite-?[lL][lL][mM]", "Aqueduct", s)  # uppercase
         return re.sub(r"lite-?[lL][lL][mM]", "aqueduct", s)  # lowercase
 
-    def _exception_response(e: Exception, status: int) -> HttpResponse:
+    def _exception_response(e: Exception, status: int) -> RawJsonResponse:
         """Convert an openai/litellm exception to an OpenAI-compatible JsonResponse.
 
         The openai SDK parses ``code``, ``param``, and ``type`` from the
@@ -717,7 +723,7 @@ def catch_router_exceptions(view_func: AsyncView) -> AsyncView:
     return wrapper
 
 
-def _normalize_choice_message(message: dict[str, Any]) -> bool:
+def _normalize_reasoning_in_message(message: dict[str, Any]) -> bool:
     """Ensure both 'reasoning' and 'reasoning_content' are present if either exists.
 
     Returns True if the message was modified.
@@ -749,50 +755,26 @@ def normalize_reasoning_fields(view_func: AsyncView) -> AsyncView:
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         result = await view_func(request, *args, **kwargs)
 
-        if isinstance(result, StreamingHttpResponse):
-            original_stream = cast("AsyncIterator[bytes]", result.streaming_content)
+        if isinstance(result, RawStreamingResponse):
 
-            async def normalized_stream() -> AsyncGenerator[str, None]:
-                async for chunk in original_stream:
-                    # Chunks may be bytes or str; normalize to str for parsing
-                    if isinstance(chunk, bytes):
-                        chunk_str = chunk.decode("utf-8")
-                    else:
-                        chunk_str = chunk
+            def _normalized_stream(chunk: ModelResponseStream) -> ModelResponseStream:
+                choices = chunk.get("choices", [])
+                for choice in choices:
+                    # Streaming chunks use "delta"; final chunks use "message"
+                    message = choice.get("delta") or {}
+                    if message:
+                        _normalize_reasoning_in_message(message)
+                return chunk
 
-                    if chunk_str.startswith("data: ") and not chunk_str.startswith("data: [DONE]"):
-                        try:
-                            data_str = chunk_str.removeprefix("data: ")
-                            data_str = data_str.rstrip("\n")
-                            chunk_data = json.loads(data_str)
+            result.transforms.append(_normalized_stream)
 
-                            choices = chunk_data.get("choices", [])
-                            for choice in choices:
-                                # Streaming chunks use "delta"; final chunks use "message"
-                                message = choice.get("delta") or {}
-                                if message:
-                                    _normalize_choice_message(message)
-
-                            modified_chunk = f"data: {json.dumps(chunk_data)}\n\n"
-                        except (json.JSONDecodeError, UnicodeDecodeError):
-                            modified_chunk = chunk_str
-
-                    else:
-                        modified_chunk = chunk_str
-
-                    yield modified_chunk
-
-            result.streaming_content = normalized_stream()
-
-        elif isinstance(result, JsonResponse):
-            content = json.loads(result.content)
+        elif isinstance(result, RawJsonResponse):
+            content = cast("dict[str, Any] | ModelResponse", result.content)
             choices = content.get("choices", [])
             for choice in choices:
                 message = choice.get("message", {})
                 if message:
-                    _normalize_choice_message(message)
-
-            result = JsonResponse(content, status=result.status_code)
+                    _normalize_reasoning_in_message(message)
 
         return result
 
@@ -892,7 +874,7 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
 def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
-        session_id = request.headers.get("Mcp-Session-Id")
+        session_id = request.headers.get("mcp-session-id")
         kwargs["session_id"] = session_id
 
         if request.method != "POST":

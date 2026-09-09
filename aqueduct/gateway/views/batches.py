@@ -2,7 +2,6 @@ from typing import Any
 
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
@@ -21,6 +20,7 @@ from .decorators import (
 )
 from .errors import error_response
 from .files import sync_batch_file_if_needed
+from .utils import RawJsonResponse
 
 
 @csrf_exempt
@@ -36,7 +36,7 @@ async def batches(
     pydantic_model: BatchCreateParams | None = None,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     GET /batches - list user's batches from local DB
     POST /batches - create a new batch on upstream
@@ -48,11 +48,10 @@ async def batches(
             batch_qs = Batch.objects.filter(token__user=token.user)
 
         batch_objects = [
-            b.model.model_dump()
-            async for b in batch_qs.order_by("-created_at").select_related("input_file")
+            b.model async for b in batch_qs.order_by("-created_at").select_related("input_file")
         ]
 
-        return JsonResponse(
+        return RawJsonResponse(
             {"object": "list", "data": batch_objects, "has_more": False}, status=200
         )
 
@@ -124,11 +123,8 @@ async def batches(
     )
     await batch_obj.asave()
 
-    # Return upstream response directly (IDs already match)
-    response_data = remote_batch.model_dump()
-    response_data["input_file_id"] = file_obj.id
-
-    return JsonResponse(response_data, status=200)
+    remote_batch.input_file_id = file_obj.id
+    return RawJsonResponse(remote_batch, status=200)
 
 
 @csrf_exempt
@@ -139,7 +135,7 @@ async def batches(
 @catch_router_exceptions
 async def batch(
     request: ASGIRequest, token: Token, batch_id: str, *args: Any, **kwargs: Any
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     GET /batches/{batch_id} - retrieve a batch from upstream
 
@@ -179,15 +175,14 @@ async def batch(
         remote_batch.error_file_id, token, client, batch_obj, "error_file"
     )
 
-    # Build response from upstream data, ensuring file IDs match our local records
-    response_data = remote_batch.model_dump()
-    response_data["input_file_id"] = batch_obj.input_file_id
+    # Ensure file IDs in the response data match our local records
+    remote_batch.input_file_id = batch_obj.input_file_id
     if output_file_obj:
-        response_data["output_file_id"] = output_file_obj.id
+        remote_batch.output_file_id = output_file_obj.id
     if error_file_obj:
-        response_data["error_file_id"] = error_file_obj.id
+        remote_batch.error_file_id = error_file_obj.id
 
-    return JsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_batch, status=200)
 
 
 @csrf_exempt
@@ -198,7 +193,7 @@ async def batch(
 @catch_router_exceptions
 async def batch_cancel(
     request: ASGIRequest, token: Token, batch_id: str, *args: Any, **kwargs: Any
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     POST /batches/{batch_id}/cancel - cancel a batch on upstream
 
@@ -232,8 +227,7 @@ async def batch_cancel(
         batch_obj.cancelled_at = remote_batch.cancelled_at
     await batch_obj.asave()
 
-    # Build response from upstream data, ensuring file IDs match our local records
-    response_data = remote_batch.model_dump()
-    response_data["input_file_id"] = batch_obj.input_file_id
+    # Ensure file ID in the response data matches our local records
+    remote_batch.input_file_id = batch_obj.input_file_id
 
-    return JsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_batch, status=200)

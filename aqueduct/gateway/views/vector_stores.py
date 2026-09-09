@@ -3,7 +3,6 @@ from typing import Any
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.db.models import Count, Q
-from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
@@ -27,6 +26,7 @@ from .decorators import (
     tos_accepted,
 )
 from .errors import error_response
+from .utils import RawJsonResponse
 
 
 @csrf_exempt
@@ -42,7 +42,7 @@ async def vector_stores(
     pydantic_model: VectorStoreCreateParams | None = None,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     GET /v1/vector_stores - List vector stores
     POST /v1/vector_stores - Create vector store
@@ -73,7 +73,7 @@ async def vector_stores(
             )
         )
 
-        return JsonResponse(
+        return RawJsonResponse(
             {
                 "object": "list",
                 "data": [
@@ -153,7 +153,7 @@ async def vector_stores(
     # Return upstream response directly (ID already matches)
     response_data = remote_vs.model_dump(mode="json")
 
-    return JsonResponse(response_data, status=200)
+    return RawJsonResponse(response_data, status=200)
 
 
 @csrf_exempt
@@ -172,7 +172,7 @@ async def vector_store(
     client: AsyncOpenAI | None = None,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id} - Retrieve vector store
     POST /v1/vector_stores/{vector_store_id} - Modify vector store
@@ -199,7 +199,7 @@ async def vector_store(
         # Return upstream response directly (ID already matches)
         response_data = remote_vs.model_dump(mode="json")
 
-        return JsonResponse(response_data, status=200)
+        return RawJsonResponse(response_data, status=200)
 
     if request.method == "POST":
         # Modify vector store
@@ -229,14 +229,14 @@ async def vector_store(
             # Return upstream response directly (ID already matches)
             response_data = remote_vs.model_dump(mode="json")
 
-            return JsonResponse(response_data, status=200)
+            return RawJsonResponse(response_data, status=200)
 
         # No changes requested, return current state
         remote_vs = await vs_obj.areload_from_upstream(client)
         if not remote_vs:
             return error_response("Vector store not found.", param="vector_store_id", status=404)
         response_data = remote_vs.model_dump(mode="json")
-        return JsonResponse(response_data, status=200)
+        return RawJsonResponse(response_data, status=200)
 
     await vs_obj.adelete_upstream(client)
 
@@ -247,7 +247,7 @@ async def vector_store(
     await vs_obj.adelete()
 
     # Return with upstream ID
-    return JsonResponse(
+    return RawJsonResponse(
         {"id": deleted_id, "object": "vector_store.deleted", "deleted": True}, status=200
     )
 
@@ -267,7 +267,7 @@ async def vector_store_search(
     pydantic_model: VectorStoreSearchParams,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/search - Search vector store
     """
@@ -292,4 +292,4 @@ async def vector_store_search(
     # Return upstream response directly (IDs already match)
     results_data = search_results.model_dump(mode="json")
 
-    return JsonResponse(results_data, status=200)
+    return RawJsonResponse(results_data, status=200)

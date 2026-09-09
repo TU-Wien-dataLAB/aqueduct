@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import ClassVar, Literal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -10,15 +10,6 @@ from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
-from litellm import Router
-from litellm.types.llms.openai import HttpxBinaryResponseContent
-from litellm.types.router import Deployment
-from litellm.types.utils import (
-    EmbeddingResponse,
-    ImageResponse,
-    ModelResponse,
-    TextCompletionResponse,
-)
 from tos.models import TermsOfService, UserAgreement
 
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
@@ -39,19 +30,6 @@ with ROUTER_CONFIG_PATH.open() as f:
     ROUTER_CONFIG = f.read()
 
 User = get_user_model()
-
-
-def get_mock_router(model: str = "test-model"):
-    router = MagicMock(spec=Router)
-    router.acompletion = AsyncMock(return_value=ModelResponse())
-    router.atext_completion = AsyncMock(return_value=TextCompletionResponse())
-    router.aembedding = AsyncMock(return_value=EmbeddingResponse())
-    router.image_generation = MagicMock(return_value=ImageResponse())
-    router.aspeech = AsyncMock(return_value=HttpxBinaryResponseContent(response=MagicMock()))
-    router.get_deployment = MagicMock(
-        return_value=Deployment("test-model", {"model": f"openai/{model}"})
-    )
-    return router
 
 
 @override_settings(

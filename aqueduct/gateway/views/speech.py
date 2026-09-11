@@ -9,9 +9,7 @@ from openai import HttpxBinaryResponseContent
 from pydantic import TypeAdapter
 
 from gateway.config import get_router
-from management.models import Request
-
-from .decorators import (
+from gateway.decorators import (
     catch_router_exceptions,
     check_limits,
     check_model_availability,
@@ -22,6 +20,7 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
+from management.models import Request
 
 
 @csrf_exempt

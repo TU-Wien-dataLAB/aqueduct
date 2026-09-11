@@ -9,18 +9,16 @@ from openai.types.batch_create_params import BatchCreateParams
 from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
-from management.models import Batch, BatchStatus, FileObject, Token
-
-from .decorators import (
+from gateway.decorators import (
     catch_router_exceptions,
     log_request,
     parse_body,
     token_authenticated,
     tos_accepted,
 )
-from .errors import error_response
-from .files import sync_batch_file_if_needed
-from .utils import RawJsonResponse
+from gateway.raw_response import RawJsonResponse, error_response
+from gateway.views.files import sync_batch_file_if_needed
+from management.models import Batch, BatchStatus, FileObject, Token
 
 
 @csrf_exempt

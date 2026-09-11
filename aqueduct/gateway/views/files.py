@@ -15,9 +15,7 @@ from openai.types.file_create_params import FileCreateParams as OpenAIFileCreate
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from gateway.config import get_files_api_client
-from management.models import Batch, FileObject, Token
-
-from .decorators import (
+from gateway.decorators import (
     catch_router_exceptions,
     log_request,
     parse_body,
@@ -25,8 +23,8 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .errors import error_response
-from .utils import RawJsonResponse
+from gateway.raw_response import RawJsonResponse, error_response
+from management.models import Batch, FileObject, Token
 
 
 class FilesCreateParams(BaseModel):

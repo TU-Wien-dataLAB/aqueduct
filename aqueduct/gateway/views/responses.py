@@ -8,9 +8,7 @@ from openai import AsyncStream
 from openai.types.responses import Response, ResponseStreamEvent
 from pydantic import TypeAdapter
 
-from management.models import Request, Token
-
-from .decorators import (
+from gateway.decorators import (
     catch_router_exceptions,
     check_limits,
     check_model_availability,
@@ -22,17 +20,16 @@ from .decorators import (
     tos_accepted,
     validate_response_id,
 )
-from .errors import error_response
-from .utils import (
+from gateway.raw_response import (
     RawJsonResponse,
     RawStreamingResponse,
-    ResponseRegistrationWrapper,
     delete_response_from_cache,
+    error_response,
     get_response_from_cache,
-    get_token_usage,
-    oai_client_from_body,
     register_response_in_cache,
 )
+from gateway.views.utils import ResponseRegistrationWrapper, get_token_usage, oai_client_from_body
+from management.models import Request, Token
 
 
 @csrf_exempt

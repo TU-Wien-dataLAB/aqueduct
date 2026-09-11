@@ -16,11 +16,9 @@ from gateway.decorators import (
     token_authenticated,
     tos_accepted,
 )
+from gateway.raw_response import RawJsonResponse, error_response
+from gateway.views.files import sync_batch_file_if_needed
 from management.models import Batch, BatchStatus, FileObject, Token
-
-from .errors import error_response
-from .files import sync_batch_file_if_needed
-from .utils import RawJsonResponse
 
 
 @csrf_exempt

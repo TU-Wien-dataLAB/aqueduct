@@ -8,9 +8,9 @@ from django.test import override_settings
 from django.urls import reverse
 
 from gateway.decorators.responses import check_tool_availability
+from gateway.raw_response import RawJsonResponse, register_response_in_cache
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from gateway.views.utils import RawJsonResponse, register_response_in_cache
 from management.models import Request, Token
 
 User = get_user_model()

@@ -20,19 +20,16 @@ from gateway.decorators import (
     tos_accepted,
     validate_response_id,
 )
-from management.models import Request, Token
-
-from .errors import error_response
-from .utils import (
+from gateway.raw_response import (
     RawJsonResponse,
     RawStreamingResponse,
-    ResponseRegistrationWrapper,
     delete_response_from_cache,
+    error_response,
     get_response_from_cache,
-    get_token_usage,
-    oai_client_from_body,
     register_response_in_cache,
 )
+from gateway.views.utils import ResponseRegistrationWrapper, get_token_usage, oai_client_from_body
+from management.models import Request, Token
 
 
 @csrf_exempt

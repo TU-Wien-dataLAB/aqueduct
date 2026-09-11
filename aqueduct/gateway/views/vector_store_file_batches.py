@@ -19,6 +19,7 @@ from gateway.decorators import (
     token_authenticated,
     tos_accepted,
 )
+from gateway.raw_response import RawJsonResponse, error_response
 from management.models import (
     FileObject,
     Token,
@@ -28,9 +29,6 @@ from management.models import (
     VectorStoreFileBatchStatus,
     VectorStoreFileStatus,
 )
-
-from .errors import error_response
-from .utils import RawJsonResponse
 
 logger = logging.getLogger(__name__)
 

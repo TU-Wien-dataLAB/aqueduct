@@ -18,9 +18,9 @@ from gateway.decorators import (
     token_authenticated,
     tos_accepted,
 )
+from gateway.raw_response import RawJsonResponse
+from gateway.views.utils import get_token_usage
 from management.models import Request
-
-from .utils import RawJsonResponse, get_token_usage
 
 if TYPE_CHECKING:
     from litellm.types.utils import EmbeddingResponse

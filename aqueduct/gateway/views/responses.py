@@ -8,9 +8,7 @@ from openai import AsyncStream
 from openai.types.responses import Response, ResponseStreamEvent
 from pydantic import TypeAdapter
 
-from management.models import Request, Token
-
-from .decorators import (
+from gateway.decorators import (
     catch_router_exceptions,
     check_limits,
     check_model_availability,
@@ -22,6 +20,8 @@ from .decorators import (
     tos_accepted,
     validate_response_id,
 )
+from management.models import Request, Token
+
 from .errors import error_response
 from .utils import (
     RawJsonResponse,

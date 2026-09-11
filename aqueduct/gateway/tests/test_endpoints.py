@@ -205,7 +205,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.chat_completions.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -282,7 +282,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.chat_completions.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -395,7 +395,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.chat_completions.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -501,7 +501,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.chat_completions.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -551,7 +551,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         )
 
         with patch(
-            "gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock
+            "gateway.decorators.chat_completions.httpx.AsyncClient.put",
+            return_value=tika_response_mock,
         ):
             response = self.client.post(
                 self.url,
@@ -1518,7 +1519,7 @@ class TokenLimitTest(ChatCompletionsBase):
         )
 
     @patch(
-        "gateway.views.decorators.get_all_model_request_limit_multipliers",
+        "gateway.decorators.auth.get_all_model_request_limit_multipliers",
         return_value={"gpt-4.1-nano": 2.0},
     )
     def test_per_model_request_limit_multiplier_budget(self, mock_multipliers):
@@ -1556,7 +1557,7 @@ class TokenLimitTest(ChatCompletionsBase):
         )
 
     @patch(
-        "gateway.views.decorators.get_all_model_request_limit_multipliers",
+        "gateway.decorators.auth.get_all_model_request_limit_multipliers",
         return_value={"gpt-4.1-nano": 0.5},
     )
     def test_per_model_expensive_multiplier_limits_requests(self, mock_multipliers):

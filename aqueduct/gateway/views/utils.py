@@ -1,16 +1,14 @@
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Generator
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, TypeVar
+from typing import Any
 
 import httpx
 import litellm
 import openai
-from django.conf import settings
-from django.core.cache import cache, caches
+from django.core.cache import cache
 from django.core.handlers.asgi import ASGIRequest
-from django.http.response import ResponseHeaders
 from litellm.types.utils import (
     EmbeddingResponse,
     ModelResponse,
@@ -18,65 +16,31 @@ from litellm.types.utils import (
     TextCompletionResponse,
 )
 from litellm.types.utils import Usage as UsageModel
-from mcp.types import JSONRPCMessage
 from openai import AsyncStream
 from openai.types.responses import ResponseCreatedEvent, ResponseStreamEvent
 from pydantic import BaseModel
 
 from gateway.config import get_openai_client, get_router
-from management.models import Request, Usage
+from gateway.raw_response import (
+    RawJsonResponse,
+    RawStreamingResponse,
+    delete_response_from_cache,
+    get_response_from_cache,
+    in_wildcard,
+    register_response_in_cache,
+)
+from management.models import Usage
 
 log = logging.getLogger("aqueduct")
 
-T = TypeVar("T", bound=ModelResponseStream | JSONRPCMessage)
-
-
-class RawJsonResponse:
-    """A wrapper for data that can be turned into a JSONResponse."""
-
-    def __init__(self, data: dict[str, Any] | BaseModel, **kwargs: Any) -> None:
-        if not isinstance(data, (dict, BaseModel)):
-            raise TypeError("RawJsonResponse data has to be a dict or a pydantic BaseModel")
-
-        self.content = data
-        self.kwargs = kwargs or {}
-        self.content_type = self.kwargs.setdefault("content_type", "application/json")
-        # Just to be on the safe side, make header keys case-insensitive:
-        self.headers = ResponseHeaders(self.kwargs.setdefault("headers", {}))
-        # The following mimics the BaseHttpResponse behaviour (argument called "status"
-        # is assigned to the "status_code" attribute)
-        self.status_code = self.kwargs.get("status", 200)
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} status_code={self.status_code}>"
-
-
-class RawStreamingResponse:
-    """A wrapper for streaming data that can be turned into a StreamingHttpResponse."""
-
-    def __init__(
-        self,
-        streaming_content: AsyncIterator[Any],
-        request_log: Request | None,
-        transforms: list[Callable[[T], T]] | None = None,
-        **kwargs: Any,
-    ) -> None:
-        if not isinstance(streaming_content, AsyncIterator):
-            raise TypeError("RawStreamResponse streaming_content has to be async iterable")
-
-        self.streaming_content = streaming_content
-        self.request_log = request_log
-        self.transforms = transforms or []
-        self.kwargs = kwargs or {}
-        self.content_type = self.kwargs.setdefault("content_type", "text/event-stream")
-        # Just to be on the safe side, make header keys case-insensitive:
-        self.headers = ResponseHeaders(self.kwargs.setdefault("headers", {}))
-        # The following mimics the BaseHttpResponse behaviour (argument called "status"
-        # is assigned to the "status_code" attribute)
-        self.status_code = self.kwargs.get("status", 200)
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} status_code={self.status_code}>"
+__all__ = [
+    "RawJsonResponse",
+    "RawStreamingResponse",
+    "delete_response_from_cache",
+    "get_response_from_cache",
+    "in_wildcard",
+    "register_response_in_cache",
+]
 
 
 def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
@@ -131,22 +95,6 @@ def cache_lock(lock_id: str, ttl: int) -> Generator[bool, None, None]:
     finally:
         if status and time.monotonic() < timeout_at:
             cache.delete(lock_id)
-
-
-def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
-    """Check if a value is in a list of allowed values or matches a wildcard pattern."""
-    if value is None:
-        return False
-
-    valid = value in allowed_values
-    if not valid:
-        # Check wildcard port patterns (e.g., "http://localhost:*")
-        for allowed in allowed_values:
-            if allowed.endswith(":*"):
-                base_origin = allowed[:-2]
-                if value.startswith(base_origin + ":"):
-                    return True
-    return valid
 
 
 def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.AsyncClient, str]:
@@ -209,32 +157,3 @@ class ResponseRegistrationWrapper:
                 register_response_in_cache(response_id, self.model_name, self.user_email)
                 self._registered = True
         return chunk
-
-
-def register_response_in_cache(response_id: str | None, model: str, email: str) -> None:
-    """Registers a response in the cache for later retrieval."""
-    if not response_id:
-        log.warning("Missing response data: id=%s, model=%s", response_id, model)
-        raise ValueError("Missing response_id")
-
-    cache_key = f"response:{response_id}"
-    cache_value = {"model": model, "email": email}
-
-    response_cache = caches["default"]
-    response_cache.set(cache_key, cache_value, timeout=settings.RESPONSES_API_TTL_SECONDS)
-    log.debug("Registered response %s for user %s with model %s", response_id, email, model)
-
-
-def get_response_from_cache(response_id: str) -> dict[str, Any] | None:
-    """Retrieves a response from the cache."""
-    cache_key = f"response:{response_id}"
-    response_cache = caches["default"]
-    result: dict[str, Any] | None = response_cache.get(cache_key)
-    return result
-
-
-def delete_response_from_cache(response_id: str) -> None:
-    """Deletes a response from the cache."""
-    cache_key = f"response:{response_id}"
-    response_cache = caches["default"]
-    response_cache.delete(cache_key)

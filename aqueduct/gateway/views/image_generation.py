@@ -8,9 +8,7 @@ from litellm import BadRequestError
 from openai.types import ImageGenerateParams, ImagesResponse
 from pydantic import ConfigDict, TypeAdapter
 
-from management.models import Request
-
-from .decorators import (
+from gateway.decorators import (
     catch_router_exceptions,
     check_limits,
     check_model_availability,
@@ -20,6 +18,8 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
+from management.models import Request
+
 from .utils import RawJsonResponse, get_token_usage, oai_client_from_body
 
 log = logging.getLogger("aqueduct")

@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
 from gateway.config import get_mcp_config
-from gateway.views.decorators import (
+from gateway.decorators import (
     check_mcp_server_availability,
     log_request,
     mcp_transport_security,

@@ -154,6 +154,8 @@ class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
 
     pk_url_kwarg = "service_account_id"  # Tell base view how to find the SA ID
     context_object_name = "service_account"  # Match template usage
+    form_class = ServiceAccountForm
+    template_name = "management/create/service_account.html"
 
     def get_initial(self) -> dict:
         initial = super().get_initial()

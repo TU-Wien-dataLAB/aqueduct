@@ -1,6 +1,3 @@
-# models/snippets.py
-"""Snippet models used to override gateway behavior via user-defined code."""
-
 from typing import Any
 
 from django.db import models

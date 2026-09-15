@@ -1,6 +1,3 @@
-# models/batches.py
-"""Batch model mirroring OpenAI's Batch type."""
-
 import logging
 import secrets
 from typing import Literal, cast
@@ -11,14 +8,12 @@ from django.db import models
 from django.db.models import JSONField
 from openai import AsyncOpenAI
 
-from .accounts import Token
-from .files import FileObject
+from management.models.accounts import Token
+from management.models.files import FileObject
 
 log = logging.getLogger("aqueduct")
 
 
-# Legacy ID generator. Referenced by historical migrations (0005) and must remain
-# importable from management.models. No longer used at runtime.
 def generate_batch_id() -> str:
     return f"batch-{secrets.token_hex(12)}"
 

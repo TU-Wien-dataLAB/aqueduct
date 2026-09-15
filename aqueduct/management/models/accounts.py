@@ -1,6 +1,3 @@
-# models/accounts.py
-"""Organization, team, user, service account, and token models."""
-
 import hashlib
 import secrets
 from collections.abc import Callable
@@ -13,8 +10,12 @@ from django.db import models
 from django.utils import timezone
 
 from gateway.config import resolve_model_alias
-
-from .mixins import LimitMixin, LimitSet, MCPServerExclusionMixin, ModelExclusionMixin
+from management.models.mixins import (
+    LimitMixin,
+    LimitSet,
+    MCPServerExclusionMixin,
+    ModelExclusionMixin,
+)
 
 _T = TypeVar("_T")
 
@@ -181,8 +182,6 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
             return False
         else:
             return membership.is_admin
-        # Removed overly defensive AttributeError check. If 'teammembership_set' is missing,
-        # it indicates a fundamental model setup error that should not be caught here.
 
 
 class TeamMembership(models.Model):
@@ -280,11 +279,7 @@ class Token(models.Model):
     )
     # This structure implies the Token is *created by* a User, potentially *for* a Service Account.
     service_account = models.OneToOneField(
-        ServiceAccount,  # Removed quotes as ServiceAccount is defined above
-        on_delete=models.CASCADE,
-        related_name="token",
-        null=True,
-        blank=True,
+        ServiceAccount, on_delete=models.CASCADE, related_name="token", null=True, blank=True
     )
     # Store hash and preview, not the original key
     key_hash = models.CharField(
@@ -342,8 +337,6 @@ class Token(models.Model):
             return ""
         return f"{key[:start]}...{key[-end:]}"
 
-    # Removed static generate_key - logic moved to _generate_secret_key
-
     def _set_new_key(self) -> str:
         """
         Generates a new secret key, sets the instance's hash and preview fields.
@@ -353,8 +346,6 @@ class Token(models.Model):
         self.key_hash = self._hash_key(secret_key)
         self.key_preview = self._generate_preview(secret_key)
         return secret_key
-
-    # Removed the key_preview @property as it's now a direct field
 
     def regenerate_key(self) -> str:
         """
@@ -369,9 +360,6 @@ class Token(models.Model):
         """
         Model-level validation. The user-specific token limit is checked in the form.
         """
-        # Removed the user token limit check here, as it's handled in TokenCreateForm.clean()
-        # Ensure hash and preview are present before final validation/save if needed
-        # (Handled by save() method)
         super().clean()
 
     def _get_from_hierarchy(self, retrieval_function: Callable[..., _T]) -> _T:

@@ -1,6 +1,3 @@
-# models/files.py
-"""File model mirroring OpenAI's FileObject type."""
-
 import asyncio
 import logging
 import secrets
@@ -10,13 +7,11 @@ import openai.types
 from django.db import models
 from openai import AsyncOpenAI
 
-from .accounts import Token
+from management.models.accounts import Token
 
 log = logging.getLogger("aqueduct")
 
 
-# Legacy ID generator. Referenced by historical migrations (0004) and must remain
-# importable from management.models. No longer used at runtime.
 def generate_file_id() -> str:
     return f"file-{secrets.token_hex(12)}"
 

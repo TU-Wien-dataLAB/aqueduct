@@ -1,6 +1,3 @@
-# models/mixins.py
-"""Shared abstract model mixins and the resolved rate-limit dataclass."""
-
 import dataclasses
 from typing import Optional
 

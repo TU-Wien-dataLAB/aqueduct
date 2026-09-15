@@ -1,6 +1,3 @@
-# models/vector_stores.py
-"""Vector store models mirroring OpenAI's vector store API types."""
-
 import asyncio
 import logging
 from typing import Optional
@@ -11,8 +8,8 @@ from django.db import models
 from django.utils import timezone
 from openai import AsyncOpenAI
 
-from .accounts import Token
-from .files import FileObject
+from management.models.accounts import Token
+from management.models.files import FileObject
 
 log = logging.getLogger("aqueduct")
 

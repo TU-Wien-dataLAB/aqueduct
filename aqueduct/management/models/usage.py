@@ -1,13 +1,10 @@
-# models/usage.py
-"""Usage logging: the Usage dataclass and the Request model."""
-
 import dataclasses
 from typing import Any, ClassVar
 
 from django.db import models
 from django.utils import timezone
 
-from .accounts import Token
+from management.models.accounts import Token
 
 
 @dataclasses.dataclass
@@ -55,7 +52,6 @@ class Request(models.Model):
     )
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
 
-    # Additional fields (endpoint_url removed)
     method = models.CharField(
         max_length=16, blank=True, help_text="HTTP method used (e.g., GET, POST, etc.)"
     )

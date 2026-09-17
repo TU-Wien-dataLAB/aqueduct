@@ -8,7 +8,8 @@ from django.core.handlers.asgi import ASGIRequest
 from mcp.types import JSONRPCMessage
 
 from gateway.decorators.types import AsyncView, ViewResult
-from gateway.raw_response import error_response, in_wildcard
+from gateway.response_types import error_response
+from gateway.utils import in_wildcard
 
 if TYPE_CHECKING:
     from management.models import Token

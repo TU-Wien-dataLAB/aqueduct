@@ -18,7 +18,7 @@ from mcp.shared.message import SessionMessage
 from mcp.types import CONNECTION_CLOSED, ErrorData, JSONRPCError, JSONRPCMessage, JSONRPCRequest
 from pydantic import TypeAdapter
 
-from gateway.raw_response import RawJsonResponse, RawStreamingResponse
+from gateway.response_types import RawJsonResponse, RawStreamingResponse
 
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -33,7 +33,7 @@ from gateway.decorators import (
     token_authenticated,
     tos_accepted,
 )
-from gateway.raw_response import error_response
+from gateway.response_types import error_response
 
 log = logging.getLogger("aqueduct")
 

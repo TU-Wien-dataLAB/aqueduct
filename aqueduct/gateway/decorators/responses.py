@@ -10,7 +10,8 @@ from openai.types.responses import ResponseCreateParams, ToolParam
 
 from gateway.config import MCPServerConfig, get_mcp_config
 from gateway.decorators.types import AsyncView, ViewResult
-from gateway.raw_response import error_response, get_response_from_cache
+from gateway.response_types import error_response
+from gateway.responses_cache import get_response_from_cache
 from management.models import Token, VectorStore
 
 if TYPE_CHECKING:

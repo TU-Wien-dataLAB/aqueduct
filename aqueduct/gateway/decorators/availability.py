@@ -6,7 +6,7 @@ from asgiref.sync import sync_to_async
 from django.core.handlers.asgi import ASGIRequest
 
 from gateway.decorators.types import AsyncView, ViewResult
-from gateway.raw_response import error_response
+from gateway.response_types import error_response
 
 if TYPE_CHECKING:
     from management.models import Token

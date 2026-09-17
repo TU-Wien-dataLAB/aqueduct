@@ -20,11 +20,9 @@ from gateway.decorators import (
     tos_accepted,
     validate_response_id,
 )
-from gateway.raw_response import (
-    RawJsonResponse,
-    RawStreamingResponse,
+from gateway.response_types import RawJsonResponse, RawStreamingResponse, error_response
+from gateway.responses_cache import (
     delete_response_from_cache,
-    error_response,
     get_response_from_cache,
     register_response_in_cache,
 )

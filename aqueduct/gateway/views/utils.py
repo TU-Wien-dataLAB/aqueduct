@@ -21,7 +21,7 @@ from openai.types.responses import ResponseCreatedEvent, ResponseStreamEvent
 from pydantic import BaseModel
 
 from gateway.config import get_openai_client, get_router
-from gateway.raw_response import register_response_in_cache
+from gateway.responses_cache import register_response_in_cache
 from management.models import Usage
 
 log = logging.getLogger("aqueduct")

@@ -13,7 +13,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from gateway.config import resolve_model_alias
 from gateway.decorators.types import AsyncView, Decorator, ViewResult
-from gateway.raw_response import error_response
+from gateway.response_types import error_response
 
 log = logging.getLogger("aqueduct")
 

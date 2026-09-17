@@ -11,7 +11,7 @@ from openai.types.chat.chat_completion_content_part_param import FileFile
 
 from gateway.config import get_files_api_client
 from gateway.decorators.types import AsyncView, ViewResult
-from gateway.raw_response import RawJsonResponse, RawStreamingResponse, error_response
+from gateway.response_types import RawJsonResponse, RawStreamingResponse, error_response
 from management.models import FileObject, Token
 
 log = logging.getLogger("aqueduct")

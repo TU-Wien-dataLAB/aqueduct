@@ -19,7 +19,7 @@ from gateway.decorators import (
     token_authenticated,
     tos_accepted,
 )
-from gateway.raw_response import RawJsonResponse, error_response
+from gateway.response_types import RawJsonResponse, error_response
 from management.models import (
     FileObject,
     Token,

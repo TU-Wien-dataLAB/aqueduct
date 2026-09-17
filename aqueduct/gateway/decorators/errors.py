@@ -8,7 +8,7 @@ import openai
 from django.core.handlers.asgi import ASGIRequest
 
 from gateway.decorators.types import AsyncView, ViewResult
-from gateway.raw_response import RawJsonResponse, error_response
+from gateway.response_types import RawJsonResponse, error_response
 
 log = logging.getLogger("aqueduct")
 

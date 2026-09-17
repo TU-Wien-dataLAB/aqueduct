@@ -12,7 +12,7 @@ from mcp import JSONRPCResponse
 from mcp.types import JSONRPCMessage
 
 from gateway.middleware import HttpResponseMiddleware
-from gateway.raw_response import RawJsonResponse, RawStreamingResponse
+from gateway.response_types import RawJsonResponse, RawStreamingResponse
 from gateway.tests.utils.base import GatewayBatchesTestCase
 from management.models import Token, Usage
 

@@ -1519,7 +1519,7 @@ class TokenLimitTest(ChatCompletionsBase):
         )
 
     @patch(
-        "gateway.decorators.auth.get_all_model_request_limit_multipliers",
+        "gateway.decorators.limits.get_all_model_request_limit_multipliers",
         return_value={"gpt-4.1-nano": 2.0},
     )
     def test_per_model_request_limit_multiplier_budget(self, mock_multipliers):
@@ -1557,7 +1557,7 @@ class TokenLimitTest(ChatCompletionsBase):
         )
 
     @patch(
-        "gateway.decorators.auth.get_all_model_request_limit_multipliers",
+        "gateway.decorators.limits.get_all_model_request_limit_multipliers",
         return_value={"gpt-4.1-nano": 0.5},
     )
     def test_per_model_expensive_multiplier_limits_requests(self, mock_multipliers):

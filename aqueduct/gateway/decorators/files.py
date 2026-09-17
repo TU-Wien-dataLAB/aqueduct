@@ -9,7 +9,7 @@ from django.core.handlers.asgi import ASGIRequest
 
 from gateway.config import get_files_api_client, get_router, resolve_model_alias
 from gateway.decorators.types import AsyncView, ViewResult
-from gateway.raw_response import error_response
+from gateway.response_types import error_response
 
 log = logging.getLogger("aqueduct")
 

@@ -10,7 +10,7 @@ from litellm.types.utils import ModelResponseStream
 from mcp.types import JSONRPCMessage
 from pydantic import BaseModel
 
-from gateway.raw_response import RawJsonResponse, RawStreamingResponse
+from gateway.response_types import RawJsonResponse, RawStreamingResponse
 from gateway.views.utils import get_token_usage
 from management.models import Usage
 

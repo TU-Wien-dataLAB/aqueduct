@@ -15,14 +15,11 @@ from openai.types.file_create_params import FileCreateParams as OpenAIFileCreate
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from gateway.config import get_files_api_client
-from gateway.decorators import (
-    catch_router_exceptions,
-    log_request,
-    parse_body,
-    process_batch_file,
-    token_authenticated,
-    tos_accepted,
-)
+from gateway.decorators.auth import token_authenticated, tos_accepted
+from gateway.decorators.body import parse_body
+from gateway.decorators.errors import catch_router_exceptions
+from gateway.decorators.files import process_batch_file
+from gateway.decorators.log import log_request
 from gateway.response_types import RawJsonResponse, error_response
 from management.models import Batch, FileObject, Token
 

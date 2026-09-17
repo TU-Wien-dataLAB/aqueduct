@@ -24,14 +24,13 @@ if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
 from gateway.config import get_mcp_config
-from gateway.decorators import (
+from gateway.decorators.auth import token_authenticated, tos_accepted
+from gateway.decorators.body import parse_body
+from gateway.decorators.log import log_request
+from gateway.decorators.mcp import (
     check_mcp_server_availability,
-    log_request,
     mcp_transport_security,
-    parse_body,
     parse_jsonrpc_message,
-    token_authenticated,
-    tos_accepted,
 )
 from gateway.response_types import error_response
 

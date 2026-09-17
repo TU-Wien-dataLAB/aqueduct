@@ -9,17 +9,12 @@ from openai import HttpxBinaryResponseContent
 from pydantic import TypeAdapter
 
 from gateway.config import get_router
-from gateway.decorators import (
-    catch_router_exceptions,
-    check_limits,
-    check_model_availability,
-    ensure_usage,
-    log_request,
-    parse_body,
-    resolve_alias,
-    token_authenticated,
-    tos_accepted,
-)
+from gateway.decorators.auth import token_authenticated, tos_accepted
+from gateway.decorators.availability import check_model_availability
+from gateway.decorators.body import ensure_usage, parse_body, resolve_alias
+from gateway.decorators.errors import catch_router_exceptions
+from gateway.decorators.limits import check_limits
+from gateway.decorators.log import log_request
 from management.models import Request
 
 

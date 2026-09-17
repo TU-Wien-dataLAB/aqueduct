@@ -7,7 +7,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
 from gateway.config import get_router_config
-from gateway.decorators import log_request, token_authenticated, tos_accepted
+from gateway.decorators.auth import token_authenticated, tos_accepted
+from gateway.decorators.log import log_request
 from gateway.response_types import RawJsonResponse
 from management.models import Request, Token
 

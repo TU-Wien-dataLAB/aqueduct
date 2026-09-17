@@ -8,18 +8,13 @@ from openai import AsyncStream
 from openai.types.responses import Response, ResponseStreamEvent
 from pydantic import TypeAdapter
 
-from gateway.decorators import (
-    catch_router_exceptions,
-    check_limits,
-    check_model_availability,
-    check_tool_availability,
-    log_request,
-    parse_body,
-    resolve_alias,
-    token_authenticated,
-    tos_accepted,
-    validate_response_id,
-)
+from gateway.decorators.auth import token_authenticated, tos_accepted
+from gateway.decorators.availability import check_model_availability
+from gateway.decorators.body import parse_body, resolve_alias
+from gateway.decorators.errors import catch_router_exceptions
+from gateway.decorators.limits import check_limits
+from gateway.decorators.log import log_request
+from gateway.decorators.responses import check_tool_availability, validate_response_id
 from gateway.response_types import RawJsonResponse, RawStreamingResponse, error_response
 from gateway.responses_cache import (
     delete_response_from_cache,

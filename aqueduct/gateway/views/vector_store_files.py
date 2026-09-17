@@ -5,7 +5,6 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.db import transaction
-from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -24,6 +23,7 @@ from .decorators import (
     tos_accepted,
 )
 from .errors import error_response
+from .utils import RawJsonResponse
 
 
 class FileUpdateBody(TypedDict, total=False):
@@ -77,7 +77,7 @@ async def vector_store_files(
     pydantic_model: FileCreateParams | None = None,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files - List files in vector store
     POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
@@ -104,13 +104,8 @@ async def vector_store_files(
         remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
 
         # Return upstream data directly (IDs already match)
-        response_files = []
-        for remote_file in remote_files:
-            file_data = remote_file.model_dump(mode="json")
-            response_files.append(file_data)
-
-        return JsonResponse(
-            {"object": "list", "data": response_files, "has_more": False}, status=200
+        return RawJsonResponse(
+            {"object": "list", "data": remote_files, "has_more": False}, status=200
         )
 
     # POST /v1/vector_stores/{vector_store_id}/files - Add file to vector store
@@ -162,9 +157,7 @@ async def vector_store_files(
         return error_response(f"Vector store file limit reached ({max_files})", status=403)
 
     # Return upstream response directly (IDs already match)
-    response_data = remote_vs_file.model_dump(mode="json")
-
-    return JsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_vs_file, status=200)
 
 
 @csrf_exempt
@@ -182,7 +175,7 @@ async def vector_store_file(
     pydantic_model: FileUpdateBody | None = None,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id} - Retrieve file
     POST /v1/vector_stores/{vector_store_id}/files/{file_id} - Update file attributes
@@ -220,9 +213,7 @@ async def vector_store_file(
             return error_response("Vector store file not found.", param="file_id", status=404)
 
         # Return upstream response directly (IDs already match)
-        response_data = remote_vs_file.model_dump(mode="json")
-
-        return JsonResponse(response_data, status=200)
+        return RawJsonResponse(remote_vs_file, status=200)
 
     if request.method == "POST":
         # Update file attributes
@@ -238,9 +229,7 @@ async def vector_store_file(
         remote_vs_file = await client.vector_stores.files.update(**update_kwargs)
 
         # Return upstream response directly (IDs already match)
-        response_data = remote_vs_file.model_dump(mode="json")
-
-        return JsonResponse(response_data, status=200)
+        return RawJsonResponse(remote_vs_file, status=200)
 
     await vs_file_obj.adelete_upstream(client)
 
@@ -250,7 +239,7 @@ async def vector_store_file(
     # Return response with upstream ID
     response_data = {"id": file_id, "object": "vector_store.file.deleted", "deleted": True}
 
-    return JsonResponse(response_data, status=200)
+    return RawJsonResponse(response_data, status=200)
 
 
 @csrf_exempt
@@ -266,7 +255,7 @@ async def vector_store_file_content(
     file_id: str,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/files/{file_id}/content - Get file content
     """
@@ -300,6 +289,4 @@ async def vector_store_file_content(
     )
 
     # FileContentResponse and AsyncPage[FileContentResponse] are both Pydantic models
-    response_data = content_response.model_dump()
-
-    return JsonResponse(response_data)
+    return RawJsonResponse(content_response)

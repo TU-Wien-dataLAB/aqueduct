@@ -621,7 +621,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertEqual(
             req.status_code,
             504,
-            f"Logged streaming timeout request should have status_code=504, got {req.status_code}",
+            f"Logged timeout request should have status_code=504, got {req.status_code}",
         )
         self.assertIn(
             "chat/completions",
@@ -629,27 +629,25 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             f"Request path should be /chat/completions, got {req.path}",
         )
         self.assertIsNotNone(
-            req.response_time_ms, "Response time should be recorded even for streaming timeout"
+            req.response_time_ms, "Response time should be recorded even for timeout"
         )
         self.assertGreater(
             req.response_time_ms,
             0,
-            f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}",
+            f"Response time should be > 0 for timeout, got {req.response_time_ms}",
         )
         self.assertIsNotNone(
-            req.processing_time_ms, "Processing time should be recorded even for streaming timeout"
+            req.processing_time_ms, "Processing time should be recorded even for timeout"
         )
         self.assertGreater(
             req.processing_time_ms,
             0,
-            f"Processing time should be > 0 for streaming timeout, got {req.processing_time_ms}",
+            f"Processing time should be > 0 for timeout, got {req.processing_time_ms}",
         )
         # Access token_id instead of token to avoid async issues
-        self.assertIsNotNone(req.token_id, "Token should be recorded for streaming timeout")
+        self.assertIsNotNone(req.token_id, "Token should be recorded for timeout")
         self.assertEqual(
-            req.model,
-            self.model,
-            f"Model should be {self.model} for streaming timeout, got {req.model}",
+            req.model, self.model, f"Model should be {self.model} for timeout, got {req.model}"
         )
 
     @override_settings(STREAM_REQUEST_TIMEOUT=5)

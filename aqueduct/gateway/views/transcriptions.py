@@ -10,19 +10,15 @@ from openai.types.audio.transcription_create_params import (
 )
 from pydantic import ConfigDict, RootModel, TypeAdapter
 
+from gateway.decorators.auth import token_authenticated, tos_accepted
+from gateway.decorators.availability import check_model_availability
+from gateway.decorators.body import parse_body, resolve_alias
+from gateway.decorators.errors import catch_router_exceptions
+from gateway.decorators.limits import check_limits
+from gateway.decorators.log import log_request
+from gateway.response_types import RawJsonResponse, RawStreamingResponse
+from gateway.views.utils import get_token_usage, oai_client_from_body
 from management.models import Request
-
-from .decorators import (
-    catch_router_exceptions,
-    check_limits,
-    check_model_availability,
-    log_request,
-    parse_body,
-    resolve_alias,
-    token_authenticated,
-    tos_accepted,
-)
-from .utils import RawJsonResponse, RawStreamingResponse, get_token_usage, oai_client_from_body
 
 
 class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]

@@ -8,8 +8,8 @@ from django.db import models
 from django.db.models import JSONField
 from openai import AsyncOpenAI
 
-from management.models.accounts import Token
 from management.models.files import FileObject
+from management.models.tokens import Token
 
 log = logging.getLogger("aqueduct")
 

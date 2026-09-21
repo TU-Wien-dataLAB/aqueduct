@@ -19,6 +19,7 @@ from .decorators import (
     log_request,
     parse_body,
     resolve_alias,
+    run_plugins,
     token_authenticated,
     tos_accepted,
     validate_response_id,
@@ -45,6 +46,7 @@ from .utils import (
 @check_model_availability
 @check_tool_availability
 @log_request
+@run_plugins
 @catch_router_exceptions
 async def create_response(
     request: ASGIRequest,

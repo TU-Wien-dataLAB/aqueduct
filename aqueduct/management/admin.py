@@ -891,9 +891,11 @@ class VectorStoreFileBatchAdmin(admin.ModelAdmin):
 
 
 class SnippetAdminForm(forms.ModelForm):
+    order = forms.IntegerField(required=False, min_value=0, initial=0)
+
     class Meta:
         model = Snippet
-        fields = ("name", "type", "active", "code")
+        fields = ("name", "type", "active", "order", "code")
 
     def clean_code(self) -> str:
         code = self.cleaned_data["code"]
@@ -916,7 +918,7 @@ class SnippetAdmin(admin.ModelAdmin):
     search_fields: ClassVar[tuple] = ("name",)
     readonly_fields: ClassVar[tuple] = ("updated_at",)
     fieldsets: ClassVar[tuple] = (
-        (None, {"fields": ("name", "type", "active")}),
+        (None, {"fields": ("name", "type", "active", "order")}),
         ("Code", {"fields": ("code",), "classes": ("wide",)}),
     )
     change_list_template = "admin/management/snippet/change_list.html"

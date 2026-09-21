@@ -43,6 +43,13 @@ from gateway.config import (
 from gateway.views.errors import error_response
 from gateway.views.utils import get_response_from_cache, in_wildcard
 from management.models import FileObject, Request, Token, VectorStore
+from management.plugins import (
+    BlockedByPlugin,
+    Plugin,
+    after_hook,
+    before_hook,
+    resolve_active_plugins,
+)
 
 log = logging.getLogger("aqueduct")
 
@@ -108,6 +115,7 @@ def token_authenticated(token_auth_only: bool) -> Decorator:
                 log.error("Token not found during authentication")
                 return unauthorized_response
             kwargs["token"] = token
+            request.active_plugins = await sync_to_async(resolve_active_plugins)()  # type: ignore[attr-defined]
             return await view_func(request, *args, **kwargs)
 
         return wrapper
@@ -640,6 +648,31 @@ def process_file_content(view_func: AsyncView) -> AsyncView:
                     del content_item["file"]
 
         return await view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+def run_plugins(view_func: AsyncView) -> AsyncView:
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
+        plugins: list[Plugin] = getattr(request, "active_plugins", [])
+        if not plugins:
+            return await view_func(request, *args, **kwargs)
+
+        token = kwargs.get("token")
+        body = kwargs.get("pydantic_model")
+
+        try:
+            final_body = before_hook(plugins, request, token, body)
+        except BlockedByPlugin as e:
+            return error_response(e.reason, status=e.status)
+
+        if final_body is not None:
+            kwargs["pydantic_model"] = final_body
+
+        response = await view_func(request, *args, **kwargs)
+        after_hook(plugins, request, token, response)
+        return response
 
     return wrapper
 

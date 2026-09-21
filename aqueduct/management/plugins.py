@@ -60,7 +60,7 @@ def after_hook(plugins: list[Plugin], request: Any, token: Any, response: Any) -
         _record_call(plugin, start)
 
 
-def error_hook(plugins: list[Plugin], request: Any, exc: Exception) -> None:
+def _error_hook(plugins: list[Plugin], request: Any, exc: Exception) -> None:
     for plugin in plugins:
         call = getattr(plugin, "on_error", None)
         if call is None:
@@ -98,7 +98,7 @@ def compile_plugin_class(code: str) -> type[Plugin]:
 
 
 @lru_cache(maxsize=128)
-def plugin_class(pk: int) -> type[Plugin]:
+def _plugin_class(pk: int) -> type[Plugin]:
     snippet = Snippet.objects.get(pk=pk)
     return compile_plugin_class(snippet.code)
 
@@ -109,4 +109,4 @@ def resolve_active_plugins() -> list[Plugin]:
         .order_by("order", "id")
         .values_list("pk", flat=True)
     )
-    return [plugin_class(pk)() for pk in ids]
+    return [_plugin_class(pk)() for pk in ids]

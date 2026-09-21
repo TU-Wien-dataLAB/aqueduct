@@ -6,9 +6,10 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from management.admin import SnippetAdminForm
+from management.admin import SnippetAdmin, SnippetAdminForm
 from management.auth import OIDCBackend
 from management.models import Snippet, SnippetType
+from management.plugins import compile_plugin_class
 from management.tests.helpers import (
     SNIPPET_ORG_CUSTOM,
     SNIPPET_ORG_FROM_FIRST_GROUP,
@@ -307,5 +308,68 @@ class SnippetConsoleTestCase(TestCase):
         resp = self.client.post(
             self.url, {"code": SNIPPET_ORG_FROM_FIRST_GROUP, "payload": "{not json"}
         )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Invalid JSON test input")
+
+
+PLUGIN_CODE = """\
+class MyPlugin(Plugin):
+    def before_request(self, request, token, body):
+        body["flagged"] = True
+        return body
+
+    def after_response(self, request, token, response):
+        response["audited"] = True
+"""
+
+
+PLUGIN_BLOCKER = """\
+class Blocker(Plugin):
+    def before_request(self, request, token, body):
+        raise BlockedByPlugin("forbidden by guard", status=403)
+"""
+
+
+@override_settings(ADMIN_SUPERUSER_EMAILS=[SUPERUSER_EMAIL])
+class PluginConsoleTestCase(TestCase):
+    def setUp(self):
+        self.superuser = User.objects.create_superuser(
+            username="admin", email=SUPERUSER_EMAIL, password="pw"
+        )
+        self.client.force_login(self.superuser)
+        self.url = reverse("admin:management_snippet_plugin_test_console")
+
+    def test_get_shows_console_with_example_data(self):
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Plugin test console")
+        self.assertContains(resp, "Plugin code")
+        self.assertContains(resp, "class MyPlugin(Plugin)")
+        self.assertContains(resp, '"model"')
+
+    def test_runs_plugin_hooks_against_payload(self):
+        resp = self.client.post(
+            self.url,
+            {"code": PLUGIN_CODE, "payload": json.dumps({"model": "gpt-4.1-nano", "messages": []})},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Plugin compiled and ran.")
+        self.assertContains(resp, "before_request returned transformed body")
+        self.assertContains(resp, "after_response ran")
+
+    def test_blocking_plugin_is_reported(self):
+        cls = compile_plugin_class(PLUGIN_BLOCKER)
+        lines = SnippetAdmin._run_plugin_console(cls, {"model": "x"})
+        self.assertEqual(
+            lines, ["before_request -> BlockedByPlugin('forbidden by guard', status=403)"]
+        )
+
+    def test_rejects_invalid_code(self):
+        resp = self.client.post(self.url, {"code": "class P(Plugin):\n  oops", "payload": "{}"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "failed to compile")
+
+    def test_rejects_invalid_json(self):
+        resp = self.client.post(self.url, {"code": PLUGIN_CODE, "payload": "{not json"})
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "Invalid JSON test input")

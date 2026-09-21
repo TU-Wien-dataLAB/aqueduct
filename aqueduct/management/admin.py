@@ -36,6 +36,7 @@ from management.models import (
     VectorStoreFile,
     VectorStoreFileBatch,
 )
+from management.plugins import BlockedByPlugin, Plugin, compile_plugin_class
 from management.snippets import ConfigSnippet, compile_snippet, get_config_snippet
 
 log = logging.getLogger("aqueduct")
@@ -910,6 +911,50 @@ class SnippetAdminForm(forms.ModelForm):
 TEST_PAYLOAD_EXAMPLE = {"email": "you@example.com", "groups": ["E123-Students", "admins"]}
 
 
+PLUGIN_TEST_CODE_EXAMPLE = """\
+class MyPlugin(Plugin):
+    def before_request(self, request, token, body):
+        # Runs before the LLM call -> guardrail or transform.
+        # Return a dict to pass a (possibly modified) body down the chain,
+        # or raise BlockedByPlugin("reason", status=403) to block the request.
+        text = " ".join(m.get("content", "") for m in body.get("messages", []))
+        if "block me" in text:
+            raise BlockedByPlugin("blocked by guard", status=403)
+        body["flagged"] = True
+        return body
+
+    def after_response(self, request, token, response):
+        # Runs after the LLM call -> observability / audit.
+        response["audited"] = True
+
+    def on_error(self, request, exc):
+        # Runs if the LLM call raises -> error handling / alerting.
+        print("error happened:", exc)
+"""
+
+PLUGIN_TEST_PAYLOAD_EXAMPLE = {
+    "model": "gpt-4.1-nano",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "max_tokens": 50,
+}
+
+
+class _ConsoleUser:
+    email = "you@example.com"
+
+
+class _ConsoleRequest:
+    def __init__(self) -> None:
+        self.META = {"REMOTE_ADDR": "127.0.0.1"}
+        self.headers = {"User-Agent": "aqueduct-plugin-console"}
+        self.user = _ConsoleUser()
+
+
+class _ConsoleToken:
+    name = "Test Token"
+    user = _ConsoleUser()
+
+
 @admin.register(Snippet)
 class SnippetAdmin(admin.ModelAdmin):
     form = SnippetAdminForm
@@ -958,7 +1003,12 @@ class SnippetAdmin(admin.ModelAdmin):
                 "test-console/",
                 self.admin_site.admin_view(self.test_console_view),
                 name=f"{self.opts.app_label}_{self.opts.model_name}_test_console",
-            )
+            ),
+            path(
+                "plugin-test-console/",
+                self.admin_site.admin_view(self.plugin_test_console_view),
+                name=f"{self.opts.app_label}_{self.opts.model_name}_plugin_test_console",
+            ),
         ]
         urls = super().get_urls()
         return custom_urls + urls
@@ -1035,5 +1085,92 @@ class SnippetAdmin(admin.ModelAdmin):
             lines.append(f"display_team_names(team names) raised {e!r}")
         else:
             lines.append(f"display_team_names(team names) -> {mapping!r}")
+
+        return lines
+
+    def plugin_test_console_view(self, request) -> HttpResponse:
+        if not self._is_allowed_superuser(request.user):
+            raise PermissionDenied
+
+        code, payload = "", ""
+        results = None
+
+        if request.method != "POST":
+            code = PLUGIN_TEST_CODE_EXAMPLE
+            payload = json.dumps(PLUGIN_TEST_PAYLOAD_EXAMPLE, indent=2)
+
+        if request.method == "POST":
+            code = request.POST.get("code", "")
+            payload = request.POST.get("payload", "")
+            try:
+                cls = compile_plugin_class(code)
+            except ValidationError as e:
+                self.message_user(request, f"Plugin failed to compile: {e}", messages.ERROR)
+            else:
+                if payload.strip():
+                    try:
+                        parsed = json.loads(payload)
+                    except json.JSONDecodeError as e:
+                        self.message_user(request, f"Invalid JSON test input: {e}", messages.ERROR)
+                    else:
+                        results = self._run_plugin_console(cls, parsed)
+                        self.message_user(
+                            request, "Plugin compiled and ran. Output below.", messages.SUCCESS
+                        )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Plugin test console",
+            "code": code,
+            "payload": payload,
+            "results": results,
+        }
+        request.current_app = self.admin_site.name
+        return TemplateResponse(
+            request, "admin/management/snippet/plugin_test_console.html", context
+        )
+
+    @staticmethod
+    def _run_plugin_console(plugin_cls: type[Plugin], body: Any) -> list[str]:
+        """Run a plugin's hooks against a test payload using simple stand-ins."""
+        lines = []
+        plugin = plugin_cls()
+        request = _ConsoleRequest()
+        token = _ConsoleToken()
+
+        if not isinstance(body, dict):
+            lines.append(
+                f"before_request skipped: test input must be a JSON object, "
+                f"got {type(body).__name__}"
+            )
+            return lines
+
+        try:
+            result = plugin.before_request(request, token, body)
+        except BlockedByPlugin as e:
+            lines.append(f"before_request -> BlockedByPlugin({e.reason!r}, status={e.status})")
+            return lines
+        except Exception as e:
+            lines.append(f"before_request raised {e!r}")
+        else:
+            if result is not None:
+                lines.append(f"before_request returned transformed body: {result!r}")
+            else:
+                lines.append("before_request ran; body unchanged")
+
+        response = {"id": "chatcmpl-test", "choices": [], "usage": {}}
+        try:
+            plugin.after_response(request, token, response)
+        except Exception as e:
+            lines.append(f"after_response raised {e!r}")
+        else:
+            lines.append("after_response ran")
+
+        try:
+            plugin.on_error(request, ValueError("simulated downstream error"))
+        except Exception as e:
+            lines.append(f"on_error raised {e!r}")
+        else:
+            lines.append("on_error ran")
 
         return lines

@@ -5,11 +5,11 @@ from management.models import Snippet, SnippetType
 from management.plugins import (
     BlockedByPlugin,
     Plugin,
+    _error_hook,
+    _plugin_class,
     after_hook,
     before_hook,
     compile_plugin_class,
-    error_hook,
-    plugin_class,
     resolve_active_plugins,
 )
 
@@ -77,7 +77,7 @@ class CompilePluginTestCase(TestCase):
 
 class ResolvePluginsTestCase(TestCase):
     def setUp(self):
-        plugin_class.cache_clear()
+        _plugin_class.cache_clear()
 
     def _plugin(self, name: str, cap: str, active: bool = True, order: int = 0) -> Snippet:
         return Snippet.objects.create(
@@ -118,7 +118,7 @@ class ResolvePluginsTestCase(TestCase):
         )
         instances = resolve_active_plugins()
         for pk in expected:
-            plugin_class(pk)
+            _plugin_class(pk)
         self.assertIsInstance(instances[0], Plugin)
         self.assertEqual(len(instances), len(expected))
 
@@ -205,5 +205,5 @@ class DispatchPluginsTestCase(TestCase):
         def handler(request, exc):
             seen.append(exc)
 
-        error_hook([self._make(on_error=handler)], "req", e)
+        _error_hook([self._make(on_error=handler)], "req", e)
         self.assertEqual(seen, [e])

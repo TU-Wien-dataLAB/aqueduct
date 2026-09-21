@@ -368,7 +368,7 @@ class Snippet(models.Model):
         "be active at a time.",
     )
     code = models.TextField(help_text="Python source of the snippet class.")
-    order = models.PositiveIntegerField(default=0)
+    order = models.PositiveSmallIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True, help_text="Last modification time.")
 
     class Meta:

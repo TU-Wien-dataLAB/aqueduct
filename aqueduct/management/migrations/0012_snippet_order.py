@@ -8,6 +8,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
-            model_name="snippet", name="order", field=models.PositiveIntegerField(default=0)
+            model_name="snippet", name="order", field=models.PositiveSmallIntegerField(default=0)
         )
     ]

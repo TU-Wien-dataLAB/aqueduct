@@ -4,7 +4,7 @@ from typing import Any, ClassVar
 from django.db import models
 from django.utils import timezone
 
-from management.models.tokens import Token
+from management.models.token import Token
 
 
 @dataclasses.dataclass

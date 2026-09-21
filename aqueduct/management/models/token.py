@@ -8,8 +8,8 @@ from django.db import models
 from django.utils import timezone
 
 from gateway.config import resolve_model_alias
-from management.models.membership import ServiceAccount
 from management.models.mixins import LimitSet, MCPServerExclusionMixin, ModelExclusionMixin
+from management.models.service_account import ServiceAccount
 
 _T = TypeVar("_T")
 

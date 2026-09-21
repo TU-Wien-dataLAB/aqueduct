@@ -7,7 +7,7 @@ import openai.types
 from django.db import models
 from openai import AsyncOpenAI
 
-from management.models.tokens import Token
+from management.models.token import Token
 
 log = logging.getLogger("aqueduct")
 

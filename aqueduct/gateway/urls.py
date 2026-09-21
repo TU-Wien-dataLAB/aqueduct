@@ -2,8 +2,8 @@
 from django.urls import path
 from django.views.generic import RedirectView
 
-from . import views
-from .views import mcp as mcp_views
+from gateway import views
+from gateway.views import mcp as mcp_views
 
 app_name = "gateway"
 

@@ -4,7 +4,7 @@ from django.test import TestCase
 from management.models import Snippet, SnippetType
 from management.plugins import (
     BlockedByPlugin,
-    Plugin,
+    PluginSnippet,
     _error_hook,
     _plugin_class,
     after_hook,
@@ -14,7 +14,7 @@ from management.plugins import (
 )
 
 GOOD_PLUGIN = """\
-class MyPlugin(Plugin):
+class MyPlugin(PluginSnippet):
     def before_request(self, request, token, body):
         body["flagged"] = True
         return body
@@ -23,12 +23,12 @@ class MyPlugin(Plugin):
         self.seen = response
 """
 
-BAD_SYNTAX = "class MyPlugin(Plugin):\n   def before_request(self"
+BAD_SYNTAX = "class MyPlugin(PluginSnippet):\n   def before_request(self"
 
 
 class PluginBaseTestCase(TestCase):
     def test_default_hooks_are_no_ops(self):
-        p = Plugin()
+        p = PluginSnippet()
         self.assertIsNone(p.before_request("r", "t", "b"))
         self.assertIsNone(p.after_response("r", "t", "resp"))
         self.assertIsNone(p.on_error("r", ValueError("boom")))
@@ -47,12 +47,12 @@ class PluginBaseTestCase(TestCase):
 class CompilePluginTestCase(TestCase):
     def test_compiles_valid_plugin(self):
         cls = compile_plugin_class(GOOD_PLUGIN)
-        self.assertTrue(issubclass(cls, Plugin))
-        self.assertIsNot(cls, Plugin)
+        self.assertTrue(issubclass(cls, PluginSnippet))
+        self.assertIsNot(cls, PluginSnippet)
 
     def test_base_class_auto_injected(self):
-        cls = compile_plugin_class("class P(Plugin):\n    pass\n")
-        self.assertTrue(issubclass(cls, Plugin))
+        cls = compile_plugin_class("class P(PluginSnippet):\n    pass\n")
+        self.assertTrue(issubclass(cls, PluginSnippet))
 
     def test_rejects_syntax_error(self):
         with self.assertRaises(ValidationError):
@@ -72,7 +72,9 @@ class CompilePluginTestCase(TestCase):
 
     def test_rejects_multiple_subclasses(self):
         with self.assertRaises(ValidationError):
-            compile_plugin_class("class A(Plugin):\n    pass\n\nclass B(Plugin):\n    pass\n")
+            compile_plugin_class(
+                "class A(PluginSnippet):\n    pass\n\nclass B(PluginSnippet):\n    pass\n"
+            )
 
 
 class ResolvePluginsTestCase(TestCase):
@@ -85,7 +87,11 @@ class ResolvePluginsTestCase(TestCase):
             type=SnippetType.PLUGIN,
             active=active,
             order=order,
-            code=f"class P(Plugin):\n    def after_response(self, r, t, resp):\n        {cap}\n",
+            code=(
+                "class P(PluginSnippet):\n"
+                "    def after_response(self, r, t, resp):\n"
+                f"        {cap}\n"
+            ),
         )
 
     def test_no_active_plugins_by_default(self):
@@ -119,7 +125,7 @@ class ResolvePluginsTestCase(TestCase):
         instances = resolve_active_plugins()
         for pk in expected:
             _plugin_class(pk)
-        self.assertIsInstance(instances[0], Plugin)
+        self.assertIsInstance(instances[0], PluginSnippet)
         self.assertEqual(len(instances), len(expected))
 
     def test_fresh_instance_per_call_and_class_cached(self):
@@ -131,8 +137,8 @@ class ResolvePluginsTestCase(TestCase):
 
 
 class DispatchPluginsTestCase(TestCase):
-    def _make(self, before=None, after=None, on_error=None) -> Plugin:
-        class P(Plugin):
+    def _make(self, before=None, after=None, on_error=None) -> PluginSnippet:
+        class P(PluginSnippet):
             pass
 
         if before is not None:

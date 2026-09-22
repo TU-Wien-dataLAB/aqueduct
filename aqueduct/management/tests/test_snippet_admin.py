@@ -42,8 +42,6 @@ class SnippetAdminFormTestCase(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
 
     def test_syntax_error_not_rejected(self):
-        # The admin deliberately does not block saving on code errors: operators
-        # rely on the snippet author, so broken code is accepted at save time.
         form = SnippetAdminForm(
             data={
                 "name": "c",
@@ -55,7 +53,6 @@ class SnippetAdminFormTestCase(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
 
     def test_wrong_signature_not_rejected(self):
-        # Same as above: bad method signatures no longer surface as form errors.
         form = SnippetAdminForm(
             data={
                 "name": "c",
@@ -154,13 +151,11 @@ class SnippetAdminFormTestCase(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
 
     def test_order_locked_for_config_only(self):
-        # A brand-new snippet defaults to config -> order must be read-only.
         form = SnippetAdminForm(
             data={"name": "c", "type": "config", "active": True, "code": VALID_CODE}
         )
         self.assertTrue(form.fields["order"].widget.attrs.get("readonly"))
 
-        # An existing/created plugin keeps order editable.
         plugin = Snippet(type=SnippetType.PLUGIN)
         form2 = SnippetAdminForm(
             data={"name": "p", "type": "plugin", "active": True, "code": VALID_CODE},
@@ -169,15 +164,13 @@ class SnippetAdminFormTestCase(TestCase):
         self.assertFalse(form2.fields["order"].widget.attrs.get("readonly"))
 
     def test_plugin_order_is_saved(self):
-        # Regression: order must persist for plugins even when the snippet is new
-        # (a plain `disabled` field would discard the submitted value on save).
         form = SnippetAdminForm(
             data={
                 "name": "p",
                 "type": "plugin",
                 "active": True,
                 "order": "7",
-                "code": "class P(Plugin):\n    pass\n",
+                "code": "class P(PluginSnippet):\n    pass\n",
             }
         )
         self.assertTrue(form.is_valid(), form.errors)
@@ -251,7 +244,6 @@ class SnippetAdminAuthorizationTestCase(TestCase):
         self.client.force_login(self.superuser)
         resp = self.client.get(reverse("admin:management_snippet_add"))
         self.assertEqual(resp.status_code, 200)
-        # The code field is rendered as a CodeMirror-backed editor, not a raw box.
         self.assertContains(resp, "snippet-code-input")
         self.assertContains(resp, "@codemirror/lang-python")
 
@@ -319,15 +311,12 @@ class SnippetConsoleTestCase(TestCase):
     def test_get_prefills_example_code_and_payload(self):
         resp = self.client.get(self.url)
         self.assertEqual(resp.status_code, 200)
-        # The code editor is prefilled with a runnable example (like the plugin console).
         self.assertContains(resp, "class Test(ConfigSnippet)")
         self.assertContains(resp, "display_team_names")
-        # The Test input is pre-filled with a runnable claims example.
         self.assertContains(resp, '"email"')
         self.assertContains(resp, "you@example.com")
         self.assertContains(resp, '"groups"')
         self.assertContains(resp, "E123-Students")
-        # No separate on-page example block; the code editor carries the example.
         self.assertNotContains(resp, "snippet-console-example")
         self.assertContains(resp, "snippet-console-code")
 
@@ -358,7 +347,7 @@ class SnippetConsoleTestCase(TestCase):
 
 
 PLUGIN_CODE = """\
-class MyPlugin(Plugin):
+class MyPlugin(PluginSnippet):
     def before_request(self, request, token, body):
         body["flagged"] = True
         return body
@@ -369,7 +358,7 @@ class MyPlugin(Plugin):
 
 
 PLUGIN_BLOCKER = """\
-class Blocker(Plugin):
+class Blocker(PluginSnippet):
     def before_request(self, request, token, body):
         raise BlockedByPlugin("forbidden by guard", status=403)
 """
@@ -389,7 +378,7 @@ class PluginConsoleTestCase(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "Plugin test console")
         self.assertContains(resp, "Plugin code")
-        self.assertContains(resp, "class MyPlugin(Plugin)")
+        self.assertContains(resp, "class MyPlugin(PluginSnippet)")
         self.assertContains(resp, '"model"')
 
     def test_runs_plugin_hooks_against_payload(self):
@@ -410,7 +399,9 @@ class PluginConsoleTestCase(TestCase):
         )
 
     def test_rejects_invalid_code(self):
-        resp = self.client.post(self.url, {"code": "class P(Plugin):\n  oops", "payload": "{}"})
+        resp = self.client.post(
+            self.url, {"code": "class P(PluginSnippet):\n  oops", "payload": "{}"}
+        )
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "failed to compile")
 

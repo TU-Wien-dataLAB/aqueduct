@@ -38,10 +38,10 @@
         <div class="form-row">
           <label for="id_code">Plugin code:</label>
           <textarea id="id_code" name="code" rows="40" class="vLargeTextField plugin-console-input plugin-console-code"
-            placeholder='class MyPlugin(Plugin):
+            placeholder='class MyPlugin(PluginSnippet):
     def before_request(self, request, token, body):
         return body'>{{ code }}</textarea>
-          <div class="help">Python class subclassing <code>Plugin</code> (auto-injected, no import needed). The code editor is prefilled with a runnable example.</div>
+          <div class="help">Python class subclassing <code>PluginSnippet</code> (auto-injected, no import needed). The code editor is prefilled with a runnable example.</div>
         </div>
         <div class="form-row">
           <label for="id_payload">Test input (JSON):</label>

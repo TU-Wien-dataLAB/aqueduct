@@ -45,7 +45,7 @@ from gateway.views.utils import get_response_from_cache, in_wildcard
 from management.models import FileObject, Request, Token, VectorStore
 from management.plugins import (
     BlockedByPlugin,
-    Plugin,
+    PluginSnippet,
     after_hook,
     before_hook,
     resolve_active_plugins,
@@ -655,7 +655,7 @@ def process_file_content(view_func: AsyncView) -> AsyncView:
 def run_plugins(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
-        plugins: list[Plugin] = getattr(request, "active_plugins", [])
+        plugins: list[PluginSnippet] = getattr(request, "active_plugins", [])
         if not plugins:
             return await view_func(request, *args, **kwargs)
 

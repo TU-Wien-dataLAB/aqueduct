@@ -14,7 +14,7 @@ BODY_EXTRA_KEY = "custom_plugin_field"
 
 BODY_MUTATING_PLUGIN = """\
 from gateway.tests.test_plugins_api import BODY_EXTRA_KEY
-class Mutator(Plugin):
+class Mutator(PluginSnippet):
     def before_request(self, request, token, body):
         body[BODY_EXTRA_KEY] = "plugin-added"
         return body
@@ -22,7 +22,7 @@ class Mutator(Plugin):
 
 
 BLOCKING_PLUGIN = """\
-class Guard(Plugin):
+class Guard(PluginSnippet):
     def before_request(self, request, token, body):
         raise BlockedByPlugin("forbidden by guard", status=403)
 """
@@ -30,7 +30,7 @@ class Guard(Plugin):
 
 AFTER_PLUGIN = """\
 from gateway.tests.test_plugins_api import AFTER_CALLS
-class Audit(Plugin):
+class Audit(PluginSnippet):
     def after_response(self, request, token, response):
         AFTER_CALLS.append(True)
 """
@@ -38,7 +38,7 @@ class Audit(Plugin):
 
 PLUGIN_RECORD_A = """\
 from gateway.tests.test_plugins_api import EVENTS
-class A(Plugin):
+class A(PluginSnippet):
     def before_request(self, request, token, body):
         EVENTS.append("A")
         return body
@@ -47,7 +47,7 @@ class A(Plugin):
 
 PLUGIN_RECORD_B = """\
 from gateway.tests.test_plugins_api import EVENTS
-class B(Plugin):
+class B(PluginSnippet):
     def before_request(self, request, token, body):
         EVENTS.append("B")
         return body
@@ -56,7 +56,7 @@ class B(Plugin):
 
 PLUGIN_SET_STEP = """\
 from gateway.tests.test_plugins_api import EVENTS
-class SetStep(Plugin):
+class SetStep(PluginSnippet):
     def before_request(self, request, token, body):
         body["step"] = "from-pipe"
         return body
@@ -65,7 +65,7 @@ class SetStep(Plugin):
 
 PLUGIN_READ_STEP = """\
 from gateway.tests.test_plugins_api import EVENTS
-class ReadStep(Plugin):
+class ReadStep(PluginSnippet):
     def before_request(self, request, token, body):
         EVENTS.append(body.get("step"))
         return body
@@ -73,7 +73,7 @@ class ReadStep(Plugin):
 
 
 PLUGIN_BOOM = """\
-class Boom(Plugin):
+class Boom(PluginSnippet):
     def before_request(self, request, token, body):
         raise RuntimeError("plugin exploded")
 """

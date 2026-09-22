@@ -36,7 +36,7 @@ from management.models import (
     VectorStoreFile,
     VectorStoreFileBatch,
 )
-from management.plugins import BlockedByPlugin, Plugin, compile_plugin_class
+from management.plugins import BlockedByPlugin, PluginSnippet, compile_plugin_class
 from management.snippets import ConfigSnippet, compile_snippet, get_config_snippet
 
 log = logging.getLogger("aqueduct")
@@ -909,13 +909,9 @@ class SnippetAdminForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # order is only meaningful for plugins; keep it fixed for config snippets.
-        # Use a readonly *attribute* (not Django's `disabled`, which would make the
-        # form ignore any submitted value) so a plugin's order is always saved.
         snippet_type = self.instance.type if self.instance else SnippetType.CONFIG
         if snippet_type != SnippetType.PLUGIN:
             self.fields["order"].widget.attrs["readonly"] = True
-        # Style the code field as a tall, full-width editor (mirrors the test console).
         self.fields["code"].widget.attrs.update(
             {"class": "vLargeTextField snippet-code-input", "rows": 30}
         )
@@ -924,19 +920,15 @@ class SnippetAdminForm(forms.ModelForm):
 TEST_CODE_EXAMPLE = """\
 class Test(ConfigSnippet):
     def org_name(self, claims):
-        # Map the IdP org/domain claim to your Aqueduct org name.
         return claims.get("org")
 
     def user_group(self, claims):
-        # Pick which group maps to the user's primary Aqueduct group.
         return (claims.get("groups") or ["default"])[0]
 
     def team_names(self, claims):
-        # Extract the team list from the claims object.
         return claims.get("groups") or []
 
     def display_team_names(self, team_names):
-        # Return (name, enabled) tuples to shape how teams appear.
         return [(name, True) for name in team_names]
 """
 
@@ -945,11 +937,8 @@ TEST_PAYLOAD_EXAMPLE = {"email": "you@example.com", "groups": ["E123-Students", 
 
 
 PLUGIN_TEST_CODE_EXAMPLE = """\
-class MyPlugin(Plugin):
+class MyPlugin(PluginSnippet):
     def before_request(self, request, token, body):
-        # Runs before the LLM call -> guardrail or transform.
-        # Return a dict to pass a (possibly modified) body down the chain,
-        # or raise BlockedByPlugin("reason", status=403) to block the request.
         text = " ".join(m.get("content", "") for m in body.get("messages", []))
         if "block me" in text:
             raise BlockedByPlugin("blocked by guard", status=403)
@@ -957,11 +946,9 @@ class MyPlugin(Plugin):
         return body
 
     def after_response(self, request, token, response):
-        # Runs after the LLM call -> observability / audit.
         response["audited"] = True
 
     def on_error(self, request, exc):
-        # Runs if the LLM call raises -> error handling / alerting.
         print("error happened:", exc)
 """
 
@@ -1034,8 +1021,8 @@ class SnippetAdmin(admin.ModelAdmin):
     def get_urls(self) -> list[URLPattern]:
         custom_urls = [
             path(
-                "test-console/",
-                self.admin_site.admin_view(self.test_console_view),
+                "config-test-console/",
+                self.admin_site.admin_view(self.config_test_console_view),
                 name=f"{self.opts.app_label}_{self.opts.model_name}_test_console",
             ),
             path(
@@ -1047,7 +1034,7 @@ class SnippetAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         return custom_urls + urls
 
-    def test_console_view(self, request) -> HttpResponse:
+    def config_test_console_view(self, request) -> HttpResponse:
         if not self._is_allowed_superuser(request.user):
             raise PermissionDenied
 
@@ -1166,7 +1153,7 @@ class SnippetAdmin(admin.ModelAdmin):
         )
 
     @staticmethod
-    def _run_plugin_console(plugin_cls: type[Plugin], body: Any) -> list[str]:
+    def _run_plugin_console(plugin_cls: type[PluginSnippet], body: Any) -> list[str]:
         """Run a plugin's hooks against a test payload using simple stand-ins."""
         lines = []
         plugin = plugin_cls()

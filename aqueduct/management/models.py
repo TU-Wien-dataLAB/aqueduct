@@ -368,7 +368,14 @@ class Snippet(models.Model):
         "be active at a time.",
     )
     code = models.TextField(help_text="Python source of the snippet class.")
-    order = models.PositiveSmallIntegerField(default=0)
+    order = models.PositiveSmallIntegerField(
+        default=0,
+        help_text=(
+            "Execution priority for plugins only: lower order runs first; ties "
+            "broken by lower id. Ignored for config snippets (only one config "
+            "is ever active)."
+        ),
+    )
     updated_at = models.DateTimeField(auto_now=True, help_text="Last modification time.")
 
     class Meta:

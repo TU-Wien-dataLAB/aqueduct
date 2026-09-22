@@ -892,20 +892,53 @@ class VectorStoreFileBatchAdmin(admin.ModelAdmin):
 
 
 class SnippetAdminForm(forms.ModelForm):
-    order = forms.IntegerField(required=False, min_value=0, initial=0)
+    order = forms.IntegerField(
+        required=False,
+        min_value=0,
+        initial=0,
+        help_text=(
+            "Execution priority for plugins only: lower order runs first; ties "
+            "broken by lower id. Disabled for config snippets (only one config "
+            "is ever active)."
+        ),
+    )
 
     class Meta:
         model = Snippet
         fields = ("name", "type", "active", "order", "code")
 
-    def clean_code(self) -> str:
-        code = self.cleaned_data["code"]
-        require_subclass = self.cleaned_data.get("type") != SnippetType.PLUGIN
-        try:
-            compile_snippet(code, require_subclass=require_subclass)
-        except ValidationError as e:
-            raise forms.ValidationError(str(e)) from e
-        return code
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # order is only meaningful for plugins; keep it fixed for config snippets.
+        # Use a readonly *attribute* (not Django's `disabled`, which would make the
+        # form ignore any submitted value) so a plugin's order is always saved.
+        snippet_type = self.instance.type if self.instance else SnippetType.CONFIG
+        if snippet_type != SnippetType.PLUGIN:
+            self.fields["order"].widget.attrs["readonly"] = True
+        # Style the code field as a tall, full-width editor (mirrors the test console).
+        self.fields["code"].widget.attrs.update(
+            {"class": "vLargeTextField snippet-code-input", "rows": 30}
+        )
+
+
+TEST_CODE_EXAMPLE = """\
+class Test(ConfigSnippet):
+    def org_name(self, claims):
+        # Map the IdP org/domain claim to your Aqueduct org name.
+        return claims.get("org")
+
+    def user_group(self, claims):
+        # Pick which group maps to the user's primary Aqueduct group.
+        return (claims.get("groups") or ["default"])[0]
+
+    def team_names(self, claims):
+        # Extract the team list from the claims object.
+        return claims.get("groups") or []
+
+    def display_team_names(self, team_names):
+        # Return (name, enabled) tuples to shape how teams appear.
+        return [(name, True) for name in team_names]
+"""
 
 
 TEST_PAYLOAD_EXAMPLE = {"email": "you@example.com", "groups": ["E123-Students", "admins"]}
@@ -958,7 +991,7 @@ class _ConsoleToken:
 @admin.register(Snippet)
 class SnippetAdmin(admin.ModelAdmin):
     form = SnippetAdminForm
-    list_display: ClassVar[tuple] = ("name", "type", "active", "updated_at")
+    list_display: ClassVar[tuple] = ("id", "name", "type", "order", "active", "updated_at")
     list_filter: ClassVar[list] = ("type", "active")
     search_fields: ClassVar[tuple] = ("name",)
     readonly_fields: ClassVar[tuple] = ("updated_at",)
@@ -967,6 +1000,7 @@ class SnippetAdmin(admin.ModelAdmin):
         ("Code", {"fields": ("code",), "classes": ("wide",)}),
     )
     change_list_template = "admin/management/snippet/change_list.html"
+    change_form_template = "admin/management/snippet/change_form.html"
 
     @staticmethod
     def _allowed_emails() -> set[str]:
@@ -1021,6 +1055,7 @@ class SnippetAdmin(admin.ModelAdmin):
         results = None
 
         if request.method != "POST":
+            code = TEST_CODE_EXAMPLE
             payload = json.dumps(TEST_PAYLOAD_EXAMPLE, indent=2)
 
         if request.method == "POST":
@@ -1047,7 +1082,7 @@ class SnippetAdmin(admin.ModelAdmin):
 
         context = {
             **self.admin_site.each_context(request),
-            "title": "Snippet test console",
+            "title": "Config test console",
             "code": code,
             "payload": payload,
             "results": results,

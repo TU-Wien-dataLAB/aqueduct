@@ -36,28 +36,28 @@
     <form method="post">{% csrf_token %}
       <fieldset class="module aligned">
         <div class="form-row">
-          <label for="id_code">Snippet code:</label>
-          <textarea id="id_code" name="code" rows="40" class="vLargeTextField snippet-console-input snippet-console-code"
-            placeholder='class Test(ConfigSnippet):
-    def org_name(self, claims):
-        return claims.get("org")'>{{ code }}</textarea>
-          <div class="help">Python class subclassing <code>ConfigSnippet</code> (auto-injected, no import needed). The code editor is prefilled with a runnable example.</div>
+          <label for="id_code">Plugin code:</label>
+          <textarea id="id_code" name="code" rows="40" class="vLargeTextField plugin-console-input plugin-console-code"
+            placeholder='class MyPlugin(PluginSnippet):
+    def before_request(self, request, token, body):
+        return body'>{{ code }}</textarea>
+          <div class="help">Python class subclassing <code>PluginSnippet</code> (auto-injected, no import needed). The code editor is prefilled with a runnable example.</div>
         </div>
         <div class="form-row">
           <label for="id_payload">Test input (JSON):</label>
-          <textarea id="id_payload" name="payload" rows="16" class="vLargeTextField snippet-console-input snippet-console-payload"
+          <textarea id="id_payload" name="payload" rows="16" class="vLargeTextField plugin-console-input plugin-console-payload"
             placeholder='{
-  "email": "you@example.com",
-  "groups": ["E123-Students", "admins"]
+  "model": "gpt-4.1-nano",
+  "messages": [{ "role": "user", "content": "Hello" }]
 }'>{{ payload }}</textarea>
           <div class="help">
-            Paste a <strong>claims object</strong> (exactly what your IdP sends). It is
-            the only input you need — the console chains it through the methods like the
-            real login flow:
+            Paste a <strong>request body</strong> (what your client sends the gateway).
+            The console chains it through the plugin hooks like the real request flow:
             <ul style="margin:0.25rem 0 0 1.25rem;">
-              <li><code>org_name(claims)</code> and <code>user_group(claims)</code> receive the object directly.</li>
-              <li><code>team_names(claims)</code> extracts the group list from it.</li>
-              <li><code>display_team_names(...)</code> receives that extracted list (not your raw input).</li>
+              <li><code>before_request(request, token, body)</code> receives the object; a returned dict is shown as the transformed body.</li>
+              <li><code>after_response(request, token, response)</code> receives a sample response dict.</li>
+              <li><code>on_error(request, exc)</code> receives a simulated error.</li>
+              <li>Try adding <code>"block me"</code> to a message to see the example <code>BlockedByPlugin</code> path.</li>
             </ul>
           </div>
         </div>
@@ -80,8 +80,6 @@
   </div>
 </div>
 
-<!-- CodeMirror 6 (ES modules) via import map. Versions pinned to the exact
-     closure resolved by npm install codemirror@6.0.2 lang-python lang-json. -->
 <script type="importmap">
 {
   "imports": {
@@ -127,10 +125,10 @@
       editors.push({ta: ta, view: view});
     });
   }
-  makeEditor("textarea.snippet-console-code", python(), "cm-host-code");
-  makeEditor("textarea.snippet-console-payload", json(), "cm-host-payload");
+  makeEditor("textarea.plugin-console-code", python(), "cm-host-code");
+  makeEditor("textarea.plugin-console-payload", json(), "cm-host-payload");
 
-  const form = document.querySelector("textarea.snippet-console-code").form;
+  const form = document.querySelector("textarea.plugin-console-code").form;
   form.addEventListener("submit", function () {
     editors.forEach(function (item) {
       item.ta.value = item.view.state.doc.toString();

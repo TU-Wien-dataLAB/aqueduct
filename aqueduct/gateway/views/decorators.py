@@ -24,7 +24,7 @@ from django.db.models import Count, Sum
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.urls import reverse
 from django.utils import timezone
-from mcp.types import JSONRPCMessage
+from mcp.types import jsonrpc_message_adapter
 from openai.types.chat import ChatCompletionStreamOptionsParam
 from openai.types.chat.chat_completion_content_part_param import FileFile
 from openai.types.responses import ResponseCreateParams, ToolParam
@@ -393,12 +393,6 @@ def check_limits(view_func: AsyncView) -> AsyncView:
 def log_request(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
-        is_initialize = kwargs.get("is_initialize", False)
-
-        if request.path.startswith("/mcp-servers/") and not is_initialize:
-            kwargs["request_log"] = None
-            return await view_func(request, *args, **kwargs)
-
         pydantic_model: dict[str, Any] | None = kwargs.get("pydantic_model")
         token = kwargs.get("token")
         request_log = Request(
@@ -890,33 +884,22 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
 
 
 def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
+    """Parse and validate the JSON-RPC message from the POST body.
+
+    Stateless 2026-07-28 flow: every request is POST-only and self-contained.
+    There is no session id and no handshake handling.
+    """
+
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
-        session_id = request.headers.get("Mcp-Session-Id")
-        kwargs["session_id"] = session_id
-
         if request.method != "POST":
-            if not session_id:
-                log.error("Session ID required for MCP server %r", kwargs.get("name"))
-                return error_response("Mcp-Session-Id header required", status=400)
-
-            return await view_func(request, *args, request_log=None, **kwargs)
+            return await view_func(request, *args, **kwargs)
 
         data = kwargs["pydantic_model"]
-        # For mcp requests, timeout should not be passed to the JSON RPC Message
+        # For MCP requests, the relay timeout should not be passed to the JSON-RPC message.
         data.pop("timeout", None)
-        json_rpc_message = JSONRPCMessage.model_validate(data)
-        is_initialize = (
-            hasattr(json_rpc_message.root, "method")
-            and json_rpc_message.root.method == "initialize"
-        )
-
-        if not is_initialize and not session_id:
-            log.error("Session ID required for MCP server %r", kwargs.get("name"))
-            return error_response("Mcp-Session-Id header required", status=400)
-
+        json_rpc_message = jsonrpc_message_adapter.validate_python(data)
         kwargs["json_rpc_message"] = json_rpc_message
-        kwargs["is_initialize"] = is_initialize
 
         return await view_func(request, *args, **kwargs)
 

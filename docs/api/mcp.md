@@ -7,90 +7,78 @@ nav_order: 9
 # Model Context Protocol (MCP)
 
 The Model Context Protocol (MCP) endpoints allow you to connect to MCP servers through a simple HTTP interface. This
-implements the 2025-06-18 version of the streamable HTTP transport specification, making it easy to integrate with
-MCP-compatible tools.
+implements the **2026-07-28** version of the streamable HTTP transport specification, which has a **stateless protocol
+core**. There is no handshake, no session id, and no server-initiated stream — every request is self-contained and can
+land on any gateway instance behind a plain round-robin load balancer.
 
 ## How It Works
 
-The MCP gateway acts as a bridge between your client application and MCP servers. You can request tools, call functions,
-and receive responses through standard HTTP requests while the gateway manages the underlying session.
+Aqueduct acts as a stateless bridge between your client application and MCP servers. Each `POST` carries the protocol
+version, client identity, and capabilities either in HTTP headers or in the JSON-RPC `_meta` field. The gateway
+validates the required transport headers and relays the request to the configured upstream server, returning its
+response. Nothing is held in memory between requests.
 
-## Available Endpoints (MCP 2025-08-16 spec)
+## Available Endpoint (MCP 2026-07-28)
 
 ```
-GET    /mcp-servers/{name}/mcp     - Start streaming responses
-POST   /mcp-servers/{name}/mcp     - Send MCP messages
-DELETE /mcp-servers/{name}/mcp     - End a session
+POST /mcp-servers/{name}/mcp     - Send one self-contained MCP request
 ```
 
-Replace `{name}` with your MCP server name from the MCP server list in the UI.
+Replace `{name}` with your MCP server name from the MCP server list in the UI. `GET` and `DELETE` are not supported —
+the stateless protocol has no sessions to manage or tear down.
 
-### Sequence Diagram (MCP 2025-08-16 spec)
+### Required headers
+
+Per the 2026-07-28 transport specification, each request must carry:
+
+- `MCP-Protocol-Version`: `2026-07-28`
+- `Mcp-Method`: the JSON-RPC method (e.g. `tools/call`, `tools/list`)
+- `Mcp-Name`: the tool/resource/prompt name, for name-bearing methods (e.g. `tools/call`, `resources/read`)
+
+### Sequence
 
 ``` mermaid
 sequenceDiagram
     participant Client
-    participant Server
-    
-    note over Client,Server: initialization
-    Client->>Server: POST InitializeRequest
-    Server->>Client: InitializeResponse<br/>Mcp-Session-Id: 1868a90c...
-    Client->>Server: POST InitializedNotification<br/>Mcp-Session-Id: 1868a90c...
-    Server->>Client: 202 Accepted
-    
-    note over Client,Server: client requests
-    Client->>Server: POST ... request ...<br/>Mcp-Session-Id: 1868a90c...
-    
-    alt [single HTTP response]
-        Server->>Client: ... response ...
-    else [server opens SSE stream]
-        loop [while connection remains open]
-            Server->>Client: ... SSE messages from server ...
-            Server->>Client: SSE event: ... response ...
-        end
-    end
-    
-    note over Client,Server: client notifications/responses
-    Client->>Server: POST ... notification/response ...<br/>Mcp-Session-Id: 1868a90c...
-    Server->>Client: 202 Accepted
-    
-    note over Client,Server: server requests
-    loop [while connection remains open]
-        Client->>Server: GET<br/>Mcp-Session-Id: 1868a90c...
-        Server->>Client: ... SSE messages from server ...
+    participant Gateway
+    participant Upstream
+
+    note over Client,Gateway: no handshake, no session
+    Client->>Gateway: POST MCP request<br/>Mcp-Method / Mcp-Name headers
+    Gateway->>Upstream: POST MCP request (headers forwarded)
+    alt [single JSON response]
+        Upstream->>Gateway: JSON-RPC response
+        Gateway->>Client: JSON-RPC response
+    else [server streams SSE]
+        Upstream->>Gateway: SSE response
+        Gateway->>Client: SSE response
     end
 ```
 
 ### Python Example
 
 ```python
-import asyncio
 import httpx
-from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
 
+url = "https://your-aqueduct-domain.com/mcp-servers/my-cool-server/mcp"
+headers = {
+    "Authorization": "Bearer YOUR_AQUEDUCT_TOKEN",
+    "Content-Type": "application/json",
+    "MCP-Protocol-Version": "2026-07-28",
+    "Mcp-Method": "tools/call",
+    "Mcp-Name": "echo",
+}
 
-async def main():
-    # Connect to your MCP server through Aqueduct
-    url = "https://your-aqueduct-domain.com/mcp-servers/my-cool-server/mcp"
-    headers = {"Authorization": "Bearer YOUR_AQUEDUCT_TOKEN"}
+body = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {"name": "echo", "arguments": {"message": "hello"}},
+    "_meta": {"io.modelcontextprotocol/clientInfo": {"name": "my-app", "version": "1.0"}},
+}
 
-    async with (
-        httpx.AsyncClient(headers=headers) as client,
-        streamable_http_client(url, http_client=client) as (read_stream, write_stream, _),
-    ):
-        # Create a session
-        async with ClientSession(read_stream, write_stream) as session:
-            # Initialize the connection
-            await session.initialize()
-
-            # List available tools
-            tools = await session.list_tools()
-            print(f"Available tools: {[tool.name for tool in tools.tools]}")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+response = httpx.post(url, json=body, headers=headers)
+print(response.json())
 ```
 
 For more information about the Model Context Protocol,

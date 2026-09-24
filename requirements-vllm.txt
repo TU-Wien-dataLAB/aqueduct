@@ -1,9 +1,0 @@
-# Dedicated environment for the opt-in `INTEGRATION_TEST_BACKEND=vllm` test mode.
-#
-# This is intentionally kept separate from the main project environment/lockfile:
-# vllm==0.8.4 requires `opentelemetry-api<1.27` while `mcp` (v2, 2026-07-28 protocol)
-# requires `>=1.28`, so they cannot coexist in one environment.
-#
-# Install into a dedicated env with:
-#   uv venv .venv-vllm && uv pip install -r requirements-vllm.txt
-vllm==0.8.4

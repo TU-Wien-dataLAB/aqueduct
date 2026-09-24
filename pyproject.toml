@@ -27,8 +27,8 @@ postgresql = [
 ]
 # NOTE: the ``vllm`` extra was removed because ``vllm==0.8.4`` requires
 # ``opentelemetry-api<1.27`` while ``mcp`` (v2, 2026-07-28 protocol) requires ``>=1.28`` --
-# they cannot share one environment. vllm is pinned unchanged in ``requirements-vllm.txt``
-# for a dedicated env (used only by the opt-in ``INTEGRATION_TEST_BACKEND=vllm`` path).
+# they cannot share one environment. vllm is unused by the codebase (never imported),
+# and the ``INTEGRATION_TEST_BACKEND=vllm`` mode is incomplete, so it was dropped entirely.
 
 [dependency-groups]
 dev = [

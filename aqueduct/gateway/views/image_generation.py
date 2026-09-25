@@ -63,6 +63,9 @@ async def image_generation(
     model_name: str = pydantic_model.get("model") or ""
     client, model_relay = oai_client_from_body(model_name, request)
     pydantic_model["model"] = model_relay
+    # gpt-image models only return b64_json and reject response_format
+    if model_relay.startswith("gpt-image"):
+        pydantic_model.pop("response_format", None)
 
     try:
         resp: ImagesResponse = await client.images.generate(**pydantic_model)

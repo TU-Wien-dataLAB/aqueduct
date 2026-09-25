@@ -4,7 +4,7 @@ from .completions import completions
 from .embeddings import embeddings
 from .files import file, file_content, files
 from .image_generation import image_generation
-from .models import models
+from .models import model_group_info, models
 from .responses import create_response, get_response_input_items, response
 from .speech import speech
 from .transcriptions import transcriptions
@@ -30,6 +30,7 @@ __all__ = [
     "files",
     "get_response_input_items",
     "image_generation",
+    "model_group_info",
     "models",
     "response",
     "speech",

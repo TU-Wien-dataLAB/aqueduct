@@ -1219,6 +1219,54 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         req = requests[0]
         self.assertIn("models", req.path, "Request endpoint should be for model listing.")
 
+    def test_model_group_info_exposes_context_window(self):
+        """The LiteLLM /model_group/info endpoint exposes token limits, so
+        LiteLLM-aware clients read the context window from the gateway."""
+        from unittest.mock import patch
+        from importlib import import_module
+
+        models_view = import_module("gateway.views.models")
+
+        config = {
+            "model_list": [
+                {
+                    "model_name": self.model,
+                    "litellm_params": {"model": f"openai/{self.model}"},
+                    "model_info": {
+                        "id": self.model,
+                        "max_tokens": 262144,
+                        "max_output_tokens": 32768,
+                        "supports_vision": True,
+                    },
+                },
+                {
+                    "model_name": "explicit-model",
+                    "litellm_params": {"model": "openai/explicit-model"},
+                    "model_info": {"max_input_tokens": 999999, "max_tokens": 262144},
+                },
+                {
+                    "model_name": "no-info-model",
+                    "litellm_params": {"model": "openai/no-info-model"},
+                },
+            ]
+        }
+        with patch.object(models_view, "get_router_config", return_value=config):
+            response = self.client.get(
+                "/model_group/info", content_type="application/json", headers=self.headers
+            )
+
+        self.assertEqual(response.status_code, 200)
+        entries = {entry["model_group"]: entry for entry in response.json()}
+        info = entries[self.model]["model_info"]
+        # max_input_tokens is derived from max_tokens (the context length)
+        self.assertEqual(info["max_input_tokens"], 262144)
+        self.assertEqual(info["max_output_tokens"], 32768)
+        self.assertTrue(info["supports_vision"])
+        # An explicit max_input_tokens in the config is never overwritten
+        self.assertEqual(entries["explicit-model"]["model_info"]["max_input_tokens"], 999999)
+        # Models without token limits get no token fields at all
+        self.assertNotIn("max_input_tokens", entries["no-info-model"]["model_info"])
+
     def test_list_models_with_invalid_token(self):
         """
         Sends a request to list available models from the vLLM server with an invalid API key.

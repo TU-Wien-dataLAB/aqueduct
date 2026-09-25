@@ -7,6 +7,7 @@ import sys
 import time
 from contextlib import contextmanager
 from http import HTTPStatus
+from typing import Any
 from unittest.mock import patch
 
 import requests
@@ -123,6 +124,15 @@ class MockAPIServer:
         logger.debug("Resetting the %s endpoint", normalized_path)
         response = requests.post(url, timeout=1)
         response.raise_for_status()
+
+    def get_last_request(self, path: str) -> dict[str, Any] | None:
+        """Return the JSON body of the last POST request made to `path`, or None."""
+        normalized_path = path.strip("/").removeprefix("v1/")
+        response = requests.get(f"{self.base_url}/last_request/{normalized_path}", timeout=1)
+        if response.status_code == HTTPStatus.NOT_FOUND:
+            return None
+        response.raise_for_status()
+        return response.json()["body"]
 
     @contextmanager
     def patch_external_api(self, url: str | None = None, config: MockConfig | None = None):

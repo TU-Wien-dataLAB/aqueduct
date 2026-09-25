@@ -18,6 +18,7 @@ from openai.types.chat import ChatCompletion
 from gateway.config import (
     get_all_model_request_limit_multipliers,
     get_model_request_limit_multiplier,
+    get_model_supports_response_format,
     get_router_config,
 )
 from gateway.tests.utils import (
@@ -1893,6 +1894,95 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
 
             multiplier = get_model_request_limit_multiplier("unknown-model")
             self.assertEqual(multiplier, 1.0)
+
+    def test_get_model_supports_response_format_returns_false_when_configured(self):
+        """
+        Test that get_model_supports_response_format returns False when explicitly configured.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-image-1",
+                    "litellm_params": {
+                        "model": "openai/gpt-image-1",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"supports_response_format": False},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            self.assertFalse(get_model_supports_response_format("gpt-image-1"))
+
+    def test_get_model_supports_response_format_defaults_to_true(self):
+        """
+        Test that get_model_supports_response_format defaults to True when not configured.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "dall-e-2",
+                    "litellm_params": {
+                        "model": "openai/dall-e-2",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["image"]},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            self.assertTrue(get_model_supports_response_format("dall-e-2"))
+
+    def test_get_model_supports_response_format_resolves_alias(self):
+        """
+        Test that get_model_supports_response_format resolves aliases correctly.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-image-1",
+                    "litellm_params": {
+                        "model": "openai/gpt-image-1",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["img"], "supports_response_format": False},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            # Should resolve the alias and return the configured value
+            self.assertFalse(get_model_supports_response_format("img"))
+
+    def test_get_model_supports_response_format_true_for_unknown_model(self):
+        """
+        Test that get_model_supports_response_format returns True for unknown models.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-4o",
+                    "litellm_params": {
+                        "model": "openai/gpt-4o",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["default"]},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            self.assertTrue(get_model_supports_response_format("unknown-model"))
 
     def test_get_all_model_request_limit_multipliers(self):
         """

@@ -7,7 +7,7 @@ from openai.types.images_response import Usage as ImageUsage
 from openai.types.images_response import UsageInputTokensDetails
 
 from gateway.tests.utils import _build_chat_headers
-from gateway.tests.utils.base import GatewayIntegrationTestCase
+from gateway.tests.utils.base import INTEGRATION_TEST_BACKEND, GatewayIntegrationTestCase
 from management.models import Request, Usage
 from mock_api.mock_configs import MockConfig
 
@@ -97,6 +97,43 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         )
         req = requests[0]
         self.assertIsInstance(req.token_usage, Usage)
+
+    def test_image_generation_omits_response_format_for_flagged_model(self):
+        """gpt-image-1 (supports_response_format: false) must not receive response_format."""
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest("Requires the mock API server")
+
+        payload = {"model": "gpt-image-1", "prompt": "A test image", "size": "1024x1024"}
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, HTTPStatus.OK, response.content)
+
+        sent = self.mock_server.get_last_request("images/generations")
+        self.assertIsNotNone(sent)
+        self.assertEqual(sent["model"], "gpt-image-1")
+        self.assertNotIn("response_format", sent)
+
+    def test_image_generation_sends_response_format_for_unflagged_model(self):
+        """dall-e-2 has no flag, so response_format=b64_json is sent as before."""
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest("Requires the mock API server")
+
+        payload = {"model": "dall-e-2", "prompt": "A test image", "size": "256x256"}
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, HTTPStatus.OK, response.content)
+
+        sent = self.mock_server.get_last_request("images/generations")
+        self.assertIsNotNone(sent)
+        self.assertEqual(sent["response_format"], "b64_json")
 
     def test_image_generation_endpoint_missing_required_fields(self):
         """Test image generation endpoint with missing required fields."""

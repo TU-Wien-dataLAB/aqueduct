@@ -72,7 +72,6 @@ async def image_generation(
             "Unexpected argument in request body", pydantic_model.get("model"), llm_provider=None
         ) from err
 
-    # TODO # data = resp.model_dump(exclude_unset=True)
     request_log.token_usage = get_token_usage(resp)
 
     return RawJsonResponse(resp)

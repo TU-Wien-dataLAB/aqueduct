@@ -106,12 +106,12 @@ class HttpResponseMiddleware:
                 for k, v in response.content.items():
                     if isinstance(v, BaseModel):
                         # Content can be a dict containing models as values
-                        response.content[k] = v.model_dump()
+                        response.content[k] = v.model_dump(mode="json")
                     elif isinstance(v, (list, tuple)) and any(
                         isinstance(item, BaseModel) for item in v
                     ):
                         # Content can be a dict containing a list of models
-                        response.content[k] = [item.model_dump() for item in v]
+                        response.content[k] = [item.model_dump(mode="json") for item in v]
 
             return JsonResponse(response.content, **kwargs)
 

@@ -199,11 +199,7 @@ class ResponseRegistrationWrapper:
 
     async def __anext__(self) -> ResponseStreamEvent:
         chunk: ResponseStreamEvent = await self.streaming_content.__anext__()
-        if (
-            not self._registered
-            and isinstance(chunk, ResponseCreatedEvent)
-            and chunk.type == "response.created"
-        ):
+        if not self._registered and isinstance(chunk, ResponseCreatedEvent):
             response_id: str | None = chunk.response.id
             if response_id:
                 register_response_in_cache(response_id, self.model_name, self.user_email)

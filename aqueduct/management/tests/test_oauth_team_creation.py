@@ -244,8 +244,9 @@ class OAuthTeamMembershipTestCase(TestCase):
         self.assertEqual(memberships.count(), 1)
         self.assertEqual(memberships.first().team.name, "E123")
 
-    def test_user_removed_from_oauth_managed_teams_even_when_removal_disabled(self):
-        """Test that user is always removed from OAuth-managed teams."""
+    @override_settings(ENABLE_OAUTH_GROUP_REMOVAL=False)
+    def test_user_not_removed_from_oauth_managed_teams_when_removal_disabled(self):
+        """Test that user stays in OAuth-managed teams when ENABLE_OAUTH_GROUP_REMOVAL=False."""
         user = User.objects.create_user(username="testuser", email="test@example.com")
         user.groups.add(self.user_group)
         profile = UserProfile.objects.create(user=user, org=self.org)
@@ -259,14 +260,30 @@ class OAuthTeamMembershipTestCase(TestCase):
         self.assertTrue(team1.managed_by_oauth)
         self.assertTrue(team2.managed_by_oauth)
 
-        with override_settings(ENABLE_OAUTH_GROUP_REMOVAL=False):
-            backend = OIDCBackend()
-            updated_groups = {"email": "test@example.com", "groups": ["E123-Students"]}
-            sync_teams(backend, user, profile, updated_groups)
+        backend = OIDCBackend()
+        updated_groups = {"email": "test@example.com", "groups": ["E123-Students"]}
+        sync_teams(backend, user, profile, updated_groups)
 
-            memberships = TeamMembership.objects.filter(user_profile=profile)
-            self.assertEqual(memberships.count(), 1)
-            self.assertEqual(memberships.first().team.name, "E123")
+        memberships = TeamMembership.objects.filter(user_profile=profile)
+        self.assertEqual(memberships.count(), 2)
+
+    def test_user_removed_from_oauth_managed_teams(self):
+        """Test that user is removed from OAuth-managed teams when removal is enabled."""
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
+
+        initial_groups = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
+        sync_teams(self.backend, user, profile, initial_groups)
+
+        self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 2)
+
+        updated_groups = {"email": "test@example.com", "groups": ["E123-Students"]}
+        sync_teams(self.backend, user, profile, updated_groups)
+
+        memberships = TeamMembership.objects.filter(user_profile=profile)
+        self.assertEqual(memberships.count(), 1)
+        self.assertEqual(memberships.first().team.name, "E123")
 
     @override_settings(ENABLE_OAUTH_GROUP_REMOVAL=False)
     def test_user_not_removed_from_non_oauth_teams_when_removal_disabled(self):
@@ -293,6 +310,23 @@ class OAuthTeamMembershipTestCase(TestCase):
         self.assertEqual(memberships.count(), 2)
         self.assertIn("E123", team_names)
         self.assertIn("ManualTeam", team_names)
+
+    def test_user_not_removed_from_non_oauth_teams_when_removal_enabled(self):
+        """Regression: non-OAuth teams are never removed, even with removal enabled."""
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
+
+        manual_team = Team.objects.create(name="ManualTeam", org=self.org, oauth_group_name="")
+        TeamMembership.objects.create(user_profile=profile, team=manual_team)
+
+        # Default ENABLE_OAUTH_GROUP_REMOVAL=True; group no longer maps to the manual team.
+        updated_groups = {"email": "test@example.com", "groups": ["OtherGroup"]}
+        sync_teams(self.backend, user, profile, updated_groups)
+
+        memberships = TeamMembership.objects.filter(user_profile=profile)
+        self.assertEqual(memberships.count(), 1)
+        self.assertEqual(memberships.first().team.name, "ManualTeam")
 
     def test_membership_sync_on_update(self):
         """Test membership sync on update_user()."""

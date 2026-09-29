@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -61,27 +62,29 @@ def _openai_stream(
 
     async def _stream() -> AsyncGenerator[str, None]:
         token_usage = Usage(0, 0)
-        async for chunk in stream:
-            chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
+        try:
+            async for chunk in stream:
+                chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
 
-            # Extract token usage from this chunk
-            chunk_usage = _get_token_usage(chunk_str.encode("utf-8"))
+                chunk_usage = _get_token_usage(chunk_str.encode("utf-8"))
 
-            # Only update if we got actual usage data (non-zero tokens)
-            if chunk_usage.input_tokens > 0 or chunk_usage.output_tokens > 0:
-                token_usage = chunk_usage
+                if chunk_usage.input_tokens > 0 or chunk_usage.output_tokens > 0:
+                    token_usage = chunk_usage
 
-            try:
                 yield f"data: {chunk_str}\n\n"
-            except Exception as e:
-                yield f"data: {e!s}\n\n"
 
-        end_time = time.monotonic()
-        request_log.token_usage = token_usage
-        request_log.response_time_ms = int((end_time - start_time) * 1000)
-        await request_log.asave()
-        # Streaming is done, yield the [DONE] chunk
-        yield "data: [DONE]\n\n"
+            request_log.status_code = 200
+            yield "data: [DONE]\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            request_log.status_code = 499
+            raise
+        except Exception:
+            request_log.status_code = 500
+            raise
+        finally:
+            request_log.token_usage = token_usage
+            request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
+            await request_log.asave()
 
     return _stream()
 

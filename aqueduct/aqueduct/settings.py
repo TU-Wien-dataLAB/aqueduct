@@ -73,7 +73,6 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "mozilla_django_oidc.middleware.SessionRefresh",
-    "gateway.middleware.HttpResponseMiddleware",
 ]
 
 AUTHENTICATION_BACKENDS = (

@@ -1,9 +1,10 @@
 import json
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Generator
 from contextlib import contextmanager
-from typing import Any, TypeVar
+from functools import reduce
+from typing import Any, Literal, TypeVar
 
 import httpx
 import litellm
@@ -12,7 +13,7 @@ from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
 from django.core.serializers.json import DjangoJSONEncoder
-from django.http.response import HttpResponseBase, ResponseHeaders
+from django.http.response import HttpResponseBase, StreamingHttpResponse
 from litellm.types.utils import (
     EmbeddingResponse,
     ModelResponse,
@@ -83,7 +84,11 @@ class RawJsonResponse(HttpResponseBase):
         return self.content.decode(self.charset or "utf-8")
 
 
-class RawStreamingResponse:
+def _apply_transforms(chunk: T, transforms: list[Callable[[T], T]]) -> T:
+    return reduce(lambda obj, tr: tr(obj), transforms, chunk)
+
+
+class RawStreamingResponse(StreamingHttpResponse):
     """A wrapper for streaming data that can be turned into a StreamingHttpResponse."""
 
     def __init__(
@@ -91,6 +96,8 @@ class RawStreamingResponse:
         streaming_content: AsyncIterator[Any],
         request_log: Request | None,
         transforms: list[Callable[[T], T]] | None = None,
+        *,
+        mode: Literal["openai", "mcp"] = "openai",
         **kwargs: Any,
     ) -> None:
         if not isinstance(streaming_content, AsyncIterator):
@@ -99,16 +106,52 @@ class RawStreamingResponse:
         self.streaming_content = streaming_content
         self.request_log = request_log
         self.transforms = transforms or []
-        self.kwargs = kwargs or {}
-        self.content_type = self.kwargs.setdefault("content_type", "text/event-stream")
-        # Just to be on the safe side, make header keys case-insensitive:
-        self.headers = ResponseHeaders(self.kwargs.setdefault("headers", {}))
-        # The following mimics the BaseHttpResponse behaviour (argument called "status"
-        # is assigned to the "status_code" attribute)
-        self.status_code = self.kwargs.get("status", 200)
+        self.mode = mode
+        kwargs.setdefault("content_type", "text/event-stream")
+        super().__init__(streaming_content=(), **kwargs)
+        self.streaming_content = self._iter_stream(streaming_content)
 
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} status_code={self.status_code}>"
+    async def _iter_stream(self, streaming_content: AsyncIterator[Any]) -> AsyncGenerator[bytes]:
+        """Post-process streaming response chunks with transforms, and log OpenAI responses.
+
+        Note: MCP streaming responses do not have `request_log` attached;
+        usage tokens and response time are only logged for OpenAI responses.
+        Also, OpenAI responses require the last yielded chunk to be b"data: [DONE]\n\n",
+        which however is not MCP-compliant.
+        """
+        token_usage = Usage(0, 0)
+        start_time = time.monotonic()
+        is_openai = self.mode == "openai"
+        log.debug(
+            "%r stream. Applying the following transforms to each chunk: %s",
+            self.mode,
+            self.transforms,
+        )
+
+        if is_openai and self.request_log is None:
+            raise ValueError(f"Missing request_log for an OpenAI streaming response: {self}!")
+
+        async for raw_chunk in streaming_content:
+            chunk = _apply_transforms(raw_chunk, self.transforms)
+
+            if is_openai:
+                chunk_usage = get_token_usage(chunk)
+                if chunk_usage.input_tokens > 0 or chunk_usage.output_tokens > 0:
+                    token_usage = chunk_usage
+                chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
+            else:
+                chunk_str = chunk.model_dump_json(exclude_none=True)
+
+            yield f"data: {chunk_str}\n\n".encode()
+
+        if is_openai:
+            if self.request_log is None:
+                raise ValueError(f"Missing request_log for an OpenAI streaming response: {self}!")
+            self.request_log.token_usage = token_usage
+            self.request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
+            await self.request_log.asave()
+
+            yield b"data: [DONE]\n\n"
 
 
 def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:

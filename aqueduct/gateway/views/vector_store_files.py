@@ -13,17 +13,12 @@ from openai.types.vector_stores.vector_store_file import VectorStoreFile as Open
 from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
+from gateway.decorators.auth import token_authenticated, tos_accepted
+from gateway.decorators.body import parse_body
+from gateway.decorators.errors import catch_router_exceptions
+from gateway.decorators.log import log_request
+from gateway.response_types import RawJsonResponse, error_response
 from management.models import FileObject, Token, VectorStore, VectorStoreFile
-
-from .decorators import (
-    catch_router_exceptions,
-    log_request,
-    parse_body,
-    token_authenticated,
-    tos_accepted,
-)
-from .errors import error_response
-from .utils import RawJsonResponse
 
 
 class FileUpdateBody(TypedDict, total=False):

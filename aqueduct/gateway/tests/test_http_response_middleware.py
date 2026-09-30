@@ -37,11 +37,10 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
         cls.token_header = {"Authorization": "Bearer sk-123abc"}
         cls.token = Token.objects.first()
 
-    def test_transforms_raw_json_response(self):
-        """RawJsonResponse should become JsonResponse with merged headers."""
-        raw_response = RawJsonResponse(
-            data={"key": "value"}, headers={"X-Custom": "test"}, status=200
-        )
+    def test_middleware_raw_json_response(self):
+        """RawJsonResponse should remain RawJsonResponse, with properly set attributes."""
+        data = {"key": "value"}
+        raw_response = RawJsonResponse(data=data, headers={"X-Custom": "test"}, status=200)
 
         def get_response(req: ASGIRequest):
             return raw_response
@@ -50,13 +49,14 @@ class TestHttpResponseMiddleware(GatewayBatchesTestCase):
         request = self.factory.get("/test", **self.token_header)
         response = middleware(request)
 
-        self.assertIsInstance(response, JsonResponse)
+        self.assertIsInstance(response, RawJsonResponse)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["X-Custom"], "test")
         self.assertEqual(response["Content-Type"], "application/json")
-        self.assertEqual(json.loads(response.content), {"key": "value"})
+        self.assertEqual(response.data, data)
+        self.assertEqual(json.loads(response.content), data)
 
-    async def test_transforms_raw_streaming_response_mcp(self):
+    async def test_middleware_raw_streaming_response_mcp(self):
         """RawStreamingResponse for MCP paths should become StreamingHttpResponse."""
 
         async def streaming_content():

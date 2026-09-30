@@ -769,8 +769,8 @@ def normalize_reasoning_fields(view_func: AsyncView) -> AsyncView:
             result.transforms.append(_normalized_stream)
 
         elif isinstance(result, RawJsonResponse):
-            content = cast("dict[str, Any] | ModelResponse", result.content)
-            choices = content.get("choices", [])
+            data = cast("dict[str, Any] | ModelResponse", result.data)
+            choices = data.get("choices", [])
             for choice in choices:
                 message = choice.get("message", {})
                 if message:

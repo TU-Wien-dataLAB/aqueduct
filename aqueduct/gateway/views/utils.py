@@ -1,7 +1,9 @@
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Callable, Generator
 from contextlib import contextmanager
+from json import JSONDecodeError
 from typing import Any, TypeVar
 
 import httpx
@@ -10,7 +12,9 @@ import openai
 from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
-from django.http.response import ResponseHeaders
+from django.core.serializers.json import DjangoJSONEncoder
+from django.http.response import HttpResponseBase, ResponseHeaders
+from django.utils.functional import cached_property
 from litellm.types.utils import (
     EmbeddingResponse,
     ModelResponse,
@@ -31,24 +35,78 @@ log = logging.getLogger("aqueduct")
 T = TypeVar("T", bound=ModelResponseStream | JSONRPCMessage)
 
 
-class RawJsonResponse:
-    """A wrapper for data that can be turned into a JSONResponse."""
+class RawJsonResponse(HttpResponseBase):
+    """Mimics JSONResponse behaviour, but dumps data to JSON lazily - only on access."""
+
+    streaming = False
 
     def __init__(self, data: dict[str, Any] | BaseModel, **kwargs: Any) -> None:
         if not isinstance(data, (dict, BaseModel)):
             raise TypeError("RawJsonResponse data has to be a dict or a pydantic BaseModel")
 
-        self.content = data
-        self.kwargs = kwargs or {}
-        self.content_type = self.kwargs.setdefault("content_type", "application/json")
-        # Just to be on the safe side, make header keys case-insensitive:
-        self.headers = ResponseHeaders(self.kwargs.setdefault("headers", {}))
-        # The following mimics the BaseHttpResponse behaviour (argument called "status"
-        # is assigned to the "status_code" attribute)
-        self.status_code = self.kwargs.get("status", 200)
+        # ``data`` is the original object passed when creating the response instance
+        self.data = data
+        # ``_content`` stores the data dumped to a string
+        self._content: bytes | None = None
+        kwargs.setdefault("content_type", "application/json")
+        super().__init__(**kwargs)
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} status_code={self.status_code}>"
+
+    @cached_property
+    def content(self) -> bytes:
+        if self._content is None:
+            self._content = self._dump_data()
+        return self._content
+
+    def _dump_data(self) -> bytes:
+        """Serialize ``self.data`` to JSON and return the result as bytes."""
+        _content = {}
+        if isinstance(self.data, BaseModel):
+            _content = self.data.model_dump(exclude_none=True, exclude_unset=True, mode="json")
+        else:
+            for k, v in self.data.items():
+                if isinstance(v, BaseModel):
+                    # Data can be a dict containing models as values
+                    _content[k] = v.model_dump(exclude_none=True, exclude_unset=True, mode="json")
+                elif isinstance(v, (list, tuple)) and any(
+                    isinstance(item, BaseModel) for item in v
+                ):
+                    # Data can be a dict containing a list of models
+                    _content[k] = [
+                        item.model_dump(exclude_none=True, exclude_unset=True, mode="json")
+                        for item in v
+                    ]
+                else:
+                    _content[k] = v
+
+        return self.make_bytes(json.dumps(_content, cls=DjangoJSONEncoder))
+
+    @cached_property
+    def text(self) -> str:
+        return self.content.decode(self.charset or "utf-8")
+
+    def write(self, content: str | bytes) -> None:
+        try:
+            new_data = json.loads(content)
+        except JSONDecodeError as err:
+            log.warning(
+                "Tried to write content that is not valid JSON. Original exception: %s", err
+            )
+            return
+        if not isinstance(new_data, dict):
+            log.warning(
+                "Content sent to `write` is not serialized to a dict, but to %s", type(new_data)
+            )
+            return
+
+        if isinstance(self.data, dict):
+            self.data.update(new_data)
+        else:
+            self.data = self.data.model_copy(update=new_data, deep=True)
+
+        self._content = None
 
 
 class RawStreamingResponse:
@@ -80,14 +138,14 @@ class RawStreamingResponse:
 
 
 def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
-    """Retrieves token usage information from the raw response content.
+    """Retrieves token usage information from the raw response data.
 
     Note that if the response data does not match the expected format, or does
     not contain the usage information, the returned token usage will be wrong,
     i.e. set to 0.
 
     Args:
-        data: The raw response content (or content's chunk for streaming responses),
+        data: The raw response data (or content's chunk for streaming responses),
           expected to be a dict or BaseModel subclass.
     Returns:
         The :class:`Usage` object with the used input and output token counts.

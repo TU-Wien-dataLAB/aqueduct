@@ -3,7 +3,6 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable, Generator
 from contextlib import contextmanager
-from json import JSONDecodeError
 from typing import Any, TypeVar
 
 import httpx
@@ -14,7 +13,6 @@ from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http.response import HttpResponseBase, ResponseHeaders
-from django.utils.functional import cached_property
 from litellm.types.utils import (
     EmbeddingResponse,
     ModelResponse,
@@ -51,10 +49,7 @@ class RawJsonResponse(HttpResponseBase):
         kwargs.setdefault("content_type", "application/json")
         super().__init__(**kwargs)
 
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} status_code={self.status_code}>"
-
-    @cached_property
+    @property
     def content(self) -> bytes:
         if self._content is None:
             self._content = self._dump_data()
@@ -83,30 +78,9 @@ class RawJsonResponse(HttpResponseBase):
 
         return self.make_bytes(json.dumps(_content, cls=DjangoJSONEncoder))
 
-    @cached_property
+    @property
     def text(self) -> str:
         return self.content.decode(self.charset or "utf-8")
-
-    def write(self, content: str | bytes) -> None:
-        try:
-            new_data = json.loads(content)
-        except JSONDecodeError as err:
-            log.warning(
-                "Tried to write content that is not valid JSON. Original exception: %s", err
-            )
-            return
-        if not isinstance(new_data, dict):
-            log.warning(
-                "Content sent to `write` is not serialized to a dict, but to %s", type(new_data)
-            )
-            return
-
-        if isinstance(self.data, dict):
-            self.data.update(new_data)
-        else:
-            self.data = self.data.model_copy(update=new_data, deep=True)
-
-        self._content = None
 
 
 class RawStreamingResponse:

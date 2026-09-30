@@ -1,9 +1,8 @@
-import json
 import logging
 import time
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncIterator, Callable, Generator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 import litellm
@@ -11,79 +10,111 @@ import openai
 from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
-from litellm import TextCompletionStreamWrapper
-from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
+from django.http.response import ResponseHeaders
+from litellm.types.utils import (
+    EmbeddingResponse,
+    ModelResponse,
+    ModelResponseStream,
+    TextCompletionResponse,
+)
+from litellm.types.utils import Usage as UsageModel
+from mcp.types import JSONRPCMessage
 from openai import AsyncStream
+from openai.types.responses import ResponseCreatedEvent, ResponseStreamEvent
+from pydantic import BaseModel
 
 from gateway.config import get_openai_client, get_router
 from management.models import Request, Usage
 
 log = logging.getLogger("aqueduct")
 
+T = TypeVar("T", bound=ModelResponseStream | JSONRPCMessage)
 
-def _get_token_usage(content: bytes | dict[str, Any]) -> Usage:
-    """Retrieves token usage information from the response content.
+
+class RawJsonResponse:
+    """A wrapper for data that can be turned into a JSONResponse."""
+
+    def __init__(self, data: dict[str, Any] | BaseModel, **kwargs: Any) -> None:
+        if not isinstance(data, (dict, BaseModel)):
+            raise TypeError("RawJsonResponse data has to be a dict or a pydantic BaseModel")
+
+        self.content = data
+        self.kwargs = kwargs or {}
+        self.content_type = self.kwargs.setdefault("content_type", "application/json")
+        # Just to be on the safe side, make header keys case-insensitive:
+        self.headers = ResponseHeaders(self.kwargs.setdefault("headers", {}))
+        # The following mimics the BaseHttpResponse behaviour (argument called "status"
+        # is assigned to the "status_code" attribute)
+        self.status_code = self.kwargs.get("status", 200)
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} status_code={self.status_code}>"
+
+
+class RawStreamingResponse:
+    """A wrapper for streaming data that can be turned into a StreamingHttpResponse."""
+
+    def __init__(
+        self,
+        streaming_content: AsyncIterator[Any],
+        request_log: Request | None,
+        transforms: list[Callable[[T], T]] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if not isinstance(streaming_content, AsyncIterator):
+            raise TypeError("RawStreamResponse streaming_content has to be async iterable")
+
+        self.streaming_content = streaming_content
+        self.request_log = request_log
+        self.transforms = transforms or []
+        self.kwargs = kwargs or {}
+        self.content_type = self.kwargs.setdefault("content_type", "text/event-stream")
+        # Just to be on the safe side, make header keys case-insensitive:
+        self.headers = ResponseHeaders(self.kwargs.setdefault("headers", {}))
+        # The following mimics the BaseHttpResponse behaviour (argument called "status"
+        # is assigned to the "status_code" attribute)
+        self.status_code = self.kwargs.get("status", 200)
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} status_code={self.status_code}>"
+
+
+def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
+    """Retrieves token usage information from the raw response content.
 
     Note that if the response data does not match the expected format, or does
     not contain the usage information, the returned token usage will be wrong,
     i.e. set to 0.
 
     Args:
-        content: The response content, either as a dict or as bytes.
+        data: The raw response content (or content's chunk for streaming responses),
+          expected to be a dict or BaseModel subclass.
     Returns:
         The :class:`Usage` object with the used input and output token counts.
     """
-
-    if isinstance(content, dict):
-        data = content
+    if isinstance(
+        data, (dict, ModelResponse, ModelResponseStream, EmbeddingResponse, TextCompletionResponse)
+    ):
+        # LiteLLM models implement `.get()` method, but the OpenAI ones - don't.
+        usage = data.get("usage")
+        if isinstance(usage, (dict, UsageModel)):
+            input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens", 0)
+            output_tokens = usage.get("completion_tokens") or usage.get("output_tokens", 0)
+            return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
     else:
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError:
-            return Usage(input_tokens=0, output_tokens=0)
-
-    # Handle responses API format (top-level usage or in response field)
-    usage_dict = data.get("usage", None)
-    if not usage_dict and "response" in data:
-        usage_dict = data["response"].get("usage", None)
-    if isinstance(usage_dict, dict):
-        input_tokens = usage_dict.get("prompt_tokens") or usage_dict.get("input_tokens", 0)
-        output_tokens = usage_dict.get("completion_tokens") or usage_dict.get("output_tokens", 0)
-        return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
-    return Usage(input_tokens=0, output_tokens=0)
-
-
-def _openai_stream(
-    stream: CustomStreamWrapper | TextCompletionStreamWrapper | AsyncStream[Any],
-    request_log: Request,
-) -> AsyncGenerator[str, None]:
-    start_time = time.monotonic()
-
-    async def _stream() -> AsyncGenerator[str, None]:
-        token_usage = Usage(0, 0)
-        async for chunk in stream:
-            chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
-
-            # Extract token usage from this chunk
-            chunk_usage = _get_token_usage(chunk_str.encode("utf-8"))
-
-            # Only update if we got actual usage data (non-zero tokens)
-            if chunk_usage.input_tokens > 0 or chunk_usage.output_tokens > 0:
-                token_usage = chunk_usage
-
+        # Handle responses API format (top-level usage or in response field)
+        usage = getattr(data, "usage", None)
+        if not usage and hasattr(data, "response"):
+            usage = getattr(data.response, "usage", None)
+        if usage:
             try:
-                yield f"data: {chunk_str}\n\n"
-            except Exception as e:
-                yield f"data: {e!s}\n\n"
+                input_tokens = usage.input_tokens
+                output_tokens = usage.output_tokens
+            except AttributeError:
+                input_tokens = output_tokens = 0
+            return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
 
-        end_time = time.monotonic()
-        request_log.token_usage = token_usage
-        request_log.response_time_ms = int((end_time - start_time) * 1000)
-        await request_log.asave()
-        # Streaming is done, yield the [DONE] chunk
-        yield "data: [DONE]\n\n"
-
-    return _stream()
+    return Usage(input_tokens=0, output_tokens=0)
 
 
 @contextmanager
@@ -157,7 +188,7 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
 class ResponseRegistrationWrapper:
     """Wraps streaming content to register response on first chunk."""
 
-    def __init__(self, streaming_content: AsyncGenerator[str, None], model: str, email: str):
+    def __init__(self, streaming_content: AsyncStream[ResponseStreamEvent], model: str, email: str):
         self.streaming_content = streaming_content
         self.model_name = model
         self.user_email = email
@@ -166,30 +197,18 @@ class ResponseRegistrationWrapper:
     def __aiter__(self) -> "ResponseRegistrationWrapper":
         return self
 
-    async def __anext__(self) -> str:
-        chunk: str = await self.streaming_content.__anext__()
-        if not self._registered and chunk:
-            response_id = self.extract_response_id_from_chunk(chunk)
+    async def __anext__(self) -> ResponseStreamEvent:
+        chunk: ResponseStreamEvent = await self.streaming_content.__anext__()
+        if (
+            not self._registered
+            and isinstance(chunk, ResponseCreatedEvent)
+            and chunk.type == "response.created"
+        ):
+            response_id: str | None = chunk.response.id
             if response_id:
                 register_response_in_cache(response_id, self.model_name, self.user_email)
                 self._registered = True
         return chunk
-
-    @staticmethod
-    def extract_response_id_from_chunk(chunk: str) -> str | None:
-        """Extract response ID from SSE chunk containing 'response.created' event."""
-        try:
-            # Parse SSE format: "data: {json}"
-            for line in chunk.split("\n"):
-                if line.startswith("data: ") and "response.created" in line:
-                    json_data: dict[str, Any] = json.loads(line.removeprefix("data: "))
-                    if json_data.get("type") == "response.created":
-                        response_data: dict[str, Any] = json_data.get("response", {})
-                        response_id: str | None = response_data.get("id")
-                        return response_id
-        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
-            return None
-        return None
 
 
 def register_response_in_cache(response_id: str | None, model: str, email: str) -> None:

@@ -14,6 +14,7 @@ from .decorators import log_request, token_authenticated, tos_accepted
 
 MODEL_CREATION_TIMESTAMP = int(timezone.now().timestamp())
 
+
 def _model_group_info_entry(model: dict[str, Any]) -> dict[str, Any]:
     """Build a LiteLLM ``/model_group/info`` entry for a router config model.
 
@@ -62,6 +63,7 @@ async def models(
             "object": "list",
         }
     )
+
 
 @csrf_exempt
 @require_GET

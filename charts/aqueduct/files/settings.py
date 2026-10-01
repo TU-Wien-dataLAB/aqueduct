@@ -38,6 +38,17 @@ LOAD_TESTING = os.getenv("LOAD_TESTING", "False").lower() == "true"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split()
 
+# Reverse Proxy Settings
+if os.getenv("SECURE_PROXY_SSL_HEADER", "False").lower() == "true":
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+if os.getenv("USE_X_FORWARDED_HOST", "False").lower() == "true":
+    USE_X_FORWARDED_HOST = True
+
+_csrf_origins = os.getenv("CSRF_TRUSTED_ORIGINS", "").split()
+if _csrf_origins:
+    CSRF_TRUSTED_ORIGINS = _csrf_origins
+
 TEST_RUNNER = "gateway.tests.utils.test_runner.MockServerTestRunner"
 TESTS_USE_MOCK_API = os.getenv("TESTS_USE_MOCK_API", "True").lower() == "true"
 

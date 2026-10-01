@@ -1222,7 +1222,6 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
     def test_model_group_info_exposes_context_window(self):
         """The LiteLLM /model_group/info endpoint exposes token limits, so
         LiteLLM-aware clients read the context window from the gateway."""
-        from unittest.mock import patch
         from importlib import import_module
 
         models_view = import_module("gateway.views.models")

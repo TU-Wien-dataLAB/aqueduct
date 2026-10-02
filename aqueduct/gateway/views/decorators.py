@@ -427,7 +427,9 @@ def log_request(view_func: AsyncView) -> AsyncView:
         )
         request_log.processing_time_ms = int((response_start_time - kwargs["request_start"]) * 1000)
         request_log.response_time_ms = int((end_time - response_start_time) * 1000)
-        request_log.status_code = result.status_code
+
+        if not isinstance(result, StreamingHttpResponse):
+            request_log.status_code = result.status_code
 
         await request_log.asave()
         return result

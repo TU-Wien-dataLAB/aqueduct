@@ -109,6 +109,9 @@ class TokenEditView(BaseAqueductView, UpdateView):
     pk_url_kwarg = "id"
     success_url = reverse_lazy("tokens")
 
+    def get_queryset(self) -> QuerySet:
+        return Token.objects.filter(user=self.request.user, service_account__isnull=True)
+
     def get_form_kwargs(self) -> dict:
         kwargs = super().get_form_kwargs()
         kwargs["user"] = self.request.user

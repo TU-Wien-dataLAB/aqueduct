@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import json
@@ -419,7 +420,15 @@ def log_request(view_func: AsyncView) -> AsyncView:
         log.debug("Initial request log object created.")
 
         response_start_time = time.monotonic()
-        result: HttpResponse | StreamingHttpResponse = await view_func(request, *args, **kwargs)
+
+        try:
+            result: HttpResponse | StreamingHttpResponse = await view_func(request, *args, **kwargs)
+        except asyncio.CancelledError:
+            request_log.status_code = 499
+            request_log.response_time_ms = int((time.monotonic() - response_start_time) * 1000)
+            await request_log.asave()
+            raise
+
         end_time = time.monotonic()
 
         assert "request_start" in kwargs, (

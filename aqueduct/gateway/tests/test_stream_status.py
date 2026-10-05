@@ -8,7 +8,6 @@ Covers the mapping the stream generator writes to ``Request.status_code``:
 """
 
 import json
-import unittest
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
@@ -99,7 +98,3 @@ class OpenAIStreamStatusTests(TestCase):
 
         request_log.refresh_from_db()
         self.assertEqual(request_log.status_code, 500)
-
-
-if __name__ == "__main__":
-    unittest.main()

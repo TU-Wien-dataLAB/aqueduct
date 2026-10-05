@@ -8,16 +8,13 @@ Covers the mapping the stream generator writes to ``Request.status_code``:
 """
 
 import json
+from typing import ClassVar
 
 from asgiref.sync import async_to_sync
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
 from django.test import TestCase
 
 from gateway.views.utils import _openai_stream
-from management.models import Org, Request, Token, UserGroup, UserProfile
-
-User = get_user_model()
+from management.models import Request, Token
 
 
 class _Chunk:
@@ -28,14 +25,10 @@ class _Chunk:
 
 
 class OpenAIStreamStatusTests(TestCase):
+    fixtures: ClassVar[list[str]] = ["gateway_data.json"]
+
     def setUp(self):
-        self.org = Org.objects.create(name="stream-org")
-        self.user = User.objects.create_user(username="streamuser", email="stream@example.com")
-        UserProfile.objects.create(user=self.user, org=self.org)
-        Group.objects.get_or_create(name=UserGroup.USER.value)
-        self.token = Token(name="stream-token", user=self.user)
-        self.token._set_new_key()
-        self.token.save()
+        self.token = Token.objects.get(name="My Token")
 
     def _request_log(self) -> Request:
         request_log = Request(token=self.token, model="gpt-4.1-nano")

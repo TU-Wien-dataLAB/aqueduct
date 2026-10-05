@@ -12,16 +12,13 @@ in ``test_stream_status.py`` (which exercise ``_openai_stream`` directly).
 import asyncio
 import time
 from types import SimpleNamespace
+from typing import ClassVar
 
 from asgiref.sync import async_to_sync
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
 from django.test import TestCase
 
 from gateway.views.decorators import log_request
-from management.models import Org, Request, Token, UserGroup, UserProfile
-
-User = get_user_model()
+from management.models import Request, Token
 
 
 def _make_request(path: str = "/v1/chat/completions") -> SimpleNamespace:
@@ -35,14 +32,10 @@ def _make_request(path: str = "/v1/chat/completions") -> SimpleNamespace:
 
 
 class LogRequestCancelTests(TestCase):
+    fixtures: ClassVar[list[str]] = ["gateway_data.json"]
+
     def setUp(self):
-        self.org = Org.objects.create(name="cancel-org")
-        self.user = User.objects.create_user(username="canceluser", email="cancel@example.com")
-        UserProfile.objects.create(user=self.user, org=self.org)
-        Group.objects.get_or_create(name=UserGroup.USER.value)
-        self.token = Token(name="cancel-token", user=self.user)
-        self.token._set_new_key()
-        self.token.save()
+        self.token = Token.objects.get(name="My Token")
 
     def test_non_streaming_client_disconnect_records_499(self):
         """A disconnect while awaiting the upstream is recorded as 499."""

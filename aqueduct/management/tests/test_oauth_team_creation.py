@@ -539,6 +539,25 @@ class OAuthTeamSettingsTestCase(TestCase):
             self.assertEqual(Team.objects.filter(org=self.org).count(), 0)
             self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 0)
 
+    def test_creation_disabled_adds_membership_to_existing_team(self):
+        """ENABLE_OAUTH_GROUP_CREATION=False still adds memberships to existing teams."""
+        seed_active_config(SNIPPET_TEAM_NAMES_AND_MAP)
+        Team.objects.create(name="E123", org=self.org, oauth_group_name="E123-Students")
+
+        with override_settings(ENABLE_OAUTH_GROUP_CREATION=False):
+            claims = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
+
+            user = User.objects.create_user(username="testuser", email="test@example.com")
+            user.groups.add(self.user_group)
+            profile = UserProfile.objects.create(user=user, org=self.org)
+
+            sync_teams(self.backend, user, profile, claims)
+
+            # E456 is not created; E123 already exists and the user is added to it.
+            self.assertEqual(Team.objects.filter(org=self.org).count(), 1)
+            self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 1)
+            self.assertEqual(TeamMembership.objects.get(user_profile=profile).team.name, "E123")
+
     def test_manual_team_not_affected_by_oauth_sync(self):
         """Test that manually created teams without oauth_group_name are not affected."""
         manual_team = Team.objects.create(name="ManualTeam", org=self.org, oauth_group_name="")

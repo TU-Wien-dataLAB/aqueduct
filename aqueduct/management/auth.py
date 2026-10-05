@@ -112,13 +112,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
     @staticmethod
     def _add_team_membership(profile: UserProfile, teams):
-        if not getattr(settings, "ENABLE_OAUTH_GROUP_CREATION", True):
-            log.info(
-                "Skipping creation of teams %s (ENABLE_OAUTH_GROUP_CREATION=False)",
-                sorted(team_name for team_name, _ in teams),
-            )
-            return
-
+        enable_creation = getattr(settings, "ENABLE_OAUTH_GROUP_CREATION", True)
         org = profile.org
         for team_name, original_group_name in teams:
             # Look up by oauth_group_name first, so renaming the mapping
@@ -127,6 +121,9 @@ class OIDCBackend(OIDCAuthenticationBackend):
             created = False
 
             if not team:
+                if not enable_creation:
+                    log.info("Skipping team '%s' (ENABLE_OAUTH_GROUP_CREATION=False)", team_name)
+                    continue
                 team, created = Team.objects.get_or_create(
                     name=team_name, org=org, defaults={"oauth_group_name": original_group_name}
                 )

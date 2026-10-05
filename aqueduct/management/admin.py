@@ -590,6 +590,7 @@ class RequestAdmin(admin.ModelAdmin):
     list_display: ClassVar[tuple] = (
         "id",
         "input_tokens",
+        "cached_input_tokens",
         "output_tokens",
         "status_code",
         "response_time_ms",

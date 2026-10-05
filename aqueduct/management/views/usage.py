@@ -185,10 +185,13 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             avg=Avg("response_time_ms")
         )["avg"]
         tokens_sum = reqs_span.aggregate(
-            input_sum=Sum("input_tokens"), output_sum=Sum("output_tokens")
+            input_sum=Sum("input_tokens"),
+            output_sum=Sum("output_tokens"),
+            cached_input_sum=Sum("cached_input_tokens"),
         )
         input_tokens = tokens_sum.get("input_sum") or 0
         output_tokens = tokens_sum.get("output_sum") or 0
+        cached_input_tokens = tokens_sum.get("cached_input_sum") or 0
 
         context.update(
             {
@@ -208,6 +211,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 "avg_time_completion": avg_time_comp or 0,
                 "avg_time_embedding": avg_time_emb or 0,
                 "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
                 "retention_warning": retention_warning,

@@ -176,7 +176,17 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
         if isinstance(usage, (dict, UsageModel)):
             input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens", 0)
             output_tokens = usage.get("completion_tokens") or usage.get("output_tokens", 0)
-            return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
+            details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details")
+            cached_input_tokens = 0
+            if isinstance(details, dict):
+                cached_input_tokens = details.get("cached_tokens") or 0
+            elif details is not None:
+                cached_input_tokens = getattr(details, "cached_tokens", 0) or 0
+            return Usage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_input_tokens=cached_input_tokens,
+            )
     else:
         # Handle responses API format (top-level usage or in response field)
         usage = getattr(data, "usage", None)
@@ -188,6 +198,13 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
                 output_tokens = usage.output_tokens
             except AttributeError:
                 input_tokens = output_tokens = 0
-            return Usage(input_tokens=input_tokens, output_tokens=output_tokens)
+            details = getattr(usage, "input_tokens_details", None)
+            cached_input_tokens = getattr(details, "cached_tokens", 0) or 0
+            return Usage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_input_tokens=cached_input_tokens,
+            )
 
     return Usage(input_tokens=0, output_tokens=0)
+

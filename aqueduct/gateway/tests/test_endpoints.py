@@ -43,6 +43,7 @@ from gateway.tests.utils.base import (
     GatewayIntegrationTestCase,
 )
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
+from management.models import Usage as AqueductUsage
 from mock_api.mock_configs import (
     MockConfig,
     MockStreamingConfig,
@@ -110,7 +111,9 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertEqual(req.output_tokens, 0, "output_tokens should be 0")
         self.assertEqual(
-            req.cached_input_tokens, 0, "embeddings have no cacheable input; cached should be 0"
+            req.cached_input_tokens,
+            0,
+            "No cached input tokens were reported for this embedding request.",
         )
         self.assertEqual(req.user_id, "")
 
@@ -1238,14 +1241,14 @@ class CachedInputTokensTest(ChatCompletionsBase):
             response = self._send_chat_completion(self.MESSAGES)
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.content}")
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one logged request.")
+        self.assertEqual(len(requests), 1, "Expected one logged request.")
         return requests[0]
 
     def test_chat_completion_records_cached_input_tokens(self):
         req = self._run_chat_completion_and_get_request(
             self._chat_completion_payload(1000, 10, cached_tokens=800)
         )
-        self.assertEqual(req.input_tokens, 1000, "input_tokens must stay gross")
+        self.assertEqual(req.input_tokens, 1000, "Input tokens should include cached tokens.")
         self.assertEqual(req.cached_input_tokens, 800)
         self.assertEqual(req.output_tokens, 10)
 
@@ -1265,13 +1268,13 @@ class CachedInputTokensTest(ChatCompletionsBase):
         self.assertEqual(req.cached_input_tokens, 0)
         self.assertEqual(req.output_tokens, 0)
 
-    def test_nonsensical_cached_tokens_is_clamped(self):
+    def test_cached_input_tokens_cannot_exceed_input_tokens(self):
         req = self._run_chat_completion_and_get_request(
             self._chat_completion_payload(1000, 10, cached_tokens=5000)
         )
         self.assertEqual(req.input_tokens, 1000)
         self.assertEqual(
-            req.cached_input_tokens, 1000, "cached tokens must be clamped to input_tokens"
+            req.cached_input_tokens, 1000, "Cached input tokens should not exceed input tokens."
         )
 
     async def test_chat_completion_streaming_records_cached_input_tokens(self):
@@ -1306,14 +1309,16 @@ class CachedInputTokensTest(ChatCompletionsBase):
         await _read_streaming_response_lines(response)
 
         requests = [r async for r in Request.objects.all()]
-        self.assertEqual(len(requests), 1, "There should be exactly one logged request.")
+        self.assertEqual(len(requests), 1, "Expected one logged request.")
         req = requests[0]
-        self.assertEqual(req.input_tokens, 1000, "input_tokens must stay gross (streaming)")
-        self.assertEqual(req.cached_input_tokens, 800, "cached tokens from final chunk (streaming)")
+        self.assertEqual(req.input_tokens, 1000, "Input tokens should include cached tokens.")
+        self.assertEqual(
+            req.cached_input_tokens, 800, "Cached input tokens should come from the final chunk."
+        )
         self.assertEqual(req.output_tokens, 10)
 
     def test_completions_records_cached_input_tokens(self):
-        # LiteLLM routes chat-only text completions through chat/completions.
+        # LiteLLM sends text completion requests to chat/completions for chat-only models.
         chat_data = self._chat_completion_payload(1000, 10, cached_tokens=800)
         text_data = TextCompletionResponse(
             id="cmpl-cached-tokens",
@@ -1347,7 +1352,7 @@ class CachedInputTokensTest(ChatCompletionsBase):
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.content}")
 
         requests = list(Request.objects.all())
-        self.assertEqual(len(requests), 1, "There should be exactly one logged request.")
+        self.assertEqual(len(requests), 1, "Expected one logged request.")
         req = requests[0]
         self.assertEqual(req.input_tokens, 1000)
         self.assertEqual(req.cached_input_tokens, 800)
@@ -1378,15 +1383,13 @@ class CachedInputTokensTest(ChatCompletionsBase):
         self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.content}")
 
         requests = [r async for r in Request.objects.all()]
-        self.assertEqual(len(requests), 1, "There should be exactly one logged request.")
+        self.assertEqual(len(requests), 1, "Expected one logged request.")
         req = requests[0]
         self.assertEqual(req.input_tokens, 1000)
         self.assertEqual(req.cached_input_tokens, 800)
         self.assertEqual(req.output_tokens, 10)
 
-    def test_token_usage_setter_enforces_invariant(self):
-        from management.models import Usage as AqueductUsage
-
+    def test_token_usage_setter_limits_cached_input_tokens(self):
         req = Request()
         req.token_usage = AqueductUsage(input_tokens=100, output_tokens=5, cached_input_tokens=500)
         self.assertEqual(req.cached_input_tokens, 100)

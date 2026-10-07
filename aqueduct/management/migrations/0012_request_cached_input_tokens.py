@@ -13,8 +13,8 @@ class Migration(migrations.Migration):
             name="cached_input_tokens",
             field=models.PositiveIntegerField(
                 default=0,
-                help_text="Input tokens served from the upstream prompt cache "
-                "(a subset of input_tokens; never subtracted from it)",
+                help_text="Input tokens read from the provider's prompt cache. "
+                "These are included in input_tokens.",
             ),
         ),
     ]

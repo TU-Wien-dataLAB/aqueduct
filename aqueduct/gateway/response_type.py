@@ -207,4 +207,3 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
             )
 
     return Usage(input_tokens=0, output_tokens=0)
-

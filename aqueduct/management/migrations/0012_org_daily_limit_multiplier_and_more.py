@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('management', '0010_request_processing_time_ms_and_more'),
+        ('management', '0011_snippet'),
     ]
 
     operations = [

@@ -21,6 +21,8 @@ urlpatterns = [
     # Models endpoints
     path("models", views.models, name="models"),
     path("v1/models", views.models, name="v1_models"),
+    # LiteLLM-style rich model metadata endpoint (probed by LiteLLM-aware clients)
+    path("model_group/info", views.model_group_info, name="model_group_info"),
     # Speech endpoint
     path("audio/speech", views.speech, name="speech"),
     path("v1/audio/speech", views.speech, name="v1_speech"),

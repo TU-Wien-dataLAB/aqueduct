@@ -41,9 +41,20 @@ class TestRawJsonResponse(SimpleTestCase):
             {"name": "test", "nested": {"foo": "bar"}, "items": [{"foo": "baz"}]},
         )
 
-    def test_rejects_non_dict_data(self):
+    def test_list_data_serialized_to_json(self):
+        class Nested(BaseModel):
+            foo: str
+
+        # Mixed list: models, plain values, and a nested list of models
+        data = [Nested(foo="bar"), {"plain": True}, [Nested(foo="baz")]]
+        response = RawJsonResponse(data=data)
+        self.assertEqual(
+            json.loads(response.content), [{"foo": "bar"}, {"plain": True}, [{"foo": "baz"}]]
+        )
+
+    def test_rejects_unsupported_data(self):
         with self.assertRaises(TypeError):
-            RawJsonResponse(data="not a dict")  # type: ignore[arg-type]
+            RawJsonResponse(data="not a dict, list, or pydantic model")  # type: ignore[arg-type]
 
 
 class TestRawStreamingResponse(SimpleTestCase):

@@ -75,8 +75,7 @@ async def model_group_info(
 ) -> RawJsonResponse:
     """LiteLLM-style rich model metadata endpoint.
 
-    Returns one entry per configured model under a top-level ``data`` key
-    (the shape used by LiteLLM's /model_group/info) so that LiteLLM-aware
+    Returns one entry per configured model (JSON array) so that LiteLLM-aware
     clients — which probe /model_group/info before falling back to
     /v1/models — read token limits and capabilities directly from the gateway
     instead of guessing from bundled model catalogs.
@@ -86,11 +85,9 @@ async def model_group_info(
     excluded_models = set(await sync_to_async(token.model_exclusion_list)())
 
     return RawJsonResponse(
-        data={
-            "data": [
-                _model_group_info_entry(model)
-                for model in model_list
-                if model["model_name"] not in excluded_models
-            ]
-        }
+        data=[
+            _model_group_info_entry(model)
+            for model in model_list
+            if model["model_name"] not in excluded_models
+        ]
     )

@@ -1257,7 +1257,7 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        entries = {entry["model_group"]: entry for entry in response.json()["data"]}
+        entries = {entry["model_group"]: entry for entry in response.json()}
         info = entries[self.model]["model_info"]
         # max_input_tokens is derived from max_tokens (the context length)
         self.assertEqual(info["max_input_tokens"], 262144)

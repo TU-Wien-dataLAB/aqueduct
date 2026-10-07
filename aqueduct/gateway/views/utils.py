@@ -41,9 +41,9 @@ class RawJsonResponse(HttpResponseBase):
 
     streaming = False
 
-    def __init__(self, data: dict[str, Any] | BaseModel, **kwargs: Any) -> None:
-        if not isinstance(data, (dict, BaseModel)):
-            raise TypeError("RawJsonResponse data has to be a dict or a pydantic BaseModel")
+    def __init__(self, data: dict[str, Any] | list[Any] | BaseModel, **kwargs: Any) -> None:
+        if not isinstance(data, (dict, list, BaseModel)):
+            raise TypeError("RawJsonResponse data has to be a dict, list, or a pydantic BaseModel")
 
         # ``data`` is the original object passed when creating the response instance
         self.data = data
@@ -60,30 +60,33 @@ class RawJsonResponse(HttpResponseBase):
 
     def _dump_data(self) -> bytes:
         """Serialize ``self.data`` to JSON and return the result as bytes."""
-        _content = {}
-        if isinstance(self.data, BaseModel):
-            _content = self.data.model_dump(exclude_none=True, exclude_unset=True, mode="json")
+        content: Any
+        if isinstance(self.data, dict):
+            # Data can be a dict with models / lists of models as values
+            content = {k: _dump_value(v) for k, v in self.data.items()}
         else:
-            for k, v in self.data.items():
-                if isinstance(v, BaseModel):
-                    # Data can be a dict containing models as values
-                    _content[k] = v.model_dump(exclude_none=True, exclude_unset=True, mode="json")
-                elif isinstance(v, (list, tuple)) and any(
-                    isinstance(item, BaseModel) for item in v
-                ):
-                    # Data can be a dict containing a list of models
-                    _content[k] = [
-                        item.model_dump(exclude_none=True, exclude_unset=True, mode="json")
-                        for item in v
-                    ]
-                else:
-                    _content[k] = v
-
-        return self.make_bytes(json.dumps(_content, cls=DjangoJSONEncoder))
+            # Data can be a pydantic model, or a list of models / plain values
+            # (e.g. /model_group/info), matching JsonResponse(data, safe=False)
+            content = _dump_value(self.data)
+        return self.make_bytes(json.dumps(content, cls=DjangoJSONEncoder))
 
     @property
     def text(self) -> str:
         return self.content.decode(self.charset or "utf-8")
+
+
+def _dump_value(value: Any) -> Any:
+    """Return a JSON-serializable version of ``value``.
+
+    Pydantic models are dumped to dicts (dropping None and unset fields),
+    lists and tuples are traversed recursively; anything else is returned
+    unchanged for ``DjangoJSONEncoder`` to handle.
+    """
+    if isinstance(value, BaseModel):
+        return value.model_dump(exclude_none=True, exclude_unset=True, mode="json")
+    if isinstance(value, (list, tuple)):
+        return [_dump_value(item) for item in value]
+    return value
 
 
 def _apply_transforms(chunk: T, transforms: list[Callable[[T], T]]) -> T:

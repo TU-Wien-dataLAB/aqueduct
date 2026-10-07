@@ -1,685 +1,264 @@
-from datetime import timedelta
-from typing import ClassVar
-from urllib.parse import urlparse
+"""Gateway tests for the stateless (2026-07-28) MCP endpoint.
+
+These tests exercise the Aqueduct gateway's MCP behavior: authentication, the
+required ``Mcp-Method`` header, header/routing metadata on the relay, response
+passthrough (JSON and SSE), transport security, and exclusion. The upstream MCP
+server is mocked with ``httpx.MockTransport`` because real servers still speak
+the old handshake-based protocol; what matters here is how the gateway relays
+each self-contained request.
+"""
+
+import json
+from unittest.mock import patch
 
 import httpx
-from asgiref.sync import async_to_sync, sync_to_async
-from django.contrib.auth import get_user_model
-from mcp import ClientSession, McpError
-from mcp.client.streamable_http import streamable_http_client
-from mcp.types import PromptReference, ResourceTemplateReference
-from pydantic.networks import AnyUrl
-
-# Note: only MCPLiveServerTestCase imported here to avoid importing any Django models as this
-#  causes problems with LiveServerTestCase in PyCharm
-from gateway.tests.utils.mcp import MCPLiveServerTestCase, skip_on_cancel_scope_error
-
-
-class MCPLiveClientTest(MCPLiveServerTestCase):
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_list_tools(self):
-        """Test MCP tools listing."""
-        async with self.client_session() as session:
-            await session.initialize()
-            tools = await session.list_tools()
-
-            self.assertIsNotNone(tools)
-            self.assertIsInstance(tools.tools, list)
-            self.assertGreater(len(tools.tools), 0)
-            # Verify expected tools are present
-            tool_names = [tool.name for tool in tools.tools]
-            self.assertIn("echo", tool_names)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_call_tool(self):
-        """Test calling a tool."""
-        async with self.client_session() as session:
-            await session.initialize()
-            tool_name = "echo"
-            result = await session.call_tool(tool_name, {"message": "test"})
-
-            self.assertIsNotNone(result)
-            self.assertIsInstance(result.content, list)
-            self.assertGreater(len(result.content), 0)
-            # Verify the echo tool returns the input message
-            self.assertIn("test", result.content[0].text)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_call_tool_long_running(self):
-        """Test calling a long-running tool with progress updates."""
-        async with self.client_session() as session:
-            await session.initialize()
-            tool_name = "longRunningOperation"
-            result = await session.call_tool(tool_name, {"duration": 0.1, "steps": 5})
-
-            self.assertIsNotNone(result)
-            self.assertIsInstance(result.content, list)
-            self.assertGreater(len(result.content), 0)
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_list_resources(self):
-        """Test listing resources."""
-        async with self.client_session() as session:
-            await session.initialize()
-            resources = await session.list_resources()
-            self.assertIsNotNone(resources)
-            self.assertIsInstance(resources.resources, list)
-            # Resources may be empty, but the response should be valid
-            self.assertGreater(len(resources.resources), 0)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_read_resource(self):
-        """Test reading a resource."""
-        async with self.client_session() as session:
-            await session.initialize()
-            resources = await session.list_resources()
-            self.assertGreater(len(resources.resources), 0)
-
-            resource_uri = resources.resources[0].uri
-            result = await session.read_resource(resource_uri)
-
-            self.assertIsNotNone(result)
-            self.assertIsInstance(result.contents, list)
-            self.assertGreater(len(result.contents), 0)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_list_prompts(self):
-        """Test listing prompts."""
-        async with self.client_session() as session:
-            await session.initialize()
-            prompts = await session.list_prompts()
-
-            self.assertIsNotNone(prompts)
-            self.assertIsInstance(prompts.prompts, list)
-            self.assertGreater(len(prompts.prompts), 0)
-            # Verify prompt names are strings
-            for prompt in prompts.prompts:
-                self.assertIsInstance(prompt.name, str)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_get_prompt(self):
-        """Test getting a prompt."""
-        async with self.client_session() as session:
-            await session.initialize()
-            prompts = await session.list_prompts()
-            self.assertGreater(len(prompts.prompts), 0)
-
-            prompt_name = prompts.prompts[0].name
-            result = await session.get_prompt(prompt_name)
-
-            self.assertIsNotNone(result)
-            self.assertIsInstance(result.messages, list)
-            self.assertGreater(len(result.messages), 0)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_send_ping(self):
-        """Test sending ping."""
-        async with self.client_session() as session:
-            await session.initialize()
-            result = await session.send_ping()
-
-            self.assertIsNotNone(result)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_list_resource_templates(self):
-        """Test listing resource templates."""
-        async with self.client_session() as session:
-            await session.initialize()
-            templates = await session.list_resource_templates()
-
-            self.assertIsNotNone(templates)
-            self.assertIsInstance(templates.resourceTemplates, list)
-            # Resource templates may be empty, but response should be valid
-            for template in templates.resourceTemplates:
-                self.assertIsInstance(template.uriTemplate, str)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_complete_resource_template(self):
-        """Test completion for resource template reference."""
-        async with self.client_session() as session:
-            await session.initialize()
-            templates = await session.list_resource_templates()
-            template = templates.resourceTemplates[0]
-
-            ref = ResourceTemplateReference(type="ref/resource", uri=template.uriTemplate)
-
-            argument = {"name": "test", "value": "argument"}
-            result = await session.complete(ref, argument)
-
-            self.assertIsNotNone(result)
-            self.assertIsNotNone(result.completion)
-            self.assertIsInstance(result.completion.values, list)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_complete_prompt_reference(self):
-        """Test completion for prompt reference."""
-        async with self.client_session() as session:
-            await session.initialize()
-            prompts = await session.list_prompts()
-            prompt = prompts.prompts[0]
-
-            ref = PromptReference(type="ref/prompt", name=prompt.name)
-
-            argument = {"name": "test", "value": "argument"}
-            result = await session.complete(ref, argument)
-
-            self.assertIsNotNone(result)
-            self.assertIsNotNone(result.completion)
-            self.assertIsInstance(result.completion.values, list)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_set_logging_level(self):
-        """Test setting server logging level."""
-        async with self.client_session() as session:
-            await session.initialize()
-            result = await session.set_logging_level("debug")
-
-            self.assertIsNotNone(result)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_send_roots_list_changed(self):
-        """Test sending roots list changed notification."""
-        async with self.client_session() as session:
-            await session.initialize()
-            result = await session.send_roots_list_changed()
-
-            self.assertIsNone(result)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_send_progress_notification(self):
-        """Test sending progress notification."""
-        async with self.client_session() as session:
-            await session.initialize()
-            result = await session.send_progress_notification(
-                progress_token="test-token", progress=50.0, total=100.0, message="Processing..."
-            )
-
-            self.assertIsNone(result)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_call_tool_with_progress_callback(self):
-        """Test calling tool with progress callback."""
-        progress_updates = []
-
-        def progress_callback(progress_token, progress, total=None):
-            progress_updates.append((progress_token, progress, total))
-
-        async with self.client_session() as session:
-            await session.initialize()
-            tool_name = "longRunningOperation"
-            result = await session.call_tool(
-                tool_name, {"duration": 0.5, "steps": 3}, progress_callback=progress_callback
-            )
-
-            self.assertIsNotNone(result)
-            self.assertIsInstance(result.content, list)
-            self.assertGreater(len(result.content), 0)
-            # Verify progress updates were received
-            self.assertGreater(len(progress_updates), 0)
-            # Verify structure of progress updates
-            for update in progress_updates:
-                self.assertEqual(len(update), 3)
-                _progress_token, progress, _total = update
-                self.assertIsInstance(progress, (int, float))
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_call_tool_with_timeout(self):
-        """Test calling tool with read timeout."""
-        async with self.client_session() as session:
-            await session.initialize()
-            tool_name = "echo"
-            result = await session.call_tool(
-                tool_name, {"message": "test"}, read_timeout_seconds=timedelta(seconds=10)
-            )
-
-            self.assertIsNotNone(result)
-            self.assertIsInstance(result.content, list)
-            self.assertGreater(len(result.content), 0)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_list_methods_with_cursor(self):
-        """Test list methods with cursor parameter functionality."""
-        async with self.client_session() as session:
-            await session.initialize()
-
-            # Test tools with cursor (if supported)
-            tools = await session.list_tools()
-            self.assertIsNotNone(tools)
-            if hasattr(tools, "nextCursor") and tools.nextCursor:
-                next_tools = await session.list_tools(cursor=tools.nextCursor)
-                self.assertIsNotNone(next_tools)
-                self.assertIsInstance(next_tools.tools, list)
-
-            # Test resources with cursor (if supported)
-            resources = await session.list_resources()
-            self.assertIsNotNone(resources)
-            if hasattr(resources, "nextCursor") and resources.nextCursor:
-                next_resources = await session.list_resources(cursor=resources.nextCursor)
-                self.assertIsNotNone(next_resources)
-                self.assertIsInstance(next_resources.resources, list)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_error_invalid_tool_name(self):
-        """Test error handling for invalid tool name."""
-        async with self.client_session() as session:
-            await session.initialize()
-            with self.assertRaises(McpError) as context:
-                await session.call_tool("nonexistent_tool", {})
-
-            self.assertEqual("Unknown tool: nonexistent_tool", str(context.exception))
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_error_invalid_resource_uri(self):
-        """Test error handling for invalid resource URI."""
-        async with self.client_session() as session:
-            await session.initialize()
-
-            with self.assertRaises(McpError) as context:
-                invalid_uri = AnyUrl("invalid://not-a-real-uri")
-                await session.read_resource(invalid_uri)
-
-            self.assertEqual("Unknown resource: invalid://not-a-real-uri", str(context.exception))
-
-        await self.assert_request_logged()
-
-    async def test_initialize(self):
-        """Test initialize method directly."""
-        async with self.client_session() as session:
-            result = await session.initialize()
-
-            self.assertIsNotNone(result)
-            # Verify initialization result has expected attributes
-            self.assertIsNotNone(result.serverInfo)
-            self.assertIsNotNone(result.capabilities)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_session_creation(self):
-        """Test that sessions have unique IDs."""
-        async with httpx.AsyncClient(headers=self.headers) as client:
-            async with (
-                streamable_http_client(self.mcp_url, http_client=client) as (r, w, get_session_id),
-                ClientSession(r, w) as session,
-            ):
-                await session.initialize()
-                s1 = get_session_id()
-
-            async with (
-                streamable_http_client(self.mcp_url, http_client=client) as (r, w, get_session_id),
-                ClientSession(r, w) as session,
-            ):
-                await session.initialize()
-                s2 = get_session_id()
-
-        self.assertNotEqual(s1, s2)
-        await self.assert_request_logged(n=2)
-
-
-class MCPTransportSecurityTest(MCPLiveServerTestCase):
-    """Test MCP transport security (DNS rebinding protection)."""
-
-    custom_validation_init_payload: ClassVar[dict] = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2025-06-18",
-            "capabilities": {},
-            "clientInfo": {"name": "test", "version": "1.0"},
+from django.test import override_settings
+from django.urls import reverse
+from mcp.types import jsonrpc_message_adapter
+
+from gateway.tests.utils.base import GatewayIntegrationTestCase
+from management.models import Org
+
+MCP_SERVER = "test-server"
+MCP_URL = f"http://upstream.example/{MCP_SERVER}/mcp"
+MCP_CONFIG = {MCP_SERVER: {"type": "streamable-http", "url": MCP_URL}}
+
+# The 2026-07-28 required transport headers.
+MCP_HEADERS = {"Mcp-Method": "tools/call", "Mcp-Name": "echo", "MCP-Protocol-Version": "2026-07-28"}
+
+MCP_BODY = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {"name": "echo", "arguments": {"message": "hi"}},
+}
+
+
+def _json_rpc_response_handler(request: httpx.Request) -> httpx.Response:
+    """Return a JSON-RPC response echoing the Mcp-* headers the relay sent."""
+    received = jsonrpc_message_adapter.validate_json(request.content)
+    return httpx.Response(
+        200,
+        json={
+            "jsonrpc": "2.0",
+            "id": getattr(received, "id", None),
+            "result": {
+                "relayed": {
+                    "method": request.headers.get("mcp-method"),
+                    "name": request.headers.get("mcp-name"),
+                    "protocol_version": request.headers.get("mcp-protocol-version"),
+                    "body_params": getattr(received, "params", None),
+                }
+            },
         },
-    }
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_valid_host_allowed(self):
-        """Test that valid hosts are allowed."""
-        # The normal client_session should work with valid hosts (localhost:*)
-        async with self.client_session() as session:
-            result = await session.initialize()
-            self.assertIsNotNone(result)
-            self.assertIsNotNone(result.serverInfo)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_invalid_host_rejected(self):
-        """Test that invalid Host header is rejected with 421."""
-        # We need to test with a host that's valid for Django's ALLOWED_HOSTS
-        # but invalid for our MCP security settings.
-        # Since the test server runs on a random port, we use a different port on localhost
-        headers = {
-            "Authorization": self.headers["Authorization"],
-            "Content-Type": "application/json",
-        }
-
-        # Create a custom request with a host not in our allowed list
-        # Use a specific port that's not in localhost:* pattern would be caught,
-        # but our test allows localhost:*, so we need to use a completely different host
-        # that Django would allow (testserver) but our security wouldn't
-        async with httpx.AsyncClient() as client:
-            request = client.build_request(
-                "POST", self.mcp_url, json=self.custom_validation_init_payload, headers=headers
-            )
-            # Use a host that would fail our security check
-            # Django test server allows 'testserver' by default
-            request.headers["host"] = "evil.testserver:8000"
-            response = await client.send(request)
-
-            # Should return 421 for invalid Host header
-            self.assertEqual(response.status_code, 421)
-            self.assertIn("error", response.json())
-            self.assertIn("Invalid Host header", response.json()["error"]["message"])
-
-        await self.assert_request_logged(n=0)
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_invalid_origin_rejected(self):
-        """Test that invalid Origin header is rejected with 403."""
-        # Extract the actual host from the live server URL
-        parsed_url = urlparse(self.live_server_url)
-        valid_host = parsed_url.netloc
-
-        headers = {
-            "Authorization": self.headers["Authorization"],
-            "Content-Type": "application/json",
-            "Host": valid_host,
-            "Origin": "https://evil.com",
-        }
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.mcp_url, json=self.custom_validation_init_payload, headers=headers
-            )
-
-            # Should return 403 for invalid Origin header
-            self.assertEqual(response.status_code, 403)
-            self.assertIn("error", response.json())
-            self.assertIn("Invalid Origin header", response.json()["error"]["message"])
-
-        await self.assert_request_logged(0)
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_invalid_content_type_rejected(self):
-        """Test that invalid Content-Type is rejected with 415."""
-        # Extract the actual host from the live server URL
-        parsed_url = urlparse(self.live_server_url)
-        valid_host = parsed_url.netloc
-
-        headers = {
-            "Authorization": self.headers["Authorization"],
-            "Content-Type": "text/plain",
-            "Host": valid_host,
-        }
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.mcp_url, json=self.custom_validation_init_payload, headers=headers
-            )
-
-            self.assertEqual(response.status_code, 415)
-            self.assertIn("error", response.json())
-            self.assertIn("Unsupported Content-Type", response.json()["error"]["message"])
-
-        await self.assert_request_logged(n=0)
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_missing_origin_allowed(self):
-        """Test that missing Origin header is allowed (same-origin requests)."""
-        # Normal requests without Origin should work
-        async with self.client_session() as session:
-            result = await session.initialize()
-            self.assertIsNotNone(result)
-            self.assertIsNotNone(result.serverInfo)
-
-        await self.assert_request_logged()
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_wildcard_port_allowed(self):
-        """Test that wildcard port patterns work (localhost:*)."""
-        # Extract the actual host from the live server URL (should match localhost:*)
-        parsed_url = urlparse(self.live_server_url)
-        valid_host = parsed_url.netloc
-
-        headers = {
-            "Authorization": self.headers["Authorization"],
-            "Content-Type": "application/json",
-            "Host": valid_host,
-        }
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.mcp_url, json=self.custom_validation_init_payload, headers=headers
-            )
-
-            # Should succeed because localhost:* is in allowed hosts
-            self.assertEqual(response.status_code, 200)
-
-        await self.assert_request_logged(n=1)
+    )
 
 
-class MCPServerExclusionTest(MCPLiveServerTestCase):
-    """Test MCP server exclusion functionality."""
+def _sse_handler(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(
+        200,
+        headers={"content-type": "text/event-stream"},
+        content=b'data: {"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n\n',
+    )
 
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_mcp_server_access_allowed(self):
-        """Test that MCP server is accessible when not excluded."""
-        async with self.client_session() as session:
-            result = await session.initialize()
-            self.assertIsNotNone(result)
-            self.assertIsNotNone(result.serverInfo)
 
-        await self.assert_request_logged()
+def _patch_client(handler) -> patch:
+    """Patch the relay's httpx.AsyncClient to use an in-memory MockTransport."""
+    from gateway.views import mcp as mcp_views
 
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_org_excluded_mcp_server(self):
-        """Test that MCP server is blocked when excluded at org level."""
-        # Get org and add exclusion
-        from management.models import Org
+    real_async_client = httpx.AsyncClient  # capture the unpatched class
 
-        org = await Org.objects.aget(name="E060")
-        await sync_to_async(org.add_excluded_mcp_server)("test-server")
+    def factory(*args, **kwargs):
+        return real_async_client(transport=httpx.MockTransport(handler))
 
-        # Try to access the MCP server - should get 404
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.mcp_url,
-                json=MCPTransportSecurityTest.custom_validation_init_payload,
-                headers=self.headers,
-            )
-            self.assertEqual(response.status_code, 404)
+    return patch.object(mcp_views.httpx, "AsyncClient", new=factory)
 
-        # Clean up
-        await sync_to_async(org.remove_excluded_mcp_server)("test-server")
 
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_team_excluded_mcp_server(self):
-        """Test that MCP server is blocked when excluded at team level."""
-        # Get team and add exclusion
-        from management.models import ServiceAccount, Team, Token
+@override_settings(MCP_ENABLE_DNS_REBINDING_PROTECTION=False)
+class MCPRelayTest(GatewayIntegrationTestCase):
+    """Stateless relay: required header, forwarding, passthrough, independence."""
 
-        team = await Team.objects.aget(name="Whale")
-        await sync_to_async(team.add_excluded_mcp_server)("test-server")
+    def setUp(self):
+        super().setUp()
+        self.url = reverse("gateway:mcp_server", kwargs={"name": MCP_SERVER})
+        patcher = patch("gateway.views.mcp.get_mcp_config", return_value=MCP_CONFIG)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
-        # Create a service account for the team
-        service_account = await ServiceAccount.objects.acreate(
-            team=team, name="Test Service Account"
+    def _post(self, body=None, headers=None, content_type="application/json", include_method=True):
+        full = {**self.headers, "Content-Type": content_type}
+        if include_method:
+            full["Mcp-Method"] = MCP_HEADERS["Mcp-Method"]
+        if headers:
+            full.update(headers)
+        return self.client.post(
+            self.url, data=json.dumps(body or MCP_BODY), content_type=content_type, headers=full
         )
 
-        # Create a token for the service account
-        from gateway.tests.utils.base import GatewayIntegrationTestCase
+    def test_requires_mcp_method_header(self):
+        # No Mcp-Method header -> 400 (the relay requires self-describing headers).
+        resp = self._post(include_method=False)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Mcp-Method", resp.json()["error"]["message"])
 
-        token = await Token.objects.aget(
-            key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
+    def test_stateless_relay_forwards_headers_and_returns_response(self):
+        with _patch_client(_json_rpc_response_handler):
+            resp = self._post(headers=MCP_HEADERS)
+        self.assertEqual(resp.status_code, 200)
+        result = resp.json()["result"]["relayed"]
+        self.assertEqual(result["method"], "tools/call")
+        self.assertEqual(result["name"], "echo")
+        self.assertEqual(result["protocol_version"], "2026-07-28")
+        self.assertEqual(result["body_params"]["name"], "echo")
+
+    def test_stateless_requests_are_independent(self):
+        # Two identical calls produce identical results (no shared session state).
+        with _patch_client(_json_rpc_response_handler):
+            r1 = self._post(headers=MCP_HEADERS)
+            r2 = self._post(headers=MCP_HEADERS)
+        self.assertEqual(r1.status_code, 200)
+        self.assertEqual(r1.json(), r2.json())
+
+    def test_relay_streams_sse_response(self):
+        from asgiref.sync import async_to_sync
+
+        async def collect() -> bytes:
+            return b"".join([chunk async for chunk in resp.streaming_content])
+
+        with _patch_client(_sse_handler):
+            resp = self._post(headers=MCP_HEADERS)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["content-type"], "text/event-stream")
+        self.assertIn(b"jsonrpc", async_to_sync(collect)())
+
+    def test_get_rejected(self):
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, 405)
+
+    def test_delete_rejected(self):
+        resp = self.client.delete(self.url)
+        self.assertEqual(resp.status_code, 405)
+
+    def test_server_requires_auth(self):
+        # No Authorization header -> 401.
+        resp = self.client.post(
+            self.url,
+            data=json.dumps(MCP_BODY),
+            content_type="application/json",
+            headers={"Content-Type": "application/json", **MCP_HEADERS},
         )
-        token.service_account = service_account
-        await token.asave()
+        self.assertEqual(resp.status_code, 401)
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.mcp_url,
-                json=MCPTransportSecurityTest.custom_validation_init_payload,
-                headers=self.headers,
+
+class MCPNotFoundTest(GatewayIntegrationTestCase):
+    """Server config lookup errors."""
+
+    @override_settings(MCP_ENABLE_DNS_REBINDING_PROTECTION=False)
+    def test_nonexistent_server_returns_404(self):
+        url = reverse("gateway:mcp_server", kwargs={"name": "ghost"})
+        with patch("gateway.views.mcp.get_mcp_config", return_value={}):
+            resp = self.client.post(
+                url,
+                data=json.dumps(MCP_BODY),
+                content_type="application/json",
+                headers={**self.headers, **MCP_HEADERS},
             )
-            self.assertEqual(response.status_code, 404)
+        self.assertEqual(resp.status_code, 404)
 
-        # Clean up
-        token.service_account = None
-        await token.asave()
-        await service_account.adelete()
-        await sync_to_async(team.remove_excluded_mcp_server)("test-server")
 
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_user_excluded_mcp_server(self):
-        """Test that MCP server is blocked when excluded at user profile level."""
+@override_settings(
+    # Let Django accept the Host header so our `mcp_transport_security` decorator runs
+    # and does the host/origin enforcement itself (the test client sends no Host by default).
+    ALLOWED_HOSTS=["*"],
+    MCP_ENABLE_DNS_REBINDING_PROTECTION=True,
+    MCP_ALLOWED_HOSTS=["testserver", "localhost:*"],
+    MCP_ALLOWED_ORIGINS=["https://allowed.example"],
+)
+class MCPTransportSecurityTest(GatewayIntegrationTestCase):
+    """Transport security (DNS rebinding / origin / content-type validation)."""
 
-        user_model = get_user_model()
+    def setUp(self):
+        super().setUp()
+        self.url = reverse("gateway:mcp_server", kwargs={"name": MCP_SERVER})
+        patcher = patch("gateway.views.mcp.get_mcp_config", return_value=MCP_CONFIG)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
-        # Get user and their profile
-        user = await user_model.objects.select_related("profile").aget(username="Me")
-        profile = user.profile
-
-        # Add exclusion to user profile
-        await sync_to_async(profile.add_excluded_mcp_server)("test-server")
-
-        # Try to access the MCP server - should get 404
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.mcp_url,
-                json=MCPTransportSecurityTest.custom_validation_init_payload,
-                headers=self.headers,
-            )
-            self.assertEqual(response.status_code, 404)
-
-        # Clean up
-        await sync_to_async(profile.remove_excluded_mcp_server)("test-server")
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_merged_exclusion_lists(self):
-        """Test that exclusion lists merge correctly across hierarchy."""
-        from management.models import Org, Token
-
-        user_model = get_user_model()
-
-        # Get the token to test exclusion list logic
-        from gateway.tests.utils.base import GatewayIntegrationTestCase
-
-        token = await sync_to_async(Token.objects.get)(
-            key_hash=Token._hash_key(GatewayIntegrationTestCase.AQUEDUCT_ACCESS_TOKEN)
+    def test_invalid_host_rejected(self):
+        headers = {**self.headers, **MCP_HEADERS}
+        resp = self.client.post(
+            self.url,
+            data=json.dumps(MCP_BODY),
+            content_type="application/json",
+            headers=headers,
+            HTTP_HOST="evil.testserver:8000",
         )
+        self.assertEqual(resp.status_code, 421)
+        self.assertIn("Invalid Host header", resp.json()["error"]["message"])
 
-        # Setup: Org excludes test-server, user has merge enabled (default)
-        org = await Org.objects.aget(name="E060")
-        await sync_to_async(org.add_excluded_mcp_server)("test-server")
+    def test_invalid_origin_rejected(self):
+        headers = {**self.headers, **MCP_HEADERS, "Origin": "https://evil.com"}
+        resp = self.client.post(
+            self.url,
+            data=json.dumps(MCP_BODY),
+            content_type="application/json",
+            headers=headers,
+            HTTP_HOST="testserver",
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("Invalid Origin header", resp.json()["error"]["message"])
 
-        user = await user_model.objects.aget(username="Me")
-        profile = await sync_to_async(lambda: user.profile)()
+    def test_invalid_content_type_rejected(self):
+        # `parse_body` rejects unsupported content types with 415 before the relay.
+        resp = self.client.post(
+            self.url,
+            data="not json",
+            content_type="text/plain",
+            headers={**self.headers, **MCP_HEADERS, "Content-Type": "text/plain"},
+        )
+        self.assertEqual(resp.status_code, 415)
 
-        # Verify merge_mcp_server_exclusion_lists is True by default
-        merge_enabled = await sync_to_async(lambda: profile.merge_mcp_server_exclusion_lists)()
-        self.assertTrue(merge_enabled)
-
-        # Check that test-server is in exclusion list (should be merged from org)
-        exclusion_list = await sync_to_async(token.mcp_server_exclusion_list)()
-        self.assertIn("test-server", exclusion_list)
-
-        # Verify the server is marked as excluded
-        is_excluded = await sync_to_async(token.mcp_server_excluded)("test-server")
-        self.assertTrue(is_excluded)
-
-        # Now disable merging at user level
-        profile.merge_mcp_server_exclusion_lists = False
-        await profile.asave()
-
-        # Check that test-server is NOT in exclusion list (merge disabled, user has no exclusions)
-        exclusion_list = await sync_to_async(token.mcp_server_exclusion_list)()
-        self.assertNotIn("test-server", exclusion_list)
-
-        # Verify the server is NOT marked as excluded
-        is_excluded = await sync_to_async(token.mcp_server_excluded)("test-server")
-        self.assertFalse(is_excluded)
-
-        # Clean up
-        profile.merge_mcp_server_exclusion_lists = True
-        await profile.asave()
-        await sync_to_async(org.remove_excluded_mcp_server)("test-server")
-
-    @async_to_sync
-    @skip_on_cancel_scope_error
-    async def test_nonexistent_mcp_server(self):
-        """Test that accessing a non-existent MCP server returns 404."""
-        nonexistent_url = f"{self.live_server_url}/mcp-servers/nonexistent-server/mcp"
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                nonexistent_url,
-                json=MCPTransportSecurityTest.custom_validation_init_payload,
-                headers=self.headers,
+    def test_valid_host_and_missing_origin_allowed(self):
+        with _patch_client(_json_rpc_response_handler):
+            resp = self.client.post(
+                self.url,
+                data=json.dumps(MCP_BODY),
+                content_type="application/json",
+                headers={**self.headers, **MCP_HEADERS},
+                HTTP_HOST="testserver",
             )
-            self.assertEqual(response.status_code, 404)
+        self.assertEqual(resp.status_code, 200)
 
-        await self.assert_request_logged(n=1)
+
+class MCPServerExclusionTest(GatewayIntegrationTestCase):
+    """MCP server exclusion (org/team/user) still enforced before relay."""
+
+    @override_settings(MCP_ENABLE_DNS_REBINDING_PROTECTION=False)
+    def test_org_excluded_mcp_server(self):
+        org = Org.objects.get(name="E060")
+        org.add_excluded_mcp_server(MCP_SERVER)
+        self.addCleanup(lambda: org.remove_excluded_mcp_server(MCP_SERVER))
+
+        url = reverse("gateway:mcp_server", kwargs={"name": MCP_SERVER})
+        resp = self.client.post(
+            url,
+            data=json.dumps(MCP_BODY),
+            content_type="application/json",
+            headers={**self.headers, **MCP_HEADERS},
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    @override_settings(MCP_ENABLE_DNS_REBINDING_PROTECTION=False)
+    def test_mcp_server_access_allowed(self):
+        url = reverse("gateway:mcp_server", kwargs={"name": MCP_SERVER})
+        with (
+            patch("gateway.views.mcp.get_mcp_config", return_value=MCP_CONFIG),
+            _patch_client(_json_rpc_response_handler),
+        ):
+            resp = self.client.post(
+                url,
+                data=json.dumps(MCP_BODY),
+                content_type="application/json",
+                headers={**self.headers, **MCP_HEADERS},
+            )
+        self.assertEqual(resp.status_code, 200)

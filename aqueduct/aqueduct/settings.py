@@ -125,8 +125,6 @@ def my_org_name_extractor(groups: list[str]) -> str | None:
 
 
 OIDC_DEFAULT_GROUPS = ["default"]
-ORG_NAME_FROM_OIDC_FUNCTION = lambda x: "default"
-ADMIN_GROUP = "default"  # all users are admins
 
 # OAuth Group Management Settings
 # Controls automatic team creation and membership management from OAuth groups
@@ -137,48 +135,10 @@ ENABLE_OAUTH_GROUP_MANAGEMENT = (
 ENABLE_OAUTH_GROUP_CREATION = os.getenv("ENABLE_OAUTH_GROUP_CREATION", "True").lower() == "true"
 ENABLE_OAUTH_GROUP_REMOVAL = os.getenv("ENABLE_OAUTH_GROUP_REMOVAL", "True").lower() == "true"
 
-
-def default_oauth_team_names(claims: dict[str, Any]) -> list[str]:
-    """
-    Default function to extract team names from OAuth claims.
-
-    Args:
-        claims: The full OAuth claims dict.
-
-    Returns:
-        List of team names, or empty list if none.
-
-    Example:
-        def my_extract_team_names(claims) -> list[str]:
-            team_names = claims.get('groups', [])
-            return [team_name for team_name in team_names if team_name.startswith('E')]
-    """
-    return []
-
-
-def default_oauth_display_team_names(team_names: list[str]) -> list[tuple[str, str]]:
-    """
-    Default function to map team names to display team names.
-
-    Args:
-        team_names: List of team names.
-
-    Returns:
-        List of (display_team_name, team_name) tuples, or empty list if none.
-
-    Example:
-        def my_display_team_names(team_names) -> list[tuple[str, str]]:
-            result = []
-            for team_name in team_names:
-                display_team_name = team_name.split('-')[0]
-                result.append((display_team_name, team_name))
-            return result
-    """
-    return [(t, t) for t in team_names]
-
-
-OAUTH_TEAM_NAMES_FUNCTION = default_oauth_team_names
-OAUTH_DISPLAY_TEAM_NAMES_FUNCTION = default_oauth_display_team_names
+ADMIN_GROUP = os.getenv("ADMIN_GROUP", "")
+ADMIN_SUPERUSER_EMAILS = [
+    e.strip().lower() for e in os.getenv("ADMIN_SUPERUSER_EMAILS", "").split(",") if e.strip()
+]
 
 EXTRA_NAV_LINKS = {
     "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",
@@ -197,6 +157,16 @@ LITELLM_ROUTER_CONFIG_FILE_PATH = os.environ.get("LITELLM_ROUTER_CONFIG_FILE_PAT
 
 AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST: list[str] = []
 AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST: list[str] = []
+
+# Rate limiting (cache-backed minute/hour/day buckets; see gateway/rate_limiting.py)
+AQUEDUCT_RATE_LIMIT_ENABLED = os.getenv("AQUEDUCT_RATE_LIMIT_ENABLED", "True").lower() == "true"
+AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS = int(
+    os.getenv("AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS", "5")
+)
+# Window multiplier defaults (applied when no object in the hierarchy sets one):
+# hourly/daily limits are derived from the per-minute limit x multiplier.
+AQUEDUCT_HOURLY_LIMIT_MULTIPLIER = int(os.getenv("AQUEDUCT_HOURLY_LIMIT_MULTIPLIER", "60"))
+AQUEDUCT_DAILY_LIMIT_MULTIPLIER = int(os.getenv("AQUEDUCT_DAILY_LIMIT_MULTIPLIER", "1440"))
 
 # External Files/Batches API endpoint (required)
 AQUEDUCT_FILES_API_URL = os.environ.get("AQUEDUCT_FILES_API_URL")
@@ -392,7 +362,7 @@ CACHES = {
     }
 }
 
-if TESTING:
+if TESTING or DEBUG:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 # Password validation

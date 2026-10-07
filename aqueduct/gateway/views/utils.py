@@ -9,6 +9,7 @@ from typing import Any, Literal, TypeVar
 import httpx
 import litellm
 import openai
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.handlers.asgi import ASGIRequest
@@ -27,6 +28,7 @@ from openai.types.responses import ResponseCreatedEvent, ResponseStreamEvent
 from pydantic import BaseModel
 
 from gateway.config import get_openai_client, get_router
+from gateway.rate_limiting import record_token_usage
 from management.models import Request, Usage
 
 log = logging.getLogger("aqueduct")
@@ -150,6 +152,12 @@ class RawStreamingResponse(StreamingHttpResponse):
             self.request_log.token_usage = token_usage
             self.request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
             await self.request_log.asave()
+            # Record token usage into the rate-limit buckets. Streaming requests
+            # defer recording to here (stream end) since token usage is only known
+            # once the upstream stream completes.
+            await sync_to_async(record_token_usage)(
+                self.request_log.token_id, self.request_log.token_usage
+            )
 
             yield b"data: [DONE]\n\n"
 

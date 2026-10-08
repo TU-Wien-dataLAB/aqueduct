@@ -449,8 +449,9 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         # Should return 400 error without calling the view function
         mock_view_func.assert_not_called()
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 400)
-        self.assertEqual(result.content["error"]["message"], "Invalid request")
+        self.assertEqual(result.data["error"]["message"], "Invalid request")
 
     async def test_check_tool_availability_missing_pydantic_model(self):
         """
@@ -472,8 +473,9 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         # Should return 400 error without calling the view function
         mock_view_func.assert_not_called()
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 400)
-        self.assertEqual(result.content["error"]["message"], "Invalid request")
+        self.assertEqual(result.data["error"]["message"], "Invalid request")
 
     @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_excluded(self, mock_get_mcp_config):
@@ -501,8 +503,9 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         # Should return 404 error without calling the view function
         mock_view_func.assert_not_called()
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 404)
-        self.assertIn("MCP server not found", result.content["error"]["message"])
+        self.assertIn("MCP server not found", result.data["error"]["message"])
 
     @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_not_found(self, mock_get_mcp_config):
@@ -531,8 +534,9 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         # Should return 404 error without calling the view function
         mock_view_func.assert_not_called()
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 404)
-        self.assertIn("MCP server not found", result.content["error"]["message"])
+        self.assertIn("MCP server not found", result.data["error"]["message"])
 
     @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_url_match(self, mock_get_mcp_config):
@@ -596,8 +600,9 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         # Should return 400 error without calling the view function
         mock_view_func.assert_not_called()
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 400)
-        self.assertEqual(result.content["error"]["message"], "Invalid tool type: invalid_tool_type")
+        self.assertEqual(result.data["error"]["message"], "Invalid tool type: invalid_tool_type")
 
     @override_settings(RESPONSES_API_ALLOWED_NATIVE_TOOLS=["allowed_native_tool"])
     async def test_check_tool_availability_allowed_native_tool(self):
@@ -729,9 +734,10 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         decorated_func = check_tool_availability(mock_view_func)
         result = await decorated_func(request, response_id, **kwargs)
 
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 404)
         mock_view_func.assert_not_called()
-        self.assertIn("One or more vector stores not found", result.content["error"]["message"])
+        self.assertIn("One or more vector stores not found", result.data["error"]["message"])
 
     async def test_check_tool_availability_file_search_empty_ids(self):
         """

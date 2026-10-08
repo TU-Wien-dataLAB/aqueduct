@@ -182,6 +182,31 @@ def get_all_model_request_limit_multipliers() -> dict[str, float]:
     return multipliers
 
 
+def get_model_supports_response_format(model_name: str) -> bool:
+    """
+    Whether the model's upstream API accepts the `response_format` request parameter.
+
+    Returns False only when the model's model_info explicitly sets
+    `supports_response_format: false` (e.g. gpt-image models, which only return
+    b64_json and reject the parameter). Defaults to True.
+
+    Args:
+        model_name: The model name (or alias, will be resolved)
+
+    Returns:
+        Whether response_format may be sent to the model
+    """
+    resolved = resolve_model_alias(model_name)
+    config = get_router_config()
+    model_list = config.get("model_list", [])
+
+    for model in model_list:
+        if model.get("model_name") == resolved:
+            return model.get("model_info", {}).get("supports_response_format", True) is not False
+
+    return True
+
+
 @lru_cache(maxsize=1)
 def get_mcp_config() -> dict[str, MCPServerConfig]:
     path = settings.MCP_CONFIG_FILE_PATH

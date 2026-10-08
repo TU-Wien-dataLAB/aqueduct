@@ -3,10 +3,13 @@ import time
 from functools import wraps
 from typing import Any
 
+from asgiref.sync import sync_to_async
 from django.core.handlers.asgi import ASGIRequest
+from django.http import StreamingHttpResponse
 from django.utils import timezone
 
 from gateway.decorators.types import AsyncView, ViewResult
+from gateway.rate_limiting import record_token_usage
 from management.models import Request
 
 log = logging.getLogger("aqueduct")
@@ -52,6 +55,16 @@ def log_request(view_func: AsyncView) -> AsyncView:
         request_log.status_code = result.status_code
 
         await request_log.asave()
+
+        # Record token usage into the rate-limit buckets for non-streaming
+        # responses. For non-streaming responses the view has finalized
+        # ``request_log.token_usage`` before returning, so it is available here.
+        # Streaming responses defer token recording to
+        # ``RawStreamingResponse._iter_stream`` (the generator runs after this
+        # wrapper returns), so we skip them here to avoid double-counting.
+        if not isinstance(result, StreamingHttpResponse):
+            await sync_to_async(record_token_usage)(request_log.token_id, request_log.token_usage)
+
         return result
 
     return wrapper

@@ -7,8 +7,11 @@ from unittest.mock import patch
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import TransactionTestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from httpx import Request as HttpxRequest
 from httpx import Response
@@ -18,6 +21,7 @@ from openai.types.chat import ChatCompletion
 from gateway.config import (
     get_all_model_request_limit_multipliers,
     get_model_request_limit_multiplier,
+    get_model_supports_response_format,
     get_router_config,
 )
 from gateway.tests.utils import (
@@ -1218,6 +1222,53 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         req = requests[0]
         self.assertIn("models", req.path, "Request endpoint should be for model listing.")
 
+    def test_model_group_info_exposes_context_window(self):
+        """The LiteLLM /model_group/info endpoint exposes token limits, so
+        LiteLLM-aware clients read the context window from the gateway."""
+        from importlib import import_module
+
+        models_view = import_module("gateway.views.models")
+
+        config = {
+            "model_list": [
+                {
+                    "model_name": self.model,
+                    "litellm_params": {"model": f"openai/{self.model}"},
+                    "model_info": {
+                        "id": self.model,
+                        "max_tokens": 262144,
+                        "max_output_tokens": 32768,
+                        "supports_vision": True,
+                    },
+                },
+                {
+                    "model_name": "explicit-model",
+                    "litellm_params": {"model": "openai/explicit-model"},
+                    "model_info": {"max_input_tokens": 999999, "max_tokens": 262144},
+                },
+                {
+                    "model_name": "no-info-model",
+                    "litellm_params": {"model": "openai/no-info-model"},
+                },
+            ]
+        }
+        with patch.object(models_view, "get_router_config", return_value=config):
+            response = self.client.get(
+                "/model_group/info", content_type="application/json", headers=self.headers
+            )
+
+        self.assertEqual(response.status_code, 200)
+        entries = {entry["model_group"]: entry for entry in response.json()}
+        info = entries[self.model]["model_info"]
+        # max_input_tokens is derived from max_tokens (the context length)
+        self.assertEqual(info["max_input_tokens"], 262144)
+        self.assertEqual(info["max_output_tokens"], 32768)
+        self.assertTrue(info["supports_vision"])
+        # An explicit max_input_tokens in the config is never overwritten
+        self.assertEqual(entries["explicit-model"]["model_info"]["max_input_tokens"], 999999)
+        # Models without token limits get no token fields at all
+        self.assertNotIn("max_input_tokens", entries["no-info-model"]["model_info"])
+
     def test_list_models_with_invalid_token(self):
         """
         Sends a request to list available models from the vLLM server with an invalid API key.
@@ -1281,6 +1332,18 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
 
 class TokenLimitTest(ChatCompletionsBase):
+    def setUp(self):
+        super().setUp()
+        # Rate-limit counts now live in the cache (LocMemCache under test), which
+        # is shared in-process across tests within the same window. Clear it so
+        # bucket counts from a previous test in the same minute/hour/day don't
+        # bleed into this one (DB transaction rollback no longer resets them).
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
     def _setup_limits(self, kind: str, field: str, value: int):
         """
         Set a rate limit for the given kind ('org', 'team', 'user') and field.
@@ -1518,10 +1581,7 @@ class TokenLimitTest(ChatCompletionsBase):
             limit_desc="user output_tokens_per_minute",
         )
 
-    @patch(
-        "gateway.decorators.limits.get_all_model_request_limit_multipliers",
-        return_value={"gpt-4.1-nano": 2.0},
-    )
+    @patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=2.0)
     def test_per_model_request_limit_multiplier_budget(self, mock_multipliers):
         """
         Tests that per-model multipliers act as a budget cost.
@@ -1532,9 +1592,6 @@ class TokenLimitTest(ChatCompletionsBase):
         """
         # Set request limit to 3
         self._setup_limits("org", "requests_per_minute", 3)
-
-        # Clear cached request counts from fixture setup
-        Request.objects.all().delete()
 
         # Requests 1-6 should succeed (weighted cost up to 2.5 < 3)
         for i in range(6):
@@ -1556,10 +1613,7 @@ class TokenLimitTest(ChatCompletionsBase):
             response7.json()["error"]["message"], "Rate limit exceeded. Request limit (6/min)."
         )
 
-    @patch(
-        "gateway.decorators.limits.get_all_model_request_limit_multipliers",
-        return_value={"gpt-4.1-nano": 0.5},
-    )
+    @patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=0.5)
     def test_per_model_expensive_multiplier_limits_requests(self, mock_multipliers):
         """
         Tests that a model with multiplier < 1 costs more budget per request.
@@ -1571,9 +1625,6 @@ class TokenLimitTest(ChatCompletionsBase):
         """
         # Set request limit to 3
         self._setup_limits("org", "requests_per_minute", 3)
-
-        # Clear cached request counts from fixture setup
-        Request.objects.all().delete()
 
         # First request: weighted = 0 < 3
         response1 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
@@ -1588,6 +1639,32 @@ class TokenLimitTest(ChatCompletionsBase):
         self.assertEqual(response3.status_code, 429)
         self.assertEqual(
             response3.json()["error"]["message"], "Rate limit exceeded. Request limit (1.5/min)."
+        )
+
+    def test_check_limits_uses_no_request_table_sql(self):
+        """A rate-limited (429) request issues no SQL against ``management_request``.
+
+        ``check_limits`` now reads from the cache, not the ``Request`` table. A
+        blocked request returns 429 before ``log_request`` runs, so it must not
+        touch ``management_request`` at all (no aggregate SELECT, no INSERT).
+        """
+        self._setup_limits("org", "requests_per_minute", 1)
+        # First request consumes the minute bucket (and creates its Request row).
+        first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(first.status_code, 200)
+
+        # Capture SQL during the second (blocked) request.
+        with CaptureQueriesContext(connection) as ctx:
+            blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        request_table_queries = [
+            q["sql"] for q in ctx.captured_queries if "management_request" in q["sql"]
+        ]
+        self.assertEqual(
+            request_table_queries,
+            [],
+            "check_limits must not query the Request table; found: "
+            + " | ".join(request_table_queries),
         )
 
 
@@ -1892,6 +1969,95 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
 
             multiplier = get_model_request_limit_multiplier("unknown-model")
             self.assertEqual(multiplier, 1.0)
+
+    def test_get_model_supports_response_format_returns_false_when_configured(self):
+        """
+        Test that get_model_supports_response_format returns False when explicitly configured.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-image-1",
+                    "litellm_params": {
+                        "model": "openai/gpt-image-1",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"supports_response_format": False},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            self.assertFalse(get_model_supports_response_format("gpt-image-1"))
+
+    def test_get_model_supports_response_format_defaults_to_true(self):
+        """
+        Test that get_model_supports_response_format defaults to True when not configured.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "dall-e-2",
+                    "litellm_params": {
+                        "model": "openai/dall-e-2",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["image"]},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            self.assertTrue(get_model_supports_response_format("dall-e-2"))
+
+    def test_get_model_supports_response_format_resolves_alias(self):
+        """
+        Test that get_model_supports_response_format resolves aliases correctly.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-image-1",
+                    "litellm_params": {
+                        "model": "openai/gpt-image-1",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["img"], "supports_response_format": False},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            # Should resolve the alias and return the configured value
+            self.assertFalse(get_model_supports_response_format("img"))
+
+    def test_get_model_supports_response_format_true_for_unknown_model(self):
+        """
+        Test that get_model_supports_response_format returns True for unknown models.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-4o",
+                    "litellm_params": {
+                        "model": "openai/gpt-4o",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["default"]},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            self.assertTrue(get_model_supports_response_format("unknown-model"))
 
     def test_get_all_model_request_limit_multipliers(self):
         """

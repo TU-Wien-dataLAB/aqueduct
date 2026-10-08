@@ -1,17 +1,17 @@
 import logging
-from datetime import timedelta
 from functools import wraps
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
-from django.db.models import Count, Sum
-from django.utils import timezone
 
-from gateway.config import get_all_model_request_limit_multipliers, resolve_model_alias
 from gateway.decorators.types import AsyncView, ViewResult
+from gateway.rate_limiting import check_and_reserve, has_any_limit
 from gateway.response_types import error_response
-from management.models import Request, Token
+
+if TYPE_CHECKING:
+    from management.models import Token
 
 log = logging.getLogger("aqueduct")
 
@@ -29,90 +29,10 @@ def check_limits(view_func: AsyncView) -> AsyncView:
             limits = await sync_to_async(token.get_limit)()
             log.debug("Rate limits for Token %r (ID: %s): %s", token.name, token.id, limits)
 
-            if (
-                limits.requests_per_minute is not None
-                or limits.input_tokens_per_minute is not None
-                or limits.output_tokens_per_minute is not None
-            ):
-                # Define the time window for usage check (last 60 seconds)
-                time_window_start = timezone.now() - timedelta(seconds=60)
-
-                # Build queryset for recent requests (last 60 seconds)
-                recent_requests = Request.objects.filter(
-                    token=token, timestamp__gte=time_window_start
-                )
-
-                # Query recent usage asynchronously using Django's async ORM
-                # Get overall token counts
-                recent_requests_agg = await recent_requests.aaggregate(
-                    request_count=Count("id"),
-                    total_input_tokens=Sum("input_tokens"),
-                    total_output_tokens=Sum("output_tokens"),
-                )
-
-                total_input = recent_requests_agg.get("total_input_tokens", 0) or 0
-                total_output = recent_requests_agg.get("total_output_tokens", 0) or 0
-
-                # Get per-model request counts for weighted budget calculation
-                model_counts = {
-                    item["model"]: item["request_count"]
-                    async for item in (
-                        recent_requests.exclude(model="")
-                        .values("model")
-                        .annotate(request_count=Count("id"))
-                    )
-                }
-
-                log.debug(
-                    "Recent usage (last 60s) for Token %r: Model counts=%s, Input=%s, Output=%s",
-                    token.name,
-                    model_counts,
-                    total_input,
-                    total_output,
-                )
-
-                # --- Check Limits ---
-                exceeded = []
-
-                # Calculate weighted request count using per-model multipliers
-                # "2x Limits" means multiplier=2, so cost = 1/2 = 0.5 per request
-                weighted_request_count: float = 0.0
-                multipliers = get_all_model_request_limit_multipliers()
-                for model, count in model_counts.items():
-                    multiplier = multipliers.get(model, 1.0)
-                    weighted_request_count += count * (1.0 / multiplier)
-
-                log.debug(
-                    "Weighted request count for Token %r: %.2f (base limit: %s)",
-                    token.name,
-                    weighted_request_count,
-                    limits.requests_per_minute,
-                )
-
-                if (
-                    limits.requests_per_minute is not None
-                    and weighted_request_count >= limits.requests_per_minute
-                ):
-                    request_limit = float(limits.requests_per_minute)
-                    pydantic_model: dict[str, Any] | None = kwargs.get("pydantic_model")
-                    model = pydantic_model.get("model") if pydantic_model else None
-                    if model:
-                        request_limit *= multipliers.get(resolve_model_alias(model), 1.0)
-                    exceeded.append(f"Request limit ({request_limit:g}/min)")
-
-                if (
-                    limits.input_tokens_per_minute is not None
-                    and total_input >= limits.input_tokens_per_minute
-                ):
-                    exceeded.append(f"Input token limit ({limits.input_tokens_per_minute}/min)")
-
-                if (
-                    limits.output_tokens_per_minute is not None
-                    and total_output >= limits.output_tokens_per_minute
-                ):
-                    exceeded.append(f"Output token limit ({limits.output_tokens_per_minute}/min)")
-
-                if exceeded:
+            if settings.AQUEDUCT_RATE_LIMIT_ENABLED and has_any_limit(limits):
+                model = (kwargs.get("pydantic_model") or {}).get("model")
+                allowed, exceeded = await sync_to_async(check_and_reserve)(limits, token.id, model)
+                if not allowed:
                     error_message = "Rate limit exceeded. " + ", ".join(exceeded) + "."
                     log.warning(
                         "Rate limit exceeded for Token %r (ID: %s). Details: %s",

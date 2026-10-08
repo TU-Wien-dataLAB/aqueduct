@@ -59,6 +59,18 @@ def _lookup_relay_model_name(requested_model: str) -> str | None:
     return relay_model
 
 
+def get_relay_model_name(requested_model: str) -> str:
+    """
+    Map a requested model name to the actual upstream model name.
+
+    Uses the LiteLLM router configuration to find the deployment.
+    """
+    relay_model = _lookup_relay_model_name(requested_model)
+    if relay_model is None:
+        return requested_model
+    return relay_model
+
+
 def rewrite_batch_file_models(content: bytes) -> bytes:
     """
     Rewrite model names in a batch input JSONL file.

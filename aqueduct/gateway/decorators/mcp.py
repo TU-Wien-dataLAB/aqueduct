@@ -82,7 +82,7 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
             return error_response("Invalid Host header", status=421)
 
         # Validate Origin header against allowed values
-        # Origin can be absent for same-origin requests, so it's only validated if present
+        # Origin can be absent for same-origin requests, so it\'s only validated if present
         allowed_origins = getattr(settings, "MCP_ALLOWED_ORIGINS", [])
         origin = request.headers.get("origin")
         if origin:

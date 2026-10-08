@@ -8,6 +8,7 @@ from litellm import BadRequestError
 from openai.types import ImageGenerateParams, ImagesResponse
 from pydantic import ConfigDict, TypeAdapter
 
+from gateway.config import get_model_supports_response_format
 from gateway.decorators.auth import token_authenticated, tos_accepted
 from gateway.decorators.availability import check_model_availability
 from gateway.decorators.body import parse_body, resolve_alias
@@ -58,6 +59,11 @@ async def image_generation(
     model_name: str = pydantic_model.get("model") or ""
     client, model_relay = oai_client_from_body(model_name, request)
     pydantic_model["model"] = model_relay
+    if not get_model_supports_response_format(model_name):
+        # Models with `supports_response_format: false` in model_info (e.g.
+        # gpt-image) reject the response_format parameter. They only return
+        # b64_json, which is the only format we support anyway.
+        pydantic_model.pop("response_format", None)
 
     try:
         resp: ImagesResponse = await client.images.generate(**pydantic_model)
@@ -68,7 +74,6 @@ async def image_generation(
             "Unexpected argument in request body", pydantic_model.get("model"), llm_provider=None
         ) from err
 
-    # TODO # data = resp.model_dump(exclude_unset=True)
     request_log.token_usage = get_token_usage(resp)
 
     return RawJsonResponse(resp)

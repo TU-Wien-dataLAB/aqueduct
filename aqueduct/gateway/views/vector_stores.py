@@ -89,7 +89,7 @@ async def vector_stores(
                             cancelled=getattr(vs, "file_count_cancelled", 0),
                         ),
                         last_active_at=vs.last_active_at,
-                    ).model_dump(mode="json")
+                    )
                     async for vs in vector_stores_qs
                 ],
                 "has_more": False,
@@ -146,9 +146,8 @@ async def vector_stores(
     await vs_obj.asave()
 
     # Return upstream response directly (ID already matches)
-    response_data = remote_vs.model_dump(mode="json")
 
-    return RawJsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_vs, status=200)
 
 
 @csrf_exempt
@@ -192,9 +191,7 @@ async def vector_store(
             return error_response("Vector store not found.", param="vector_store_id", status=404)
 
         # Return upstream response directly (ID already matches)
-        response_data = remote_vs.model_dump(mode="json")
-
-        return RawJsonResponse(response_data, status=200)
+        return RawJsonResponse(remote_vs, status=200)
 
     if request.method == "POST":
         # Modify vector store
@@ -222,16 +219,13 @@ async def vector_store(
             await vs_obj.asave()
 
             # Return upstream response directly (ID already matches)
-            response_data = remote_vs.model_dump(mode="json")
-
-            return RawJsonResponse(response_data, status=200)
+            return RawJsonResponse(remote_vs, status=200)
 
         # No changes requested, return current state
         remote_vs = await vs_obj.areload_from_upstream(client)
         if not remote_vs:
             return error_response("Vector store not found.", param="vector_store_id", status=404)
-        response_data = remote_vs.model_dump(mode="json")
-        return RawJsonResponse(response_data, status=200)
+        return RawJsonResponse(remote_vs, status=200)
 
     await vs_obj.adelete_upstream(client)
 
@@ -285,6 +279,4 @@ async def vector_store_search(
     search_results = await client.vector_stores.search(vector_store_id=vs_obj.id, **pydantic_model)
 
     # Return upstream response directly (IDs already match)
-    results_data = search_results.model_dump(mode="json")
-
-    return RawJsonResponse(results_data, status=200)
+    return RawJsonResponse(search_results, status=200)

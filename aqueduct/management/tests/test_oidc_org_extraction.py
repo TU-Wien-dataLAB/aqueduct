@@ -1,65 +1,16 @@
 from django.test import TestCase, override_settings
 
-from management.auth import OIDCBackend, default_org_name, get_org_name
+from management.auth import OIDCBackend
 from management.models import Org
+from management.tests.helpers import SNIPPET_ORG_FROM_FIRST_GROUP, seed_active_config
 
 
-def _extract_org_from_first_group(claims: dict) -> str | None:
-    """Test helper to extract org name from the first group in claims."""
-    if groups := claims.get("groups"):
-        return groups[0]
-    return None
-
-
-class DefaultOrgNameTestCase(TestCase):
-    """Test the default_org_name function returns a constant literal value."""
-
-    def test_returns_default_literal(self):
-        """Test that default_org_name returns the constant string 'default'."""
-        result = default_org_name()
-        self.assertEqual(result, "default")
-
-
-class GetOrgNameTestCase(TestCase):
-    """Test the get_org_name function with custom configurations."""
-
-    def test_uses_default_implementation_when_setting_is_none(self):
-        """Test that get_org_name uses default_org_name when setting returns None."""
-        claims = {"groups": ["test-org"]}
-        result = get_org_name(claims)
-        self.assertEqual(result, "default")
-
-    @override_settings(ORG_NAME_FROM_OIDC_FUNCTION=lambda claims: claims.get("custom_org"))
-    def test_uses_custom_function_when_configured(self):
-        """Test that get_org_name uses custom function when ORG_NAME_FROM_OIDC_FUNCTION is set."""
-        claims = {"groups": ["default-org"], "custom_org": "custom-org"}
-        result = get_org_name(claims)
-        self.assertEqual(result, "custom-org")
-
-    @override_settings(ORG_NAME_FROM_OIDC_FUNCTION=lambda claims: claims.get("groups", [""])[-1])
-    def test_custom_function_can_extract_last_group(self):
-        """Test custom function that extracts the last group instead of first."""
-        claims = {"groups": ["org-first", "org-middle", "org-last"]}
-        result = get_org_name(claims)
-        self.assertEqual(result, "org-last")
-
-    @override_settings(ORG_NAME_FROM_OIDC_FUNCTION=lambda claims: None)
-    def test_custom_function_can_return_none(self):
-        """Test that custom function can return None to indicate no org."""
-        claims = {"groups": ["some-org"]}
-        result = get_org_name(claims)
-        self.assertIsNone(result)
-
-
-@override_settings(
-    OIDC_RP_SIGN_ALGO="HS256",
-    OIDC_RP_IDP_SIGN_KEY="test-key",
-    ORG_NAME_FROM_OIDC_FUNCTION=_extract_org_from_first_group,
-)
+@override_settings(OIDC_RP_SIGN_ALGO="HS256", OIDC_RP_IDP_SIGN_KEY="test-key")
 class OIDCBackendOrgTestCase(TestCase):
     """Test the OIDCBackend._org() method."""
 
     def setUp(self):
+        seed_active_config(SNIPPET_ORG_FROM_FIRST_GROUP)
         self.backend = OIDCBackend()
 
     def test_creates_org_if_not_exists(self):
@@ -107,15 +58,12 @@ class OIDCBackendOrgTestCase(TestCase):
         self.assertEqual(org.name, "primary-org")
 
 
-@override_settings(
-    OIDC_RP_SIGN_ALGO="HS256",
-    OIDC_RP_IDP_SIGN_KEY="test-key",
-    ORG_NAME_FROM_OIDC_FUNCTION=_extract_org_from_first_group,
-)
+@override_settings(OIDC_RP_SIGN_ALGO="HS256", OIDC_RP_IDP_SIGN_KEY="test-key")
 class OIDCBackendOrgIntegrationTestCase(TestCase):
     """Integration tests for org creation in authentication flow."""
 
     def setUp(self):
+        seed_active_config(SNIPPET_ORG_FROM_FIRST_GROUP)
         self.backend = OIDCBackend()
 
     def test_multiple_users_same_org_reuse_org(self):

@@ -28,14 +28,14 @@ log = logging.getLogger("aqueduct")
 
 
 def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
-    """Retrieves token usage information from the raw response content.
+    """Retrieves token usage information from the raw response data.
 
     Note that if the response data does not match the expected format, or does
     not contain the usage information, the returned token usage will be wrong,
     i.e. set to 0.
 
     Args:
-        data: The raw response content (or content's chunk for streaming responses),
+        data: The raw response data (or content's chunk for streaming responses),
           expected to be a dict or BaseModel subclass.
     Returns:
         The :class:`Usage` object with the used input and output token counts.
@@ -131,11 +131,7 @@ class ResponseRegistrationWrapper:
 
     async def __anext__(self) -> ResponseStreamEvent:
         chunk: ResponseStreamEvent = await self.streaming_content.__anext__()
-        if (
-            not self._registered
-            and isinstance(chunk, ResponseCreatedEvent)
-            and chunk.type == "response.created"
-        ):
+        if not self._registered and isinstance(chunk, ResponseCreatedEvent):
             response_id: str | None = chunk.response.id
             if response_id:
                 register_response_in_cache(response_id, self.model_name, self.user_email)

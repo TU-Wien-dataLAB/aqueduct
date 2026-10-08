@@ -595,7 +595,10 @@ async def handle_get_request(
     log.info("MCP GET %s - SSE stream for existing session %s", name, session_id)
     headers = {"Cache-Control": "no-cache", "Connection": "keep-alive"}
     return RawStreamingResponse(
-        streaming_content=_mcp_sse_stream(request_id, session_id), request_log=None, headers=headers
+        streaming_content=_mcp_sse_stream(request_id, session_id),
+        request_log=None,
+        headers=headers,
+        mode="mcp",
     )
 
 

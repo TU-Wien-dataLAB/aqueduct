@@ -1,5 +1,3 @@
-"""Request logging decorator."""
-
 import logging
 import time
 from functools import wraps
@@ -15,8 +13,6 @@ from gateway.rate_limiting import record_token_usage
 from management.models import Request
 
 log = logging.getLogger("aqueduct")
-
-__all__ = ["log_request"]
 
 
 def log_request(view_func: AsyncView) -> AsyncView:

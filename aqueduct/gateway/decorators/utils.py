@@ -1,8 +1,3 @@
-"""Small shared helpers for the gateway decorators package."""
-
-__all__ = ["in_wildcard"]
-
-
 def in_wildcard(value: str | None, allowed_values: list[str]) -> bool:
     """Check if a value is in a list of allowed values or matches a wildcard pattern."""
     if value is None:

@@ -1,10 +1,3 @@
-"""Utility helpers for gateway views.
-
-``cache_lock``, ``oai_client_from_body`` and ``ResponseRegistrationWrapper`` are
-view-specific helpers defined below. The raw response wrappers and ``get_token_usage``
-live in ``gateway.response_type`` (shared with the ``gateway.decorators`` package).
-"""
-
 import logging
 import time
 from collections.abc import Generator

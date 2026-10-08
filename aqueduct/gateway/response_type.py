@@ -1,10 +1,3 @@
-"""Raw response wrapper types and token-usage helpers.
-
-Shared by ``gateway.views`` and ``gateway.decorators``. These live outside both
-packages (which import each other) so the packages can share them without a
-circular import at module load.
-"""
-
 import json
 import logging
 import time

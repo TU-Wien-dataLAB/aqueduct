@@ -1,5 +1,3 @@
-"""Decorators for processing chat-completion response content types."""
-
 import base64
 import logging
 from functools import wraps
@@ -18,8 +16,6 @@ from gateway.response_type import RawJsonResponse, RawStreamingResponse
 from management.models import FileObject, Token
 
 log = logging.getLogger("aqueduct")
-
-__all__ = ["normalize_reasoning_fields", "process_file_content"]
 
 
 async def extract_text_with_tika(file_bytes: bytes) -> str:

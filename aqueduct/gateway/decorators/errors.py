@@ -1,5 +1,3 @@
-"""Router exception handling decorator."""
-
 import logging
 import re
 from functools import wraps
@@ -14,8 +12,6 @@ from gateway.response_error import error_response
 from gateway.response_type import RawJsonResponse
 
 log = logging.getLogger("aqueduct")
-
-__all__ = ["catch_router_exceptions"]
 
 
 def catch_router_exceptions(view_func: AsyncView) -> AsyncView:

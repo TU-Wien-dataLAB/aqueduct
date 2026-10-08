@@ -1,5 +1,3 @@
-"""Responses API decorators and their tool validation helpers."""
-
 import logging
 from functools import wraps
 from typing import TYPE_CHECKING, Any
@@ -20,8 +18,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 log = logging.getLogger("aqueduct")
-
-__all__ = ["check_tool_availability", "validate_response_id"]
 
 
 def validate_response_id(view_func: AsyncView) -> AsyncView:

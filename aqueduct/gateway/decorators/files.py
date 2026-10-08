@@ -1,5 +1,3 @@
-"""Files and batch-file processing decorators."""
-
 import json
 import logging
 import sys
@@ -14,8 +12,6 @@ from gateway.decorators.types import AsyncView, ViewResult
 from gateway.response_error import error_response
 
 log = logging.getLogger("aqueduct")
-
-__all__ = ["process_batch_file", "require_files_api_client"]
 
 
 def require_files_api_client(view_func: AsyncView) -> AsyncView:

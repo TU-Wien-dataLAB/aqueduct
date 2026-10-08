@@ -1,5 +1,3 @@
-"""Model availability checking decorator."""
-
 import logging
 from functools import wraps
 from typing import TYPE_CHECKING, Any
@@ -14,8 +12,6 @@ if TYPE_CHECKING:
     from management.models import Token
 
 log = logging.getLogger("aqueduct")
-
-__all__ = ["check_model_availability"]
 
 
 def check_model_availability(view_func: AsyncView) -> AsyncView:

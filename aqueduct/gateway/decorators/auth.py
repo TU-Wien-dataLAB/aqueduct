@@ -1,5 +1,3 @@
-"""Authentication and Terms-of-Service decorators."""
-
 import logging
 import time
 from functools import wraps
@@ -18,8 +16,6 @@ from gateway.response_error import error_response
 from management.models import Token
 
 log = logging.getLogger("aqueduct")
-
-__all__ = ["token_authenticated", "tos_accepted"]
 
 
 def token_authenticated(token_auth_only: bool) -> Decorator:

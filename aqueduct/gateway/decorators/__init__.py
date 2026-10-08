@@ -1,12 +1,3 @@
-"""Facade re-exporting the gateway decorators as a single interface.
-
-Individual decorators and helpers are split into one module per concern. Import
-the decorators from this package so that the internal organisation stays
-opaque::
-
-    from gateway.decorators import token_authenticated, parse_body, log_request
-"""
-
 from gateway.decorators.auth import token_authenticated, tos_accepted
 from gateway.decorators.availability import check_model_availability
 from gateway.decorators.body import FileSizeError, ensure_usage, parse_body, resolve_alias

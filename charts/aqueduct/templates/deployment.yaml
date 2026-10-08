@@ -18,10 +18,7 @@ spec:
         component: web
     spec:
       securityContext:
-        runAsUser: {{ .Values.securityContext.runAsUser }}
-        runAsGroup: {{ .Values.securityContext.runAsGroup }}
-        fsGroup: {{ .Values.securityContext.fsGroup }}
-        fsGroupChangePolicy: OnRootMismatch
+        {{- toYaml .Values.securityContext | nindent 8 }}
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -36,8 +33,25 @@ spec:
         - name: django
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.web.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
           ports:
-            - containerPort: 8000
+            - name: http
+              containerPort: 8000
+          {{- with .Values.web.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.web.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.web.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
             {{- include "aqueduct.env" . | nindent 12 }}
             {{- with .Values.web.extraEnv }}
@@ -59,6 +73,10 @@ spec:
         - name: collectstatic
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.collectstatic.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.collectstatic.resources | nindent 12 }}
           command: [ "python", "manage.py", "collectstatic", "--noinput", "--clear" ]
           volumeMounts:
             - name: staticfiles
@@ -66,6 +84,10 @@ spec:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.migrate.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
           command: [ "python", "manage.py", "migrate" ]
           env:
             {{- include "aqueduct.env" . | nindent 12 }}
@@ -77,6 +99,10 @@ spec:
         - name: celery-beat
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.celery.beatContainerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.celery.beatResources | nindent 12 }}
           restartPolicy: Always
           command: [ "python", "-m", "celery", "-A", "aqueduct", "beat", "-l", "INFO" ]
           env:

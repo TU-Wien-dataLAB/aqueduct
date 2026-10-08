@@ -1,19 +1,6 @@
-from django.http import JsonResponse
 from openai.types import ErrorObject
 
-
-def error_response(
-    message: str,
-    error_type: str | None = None,
-    param: str | None = None,
-    code: str | None = None,
-    status: int = 400,
-) -> JsonResponse:
-    """Return an OpenAI-compatible error response."""
-    if error_type is None:
-        error_type = _status_to_error_type(status)
-    error = ErrorObject(message=message, type=error_type, param=param, code=code)
-    return JsonResponse({"error": error.model_dump(exclude_none=True)}, status=status)
+from gateway.response_type import RawJsonResponse
 
 
 def _status_to_error_type(status: int) -> str:
@@ -32,3 +19,17 @@ def _status_to_error_type(status: int) -> str:
         504: "timeout_error",
     }
     return status_map.get(status, "invalid_request_error")
+
+
+def error_response(
+    message: str,
+    error_type: str | None = None,
+    param: str | None = None,
+    code: str | None = None,
+    status: int = 400,
+) -> RawJsonResponse:
+    """Return an OpenAI-compatible error response."""
+    if error_type is None:
+        error_type = _status_to_error_type(status)
+    error = ErrorObject(message=message, type=error_type, param=param, code=code)
+    return RawJsonResponse({"error": error.model_dump(exclude_none=True)}, status=status)

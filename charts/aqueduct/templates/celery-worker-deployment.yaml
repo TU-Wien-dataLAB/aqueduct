@@ -19,10 +19,7 @@ spec:
         component: celery-worker
     spec:
       securityContext:
-        runAsUser: {{ .Values.securityContext.runAsUser }}
-        runAsGroup: {{ .Values.securityContext.runAsGroup }}
-        fsGroup: {{ .Values.securityContext.fsGroup }}
-        fsGroupChangePolicy: OnRootMismatch
+        {{- toYaml .Values.securityContext | nindent 8 }}
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -37,6 +34,8 @@ spec:
         - name: celery-worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          securityContext:
+            {{- toYaml .Values.celery.workerDeployment.containerSecurityContext | nindent 12 }}
           command: [ "python", "-m", "celery", "-A", "aqueduct", "worker", "--loglevel=info" ]
           env:
             {{- include "aqueduct.env" . | nindent 12 }}

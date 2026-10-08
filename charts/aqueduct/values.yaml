@@ -25,6 +25,26 @@ securityContext:
   runAsUser: 1000
   runAsGroup: 1000
   fsGroup: 1000
+  fsGroupChangePolicy: OnRootMismatch
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+collectstatic:
+  resources: { }
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+migrate:
+  resources: { }
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
 
 djangoSecretKey:
   value: ""
@@ -52,6 +72,12 @@ celery:
   workerExtraEnv: []
   # Extra environment variables appended to the celery beat sidecar container only.
   beatExtraEnv: []
+  beatResources: { }
+  beatContainerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   # Celery broker URL. Leave empty to auto-derive from the enabled broker
   # backend: the Bitnami `redis` subchart (redis://redis-master:6379/0) when
   # `redis` is enabled, or the Valkey release (redis://valkey:6379/0) when
@@ -64,6 +90,11 @@ celery:
   workerDeployment:
     replicas: 1
     resources: { }
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
 
 silk:
   enabled: true
@@ -108,6 +139,34 @@ env:
 # which should differ between the web server, celery worker, and celery beat.
 web:
   extraEnv: []
+  resources: { }
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  # Set probes to null to disable.
+  startupProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 60
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
 
 settingsPy:
   extra: |
@@ -237,6 +296,12 @@ valkey:
 
 tika:
   enabled: true
-
-
-
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL

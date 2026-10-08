@@ -5,7 +5,6 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.db import transaction
-from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
@@ -13,6 +12,15 @@ from openai.types.vector_stores.file_batch_create_params import FileBatchCreateP
 from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
+from gateway.decorators import (
+    catch_router_exceptions,
+    log_request,
+    parse_body,
+    token_authenticated,
+    tos_accepted,
+)
+from gateway.response_error import error_response
+from gateway.response_type import RawJsonResponse
 from management.models import (
     FileObject,
     Token,
@@ -22,15 +30,6 @@ from management.models import (
     VectorStoreFileBatchStatus,
     VectorStoreFileStatus,
 )
-
-from .decorators import (
-    catch_router_exceptions,
-    log_request,
-    parse_body,
-    token_authenticated,
-    tos_accepted,
-)
-from .errors import error_response
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +76,7 @@ async def vector_store_file_batches(
     pydantic_model: FileBatchCreateParams,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/file_batches - Create file batch
     """
@@ -188,9 +187,7 @@ async def vector_store_file_batches(
         return error_response("File limit exceeded", status=403)
 
     # Return upstream response directly (IDs already match)
-    response_data = remote_batch.model_dump(mode="json")
-
-    return JsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_batch, status=200)
 
 
 @csrf_exempt
@@ -206,7 +203,7 @@ async def vector_store_file_batch(
     batch_id: str,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/file_batches/{batch_id} - Retrieve batch
     """
@@ -252,9 +249,7 @@ async def vector_store_file_batch(
         )
 
     # Return upstream response directly (IDs already match)
-    response_data = remote_batch.model_dump(mode="json")
-
-    return JsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_batch, status=200)
 
 
 @csrf_exempt
@@ -270,7 +265,7 @@ async def vector_store_file_batch_cancel(
     batch_id: str,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     POST /v1/vector_stores/{vector_store_id}/file_batches/{batch_id}/cancel - Cancel batch
     """
@@ -317,9 +312,7 @@ async def vector_store_file_batch_cancel(
     )
 
     # Return upstream response directly (IDs already match)
-    response_data = remote_batch.model_dump(mode="json")
-
-    return JsonResponse(response_data, status=200)
+    return RawJsonResponse(remote_batch, status=200)
 
 
 @csrf_exempt
@@ -335,7 +328,7 @@ async def vector_store_file_batch_files(
     batch_id: str,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     """
     GET /v1/vector_stores/{vector_store_id}/file_batches/{batch_id}/files - List files in batch
     """
@@ -370,9 +363,4 @@ async def vector_store_file_batch_files(
 
     # Return upstream response directly (IDs already match)
     remote_files = remote_files_response.data if hasattr(remote_files_response, "data") else []
-    response_files = []
-    for remote_file in remote_files:
-        file_data = remote_file.model_dump(mode="json")
-        response_files.append(file_data)
-
-    return JsonResponse({"object": "list", "data": response_files, "has_more": False}, status=200)
+    return RawJsonResponse({"object": "list", "data": remote_files, "has_more": False}, status=200)

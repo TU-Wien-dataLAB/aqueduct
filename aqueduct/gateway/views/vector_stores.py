@@ -15,9 +15,7 @@ from openai.types.vector_store_update_params import VectorStoreUpdateParams
 from pydantic import TypeAdapter
 
 from gateway.config import get_files_api_client
-from management.models import Token, VectorStore
-
-from .decorators import (
+from gateway.decorators import (
     catch_router_exceptions,
     log_request,
     parse_body,
@@ -25,8 +23,9 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .errors import error_response
-from .utils import RawJsonResponse
+from gateway.response_error import error_response
+from gateway.response_type import RawJsonResponse
+from management.models import Token, VectorStore
 
 
 @csrf_exempt

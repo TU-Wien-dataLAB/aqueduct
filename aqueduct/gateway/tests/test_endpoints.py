@@ -209,7 +209,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.response_type.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -286,7 +286,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.response_type.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -399,7 +399,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.response_type.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -505,7 +505,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.response_type.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -555,7 +555,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         )
 
         with patch(
-            "gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock
+            "gateway.decorators.response_type.httpx.AsyncClient.put",
+            return_value=tika_response_mock,
         ):
             response = self.client.post(
                 self.url,

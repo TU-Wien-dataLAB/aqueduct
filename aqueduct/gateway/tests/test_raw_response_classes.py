@@ -8,7 +8,7 @@ from mcp import JSONRPCResponse
 from mcp.types import JSONRPCMessage
 from pydantic import BaseModel
 
-from gateway.views.utils import RawJsonResponse, RawStreamingResponse
+from gateway.response_type import RawJsonResponse, RawStreamingResponse
 from management.models import Usage
 
 

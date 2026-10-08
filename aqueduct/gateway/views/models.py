@@ -8,7 +8,7 @@ from django.views.decorators.http import require_GET
 
 from gateway.config import get_router_config
 from gateway.decorators import log_request, token_authenticated, tos_accepted
-from gateway.views.utils import RawJsonResponse
+from gateway.response_type import RawJsonResponse
 from management.models import Request, Token
 
 MODEL_CREATION_TIMESTAMP = int(timezone.now().timestamp())

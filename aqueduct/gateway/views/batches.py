@@ -16,8 +16,8 @@ from gateway.decorators import (
     token_authenticated,
     tos_accepted,
 )
-from gateway.views.errors import error_response
-from gateway.views.utils import RawJsonResponse
+from gateway.response_error import error_response
+from gateway.response_type import RawJsonResponse
 from management.models import Batch, BatchStatus, FileObject, Token
 
 from .files import sync_batch_file_if_needed

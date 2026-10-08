@@ -25,14 +25,9 @@ from gateway.decorators.response_cache import (
     get_response_from_cache,
     register_response_in_cache,
 )
-from gateway.views.errors import error_response
-from gateway.views.utils import (
-    RawJsonResponse,
-    RawStreamingResponse,
-    ResponseRegistrationWrapper,
-    get_token_usage,
-    oai_client_from_body,
-)
+from gateway.response_error import error_response
+from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
+from gateway.views.utils import ResponseRegistrationWrapper, oai_client_from_body
 from management.models import Request, Token
 
 

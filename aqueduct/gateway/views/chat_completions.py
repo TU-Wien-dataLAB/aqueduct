@@ -22,7 +22,7 @@ from gateway.decorators import (
     token_authenticated,
     tos_accepted,
 )
-from gateway.views.utils import RawJsonResponse, RawStreamingResponse, get_token_usage
+from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
 from management.models import Request
 
 

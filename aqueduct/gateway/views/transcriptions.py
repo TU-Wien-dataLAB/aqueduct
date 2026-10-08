@@ -20,12 +20,8 @@ from gateway.decorators import (
     token_authenticated,
     tos_accepted,
 )
-from gateway.views.utils import (
-    RawJsonResponse,
-    RawStreamingResponse,
-    get_token_usage,
-    oai_client_from_body,
-)
+from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
+from gateway.views.utils import oai_client_from_body
 from management.models import Request
 
 

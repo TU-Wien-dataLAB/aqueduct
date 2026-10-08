@@ -9,9 +9,9 @@ from django.urls import reverse
 
 from gateway.decorators import check_tool_availability
 from gateway.decorators.response_cache import register_response_in_cache
+from gateway.response_type import RawJsonResponse
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from gateway.views.utils import RawJsonResponse
 from management.models import Request, Token
 
 User = get_user_model()

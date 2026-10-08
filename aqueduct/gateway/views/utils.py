@@ -1,11 +1,8 @@
 """Utility helpers for gateway views.
 
-The raw response wrappers (``RawJsonResponse``, ``RawStreamingResponse``) and
-``get_token_usage`` live in ``gateway.response_type`` so they can be shared with
-the ``gateway.decorators`` package without a circular import;
-they are re-exported here to keep existing ``gateway.views.utils`` imports
-working. ``cache_lock``, ``oai_client_from_body`` and ``ResponseRegistrationWrapper``
-remain view-specific and are defined below.
+``cache_lock``, ``oai_client_from_body`` and ``ResponseRegistrationWrapper`` are
+view-specific helpers defined below. The raw response wrappers and ``get_token_usage``
+live in ``gateway.response_type`` (shared with the ``gateway.decorators`` package).
 """
 
 import logging
@@ -23,18 +20,8 @@ from openai.types.responses import ResponseCreatedEvent, ResponseStreamEvent
 
 from gateway.config import get_openai_client, get_router
 from gateway.decorators.response_cache import register_response_in_cache
-from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
 
 log = logging.getLogger("aqueduct")
-
-__all__ = [
-    "RawJsonResponse",
-    "RawStreamingResponse",
-    "ResponseRegistrationWrapper",
-    "cache_lock",
-    "get_token_usage",
-    "oai_client_from_body",
-]
 
 
 @contextmanager

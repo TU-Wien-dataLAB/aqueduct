@@ -104,13 +104,7 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         self.assertCountEqual(ids2, [b2.id])
 
     def test_list_batches_with_output_and_error_files(self):
-        """GET /batches returns 200 when a finished batch has output/error files.
-
-        Regression test: the list view reads output_file/error_file via the
-        Batch.model property; without select_related, the lazy FK access runs a
-        synchronous query inside the async view and raises
-        SynchronousOnlyOperation, surfaced as a 502.
-        """
+        """GET /batches returns 200 when a finished batch has output/error files."""
         token1 = Token.objects.get(pk=1)
         fid = self._create_jsonl_file()
         now = 1773058900

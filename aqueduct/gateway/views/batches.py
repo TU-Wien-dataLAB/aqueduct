@@ -48,7 +48,10 @@ async def batches(
             batch_qs = Batch.objects.filter(token__user=token.user)
 
         batch_objects = [
-            b.model async for b in batch_qs.order_by("-created_at").select_related("input_file")
+            b.model.model_dump()
+            async for b in batch_qs.order_by("-created_at").select_related(
+                "input_file", "output_file", "error_file"
+            )
         ]
 
         return RawJsonResponse(

@@ -160,9 +160,7 @@ AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST: list[str] = []
 
 # Rate limiting (cache-backed minute/hour/day buckets; see gateway/rate_limiting.py)
 AQUEDUCT_RATE_LIMIT_ENABLED = os.getenv("AQUEDUCT_RATE_LIMIT_ENABLED", "True").lower() == "true"
-AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS = int(
-    os.getenv("AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS", "5")
-)
+AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS = int(os.getenv("AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS", "5"))
 # Window multiplier defaults (applied when no object in the hierarchy sets one):
 # hourly/daily limits are derived from the per-minute limit x multiplier.
 AQUEDUCT_HOURLY_LIMIT_MULTIPLIER = int(os.getenv("AQUEDUCT_HOURLY_LIMIT_MULTIPLIER", "60"))

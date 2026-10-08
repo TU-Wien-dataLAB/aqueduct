@@ -1,35 +1,10 @@
-from openai.types import ErrorObject
+"""OpenAI-compatible error responses.
 
-from gateway.views.utils import RawJsonResponse
+The implementation now lives in ``gateway.response_error`` so it can be shared with the
+``gateway.decorators`` package without a circular import. Re-exported here to
+keep existing ``gateway.views.errors`` imports working.
+"""
 
+from gateway.response_error import error_response
 
-def error_response(
-    message: str,
-    error_type: str | None = None,
-    param: str | None = None,
-    code: str | None = None,
-    status: int = 400,
-) -> RawJsonResponse:
-    """Return an OpenAI-compatible error response."""
-    if error_type is None:
-        error_type = _status_to_error_type(status)
-    error = ErrorObject(message=message, type=error_type, param=param, code=code)
-    return RawJsonResponse({"error": error.model_dump(exclude_none=True)}, status=status)
-
-
-def _status_to_error_type(status: int) -> str:
-    """Map HTTP status codes to OpenAI error types."""
-    status_map = {
-        400: "invalid_request_error",
-        401: "invalid_request_error",
-        403: "permission_denied_error",
-        404: "not_found_error",
-        410: "invalid_request_error",
-        421: "invalid_request_error",
-        422: "invalid_request_error",
-        429: "rate_limit_error",
-        500: "server_error",
-        503: "server_error",
-        504: "timeout_error",
-    }
-    return status_map.get(status, "invalid_request_error")
+__all__ = ["error_response"]

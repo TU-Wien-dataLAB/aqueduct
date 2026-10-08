@@ -7,10 +7,11 @@ from django.core.cache import caches
 from django.test import override_settings
 from django.urls import reverse
 
+from gateway.decorators import check_tool_availability
+from gateway.decorators.response_cache import register_response_in_cache
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from gateway.views.decorators import check_tool_availability
-from gateway.views.utils import RawJsonResponse, register_response_in_cache
+from gateway.views.utils import RawJsonResponse
 from management.models import Request, Token
 
 User = get_user_model()
@@ -360,7 +361,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
 class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
     """Tests for the check_tool_availability decorator."""
 
-    @patch("gateway.views.decorators.get_mcp_config")
+    @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_success(self, mock_get_mcp_config):
         """
         Test check_tool_availability decorator with valid tools.
@@ -391,7 +392,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         mock_view_func.assert_called_once_with(request, response_id, **kwargs)
         self.assertEqual(result.status_code, 200)
 
-    @patch("gateway.views.decorators.get_mcp_config")
+    @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_success(self, mock_get_mcp_config):
         """
         Test check_tool_availability decorator with valid MCP server.
@@ -476,7 +477,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         self.assertEqual(result.status_code, 400)
         self.assertEqual(result.data["error"]["message"], "Invalid request")
 
-    @patch("gateway.views.decorators.get_mcp_config")
+    @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_excluded(self, mock_get_mcp_config):
         """
         Test check_tool_availability decorator with excluded MCP server.
@@ -506,7 +507,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         self.assertEqual(result.status_code, 404)
         self.assertIn("MCP server not found", result.data["error"]["message"])
 
-    @patch("gateway.views.decorators.get_mcp_config")
+    @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_not_found(self, mock_get_mcp_config):
         """
         Test check_tool_availability decorator with MCP server not in config.
@@ -537,7 +538,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         self.assertEqual(result.status_code, 404)
         self.assertIn("MCP server not found", result.data["error"]["message"])
 
-    @patch("gateway.views.decorators.get_mcp_config")
+    @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_url_match(self, mock_get_mcp_config):
         """
         Test check_tool_availability decorator with server_label different from config key.
@@ -630,7 +631,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         mock_view_func.assert_called_once_with(request, response_id, **kwargs)
         self.assertEqual(result.status_code, 200)
 
-    @patch("gateway.views.decorators.VectorStore")
+    @patch("gateway.decorators.responses.VectorStore")
     async def test_check_tool_availability_file_search_success(self, mock_vector_store_class):
         """
         Test check_tool_availability decorator with file_search tool for user token.
@@ -664,7 +665,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         call_kwargs = mock_vector_store_class.objects.filter.call_args.kwargs
         self.assertEqual(sorted(call_kwargs["id__in"]), ["vs_remote_abc", "vs_remote_def"])
 
-    @patch("gateway.views.decorators.VectorStore")
+    @patch("gateway.decorators.responses.VectorStore")
     async def test_check_tool_availability_file_search_service_account(
         self, mock_vector_store_class
     ):
@@ -707,7 +708,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         self.assertEqual(call_kwargs["token__service_account__team"], mock_team)
         self.assertEqual(call_kwargs["id__in"], ["vs_remote_abc"])
 
-    @patch("gateway.views.decorators.VectorStore")
+    @patch("gateway.decorators.responses.VectorStore")
     async def test_check_tool_availability_file_search_not_found(self, mock_vector_store_class):
         """
         Test check_tool_availability decorator with file_search tool when vector store not found.

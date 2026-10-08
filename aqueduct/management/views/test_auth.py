@@ -14,7 +14,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 
-from gateway.views.decorators import token_authenticated
+from gateway.decorators import token_authenticated
 from gateway.views.utils import RawJsonResponse
 from management.models import Org, Token, UserProfile
 

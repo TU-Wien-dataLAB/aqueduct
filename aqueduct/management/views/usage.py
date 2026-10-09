@@ -4,8 +4,19 @@ from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
-from django.db.models import Avg, BooleanField, Count, ExpressionWrapper, F, Q, QuerySet, Sum, Value
-from django.db.models.functions import TruncDay, TruncHour, TruncMinute
+from django.db.models import (
+    Avg,
+    BooleanField,
+    Count,
+    ExpressionWrapper,
+    F,
+    FloatField,
+    Q,
+    QuerySet,
+    Sum,
+    Value,
+)
+from django.db.models.functions import NullIf, TruncDay, TruncHour, TruncMinute
 from django.utils import timezone
 from django.views.generic import TemplateView
 
@@ -185,10 +196,15 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             avg=Avg("response_time_ms")
         )["avg"]
         tokens_sum = reqs_span.aggregate(
-            input_sum=Sum("input_tokens"), output_sum=Sum("output_tokens")
+            input_sum=Sum("input_tokens"),
+            output_sum=Sum("output_tokens"),
+            cached_input_sum=Sum("cached_input_tokens"),
+            reasoning_sum=Sum("reasoning_tokens"),
         )
         input_tokens = tokens_sum.get("input_sum") or 0
         output_tokens = tokens_sum.get("output_sum") or 0
+        cached_input_tokens = tokens_sum.get("cached_input_sum") or 0
+        reasoning_tokens = tokens_sum.get("reasoning_sum") or 0
 
         context.update(
             {
@@ -208,7 +224,9 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 "avg_time_completion": avg_time_comp or 0,
                 "avg_time_embedding": avg_time_emb or 0,
                 "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
                 "output_tokens": output_tokens,
+                "reasoning_tokens": reasoning_tokens,
                 "total_tokens": input_tokens + output_tokens,
                 "retention_warning": retention_warning,
                 "retention_days": int(retention_days),
@@ -348,7 +366,17 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 output_field=BooleanField(),
             ),
             input_sum=Sum("input_tokens", default=0),
+            cached_input_sum=Sum("cached_input_tokens", default=0),
             output_sum=Sum("output_tokens", default=0),
+            reasoning_sum=Sum("reasoning_tokens", default=0),
             total_sum=Sum(F("input_tokens") + F("output_tokens")),
+            cached_input_percent=ExpressionWrapper(
+                Value(100.0) * F("cached_input_sum") / NullIf(F("input_sum"), Value(0)),
+                output_field=FloatField(),
+            ),
+            reasoning_percent=ExpressionWrapper(
+                Value(100.0) * F("reasoning_sum") / NullIf(F("output_sum"), Value(0)),
+                output_field=FloatField(),
+            ),
         )
         return top_items.order_by("-count")[:100]

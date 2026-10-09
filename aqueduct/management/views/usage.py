@@ -4,8 +4,19 @@ from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
-from django.db.models import Avg, BooleanField, Count, ExpressionWrapper, F, Q, QuerySet, Sum, Value
-from django.db.models.functions import TruncDay, TruncHour, TruncMinute
+from django.db.models import (
+    Avg,
+    BooleanField,
+    Count,
+    ExpressionWrapper,
+    F,
+    FloatField,
+    Q,
+    QuerySet,
+    Sum,
+    Value,
+)
+from django.db.models.functions import NullIf, TruncDay, TruncHour, TruncMinute
 from django.utils import timezone
 from django.views.generic import TemplateView
 
@@ -355,7 +366,17 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 output_field=BooleanField(),
             ),
             input_sum=Sum("input_tokens", default=0),
+            cached_input_sum=Sum("cached_input_tokens", default=0),
             output_sum=Sum("output_tokens", default=0),
+            reasoning_sum=Sum("reasoning_tokens", default=0),
             total_sum=Sum(F("input_tokens") + F("output_tokens")),
+            cached_input_percent=ExpressionWrapper(
+                Value(100.0) * F("cached_input_sum") / NullIf(F("input_sum"), Value(0)),
+                output_field=FloatField(),
+            ),
+            reasoning_percent=ExpressionWrapper(
+                Value(100.0) * F("reasoning_sum") / NullIf(F("output_sum"), Value(0)),
+                output_field=FloatField(),
+            ),
         )
         return top_items.order_by("-count")[:100]

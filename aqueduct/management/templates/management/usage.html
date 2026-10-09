@@ -224,9 +224,19 @@
                                 </td>
                                 <td class="font-bold">
                                     {{ item.input_sum|intcomma }}
+                                    {% if item.cached_input_percent != None %}
+                                        <div class="text-xs font-normal text-base-content/60">
+                                            {{ item.cached_input_percent|floatformat }}% cached
+                                        </div>
+                                    {% endif %}
                                 </td>
                                 <td class="font-bold">
                                     {{ item.output_sum|intcomma }}
+                                    {% if item.reasoning_percent != None %}
+                                        <div class="text-xs font-normal text-base-content/60">
+                                            {{ item.reasoning_percent|floatformat }}% reasoning
+                                        </div>
+                                    {% endif %}
                                 </td>
                                 <td class="font-bold">
                                     {{ item.total_sum|intcomma }}

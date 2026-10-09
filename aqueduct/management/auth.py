@@ -120,38 +120,38 @@ class OIDCBackend(OIDCAuthenticationBackend):
             team = Team.objects.filter(oauth_group_name=original_group_name, org=org).first()
             created = False
 
-            if not team:
-                if not enable_creation:
-                    log.info("Skipping team '%s' (ENABLE_OAUTH_GROUP_CREATION=False)", team_name)
-                    continue
+            if team is not None:
+                if team.name != team_name:
+                    collision = (
+                        Team.objects.filter(name=team_name, org=org).exclude(pk=team.pk).exists()
+                    )
+
+                    if collision:
+                        log.warning(
+                            "Cannot rename team '%s' -> '%s': name collision (org: %s, "
+                            "oauth_group: '%s'). Reusing existing team as-is.",
+                            team.name,
+                            team_name,
+                            org.name,
+                            original_group_name,
+                        )
+                    else:
+                        log.info(
+                            "Renaming team '%s' -> '%s' (org: %s, oauth_group: '%s')",
+                            team.name,
+                            team_name,
+                            org.name,
+                            original_group_name,
+                        )
+                        team.name = team_name
+                        team.save(update_fields=["name"])
+            elif not enable_creation and not Team.objects.filter(name=team_name, org=org).exists():
+                log.info("Skipping team '%s' (ENABLE_OAUTH_GROUP_CREATION=False)", team_name)
+                continue
+            else:
                 team, created = Team.objects.get_or_create(
                     name=team_name, org=org, defaults={"oauth_group_name": original_group_name}
                 )
-
-            if team and team.name != team_name:
-                collision = (
-                    Team.objects.filter(name=team_name, org=org).exclude(pk=team.pk).exists()
-                )
-
-                if collision:
-                    log.warning(
-                        "Cannot rename team '%s' -> '%s': name collision (org: %s, "
-                        "oauth_group: '%s'). Reusing existing team as-is.",
-                        team.name,
-                        team_name,
-                        org.name,
-                        original_group_name,
-                    )
-                else:
-                    log.info(
-                        "Renaming team '%s' -> '%s' (org: %s, oauth_group: '%s')",
-                        team.name,
-                        team_name,
-                        org.name,
-                        original_group_name,
-                    )
-                    team.name = team_name
-                    team.save(update_fields=["name"])
 
             if created:
                 log.info("Created team '%s' for org '%s'", team_name, org.name)
@@ -163,22 +163,28 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
     @staticmethod
     def _remove_team_membership(profile: UserProfile, teams):
-        if not getattr(settings, "ENABLE_OAUTH_GROUP_REMOVAL", True):
-            log.info(
-                "Skipping removal from teams %s for user '%s' (ENABLE_OAUTH_GROUP_REMOVAL=False)",
-                sorted(teams),
-                profile.user.email,
-            )
-            return
-
+        enable_removal = getattr(settings, "ENABLE_OAUTH_GROUP_REMOVAL", True)
         org = profile.org
+
         for team_name in teams:
             try:
                 team = Team.objects.get(name=team_name, org=org)
-                TeamMembership.objects.filter(user_profile=profile, team=team).delete()
-                log.info(
-                    "Removed user '%s' from team '%s' (%s)", profile.user.email, team_name, org.name
-                )
+                is_oauth_managed = bool(team.oauth_group_name)
+
+                if is_oauth_managed or enable_removal:
+                    TeamMembership.objects.filter(user_profile=profile, team=team).delete()
+                    log.info(
+                        "Removed user '%s' from team '%s' (%s)",
+                        profile.user.email,
+                        team_name,
+                        org.name,
+                    )
+                else:
+                    log.info(
+                        "Skipping removal from non-OAuth team '%s' for user '%s'",
+                        team_name,
+                        profile.user.email,
+                    )
             except Team.DoesNotExist:
                 log.warning(
                     "Team '%s' not found for removal (org: %s, user: %s)",
@@ -201,7 +207,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             log.info(
                 "Skipping synchronization of teams %s (ENABLE_OAUTH_GROUP_MANAGEMENT=False)",
-                sorted(team_name for team_name, _ in team_names),
+                sorted(team_names),
             )
             return
 

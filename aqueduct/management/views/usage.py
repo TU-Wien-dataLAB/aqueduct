@@ -188,10 +188,12 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             input_sum=Sum("input_tokens"),
             output_sum=Sum("output_tokens"),
             cached_input_sum=Sum("cached_input_tokens"),
+            reasoning_sum=Sum("reasoning_tokens"),
         )
         input_tokens = tokens_sum.get("input_sum") or 0
         output_tokens = tokens_sum.get("output_sum") or 0
         cached_input_tokens = tokens_sum.get("cached_input_sum") or 0
+        reasoning_tokens = tokens_sum.get("reasoning_sum") or 0
 
         context.update(
             {
@@ -213,6 +215,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 "input_tokens": input_tokens,
                 "cached_input_tokens": cached_input_tokens,
                 "output_tokens": output_tokens,
+                "reasoning_tokens": reasoning_tokens,
                 "total_tokens": input_tokens + output_tokens,
                 "retention_warning": retention_warning,
                 "retention_days": int(retention_days),

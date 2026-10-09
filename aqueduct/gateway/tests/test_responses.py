@@ -13,6 +13,7 @@ from gateway.response_type import RawJsonResponse
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import GatewayIntegrationTestCase
 from management.models import Request, Token
+from mock_api.mock_configs import MockStreamingConfig, default_post_stream_configs
 
 User = get_user_model()
 
@@ -130,6 +131,35 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
             f"GET after DELETE should return 404, "
             f"got {verify_get_response.status_code}: {verify_get_response.content}",
         )
+
+    async def test_streaming_records_reasoning_tokens_from_completed_response(self):
+        chunks = []
+        for chunk in default_post_stream_configs["responses"].response_data:
+            data = json.loads(chunk.decode().removeprefix("data: ").strip())
+            if data["type"] == "response.completed":
+                data["response"]["usage"]["output_tokens"] = 20
+                data["response"]["usage"]["output_tokens_details"]["reasoning_tokens"] = 12
+                data["response"]["usage"]["total_tokens"] = (
+                    data["response"]["usage"]["input_tokens"] + 20
+                )
+            chunks.append(b"data: " + json.dumps(data).encode() + b"\n\n")
+
+        with self.mock_server.patch_external_api(
+            "responses", MockStreamingConfig(response_data=chunks)
+        ):
+            response = await self.async_client.post(
+                self.url,
+                data=json.dumps({"model": self.model, "input": "Hello", "stream": True}),
+                headers=self.headers,
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200)
+            await _read_streaming_response_lines(response)
+
+        req = await Request.objects.aget()
+        self.assertEqual(req.output_tokens, 20)
+        self.assertEqual(req.reasoning_tokens, 12)
+        self.assertEqual(req.token_usage.total_tokens, req.input_tokens + 20)
 
     async def test_create_response_streaming(self):
         """

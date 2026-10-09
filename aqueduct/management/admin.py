@@ -12,14 +12,16 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
-from django.db.models import Q, QuerySet
+from django.db.models import Count, Q, QuerySet
 from django.http import HttpResponse
+from django.template.defaultfilters import filesizeformat
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.urls.resolvers import URLPattern
 from django.utils.html import format_html
+from tos.middleware import cache
 
-from gateway.config import get_files_api_client, get_router_config
+from gateway.config import get_files_api_client, get_mcp_config, get_router_config
 from gateway.rate_limiting import get_per_token_usage
 from management.models import (
     Batch,
@@ -69,8 +71,6 @@ def get_model_choices() -> list[str]:
 
 
 def get_mcp_server_choices() -> list[str]:
-    from gateway.config import get_mcp_config
-
     try:
         config = get_mcp_config()
         return list(config.keys())
@@ -94,8 +94,6 @@ class ExcludedModelsAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Dynamically provide choices using get_model_choices
-        from .admin import get_model_choices
-
         self.fields["excluded_models"].choices = [(m, m) for m in get_model_choices()]
         if self.instance and getattr(self.instance, "excluded_models", None):
             self.initial["excluded_models"] = self.instance.excluded_models
@@ -190,8 +188,6 @@ def make_user(modeladmin, request, queryset):
 
 @admin.action(description="Delete Terms of Service cache")
 def delete_tos_cache(modeladmin, request, queryset):
-    from tos.middleware import cache
-
     key_version = cache.get("django:tos:key_version")
 
     for user in queryset:
@@ -592,6 +588,7 @@ class RequestAdmin(admin.ModelAdmin):
         "input_tokens",
         "cached_input_tokens",
         "output_tokens",
+        "reasoning_tokens",
         "status_code",
         "response_time_ms",
         "processing_time_ms",
@@ -726,8 +723,6 @@ class FileObjectAdmin(admin.ModelAdmin):
     actions: ClassVar[list] = [reload_from_upstream]
 
     def bytes_formatted(self, obj) -> str:
-        from django.template.defaultfilters import filesizeformat
-
         return filesizeformat(obj.bytes)
 
     bytes_formatted.short_description = "Size"
@@ -789,8 +784,6 @@ class VectorStoreAdmin(admin.ModelAdmin):
     actions: ClassVar[list] = [reload_from_upstream]
 
     def get_queryset(self, request) -> QuerySet:
-        from django.db.models import Count
-
         return super().get_queryset(request).annotate(file_count=Count("files"))
 
     def file_count(self, obj) -> int:
@@ -800,8 +793,6 @@ class VectorStoreAdmin(admin.ModelAdmin):
     file_count.admin_order_field = "file_count"
 
     def usage_bytes_formatted(self, obj) -> str:
-        from django.template.defaultfilters import filesizeformat
-
         return filesizeformat(obj.usage_bytes)
 
     usage_bytes_formatted.short_description = "Usage"
@@ -884,8 +875,6 @@ class VectorStoreFileAdmin(admin.ModelAdmin):
     actions: ClassVar[list] = [reload_from_upstream]
 
     def usage_bytes_formatted(self, obj) -> str:
-        from django.template.defaultfilters import filesizeformat
-
         return filesizeformat(obj.usage_bytes)
 
     usage_bytes_formatted.short_description = "Size"

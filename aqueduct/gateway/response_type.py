@@ -182,10 +182,19 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
                 cached_input_tokens = details.get("cached_tokens") or 0
             elif details is not None:
                 cached_input_tokens = getattr(details, "cached_tokens", 0) or 0
+            output_details = usage.get("completion_tokens_details") or usage.get(
+                "output_tokens_details"
+            )
+            reasoning_tokens = 0
+            if isinstance(output_details, dict):
+                reasoning_tokens = output_details.get("reasoning_tokens") or 0
+            elif output_details is not None:
+                reasoning_tokens = getattr(output_details, "reasoning_tokens", 0) or 0
             return Usage(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 cached_input_tokens=cached_input_tokens,
+                reasoning_tokens=reasoning_tokens,
             )
     else:
         # Handle responses API format (top-level usage or in response field)
@@ -200,10 +209,13 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
                 input_tokens = output_tokens = 0
             details = getattr(usage, "input_tokens_details", None)
             cached_input_tokens = getattr(details, "cached_tokens", 0) or 0
+            output_details = getattr(usage, "output_tokens_details", None)
+            reasoning_tokens = getattr(output_details, "reasoning_tokens", 0) or 0
             return Usage(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 cached_input_tokens=cached_input_tokens,
+                reasoning_tokens=reasoning_tokens,
             )
 
     return Usage(input_tokens=0, output_tokens=0)

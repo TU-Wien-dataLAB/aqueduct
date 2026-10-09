@@ -1423,6 +1423,17 @@ class TokenUsageDetailsTest(ChatCompletionsBase):
         self.assertEqual(req.cached_input_tokens, 40)
         self.assertEqual(req.token_usage, AqueductUsage(100, 5, 40))
 
+    def test_token_usage_setter_limits_reasoning_tokens(self):
+        for reported, expected in [(-5, 0), (50, 20), (12, 12)]:
+            with self.subTest(reported=reported):
+                req = Request()
+                req.token_usage = AqueductUsage(
+                    input_tokens=10, output_tokens=20, reasoning_tokens=reported
+                )
+                self.assertEqual(req.reasoning_tokens, expected)
+                self.assertEqual(req.token_usage.reasoning_tokens, expected)
+                self.assertEqual(req.token_usage.total_tokens, 30)
+
     def test_reasoning_tokens_cannot_exceed_output_tokens(self):
         req = self._run_chat_completion_and_get_request(
             self._chat_completion_payload(20, 10, reasoning_tokens=50)

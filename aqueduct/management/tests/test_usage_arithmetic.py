@@ -1,6 +1,6 @@
 from django.test import SimpleTestCase
 
-from management.models import Request, Usage
+from management.models import Usage
 
 
 class UsageArithmeticTest(SimpleTestCase):

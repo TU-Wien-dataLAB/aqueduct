@@ -124,10 +124,7 @@
         <div class="stat">
             <div class="stat-title">Input Tokens</div>
             <div class="stat-value text-primary">{{ input_tokens|intcomma }}</div>
-        </div>
-        <div class="stat">
-            <div class="stat-title">Cached Input Tokens</div>
-            <div class="stat-value text-primary">{{ cached_input_tokens|intcomma }}</div>
+            <div class="stat-desc">Of which {{ cached_input_tokens|intcomma }} were cached</div>
         </div>
         <div class="stat">
             <div class="stat-title">Output Tokens</div>

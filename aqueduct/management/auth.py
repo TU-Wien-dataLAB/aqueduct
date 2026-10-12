@@ -111,11 +111,16 @@ class OIDCBackend(OIDCAuthenticationBackend):
         user.save()
 
     @staticmethod
-    def _update_team_membership(profile: UserProfile, teams, teams_by_name):
+    def _update_team_membership(
+        profile: UserProfile,
+        teams_to_update: list[tuple[Team, str, str]],
+        teams_by_name: dict[str, Team],
+    ):
+        """Rename OAuth teams to match current group names and ensure membership."""
         org = profile.org
         added = []
 
-        for team, team_name, original_group_name in teams:
+        for team, team_name, original_group_name in teams_to_update:
             if team.name != team_name:
                 existing = teams_by_name.get(team_name)
                 collision = existing is not None and existing.pk != team.pk
@@ -156,12 +161,12 @@ class OIDCBackend(OIDCAuthenticationBackend):
             log.info("Added user '%s' to team '%s' (%s)", profile.user.email, team.name, org.name)
 
     @staticmethod
-    def _add_team_membership(profile: UserProfile, teams):
+    def _add_team_membership(profile: UserProfile, teams_to_add: list[tuple[str, str]]):
         """Create OAuth teams (or reuse an existing team by name) and ensure membership."""
         org = profile.org
         added = []
 
-        for team_name, original_group_name in teams:
+        for team_name, original_group_name in teams_to_add:
             team, created = Team.objects.get_or_create(
                 name=team_name, org=org, defaults={"oauth_group_name": original_group_name}
             )
@@ -180,35 +185,24 @@ class OIDCBackend(OIDCAuthenticationBackend):
             log.info("Added user '%s' to team '%s' (%s)", profile.user.email, team_name, org.name)
 
     @staticmethod
-    def _remove_team_membership(profile: UserProfile, team_names):
+    def _remove_team_membership(profile: UserProfile, team_names: set[str]):
+        """Remove the user from teams no longer present in their OAuth groups."""
         enable_removal = getattr(settings, "ENABLE_OAUTH_GROUP_REMOVAL", True)
         org = profile.org
 
         teams = Team.objects.filter(name__in=team_names, org=org)
-
         for team in teams:
-            try:
-                is_oauth_managed = bool(team.oauth_group_name)
+            is_oauth_managed = bool(team.oauth_group_name)
 
-                if is_oauth_managed or enable_removal:
-                    TeamMembership.objects.filter(user_profile=profile, team=team).delete()
-                    log.info(
-                        "Removed user '%s' from team '%s' (%s)",
-                        profile.user.email,
-                        team.name,
-                        org.name,
-                    )
-                else:
-                    log.info(
-                        "Skipping removal from non-OAuth team '%s' for user '%s'",
-                        team.name,
-                        profile.user.email,
-                    )
-            except Team.DoesNotExist:
-                log.warning(
-                    "Team '%s' not found for removal (org: %s, user: %s)",
+            if is_oauth_managed or enable_removal:
+                TeamMembership.objects.filter(user_profile=profile, team=team).delete()
+                log.info(
+                    "Removed user '%s' from team '%s' (%s)", profile.user.email, team.name, org.name
+                )
+            else:
+                log.info(
+                    "Skipping removal from non-OAuth team '%s' for user '%s'",
                     team.name,
-                    org.name,
                     profile.user.email,
                 )
 
@@ -266,9 +260,9 @@ class OIDCBackend(OIDCAuthenticationBackend):
                     log.info("Skipping team '%s' (ENABLE_OAUTH_GROUP_CREATION=False)", team_name)
 
             self._update_team_membership(
-                profile=profile, teams=to_update, teams_by_name=teams_by_name
+                profile=profile, teams_to_update=to_update, teams_by_name=teams_by_name
             )
-            self._add_team_membership(profile=profile, teams=to_add)
+            self._add_team_membership(profile=profile, teams_to_add=to_add)
 
             teams_to_remove = existing_memberships - target_team_names
             self._remove_team_membership(profile=profile, team_names=teams_to_remove)

@@ -162,13 +162,14 @@ class OIDCBackend(OIDCAuthenticationBackend):
             log.info("Added user '%s' to team '%s' (%s)", profile.user.email, team_name, org.name)
 
     @staticmethod
-    def _remove_team_membership(profile: UserProfile, teams):
+    def _remove_team_membership(profile: UserProfile, team_names):
         enable_removal = getattr(settings, "ENABLE_OAUTH_GROUP_REMOVAL", True)
         org = profile.org
 
-        for team_name in teams:
+        teams = Team.objects.filter(name__in=team_names, org=org)
+
+        for team in teams:
             try:
-                team = Team.objects.get(name=team_name, org=org)
                 is_oauth_managed = bool(team.oauth_group_name)
 
                 if is_oauth_managed or enable_removal:
@@ -176,19 +177,19 @@ class OIDCBackend(OIDCAuthenticationBackend):
                     log.info(
                         "Removed user '%s' from team '%s' (%s)",
                         profile.user.email,
-                        team_name,
+                        team.name,
                         org.name,
                     )
                 else:
                     log.info(
                         "Skipping removal from non-OAuth team '%s' for user '%s'",
-                        team_name,
+                        team.name,
                         profile.user.email,
                     )
             except Team.DoesNotExist:
                 log.warning(
                     "Team '%s' not found for removal (org: %s, user: %s)",
-                    team_name,
+                    team.name,
                     org.name,
                     profile.user.email,
                 )
@@ -233,7 +234,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
             self._add_team_membership(profile=profile, teams=teams_to_add)
 
             teams_to_remove = existing_memberships - target_team_names
-            self._remove_team_membership(profile=profile, teams=teams_to_remove)
+            self._remove_team_membership(profile=profile, team_names=teams_to_remove)
 
     def create_user(self, claims: dict[str, Any]) -> User | None:
         org = self._org(claims)

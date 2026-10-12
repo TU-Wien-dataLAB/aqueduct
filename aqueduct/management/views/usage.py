@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import json
 from datetime import timedelta
 from typing import Any
@@ -15,7 +15,7 @@ from management.views.base import BaseAqueductView
 
 
 def _bucket_config_for_range(
-    start_time: datetime.datetime, end_time: datetime.datetime
+    start_time: dt.datetime, end_time: dt.datetime
 ) -> tuple[timedelta, Any]:
     """Determine bucket delta and round function for a custom time range."""
     duration = end_time - start_time
@@ -31,9 +31,7 @@ def _bucket_config_for_range(
     return delta, round_time
 
 
-def get_all_buckets(
-    start_time: datetime.datetime, now: datetime.datetime, freq_label: str
-) -> list[int]:
+def get_all_buckets(start_time: dt.datetime, now: dt.datetime, freq_label: str) -> list[int]:
     points = []
     if freq_label == "1h":
         # one point per minute
@@ -238,7 +236,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
 
     @staticmethod
     def _validate_custom_range(
-        start: datetime.datetime | None, end: datetime.datetime | None, now: datetime.datetime
+        start: dt.datetime | None, end: dt.datetime | None, now: dt.datetime
     ) -> str | None:
         """Return the first validation error for a custom range, or ``None``."""
         if not (start and end):
@@ -252,8 +250,8 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         return None
 
     def _parse_custom_range(
-        self, start_str: str, end_str: str, now: datetime.datetime
-    ) -> tuple[datetime.datetime | None, datetime.datetime | None, str | None]:
+        self, start_str: str, end_str: str, now: dt.datetime
+    ) -> tuple[dt.datetime | None, dt.datetime | None, str | None]:
         """Parse and validate the optional custom start/end query params.
 
         Returns ``(start, end, error)``:
@@ -265,14 +263,14 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         if not start_str and not end_str:
             return None, None, None
         try:
-            start = datetime.datetime.fromisoformat(start_str) if start_str else None
-            end = datetime.datetime.fromisoformat(end_str) if end_str else None
+            start = dt.datetime.fromisoformat(start_str) if start_str else None
+            end = dt.datetime.fromisoformat(end_str) if end_str else None
         except (ValueError, TypeError):
             return None, None, "Invalid date format."
         if start is not None and timezone.is_naive(start):
-            start = timezone.make_aware(start, datetime.UTC)
+            start = timezone.make_aware(start, dt.UTC)
         if end is not None and timezone.is_naive(end):
-            end = timezone.make_aware(end, datetime.UTC)
+            end = timezone.make_aware(end, dt.UTC)
         return start, end, self._validate_custom_range(start, end, now)
 
     def _get_selected_token(self, selected_org: Org | None) -> Token | None:
@@ -297,8 +295,8 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         self,
         reqs: QuerySet[Request],
         selected_span: str,
-        start_time: datetime.datetime,
-        end_time: datetime.datetime,
+        start_time: dt.datetime,
+        end_time: dt.datetime,
         span_cfg: dict,
     ) -> list[tuple[int, int]]:
         """Get the request count per time bucket of the timeseries."""

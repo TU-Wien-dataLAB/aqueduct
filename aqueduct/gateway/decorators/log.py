@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from functools import wraps
@@ -44,7 +45,17 @@ def log_request(view_func: AsyncView) -> AsyncView:
         log.debug("Initial request log object created.")
 
         response_start_time = time.monotonic()
-        result: ViewResult = await view_func(request, *args, **kwargs)
+        try:
+            result: ViewResult = await view_func(request, *args, **kwargs)
+        except asyncio.CancelledError:
+            request_log.processing_time_ms = int(
+                (response_start_time - kwargs["request_start"]) * 1000
+            )
+            request_log.response_time_ms = int((time.monotonic() - response_start_time) * 1000)
+            request_log.status_code = 499
+            await request_log.asave()
+            raise
+
         end_time = time.monotonic()
 
         assert "request_start" in kwargs, (

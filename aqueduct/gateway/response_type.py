@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -126,33 +127,49 @@ class RawStreamingResponse(StreamingHttpResponse):
         if is_openai and self.request_log is None:
             raise ValueError(f"Missing request_log for an OpenAI streaming response: {self}!")
 
-        async for raw_chunk in streaming_content:
-            chunk = _apply_transforms(raw_chunk, self.transforms)
-
-            if is_openai:
-                chunk_usage = get_token_usage(chunk)
-                if chunk_usage.input_tokens > 0 or chunk_usage.output_tokens > 0:
-                    token_usage = chunk_usage
-                chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
-            else:
-                chunk_str = chunk.model_dump_json(exclude_none=True)
-
-            yield f"data: {chunk_str}\n\n".encode()
-
-        if is_openai:
+        async def _record_status(status: int) -> None:
             if self.request_log is None:
-                raise ValueError(f"Missing request_log for an OpenAI streaming response: {self}!")
-            self.request_log.token_usage = token_usage
+                return
+            self.request_log.status_code = status
             self.request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
             await self.request_log.asave()
-            # Record token usage into the rate-limit buckets. Streaming requests
-            # defer recording to here (stream end) since token usage is only known
-            # once the upstream stream completes.
-            await sync_to_async(record_token_usage)(
-                self.request_log.token_id, self.request_log.token_usage
-            )
 
-            yield b"data: [DONE]\n\n"
+        try:
+            async for raw_chunk in streaming_content:
+                chunk = _apply_transforms(raw_chunk, self.transforms)
+
+                if is_openai:
+                    chunk_usage = get_token_usage(chunk)
+                    if chunk_usage.input_tokens > 0 or chunk_usage.output_tokens > 0:
+                        token_usage = chunk_usage
+                    chunk_str = chunk.model_dump_json(exclude_none=True, exclude_unset=True)
+                else:
+                    chunk_str = chunk.model_dump_json(exclude_none=True)
+
+                yield f"data: {chunk_str}\n\n".encode()
+
+            if is_openai:
+                if self.request_log is None:
+                    raise ValueError(
+                        f"Missing request_log for an OpenAI streaming response: {self}!"
+                    )
+                self.request_log.token_usage = token_usage
+                await _record_status(200)
+                # Record token usage into the rate-limit buckets. Streaming requests
+                # defer recording to here (stream end) since token usage is only known
+                # once the upstream stream completes.
+                await sync_to_async(record_token_usage)(
+                    self.request_log.token_id, self.request_log.token_usage
+                )
+
+                yield b"data: [DONE]\n\n"
+        except (GeneratorExit, asyncio.CancelledError):
+            await _record_status(499)
+            raise
+        except Exception:
+            log.exception("Error while streaming response: %r", streaming_content)
+            await _record_status(500)
+            raise
 
 
 def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:

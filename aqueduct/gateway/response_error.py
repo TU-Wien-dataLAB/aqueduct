@@ -27,9 +27,12 @@ def error_response(
     param: str | None = None,
     code: str | None = None,
     status: int = 400,
+    headers: dict[str, str] | None = None,
 ) -> RawJsonResponse:
     """Return an OpenAI-compatible error response."""
     if error_type is None:
         error_type = _status_to_error_type(status)
     error = ErrorObject(message=message, type=error_type, param=param, code=code)
-    return RawJsonResponse({"error": error.model_dump(exclude_none=True)}, status=status)
+    return RawJsonResponse(
+        {"error": error.model_dump(exclude_none=True)}, status=status, headers=headers
+    )

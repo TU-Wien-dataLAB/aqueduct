@@ -56,6 +56,13 @@ class RateLimitingBase(SimpleTestCase):
 
 
 class CheckAndReserveTest(RateLimitingBase):
+    def setUp(self):
+        super().setUp()
+        # 14.5 s left in the minute (15 rounded up), unless a test sets its own clock
+        patcher = _patch_time(_Clock(datetime(2026, 7, 2, 10, 0, 45, 500000, tzinfo=UTC)))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_no_limits_is_noop_and_allows(self):
         limits = LimitSet()  # all None
         allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model=None)
@@ -75,7 +82,7 @@ class CheckAndReserveTest(RateLimitingBase):
             self.assertEqual(exceeded, [])
         allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model=None)
         self.assertFalse(allowed)
-        self.assertEqual(exceeded, ["Request limit (3/min)"])
+        self.assertEqual(exceeded, [("Request limit (3/min)", 15)])
 
     def test_weighted_budget_uses_model_multiplier(self):
         limits = LimitSet(requests_per_minute=3)
@@ -87,7 +94,7 @@ class CheckAndReserveTest(RateLimitingBase):
             allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model="gpt-4.1-nano")
         self.assertFalse(allowed)
         # Message shows the effective capacity for this model: 3 x 2.0 = 6.
-        self.assertEqual(exceeded, ["Request limit (6/min)"])
+        self.assertEqual(exceeded, [("Request limit (6/min)", 15)])
 
     def test_scaled_request_limit_in_message_for_cheap_model(self):
         """A multiplier < 1 (each request costs more budget) shows a fractional limit."""
@@ -99,7 +106,7 @@ class CheckAndReserveTest(RateLimitingBase):
             allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model="expensive")
         self.assertFalse(allowed)  # bucket 4.0 >= 3
         # 3 x 0.5 = 1.5 formatted with :g.
-        self.assertEqual(exceeded, ["Request limit (1.5/min)"])
+        self.assertEqual(exceeded, [("Request limit (1.5/min)", 15)])
 
     def test_mixed_model_weighted_budget_accumulates(self):
         limits = LimitSet(requests_per_minute=3)
@@ -120,7 +127,7 @@ class CheckAndReserveTest(RateLimitingBase):
             # cheap again: bucket 3.0 (>=3) blocked -> message scaled by cheap's 2.0
             allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model="cheap")
         self.assertFalse(allowed)
-        self.assertEqual(exceeded, ["Request limit (6/min)"])
+        self.assertEqual(exceeded, [("Request limit (6/min)", 15)])
 
     def test_input_token_limit_blocks(self):
         limits = LimitSet(input_tokens_per_minute=100)
@@ -130,7 +137,7 @@ class CheckAndReserveTest(RateLimitingBase):
             record_token_usage(TOKEN_ID, Usage(input_tokens=100, output_tokens=0))
             allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model=None)
         self.assertFalse(allowed)
-        self.assertEqual(exceeded, ["Input token limit (100/min)"])
+        self.assertEqual(exceeded, [("Input token limit (100/min)", 60)])
 
     def test_lock_contention_fails_open_for_check(self):
         limits = LimitSet(requests_per_minute=3)
@@ -309,7 +316,24 @@ class HourDayLimitTest(RateLimitingBase):
             # 61st request in a fresh minute: minute ok, hour bucket (60) >= 60 -> blocked.
             allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model=None)
         self.assertFalse(allowed)
-        self.assertEqual(exceeded, ["Request limit (60/hour)"])
+        self.assertEqual(exceeded, [("Request limit (60/hour)", 54 * 60)])
+
+    def test_reports_seconds_left_per_exceeded_metric(self):
+        # Requests full for the hour (2/hour), output tokens full for the minute
+        limits = LimitSet(
+            requests_per_minute=2, output_tokens_per_minute=100, hourly_limit_multiplier=1
+        )
+        clock = _Clock(datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC))
+        with _patch_time(clock):
+            for _ in range(2):
+                self.assertTrue(check_and_reserve(limits, TOKEN_ID, model=None)[0])
+            clock.advance_minutes(6)
+            record_token_usage(TOKEN_ID, Usage(input_tokens=0, output_tokens=100))
+            allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model=None)
+        self.assertFalse(allowed)
+        self.assertEqual(
+            exceeded, [("Request limit (2/hour)", 54 * 60), ("Output token limit (100/min)", 60)]
+        )
 
     def test_day_limit_derived_from_per_minute(self):
         limits = LimitSet(requests_per_minute=10, daily_limit_multiplier=6)

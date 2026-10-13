@@ -1693,6 +1693,10 @@ class TokenLimitTest(ChatCompletionsBase):
             429,
             f"Expected 429 Too Many Requests, got {response2.status_code}: {response2.content}",
         )
+        # The exceeded minute bucket ends within a minute
+        retry_after = int(response2.headers["Retry-After"])
+        self.assertGreaterEqual(retry_after, 1)
+        self.assertLessEqual(retry_after, 60)
         # Optionally, check error message
         try:
             error_json = response2.json()
@@ -1862,8 +1866,10 @@ class TokenLimitTest(ChatCompletionsBase):
             429,
             f"Expected 429 Too Many Requests, got {response7.status_code}: {response7.content}",
         )
+        retry_after = response7.headers["Retry-After"]
         self.assertEqual(
-            response7.json()["error"]["message"], "Rate limit exceeded. Request limit (6/min)."
+            response7.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (6/min) (Retry after {retry_after}s).",
         )
 
     @patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=0.5)
@@ -1890,8 +1896,25 @@ class TokenLimitTest(ChatCompletionsBase):
         # Third request: weighted = 4.0 >= 3
         response3 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
         self.assertEqual(response3.status_code, 429)
+        retry_after = response3.headers["Retry-After"]
         self.assertEqual(
-            response3.json()["error"]["message"], "Rate limit exceeded. Request limit (1.5/min)."
+            response3.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (1.5/min) (Retry after {retry_after}s).",
+        )
+
+    def test_rate_limit_message_lists_each_exceeded_limit(self):
+        self._setup_limits("org", "requests_per_minute", 1)
+        self._setup_limits("org", "output_tokens_per_minute", 1)
+        first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(first.status_code, 200)
+
+        blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        retry_after = blocked.headers["Retry-After"]
+        self.assertEqual(
+            blocked.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (1/min) (Retry after {retry_after}s), "
+            f"Output token limit (1/min) (Retry after {retry_after}s).",
         )
 
     def test_check_limits_uses_no_request_table_sql(self):

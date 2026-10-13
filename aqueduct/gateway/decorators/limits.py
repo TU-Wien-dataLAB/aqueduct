@@ -33,7 +33,11 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 model = (kwargs.get("pydantic_model") or {}).get("model")
                 allowed, exceeded = await sync_to_async(check_and_reserve)(limits, token.id, model)
                 if not allowed:
-                    error_message = "Rate limit exceeded. " + ", ".join(exceeded) + "."
+                    messages = (
+                        f"{message} (Retry after {seconds_left}s)"
+                        for message, seconds_left in exceeded
+                    )
+                    error_message = "Rate limit exceeded. " + ", ".join(messages) + "."
                     log.warning(
                         "Rate limit exceeded for Token %r (ID: %s). Details: %s",
                         token.name,
@@ -41,8 +45,12 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                         error_message,
                     )
                     log.error("Rate limit exceeded - %s", error_message)
+                    # Wait until every exceeded bucket has ended
+                    retry_after = max(seconds_left for _message, seconds_left in exceeded)
                     # Return 429 Too Many Requests
-                    return error_response(error_message, status=429)
+                    return error_response(
+                        error_message, status=429, headers={"Retry-After": str(retry_after)}
+                    )
 
         except Exception as e:
             log.exception("Error checking rate limits for Token %r: %s", token.name, e)

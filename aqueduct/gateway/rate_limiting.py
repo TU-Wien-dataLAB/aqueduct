@@ -28,8 +28,10 @@ Reservation vs. recording:
 """
 
 import logging
+import math
 from collections.abc import Collection
 from contextlib import AbstractContextManager
+from datetime import datetime
 from typing import Any
 
 from django.conf import settings
@@ -84,13 +86,21 @@ def _cache_lock(lock_id: str, ttl: int) -> AbstractContextManager[bool]:
     return cache_lock(lock_id, ttl)
 
 
+def _seconds_left(window_seconds: int, now: datetime) -> int:
+    """Whole seconds until the current bucket ends (buckets align with the UTC epoch)."""
+    return math.ceil(window_seconds - now.timestamp() % window_seconds)
+
+
 def _evaluate(
     windows: list[tuple[str, int, int | None, int | None, int | None]],
     buckets: dict[str, dict[str, float]],
     keys: list[str],
     request_multiplier: float,
-) -> list[str]:
-    """Return exceeded-message list, reporting only the finest exceeded window per metric.
+    now: datetime,
+) -> list[tuple[str, int]]:
+    """Return ``(message, seconds_left)`` pairs, reporting only the finest exceeded window.
+
+    One pair per exceeded metric; ``seconds_left`` is the time until that window's bucket ends.
 
     ``windows`` is finest-first (min, hour, day); for each metric we stop at the
     first (finest) window whose limit is exceeded and do not report coarser ones
@@ -101,17 +111,18 @@ def _evaluate(
     historical "Request limit (6/min)" shape for models with a weighted multiplier.
     Input/output token limits are reported unscaled.
     """
-    messages: list[str] = []
+    exceeded: list[tuple[str, int]] = []
     for field, label in _METRICS:
-        for (name, _secs, rpm, itpm, otpm), key in zip(windows, keys, strict=True):
+        for (name, secs, rpm, itpm, otpm), key in zip(windows, keys, strict=True):
             limit = {"req": rpm, "in": itpm, "out": otpm}[field]
             if limit is not None and buckets[key][field] >= limit:
                 if field == "req":
-                    messages.append(f"{label} ({limit * request_multiplier:g}/{_SUFFIX[name]})")
+                    message = f"{label} ({limit * request_multiplier:g}/{_SUFFIX[name]})"
                 else:
-                    messages.append(f"{label} ({limit}/{_SUFFIX[name]})")
+                    message = f"{label} ({limit}/{_SUFFIX[name]})"
+                exceeded.append((message, _seconds_left(secs, now)))
                 break  # finest exceeded window for this metric; skip coarser windows
-    return messages
+    return exceeded
 
 
 def has_any_limit(limits: LimitSet) -> bool:
@@ -127,12 +138,14 @@ def has_any_limit(limits: LimitSet) -> bool:
     )
 
 
-def check_and_reserve(limits: LimitSet, token_id: int, model: str | None) -> tuple[bool, list[str]]:
+def check_and_reserve(
+    limits: LimitSet, token_id: int, model: str | None
+) -> tuple[bool, list[tuple[str, int]]]:
     """Read all-window buckets, enforce limits, reserve the request slot in every window.
 
-    Returns ``(allowed, exceeded_messages)``. On rare same-token lock contention we
-    fail open (allow the request) to avoid latency spikes — no worse than the read
-    races this replaces.
+    Returns ``(allowed, exceeded)`` with ``exceeded`` as in ``_evaluate``. On rare
+    same-token lock contention we fail open (allow the request) to avoid latency
+    spikes — no worse than the read races this replaces.
     """
     if not has_any_limit(limits):
         return True, []
@@ -158,7 +171,7 @@ def check_and_reserve(limits: LimitSet, token_id: int, model: str | None) -> tup
         raw = cache.get_many(keys)
         buckets = {k: (raw.get(k) or _new_bucket()) for k in keys}
 
-        exceeded = _evaluate(windows, buckets, keys, request_multiplier)
+        exceeded = _evaluate(windows, buckets, keys, request_multiplier, now)
         if exceeded:
             return False, exceeded
 

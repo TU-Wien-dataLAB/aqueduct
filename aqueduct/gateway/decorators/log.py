@@ -34,7 +34,7 @@ def log_request(view_func: AsyncView) -> AsyncView:
             timestamp=timezone.now(),
             method=request.method,
             user_agent=request.headers.get("User-Agent", ""),
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=(request.META.get("HTTP_X_REAL_IP") or request.META.get("REMOTE_ADDR")),
             user_id=kwargs.get("user_id", ""),
             # path, Status, time, usage set later in the view or processing steps
         )

@@ -34,4 +34,4 @@ WORKDIR /app/aqueduct
 
 EXPOSE 8000
 
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "aqueduct.asgi:application"]
+CMD ["sh", "-c", "if [ -n \"$$TRUST_PROXY_HEADERS\" ]; then exec daphne --proxy-headers -b 0.0.0.0 -p 8000 aqueduct.asgi:application; else exec daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application; fi"]

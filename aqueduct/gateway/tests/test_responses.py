@@ -4,15 +4,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.cache import caches
-from django.http import JsonResponse
 from django.test import override_settings
 from django.urls import reverse
 
+from gateway.decorators import check_tool_availability
+from gateway.decorators.response_cache import register_response_in_cache
+from gateway.response_type import RawJsonResponse
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from gateway.views.decorators import check_tool_availability
-from gateway.views.utils import register_response_in_cache
 from management.models import Request, Token
+from mock_api.mock_configs import MockStreamingConfig, default_post_stream_configs
 
 User = get_user_model()
 
@@ -130,6 +131,35 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
             f"GET after DELETE should return 404, "
             f"got {verify_get_response.status_code}: {verify_get_response.content}",
         )
+
+    async def test_streaming_records_reasoning_tokens_from_completed_response(self):
+        chunks = []
+        for chunk in default_post_stream_configs["responses"].response_data:
+            data = json.loads(chunk.decode().removeprefix("data: ").strip())
+            if data["type"] == "response.completed":
+                data["response"]["usage"]["output_tokens"] = 20
+                data["response"]["usage"]["output_tokens_details"]["reasoning_tokens"] = 12
+                data["response"]["usage"]["total_tokens"] = (
+                    data["response"]["usage"]["input_tokens"] + 20
+                )
+            chunks.append(b"data: " + json.dumps(data).encode() + b"\n\n")
+
+        with self.mock_server.patch_external_api(
+            "responses", MockStreamingConfig(response_data=chunks)
+        ):
+            response = await self.async_client.post(
+                self.url,
+                data=json.dumps({"model": self.model, "input": "Hello", "stream": True}),
+                headers=self.headers,
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200)
+            await _read_streaming_response_lines(response)
+
+        req = await Request.objects.aget()
+        self.assertEqual(req.output_tokens, 20)
+        self.assertEqual(req.reasoning_tokens, 12)
+        self.assertEqual(req.token_usage.total_tokens, req.input_tokens + 20)
 
     async def test_create_response_streaming(self):
         """
@@ -361,7 +391,7 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
 class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
     """Tests for the check_tool_availability decorator."""
 
-    @patch("gateway.views.decorators.get_mcp_config")
+    @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_success(self, mock_get_mcp_config):
         """
         Test check_tool_availability decorator with valid tools.
@@ -369,7 +399,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         """
         # Mock the decorated view function
         mock_view_func = AsyncMock()
-        mock_view_func.return_value = JsonResponse({"result": "success"})
+        mock_view_func.return_value = RawJsonResponse({"result": "success"})
 
         # Create a mock request and token
         request = AsyncMock()
@@ -392,14 +422,14 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         mock_view_func.assert_called_once_with(request, response_id, **kwargs)
         self.assertEqual(result.status_code, 200)
 
-    @patch("gateway.views.decorators.get_mcp_config")
+    @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_success(self, mock_get_mcp_config):
         """
         Test check_tool_availability decorator with valid MCP server.
         Should successfully call the decorated function with server_url added.
         """
         mock_view_func = AsyncMock()
-        mock_view_func.return_value = JsonResponse({"result": "success"})
+        mock_view_func.return_value = RawJsonResponse({"result": "success"})
 
         # Mock MCP config
         mock_get_mcp_config.return_value = {"test_mcp_server": {"url": "http://mcp-server:8080"}}
@@ -449,9 +479,9 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         # Should return 400 error without calling the view function
         mock_view_func.assert_not_called()
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 400)
-        data = json.loads(result.content)
-        self.assertEqual(data["error"]["message"], "Invalid request")
+        self.assertEqual(result.data["error"]["message"], "Invalid request")
 
     async def test_check_tool_availability_missing_pydantic_model(self):
         """
@@ -473,11 +503,11 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         # Should return 400 error without calling the view function
         mock_view_func.assert_not_called()
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 400)
-        data = json.loads(result.content)
-        self.assertEqual(data["error"]["message"], "Invalid request")
+        self.assertEqual(result.data["error"]["message"], "Invalid request")
 
-    @patch("gateway.views.decorators.get_mcp_config")
+    @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_excluded(self, mock_get_mcp_config):
         """
         Test check_tool_availability decorator with excluded MCP server.
@@ -503,11 +533,11 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         # Should return 404 error without calling the view function
         mock_view_func.assert_not_called()
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 404)
-        data = json.loads(result.content)
-        self.assertIn("MCP server not found", data["error"]["message"])
+        self.assertIn("MCP server not found", result.data["error"]["message"])
 
-    @patch("gateway.views.decorators.get_mcp_config")
+    @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_not_found(self, mock_get_mcp_config):
         """
         Test check_tool_availability decorator with MCP server not in config.
@@ -534,18 +564,18 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         # Should return 404 error without calling the view function
         mock_view_func.assert_not_called()
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 404)
-        data = json.loads(result.content)
-        self.assertIn("MCP server not found", data["error"]["message"])
+        self.assertIn("MCP server not found", result.data["error"]["message"])
 
-    @patch("gateway.views.decorators.get_mcp_config")
+    @patch("gateway.decorators.responses.get_mcp_config")
     async def test_check_tool_availability_mcp_server_url_match(self, mock_get_mcp_config):
         """
         Test check_tool_availability decorator with server_label different from config key.
         Should successfully match by URL and rewrite to internal URL.
         """
         mock_view_func = AsyncMock()
-        mock_view_func.return_value = JsonResponse({"result": "success"})
+        mock_view_func.return_value = RawJsonResponse({"result": "success"})
 
         mock_get_mcp_config.return_value = {
             "brave": {"url": "http://mcp-server:8080"},
@@ -600,9 +630,9 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
 
         # Should return 400 error without calling the view function
         mock_view_func.assert_not_called()
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 400)
-        data = json.loads(result.content)
-        self.assertEqual(data["error"]["message"], "Invalid tool type: invalid_tool_type")
+        self.assertEqual(result.data["error"]["message"], "Invalid tool type: invalid_tool_type")
 
     @override_settings(RESPONSES_API_ALLOWED_NATIVE_TOOLS=["allowed_native_tool"])
     async def test_check_tool_availability_allowed_native_tool(self):
@@ -611,7 +641,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         Should successfully call the decorated function.
         """
         mock_view_func = AsyncMock()
-        mock_view_func.return_value = JsonResponse({"result": "success"})
+        mock_view_func.return_value = RawJsonResponse({"result": "success"})
 
         request = AsyncMock()
         response_id = "test_response_id"
@@ -631,14 +661,14 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         mock_view_func.assert_called_once_with(request, response_id, **kwargs)
         self.assertEqual(result.status_code, 200)
 
-    @patch("gateway.views.decorators.VectorStore")
+    @patch("gateway.decorators.responses.VectorStore")
     async def test_check_tool_availability_file_search_success(self, mock_vector_store_class):
         """
         Test check_tool_availability decorator with file_search tool for user token.
         Should resolve vector store IDs to remote IDs.
         """
         mock_view_func = AsyncMock()
-        mock_view_func.return_value = JsonResponse({"result": "success"})
+        mock_view_func.return_value = RawJsonResponse({"result": "success"})
 
         request = AsyncMock()
         response_id = "test_response_id"
@@ -665,7 +695,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         call_kwargs = mock_vector_store_class.objects.filter.call_args.kwargs
         self.assertEqual(sorted(call_kwargs["id__in"]), ["vs_remote_abc", "vs_remote_def"])
 
-    @patch("gateway.views.decorators.VectorStore")
+    @patch("gateway.decorators.responses.VectorStore")
     async def test_check_tool_availability_file_search_service_account(
         self, mock_vector_store_class
     ):
@@ -674,7 +704,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         Should resolve vector store IDs to remote IDs using team filter.
         """
         mock_view_func = AsyncMock()
-        mock_view_func.return_value = JsonResponse({"result": "success"})
+        mock_view_func.return_value = RawJsonResponse({"result": "success"})
 
         request = AsyncMock()
         response_id = "test_response_id"
@@ -708,7 +738,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         self.assertEqual(call_kwargs["token__service_account__team"], mock_team)
         self.assertEqual(call_kwargs["id__in"], ["vs_remote_abc"])
 
-    @patch("gateway.views.decorators.VectorStore")
+    @patch("gateway.decorators.responses.VectorStore")
     async def test_check_tool_availability_file_search_not_found(self, mock_vector_store_class):
         """
         Test check_tool_availability decorator with file_search tool when vector store not found.
@@ -734,10 +764,10 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         decorated_func = check_tool_availability(mock_view_func)
         result = await decorated_func(request, response_id, **kwargs)
 
+        self.assertIsInstance(result, RawJsonResponse)
         self.assertEqual(result.status_code, 404)
         mock_view_func.assert_not_called()
-        data = json.loads(result.content)
-        self.assertIn("One or more vector stores not found", data["error"]["message"])
+        self.assertIn("One or more vector stores not found", result.data["error"]["message"])
 
     async def test_check_tool_availability_file_search_empty_ids(self):
         """
@@ -745,7 +775,7 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         Should pass through without error.
         """
         mock_view_func = AsyncMock()
-        mock_view_func.return_value = JsonResponse({"result": "success"})
+        mock_view_func.return_value = RawJsonResponse({"result": "success"})
 
         request = AsyncMock()
         response_id = "test_response_id"

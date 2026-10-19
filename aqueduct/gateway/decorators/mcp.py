@@ -97,8 +97,6 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
 
 
 def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
-    """Parse and validate the JSON-RPC message from the POST body."""
-
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         if request.method != "POST":

@@ -48,7 +48,6 @@ _NAME_BEARING_METHODS = {
 
 
 def _extract_name(message: JSONRPCMessage) -> str | None:
-    """Return the RPC name (tool/resource/prompt) for the Mcp-Name header, if any."""
     method = getattr(message, "method", None)
     if method not in _NAME_BEARING_METHODS:
         return None
@@ -85,7 +84,7 @@ async def _relay(
 
     content_type = response.headers.get(CONTENT_TYPE, "")
     if SSE in content_type.lower():
-        # Stream the upstream SSE body through without buffering.
+
         async def sse_stream() -> AsyncGenerator[bytes, None]:
             try:
                 async for chunk in response.aiter_bytes():
@@ -101,7 +100,6 @@ async def _relay(
         payload = json.loads(raw)
         return RawJsonResponse(payload, status=response.status_code)
     except (json.JSONDecodeError, UnicodeDecodeError):
-        # Upstream returned non-JSON; pass the raw body through.
         return HttpResponse(raw, content_type=content_type or JSON, status=response.status_code)
 
 
@@ -111,7 +109,6 @@ async def handle_post_request(
     method_header: str | None,
     name_header: str | None,
 ) -> RawJsonResponse | StreamingHttpResponse | HttpResponse:
-    """Relay a stateless MCP request to the configured upstream server."""
     if json_rpc_message is None:
         return error_response("Missing JSON-RPC message", status=400)
 
@@ -148,13 +145,6 @@ async def mcp_server(
     *args: Any,
     **kwargs: Any,
 ) -> RawJsonResponse | StreamingHttpResponse | HttpResponse:
-    """
-    Stateless MCP endpoint.
-
-    Each POST is a self-contained JSON-RPC exchange: the gateway requires the
-    2026-07-28 ``Mcp-Method`` header, then relays the request to the configured
-    upstream server and returns its response.
-    """
     if name is None:
         return error_response("Server name is required", status=400)
 

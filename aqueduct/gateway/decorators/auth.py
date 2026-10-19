@@ -14,6 +14,7 @@ from gateway.authentication import token_from_request
 from gateway.decorators.types import AsyncView, Decorator, ViewResult
 from gateway.response_error import error_response
 from management.models import Token
+from management.plugins import resolve_active_plugins
 
 log = logging.getLogger("aqueduct")
 
@@ -75,6 +76,7 @@ def token_authenticated(token_auth_only: bool) -> Decorator:
                 log.error("Token not found during authentication")
                 return unauthorized_response
             kwargs["token"] = token
+            request.active_plugins = await sync_to_async(resolve_active_plugins)()  # type: ignore[attr-defined]
             return await view_func(request, *args, **kwargs)
 
         return wrapper

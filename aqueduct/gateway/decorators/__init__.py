@@ -10,6 +10,7 @@ from gateway.decorators.mcp import (
     mcp_transport_security,
     parse_jsonrpc_message,
 )
+from gateway.decorators.plugins import run_plugins
 from gateway.decorators.response_type import normalize_reasoning_fields, process_file_content
 from gateway.decorators.responses import check_tool_availability, validate_response_id
 
@@ -30,6 +31,7 @@ __all__ = [
     "process_file_content",
     "require_files_api_client",
     "resolve_alias",
+    "run_plugins",
     "token_authenticated",
     "tos_accepted",
     "validate_response_id",

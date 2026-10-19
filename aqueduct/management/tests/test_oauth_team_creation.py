@@ -268,6 +268,24 @@ class OAuthTeamMembershipTestCase(TestCase):
             self.assertEqual(memberships.count(), 1)
             self.assertEqual(memberships.first().team.name, "E123")
 
+    def test_user_removed_from_oauth_managed_teams(self):
+        """Test that user is removed from OAuth-managed teams when removal is enabled."""
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
+
+        initial_groups = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
+        sync_teams(self.backend, user, profile, initial_groups)
+
+        self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 2)
+
+        updated_groups = {"email": "test@example.com", "groups": ["E123-Students"]}
+        sync_teams(self.backend, user, profile, updated_groups)
+
+        memberships = TeamMembership.objects.filter(user_profile=profile)
+        self.assertEqual(memberships.count(), 1)
+        self.assertEqual(memberships.first().team.name, "E123")
+
     @override_settings(ENABLE_OAUTH_GROUP_REMOVAL=False)
     def test_user_not_removed_from_non_oauth_teams_when_removal_disabled(self):
         """Test that user stays in non-OAuth teams when ENABLE_OAUTH_GROUP_REMOVAL=False."""
@@ -293,6 +311,44 @@ class OAuthTeamMembershipTestCase(TestCase):
         self.assertEqual(memberships.count(), 2)
         self.assertIn("E123", team_names)
         self.assertIn("ManualTeam", team_names)
+
+    def test_user_not_removed_from_non_oauth_teams_when_removal_enabled(self):
+        """Regression: non-OAuth teams are never removed, even with removal enabled."""
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
+
+        manual_team = Team.objects.create(name="ManualTeam", org=self.org, oauth_group_name="")
+        TeamMembership.objects.create(user_profile=profile, team=manual_team)
+
+        # Default ENABLE_OAUTH_GROUP_REMOVAL=True; group no longer maps to the manual team.
+        updated_groups = {"email": "test@example.com", "groups": ["OtherGroup"]}
+        sync_teams(self.backend, user, profile, updated_groups)
+
+        memberships = TeamMembership.objects.filter(user_profile=profile)
+        self.assertEqual(memberships.count(), 1)
+        self.assertEqual(memberships.first().team.name, "ManualTeam")
+
+    def test_only_oauth_teams_managed_and_non_oauth_preserved(self):
+        """Only OAuth-managed teams are added/removed; non-OAuth memberships are preserved."""
+        user = User.objects.create_user(username="testuser", email="test@example.com")
+        user.groups.add(self.user_group)
+        profile = UserProfile.objects.create(user=user, org=self.org)
+
+        initial_groups = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
+        sync_teams(self.backend, user, profile, initial_groups)
+        self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 2)
+
+        # Manually attach to a non-OAuth (manual) team; sync must never touch it.
+        manual_team = Team.objects.create(name="ManualTeam", org=self.org, oauth_group_name="")
+        TeamMembership.objects.create(user_profile=profile, team=manual_team)
+
+        # E456-Staff is dropped, E123-Students kept; OtherGroup maps to no OAuth team.
+        updated_groups = {"email": "test@example.com", "groups": ["E123-Students", "OtherGroup"]}
+        sync_teams(self.backend, user, profile, updated_groups)
+
+        team_names = {m.team.name for m in TeamMembership.objects.filter(user_profile=profile)}
+        self.assertEqual(team_names, {"E123", "ManualTeam"})
 
     def test_membership_sync_on_update(self):
         """Test membership sync on update_user()."""
@@ -483,6 +539,46 @@ class OAuthTeamSettingsTestCase(TestCase):
 
             self.assertEqual(Team.objects.filter(org=self.org).count(), 0)
             self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 0)
+
+    def test_creation_disabled_adds_membership_to_existing_team(self):
+        """ENABLE_OAUTH_GROUP_CREATION=False still adds memberships to existing teams."""
+        seed_active_config(SNIPPET_TEAM_NAMES_AND_MAP)
+        Team.objects.create(name="E123", org=self.org, oauth_group_name="E123-Students")
+
+        with override_settings(ENABLE_OAUTH_GROUP_CREATION=False):
+            claims = {"email": "test@example.com", "groups": ["E123-Students", "E456-Staff"]}
+
+            user = User.objects.create_user(username="testuser", email="test@example.com")
+            user.groups.add(self.user_group)
+            profile = UserProfile.objects.create(user=user, org=self.org)
+
+            sync_teams(self.backend, user, profile, claims)
+
+            # E456 is not created; E123 already exists and the user is added to it.
+            self.assertEqual(Team.objects.filter(org=self.org).count(), 1)
+            self.assertEqual(TeamMembership.objects.filter(user_profile=profile).count(), 1)
+            self.assertEqual(TeamMembership.objects.get(user_profile=profile).team.name, "E123")
+
+    def test_creation_disabled_reuses_manual_team_by_name(self):
+        """Creation disabled reuses an existing manual team matching the display name."""
+        seed_active_config(SNIPPET_TEAM_NAMES_AND_MAP)
+        manual_team = Team.objects.create(name="E123", org=self.org, oauth_group_name="")
+
+        with override_settings(ENABLE_OAUTH_GROUP_CREATION=False):
+            claims = {"email": "test@example.com", "groups": ["E123-Students"]}
+
+            user = User.objects.create_user(username="testuser", email="test@example.com")
+            user.groups.add(self.user_group)
+            profile = UserProfile.objects.create(user=user, org=self.org)
+
+            sync_teams(self.backend, user, profile, claims)
+
+            # No new team created; the manual team is reused and the user is added to it.
+            self.assertEqual(Team.objects.filter(org=self.org).count(), 1)
+            memberships = TeamMembership.objects.filter(user_profile=profile)
+            self.assertEqual(memberships.count(), 1)
+            self.assertEqual(memberships.first().team, manual_team)
+            self.assertEqual(manual_team.oauth_group_name, "")
 
     def test_manual_team_not_affected_by_oauth_sync(self):
         """Test that manually created teams without oauth_group_name are not affected."""

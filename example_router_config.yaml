@@ -37,3 +37,12 @@ model_list:
     id: dall-e-2
     mode: image_generations
     aliases: ["image"]
+- model_name: gpt-image-1
+  litellm_params:
+    model: openai/gpt-image-1
+    api_key: "os.environ/OPENAI_API_KEY"
+  model_info:
+    id: gpt-image-1
+    mode: image_generation
+    supports_response_format: false
+    aliases: ["gpt-image"]

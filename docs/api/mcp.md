@@ -9,14 +9,14 @@ nav_order: 9
 The Model Context Protocol (MCP) endpoints allow you to connect to MCP servers through a simple HTTP interface. This
 implements the **2026-07-28** version of the streamable HTTP transport specification, which has a **stateless protocol
 core**. There is no handshake, no session id, and no server-initiated stream — every request is self-contained and can
-land on any gateway instance behind a plain round-robin load balancer.
+land on any gateway instance.
 
 ## How It Works
 
-Aqueduct acts as a stateless bridge between your client application and MCP servers. Each `POST` carries the protocol
-version, client identity, and capabilities either in HTTP headers or in the JSON-RPC `_meta` field. The gateway
-validates the required transport headers and relays the request to the configured upstream server, returning its
-response. Nothing is held in memory between requests.
+Aqueduct acts as a stateless bridge between your client application and MCP servers. Each call is an independent,
+self-contained exchange: there is no handshake and no session to manage, and nothing is held in memory between requests.
+The gateway checks the request headers, forwards the request to the configured upstream server, and returns its
+response (a JSON message or an SSE stream) unchanged.
 
 ## Available Endpoint (MCP 2026-07-28)
 
@@ -29,8 +29,10 @@ the stateless protocol has no sessions to manage or tear down.
 
 ### Required headers
 
-Per the 2026-07-28 transport specification, each request must carry:
+Each request must carry your Aqueduct token in the `Authorization` header, plus the 2026-07-28 transport headers
+required by the MCP spec:
 
+- `Authorization`: `Bearer <your-aqueduct-token>`
 - `MCP-Protocol-Version`: `2026-07-28`
 - `Mcp-Method`: the JSON-RPC method (e.g. `tools/call`, `tools/list`)
 - `Mcp-Name`: the tool/resource/prompt name, for name-bearing methods (e.g. `tools/call`, `resources/read`)

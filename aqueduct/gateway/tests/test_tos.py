@@ -16,7 +16,7 @@ class TOSTestCase(TOSGatewayTestCase):
         updated_access_token, user_id = self.create_new_user()
         self.accept_tos(user_id=user_id)
 
-        with patch("gateway.views.decorators.cache", caches["default"]):
+        with patch("gateway.decorators.auth.cache", caches["default"]):
             # Call the /models endpoint
             response = self.client.get(
                 "/models",
@@ -50,7 +50,7 @@ class TOSTestCase(TOSGatewayTestCase):
         # Create an active Terms of Service but DON'T create a UserAgreement for the user
         TermsOfService.objects.create(active=True, content="Test Terms of Service content")
 
-        with patch("gateway.views.decorators.cache", caches["default"]):
+        with patch("gateway.decorators.auth.cache", caches["default"]):
             # Call the /models endpoint - user should be blocked because they haven't accepted TOS
             response = self.client.get(
                 "/models",
@@ -81,7 +81,7 @@ class TOSTestCase(TOSGatewayTestCase):
 
         TermsOfService.objects.create(active=True, content="Test Terms of Service content")
 
-        with patch("gateway.views.decorators.cache", caches["default"]):
+        with patch("gateway.decorators.auth.cache", caches["default"]):
             # Call the /models endpoint
             response = self.client.get(
                 "/models",

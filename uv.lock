@@ -204,7 +204,6 @@ postgresql = [
 [package.dev-dependencies]
 dev = [
     { name = "celery-types" },
-    { name = "channels", extra = ["daphne"] },
     { name = "django-stubs", extra = ["compatible-mypy"] },
     { name = "fastapi", version = "0.115.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "fastapi", version = "0.141.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
@@ -242,7 +241,6 @@ provides-extras = ["postgresql"]
 [package.metadata.requires-dev]
 dev = [
     { name = "celery-types", specifier = ">=0.26.0" },
-    { name = "channels", extras = ["daphne"], specifier = ">=4.3.1" },
     { name = "django-stubs", extras = ["compatible-mypy"], specifier = "==5.2.9" },
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "mypy", specifier = "==1.19.1" },
@@ -479,24 +477,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/11/74/539e56497d9bd1d484fd863dd69cbbfa653cd2aa27abfe35653494d85e94/cfgv-3.4.0.tar.gz", hash = "sha256:e52591d4c5f5dead8e0f673fb16db7949d2cfb3f7da4582893288f0ded8fe560", size = 7114, upload-time = "2023-08-12T20:38:17.776Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c5/55/51844dd50c4fc7a33b653bfaba4c2456f06955289ca770a5dbd5fd267374/cfgv-3.4.0-py2.py3-none-any.whl", hash = "sha256:b7265b1f29fd3316bfcd2b330d63d024f2bfd8bcb8b0272f8e19a504856c48f9", size = 7249, upload-time = "2023-08-12T20:38:16.269Z" },
-]
-
-[[package]]
-name = "channels"
-version = "4.3.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "asgiref" },
-    { name = "django" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/12/a0/46450fcf9e56af18a6b0440ba49db6635419bb7bc84142c35f4143b1a66c/channels-4.3.1.tar.gz", hash = "sha256:97413ffd674542db08e16a9ef09cd86ec0113e5f8125fbd33cf0854adcf27cdb", size = 26896, upload-time = "2025-08-01T13:25:19.952Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/89/1c/eae1c2a8c195760376e7f65d0bdcc3e966695d29cfbe5c54841ce5c71408/channels-4.3.1-py3-none-any.whl", hash = "sha256:b091d4b26f91d807de3e84aead7ba785314f27eaf5bac31dd51b1c956b883859", size = 31286, upload-time = "2025-08-01T13:25:18.845Z" },
-]
-
-[package.optional-dependencies]
-daphne = [
-    { name = "daphne" },
 ]
 
 [[package]]

@@ -5,13 +5,13 @@ from typing import Any
 
 import httpx
 from django.core.handlers.asgi import ASGIRequest
-from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from mcp.types import LATEST_PROTOCOL_VERSION, jsonrpc_message_adapter
+from mcp.types import LATEST_PROTOCOL_VERSION, JSONRPCMessage, jsonrpc_message_adapter
 
 from gateway.config import get_mcp_config
-from gateway.views.decorators import (
+from gateway.decorators import (
     check_mcp_server_availability,
     log_request,
     mcp_transport_security,
@@ -20,7 +20,8 @@ from gateway.views.decorators import (
     token_authenticated,
     tos_accepted,
 )
-from gateway.views.errors import error_response
+from gateway.response_error import error_response
+from gateway.response_type import RawJsonResponse
 
 log = logging.getLogger("aqueduct")
 
@@ -34,8 +35,6 @@ ACCEPT = "accept"
 JSON = "application/json"
 SSE = "text/event-stream"
 
-# Name-bearing methods carry their tool/resource/prompt name in params; these get an
-# `Mcp-Name` header. Other methods (e.g. tools/list) only need `Mcp-Method`.
 _NAME_BEARING_METHODS = {
     "tools/call",
     "tools/get",
@@ -48,7 +47,7 @@ _NAME_BEARING_METHODS = {
 }
 
 
-def _extract_name(message: Any) -> str | None:
+def _extract_name(message: JSONRPCMessage) -> str | None:
     """Return the RPC name (tool/resource/prompt) for the Mcp-Name header, if any."""
     method = getattr(message, "method", None)
     if method not in _NAME_BEARING_METHODS:
@@ -61,15 +60,8 @@ def _extract_name(message: Any) -> str | None:
 
 
 def _relay_headers(
-    method_header: str | None, name_header: str | None, message: Any
+    method_header: str | None, name_header: str | None, message: JSONRPCMessage
 ) -> dict[str, str]:
-    """Build the 2026-07-28 required transport headers for the upstream request.
-
-    The gateway always advertises the latest protocol version and the JSON-RPC
-    method, mirroring the client's ``Mcp-Method``/``Mcp-Name`` headers when sent and
-    otherwise deriving them from the message body. This makes every relayed request
-    self-describing so it can land on any instance behind a round-robin load balancer.
-    """
     headers = {
         ACCEPT: f"{JSON}, {SSE}",
         CONTENT_TYPE: JSON,
@@ -83,13 +75,8 @@ def _relay_headers(
 
 
 async def _relay(
-    url: str, message: Any, method_header: str | None, name_header: str | None
-) -> HttpResponse | StreamingHttpResponse:
-    """Relay a single stateless JSON-RPC message to an upstream MCP server.
-
-    Each request is fully independent: a fresh client, no session, no held-open
-    stream. The upstream response is returned as-is (JSON or a streamed SSE body).
-    """
+    url: str, message: JSONRPCMessage, method_header: str | None, name_header: str | None
+) -> RawJsonResponse | StreamingHttpResponse | HttpResponse:
     body = message.model_dump_json(exclude_none=True)
     headers = _relay_headers(method_header, name_header, message)
     client = httpx.AsyncClient(timeout=httpx.Timeout(30, read=300))
@@ -112,16 +99,22 @@ async def _relay(
     await client.aclose()
     try:
         payload = json.loads(raw)
-        return JsonResponse(payload, status=response.status_code)
+        return RawJsonResponse(payload, status=response.status_code)
     except (json.JSONDecodeError, UnicodeDecodeError):
         # Upstream returned non-JSON; pass the raw body through.
         return HttpResponse(raw, content_type=content_type or JSON, status=response.status_code)
 
 
 async def handle_post_request(
-    name: str, json_rpc_message: Any, method_header: str | None, name_header: str | None
-) -> HttpResponse | StreamingHttpResponse:
+    name: str,
+    json_rpc_message: JSONRPCMessage | None,
+    method_header: str | None,
+    name_header: str | None,
+) -> RawJsonResponse | StreamingHttpResponse | HttpResponse:
     """Relay a stateless MCP request to the configured upstream server."""
+    if json_rpc_message is None:
+        return error_response("Missing JSON-RPC message", status=400)
+
     try:
         mcp_config = get_mcp_config()
         server_config = mcp_config[name]
@@ -149,15 +142,18 @@ async def handle_post_request(
 @mcp_transport_security
 @log_request
 async def mcp_server(
-    request: ASGIRequest, name: str | None, json_rpc_message: Any = None, *args: Any, **kwargs: Any
-) -> HttpResponse | StreamingHttpResponse:
+    request: ASGIRequest,
+    name: str | None,
+    json_rpc_message: JSONRPCMessage | None = None,
+    *args: Any,
+    **kwargs: Any,
+) -> RawJsonResponse | StreamingHttpResponse | HttpResponse:
     """
     Stateless MCP endpoint.
 
     Each POST is a self-contained JSON-RPC exchange: the gateway requires the
     2026-07-28 ``Mcp-Method`` header, then relays the request to the configured
-    upstream server and returns its response. There is no session, no GET stream,
-    and no DELETE endpoint.
+    upstream server and returns its response.
     """
     if name is None:
         return error_response("Server name is required", status=400)

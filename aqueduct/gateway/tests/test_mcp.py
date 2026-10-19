@@ -12,6 +12,7 @@ import json
 from unittest.mock import patch
 
 import httpx
+from asgiref.sync import async_to_sync
 from django.test import override_settings
 from django.urls import reverse
 from mcp.types import jsonrpc_message_adapter
@@ -120,8 +121,6 @@ class MCPRelayTest(GatewayIntegrationTestCase):
         self.assertEqual(r1.json(), r2.json())
 
     def test_relay_streams_sse_response(self):
-        from asgiref.sync import async_to_sync
-
         async def collect() -> bytes:
             return b"".join([chunk async for chunk in resp.streaming_content])
 

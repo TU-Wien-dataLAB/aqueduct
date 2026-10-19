@@ -124,10 +124,12 @@
         <div class="stat">
             <div class="stat-title">Input Tokens</div>
             <div class="stat-value text-primary">{{ input_tokens|intcomma }}</div>
+            <div class="stat-desc">Of which {{ cached_input_tokens|intcomma }} were cached</div>
         </div>
         <div class="stat">
             <div class="stat-title">Output Tokens</div>
             <div class="stat-value text-primary">{{ output_tokens|intcomma }}</div>
+            <div class="stat-desc">Of which {{ reasoning_tokens|intcomma }} were reasoning tokens</div>
         </div>
         <div class="stat">
             <div class="stat-title">Total Tokens</div>
@@ -222,9 +224,19 @@
                                 </td>
                                 <td class="font-bold">
                                     {{ item.input_sum|intcomma }}
+                                    {% if item.cached_input_percent != None %}
+                                        <div class="text-xs font-normal text-base-content/60">
+                                            {{ item.cached_input_percent|floatformat }}% cached
+                                        </div>
+                                    {% endif %}
                                 </td>
                                 <td class="font-bold">
                                     {{ item.output_sum|intcomma }}
+                                    {% if item.reasoning_percent != None %}
+                                        <div class="text-xs font-normal text-base-content/60">
+                                            {{ item.reasoning_percent|floatformat }}% reasoning
+                                        </div>
+                                    {% endif %}
                                 </td>
                                 <td class="font-bold">
                                     {{ item.total_sum|intcomma }}

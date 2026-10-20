@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import ClassVar, Literal
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -76,18 +76,13 @@ class GatewayIntegrationTestCase(TestCase):
                 {"OPENAI_BASE_URL": cls.mock_server.base_url, "OPENAI_API_KEY": "fake_openai_key"},
             )
             cls._patcher.start()
+            cls.addClassCleanup(cls._patcher.stop)
 
             # We want to override the files API url for all tests.
             settings.AQUEDUCT_FILES_API_URL = cls.mock_server.base_url
             settings.AQUEDUCT_FILES_API_KEY = "test_key"
 
         cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
-
-    @classmethod
-    def tearDownClass(cls):
-        if hasattr(cls, "_patcher") and cls._patcher:
-            cls._patcher.stop()
-        super().tearDownClass()
 
     @staticmethod
     def create_new_user() -> tuple[str, int]:
@@ -103,6 +98,17 @@ class GatewayIntegrationTestCase(TestCase):
         token_value = new_token._set_new_key()
         new_token.save()
         return token_value, new_user.id
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Patch the concurrent requests limiter, to avoid attempts to actually access Redis:
+        self._limiter_patcher = patch("gateway.decorators.limits.limiter")
+        self.mock_limiter = self._limiter_patcher.start()
+        # Default: allow all requests through. These methods can be overridden by individual tests.
+        self.mock_limiter.acquire = AsyncMock(return_value=1)
+        self.mock_limiter.release = AsyncMock(return_value=1)
+
+        self.addCleanup(self._limiter_patcher.stop)
 
 
 class GatewayFilesTestCase(GatewayIntegrationTestCase):

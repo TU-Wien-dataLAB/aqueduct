@@ -5,11 +5,9 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.http import JsonResponse
 from django.test import override_settings
 from django.urls import reverse
-from mcp import JSONRPCResponse
-from mcp.shared.message import SessionMessage
-from mcp.types import JSONRPCMessage
 
 from gateway.tests.utils.base import GatewayIntegrationTestCase
 from management.models import FileObject, Request, Token, VectorStore, VectorStoreStatus
@@ -153,33 +151,25 @@ class TestUserId(GatewayIntegrationTestCase):
 
     @override_settings(MCP_ENABLE_DNS_REBINDING_PROTECTION=False)
     @patch("gateway.views.mcp.get_mcp_config")
-    def test_mcp_with_user_id_in_body(self, mock_get_mcp_config):
+    @patch("gateway.views.mcp._relay")
+    def test_mcp_with_user_id_in_body(self, mock_relay, mock_get_mcp_config):
         mock_get_mcp_config.return_value = {"test_mcp_server": {"url": self.mock_server.base_url}}
+        mock_relay.return_value = JsonResponse({"jsonrpc": "2.0", "id": 0, "result": {}})
 
         user_id = "testuser"
         payload = {
             "jsonrpc": "2.0",
             "id": 0,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "1.0"},
-            },
+            "method": "tools/call",
+            "params": {"name": "echo", "arguments": {"message": "test"}},
             "user_id": user_id,
         }
         mcp_url = reverse("gateway:mcp_server", kwargs={"name": "test_mcp_server"})
 
-        mock_msg = SessionMessage(
-            message=JSONRPCMessage(JSONRPCResponse(jsonrpc="2.0", id=0, result={"test": "yes"}))
+        headers = {**self.headers, "Mcp-Method": "tools/call"}
+        resp = self.client.post(
+            mcp_url, data=json.dumps(payload), headers=headers, content_type="application/json"
         )
-        with patch("gateway.views.mcp.ManagedMCPSession.receive_message", return_value=mock_msg):
-            resp = self.client.post(
-                mcp_url,
-                data=json.dumps(payload),
-                headers=self.headers,
-                content_type="application/json",
-            )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK)
         req = Request.objects.get()

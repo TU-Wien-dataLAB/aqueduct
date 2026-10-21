@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
-from mcp.types import JSONRPCMessage
+from mcp.types import jsonrpc_message_adapter
 
 from gateway.decorators.types import AsyncView, ViewResult
 from gateway.decorators.utils import in_wildcard
@@ -99,31 +99,14 @@ def mcp_transport_security(view_func: AsyncView) -> AsyncView:
 def parse_jsonrpc_message(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
-        session_id = request.headers.get("mcp-session-id")
-        kwargs["session_id"] = session_id
-
         if request.method != "POST":
-            if not session_id:
-                log.error("Session ID required for MCP server %r", kwargs.get("name"))
-                return error_response("Mcp-Session-Id header required", status=400)
-
-            return await view_func(request, *args, request_log=None, **kwargs)
+            return await view_func(request, *args, **kwargs)
 
         data = kwargs["pydantic_model"]
-        # For mcp requests, timeout should not be passed to the JSON RPC Message
+        # For MCP requests, the relay timeout should not be passed to the JSON-RPC message.
         data.pop("timeout", None)
-        json_rpc_message = JSONRPCMessage.model_validate(data)
-        is_initialize = (
-            hasattr(json_rpc_message.root, "method")
-            and json_rpc_message.root.method == "initialize"
-        )
-
-        if not is_initialize and not session_id:
-            log.error("Session ID required for MCP server %r", kwargs.get("name"))
-            return error_response("Mcp-Session-Id header required", status=400)
-
+        json_rpc_message = jsonrpc_message_adapter.validate_python(data)
         kwargs["json_rpc_message"] = json_rpc_message
-        kwargs["is_initialize"] = is_initialize
 
         return await view_func(request, *args, **kwargs)
 

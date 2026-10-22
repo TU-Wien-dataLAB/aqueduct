@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-from contextlib import contextmanager
 from typing import ClassVar
 from unittest.mock import patch
 
@@ -14,21 +13,7 @@ from django.urls import reverse
 
 from gateway.tests.test_mcp import MCP_BODY, MCP_CONFIG, MCP_HEADERS, MCP_SERVER
 from gateway.tests.utils.base import ROUTER_CONFIG_PATH, GatewayIntegrationTestCase
-
-
-@contextmanager
-def upstream(handler):
-    """Use real HTTP clients with a controlled external transport and track ownership."""
-    clients = []
-    real_client = httpx.AsyncClient
-
-    def factory(*args, **kwargs):
-        client = real_client(*args, **kwargs, transport=httpx.MockTransport(handler))
-        clients.append(client)
-        return client
-
-    with patch("gateway.views.mcp.httpx.AsyncClient", new=factory):
-        yield clients
+from gateway.tests.utils.mcp_transport import upstream
 
 
 class FailingStream(httpx.AsyncByteStream):

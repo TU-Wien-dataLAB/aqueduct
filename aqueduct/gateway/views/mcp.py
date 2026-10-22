@@ -50,12 +50,9 @@ def _extract_name(message: JSONRPCMessage) -> str | None:
     return name if isinstance(name, str) else None
 
 
-def _relay_headers(
-    method_header: str | None,
-    name_header: str | None,
-    message: JSONRPCMessage,
-    request_headers: Mapping[str, str],
-) -> dict[str, str]:
+def _relay_headers(message: JSONRPCMessage, request_headers: Mapping[str, str]) -> dict[str, str]:
+    method_header = request_headers.get(MCP_METHOD_HEADER)
+    name_header = request_headers.get(MCP_NAME_HEADER)
     headers = {
         ACCEPT: f"{JSON}, {SSE}",
         CONTENT_TYPE: JSON,
@@ -78,14 +75,10 @@ def _relay_headers(
 
 
 async def _relay(
-    url: str,
-    message: JSONRPCMessage,
-    method_header: str | None,
-    name_header: str | None,
-    request_headers: Mapping[str, str],
+    url: str, message: JSONRPCMessage, request_headers: Mapping[str, str]
 ) -> RawJsonResponse | StreamingHttpResponse | HttpResponse:
     body = message.model_dump_json(exclude_none=True)
-    headers = _relay_headers(method_header, name_header, message, request_headers)
+    headers = _relay_headers(message, request_headers)
     client = httpx.AsyncClient(timeout=httpx.Timeout(30, read=300))
     request = httpx.Request("POST", url, content=body, headers=headers)
     try:
@@ -164,5 +157,4 @@ async def mcp_server(
     log.info(
         "MCP relay POST - Server: '%s', Method: %s", name, getattr(json_rpc_message, "method", None)
     )
-    name_header = request.headers.get(MCP_NAME_HEADER)
-    return await _relay(url, json_rpc_message, method_header, name_header, request.headers)
+    return await _relay(url, json_rpc_message, request.headers)

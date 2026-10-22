@@ -26,6 +26,7 @@ from mcp.types import (
 
 from gateway.tests.utils.base import GatewayIntegrationTestCase
 from gateway.tests.utils.mcp import TASKS_EXTENSION, MCPLiveServerTestCase
+from gateway.tests.utils.mcp_transport import upstream as _patch_client
 from management.models import Org, ServiceAccount, Team, Token, UserProfile
 
 MCP_SERVER = "test-server"
@@ -74,18 +75,6 @@ def _sse_handler(request: httpx.Request) -> httpx.Response:
         headers={"content-type": "text/event-stream"},
         content=b'data: {"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n\n',
     )
-
-
-def _patch_client(handler) -> patch:
-    """Patch the relay's httpx.AsyncClient to use an in-memory MockTransport."""
-    from gateway.views import mcp as mcp_views
-
-    real_async_client = httpx.AsyncClient  # capture the unpatched class
-
-    def factory(*args, **kwargs):
-        return real_async_client(transport=httpx.MockTransport(handler))
-
-    return patch.object(mcp_views.httpx, "AsyncClient", new=factory)
 
 
 class MCPLiveClientTest(MCPLiveServerTestCase):

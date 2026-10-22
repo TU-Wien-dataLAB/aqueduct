@@ -101,14 +101,19 @@ class GatewayIntegrationTestCase(TestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        # Patch the concurrent requests limiter, to avoid attempts to actually access Redis:
-        self._limiter_patcher = patch("gateway.decorators.limits.limiter")
-        self.mock_limiter = self._limiter_patcher.start()
-        # Default: allow all requests through. These methods can be overridden by individual tests.
-        self.mock_limiter.acquire = AsyncMock(return_value=1)
-        self.mock_limiter.release = AsyncMock(return_value=1)
-
-        self.addCleanup(self._limiter_patcher.stop)
+        # Patch the scripts limiting concurrent user requests, registered to run on Redis server.
+        # Default: allow all requests through (return_value=1).
+        acquire_patcher = patch(
+            "gateway.decorators.limits.acquire_script", AsyncMock(return_value=1)
+        )
+        release_patcher = patch(
+            "gateway.decorators.limits.release_script", AsyncMock(return_value=1)
+        )
+        # These mocks can be overwritten by individual tests.
+        self.mock_limiter_acquire = acquire_patcher.start()
+        self.addCleanup(acquire_patcher.stop)
+        self.mock_limiter_release = release_patcher.start()
+        self.addCleanup(release_patcher.stop)
 
 
 class GatewayFilesTestCase(GatewayIntegrationTestCase):

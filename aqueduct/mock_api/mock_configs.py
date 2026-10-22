@@ -423,6 +423,11 @@ default_post_configs = {
         ).model_dump()
     ),
     "responses": MockConfig(response_data=responses_detail_response),
+    "decisions": MockConfig(
+        response_data={
+            "answers": [{"type": "predicate", "name": "visible_damage", "probability": 0.92}]
+        }
+    ),
     "vector_stores": MockConfig(response_data=vector_store_detail_response),
     "vector_stores/id": MockConfig(response_data=vector_store_update_response),
     "vector_stores/id/file_batches": MockConfig(

@@ -5,6 +5,7 @@ from functools import wraps
 from typing import Any
 
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.http import StreamingHttpResponse
 from django.utils import timezone
@@ -14,6 +15,16 @@ from gateway.rate_limiting import record_token_usage
 from management.models import Request
 
 log = logging.getLogger("aqueduct")
+
+
+def client_ip(meta: dict[str, Any]) -> str | None:
+    """The client IP from ``CLIENT_IP_HEADERS`` (first non-empty wins),
+    falling back to ``REMOTE_ADDR``."""
+    for key in settings.CLIENT_IP_HEADERS:
+        value: str | None = meta.get(key)
+        if value:
+            return value
+    return meta.get("REMOTE_ADDR")
 
 
 def log_request(view_func: AsyncView) -> AsyncView:
@@ -34,7 +45,7 @@ def log_request(view_func: AsyncView) -> AsyncView:
             timestamp=timezone.now(),
             method=request.method,
             user_agent=request.headers.get("User-Agent", ""),
-            ip_address=(request.META.get("HTTP_X_REAL_IP") or request.META.get("REMOTE_ADDR")),
+            ip_address=client_ip(request.META),
             user_id=kwargs.get("user_id", ""),
             # path, Status, time, usage set later in the view or processing steps
         )

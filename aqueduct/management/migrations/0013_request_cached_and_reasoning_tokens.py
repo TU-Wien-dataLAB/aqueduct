@@ -4,6 +4,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
+
     dependencies = [("management", "0012_org_daily_limit_multiplier_and_more")]
 
     operations = [
@@ -11,14 +12,16 @@ class Migration(migrations.Migration):
             model_name="request",
             name="cached_input_tokens",
             field=models.PositiveIntegerField(
-                default=0, help_text="Subset of input tokens read from the provider's prompt cache."
+                default=0,
+                help_text="Subset of input tokens read from the provider's prompt cache.",
             ),
         ),
         migrations.AddField(
             model_name="request",
             name="reasoning_tokens",
             field=models.PositiveIntegerField(
-                default=0, help_text="Subset of output tokens used for reasoning."
+                default=0,
+                help_text="Subset of output tokens used for reasoning.",
             ),
         ),
     ]

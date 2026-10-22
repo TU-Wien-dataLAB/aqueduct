@@ -3,6 +3,7 @@ from http import HTTPStatus
 from pathlib import Path
 from unittest.mock import patch
 
+from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import JsonResponse
@@ -10,6 +11,8 @@ from django.test import override_settings
 from django.urls import reverse
 
 from gateway.tests.utils.base import GatewayIntegrationTestCase
+from gateway.tests.utils.mcp import MCP_PROTOCOL_VERSION, modern_params
+from gateway.tests.utils.test_runner import get_shared_mcp_server
 from management.models import FileObject, Request, Token, VectorStore, VectorStoreStatus
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
@@ -174,6 +177,50 @@ class TestUserId(GatewayIntegrationTestCase):
         self.assertEqual(resp.status_code, HTTPStatus.OK)
         req = Request.objects.get()
         self.assertEqual(req.user_id, user_id)
+
+    @override_settings(MCP_ENABLE_DNS_REBINDING_PROTECTION=False)
+    def test_live_mcp_with_user_id_in_body(self):
+        """User attribution survives a real stateless request, not a mocked relay."""
+        server = get_shared_mcp_server()
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": modern_params({"name": "echo", "arguments": {"message": "attributed"}}),
+            "user_id": "live-mcp-user",
+        }
+        url = reverse("gateway:mcp_server", kwargs={"name": "test-server"})
+        with patch(
+            "gateway.views.mcp.get_mcp_config", return_value={"test-server": {"url": server.url}}
+        ):
+            resp = self.client.post(
+                url,
+                data=json.dumps(payload),
+                content_type="application/json",
+                headers={
+                    **self.headers,
+                    "Mcp-Method": "tools/call",
+                    "Mcp-Name": "echo",
+                    "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+                },
+            )
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        if resp.streaming:
+
+            async def collect():
+                return b"".join([chunk async for chunk in resp.streaming_content])
+
+            body = async_to_sync(collect)().decode()
+            messages = [
+                json.loads(line[5:]) for line in body.splitlines() if line.startswith("data:")
+            ]
+            result = next(message for message in messages if message.get("id") == payload["id"])
+        else:
+            result = resp.json()
+        self.assertEqual(result["result"]["content"][0]["text"], "Echo: attributed")
+        req = Request.objects.get()
+        self.assertEqual(req.user_id, "live-mcp-user")
+        self.assertEqual(req.status_code, HTTPStatus.OK)
 
     def test_responses_with_user_id_in_body(self):
         url = reverse("gateway:responses")

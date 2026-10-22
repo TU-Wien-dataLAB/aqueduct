@@ -1,16 +1,27 @@
 import atexit
 import logging
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.test.runner import DiscoverRunner
 
 from mock_api.mock_server import MockAPIServer
 
+if TYPE_CHECKING:
+    from gateway.tests.utils.mcp import MCPEverythingServer
+
 logger = logging.getLogger("aqueduct")
 
 
 class MockServerState:
     _mock_server: MockAPIServer | None = None
+    _mcp_server: "MCPEverythingServer | None" = None
+
+    @classmethod
+    def cleanup_mcp_server(cls):
+        server, cls._mcp_server = cls._mcp_server, None
+        if server is not None:
+            server.stop()
 
     @classmethod
     def get_mock_server(cls) -> MockAPIServer | None:
@@ -29,15 +40,31 @@ def get_shared_mock_server() -> MockAPIServer | None:
     return MockServerState.get_mock_server()
 
 
+def get_shared_mcp_server() -> "MCPEverythingServer":
+    """Start the real npm reference server only when a live MCP test needs it."""
+    if MockServerState._mcp_server is None:
+        from gateway.tests.utils.mcp import MCPEverythingServer
+
+        server = MCPEverythingServer()
+        MockServerState._mcp_server = server
+        try:
+            server.start()
+        except BaseException:
+            # Include KeyboardInterrupt: npm may already have spawned node.
+            MockServerState.cleanup_mcp_server()
+            raise
+    return MockServerState._mcp_server
+
+
 class MockServerTestRunner(DiscoverRunner):
     """
-    Custom Django test runner that starts a single mock server instance
-    for the entire test suite.
+    Start the shared mock API and clean up it and the lazy live MCP server.
     """
 
     def setup_test_environment(self, **kwargs):
         """Set up the test environment, starting the mock API server."""
         super().setup_test_environment(**kwargs)
+        atexit.register(MockServerState.cleanup_mcp_server)
 
         if settings.TESTS_USE_MOCK_API:
             MockServerState._mock_server = MockAPIServer(host="localhost", delays=False)
@@ -53,6 +80,9 @@ class MockServerTestRunner(DiscoverRunner):
             logger.warning("Skipping the initialisation of the mock server.")
 
     def teardown_test_environment(self, **kwargs):
-        """Tear down the test environment, stopping the mock server."""
-        MockServerState.cleanup_mock_server()
-        super().teardown_test_environment(**kwargs)
+        """Stop both subprocesses, including after a failed test class setup."""
+        try:
+            MockServerState.cleanup_mcp_server()
+        finally:
+            MockServerState.cleanup_mock_server()
+            super().teardown_test_environment(**kwargs)

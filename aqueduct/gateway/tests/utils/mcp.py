@@ -10,9 +10,8 @@ from contextlib import asynccontextmanager, suppress
 from http import HTTPStatus
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import ClassVar
+from typing import Any, ClassVar
 
-import httpx
 import httpx2
 from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
@@ -64,7 +63,7 @@ class MCPEverythingServer:
         self.log_file = self.log_path.open("w")
         try:
             self.process = subprocess.Popen(
-                ["npx", "-y", MCP_PACKAGE, "streamableHttp"],
+                ["npx", "--prefer-offline", "-y", MCP_PACKAGE, "streamableHttp"],
                 env={**os.environ, "PORT": str(self.port)},
                 cwd=self.directory.name,
                 stdout=self.log_file,
@@ -72,7 +71,7 @@ class MCPEverythingServer:
                 start_new_session=True,
             )
             deadline = time.monotonic() + 60
-            with httpx.Client(timeout=1, trust_env=False) as client:
+            with httpx2.Client(timeout=1, trust_env=False) as client:
                 while time.monotonic() < deadline:
                     if self.process.poll() is not None:
                         raise RuntimeError("MCP reference server exited during startup")
@@ -91,7 +90,7 @@ class MCPEverythingServer:
                                 "params": modern_params(),
                             },
                         )
-                    except httpx.TransportError:
+                    except httpx2.TransportError:
                         time.sleep(0.1)
                         continue
                     if response.status_code != HTTPStatus.OK or "result" not in response.json():
@@ -199,8 +198,10 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         ):
             yield client
 
-    async def rpc(self, method, params=None, *, headers=None, capabilities=None, request_id=1):
-        """Raw JSON/SSE seam for extension methods and transport-level errors."""
+    async def rpc(
+        self, method, params=None, *, headers=None, capabilities=None, request_id=1
+    ) -> tuple[httpx2.Response, dict[str, Any]]:
+        """Send JSON-RPC without the SDK; return the HTTP response and parsed JSON/SSE payload."""
         params = modern_params(params, capabilities)
         full_headers = {
             **self.headers,
@@ -216,7 +217,7 @@ class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
         if method in {"tasks/get", "tasks/update", "tasks/cancel"}:
             full_headers["Mcp-Name"] = params["taskId"]
         full_headers.update(headers or {})
-        async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
+        async with httpx2.AsyncClient(timeout=10, trust_env=False) as client:
             response = await client.post(
                 self.mcp_url,
                 headers=full_headers,

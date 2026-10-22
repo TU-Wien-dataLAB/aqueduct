@@ -3,7 +3,6 @@ from http import HTTPStatus
 from pathlib import Path
 from unittest.mock import patch
 
-from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import JsonResponse
@@ -205,18 +204,10 @@ class TestUserId(GatewayIntegrationTestCase):
                 },
             )
         self.assertEqual(resp.status_code, HTTPStatus.OK)
-        if resp.streaming:
-
-            async def collect():
-                return b"".join([chunk async for chunk in resp.streaming_content])
-
-            body = async_to_sync(collect)().decode()
-            messages = [
-                json.loads(line[5:]) for line in body.splitlines() if line.startswith("data:")
-            ]
-            result = next(message for message in messages if message.get("id") == payload["id"])
-        else:
-            result = resp.json()
+        self.assertFalse(resp.streaming)
+        self.assertEqual(resp["Content-Type"], "application/json")
+        result = resp.json()
+        self.assertEqual(result["id"], payload["id"])
         self.assertEqual(result["result"]["content"][0]["text"], "Echo: attributed")
         req = Request.objects.get()
         self.assertEqual(req.user_id, "live-mcp-user")

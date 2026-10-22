@@ -21,7 +21,7 @@ services:
     build: .
     container_name: django-app
     command: |
-      sh -c "python manage.py collectstatic --no-input && daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application"
+      sh -c 'python manage.py collectstatic --no-input && if [ -n "$$TRUST_PROXY_HEADERS" ]; then exec daphne --proxy-headers -b 0.0.0.0 -p 8000 aqueduct.asgi:application; else exec daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application; fi'
     volumes:
       - ./example_router_config.yaml:/app/example_router_config.yaml
       - ./test-mcp.json:/app/test-mcp.json

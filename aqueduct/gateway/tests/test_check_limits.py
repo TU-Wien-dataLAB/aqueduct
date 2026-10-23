@@ -1,11 +1,20 @@
-from unittest.mock import patch
+import asyncio
+from typing import Any
+from unittest.mock import MagicMock, call, patch
 
+from asgiref.sync import async_to_sync
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.handlers.asgi import ASGIRequest
 from django.db import connection
+from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 from openai.types.chat import ChatCompletion
 
+from gateway.decorators import check_limits
+from gateway.decorators.limits import concurrency_key
+from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import ChatCompletionsBase
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
 
@@ -370,3 +379,136 @@ class TokenRateLimitTest(ChatCompletionsBase):
             "check_limits must not query the Request table; found: "
             + " | ".join(request_table_queries),
         )
+
+
+@override_settings(AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT=3, AQUEDUCT_RATE_LIMIT_ENABLED=False)
+class ConcurrentRequestLimitTest(ChatCompletionsBase):
+    def test_concurrent_requests_limit_per_user(self):
+        limit = settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
+        # The acquire script returns 1 when request is allowed, and 0 for requests above the limit
+        self.mock_limiter_acquire.side_effect = [1] * limit + [0]
+
+        for _ in range(limit):
+            resp_ok = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+            self.assertEqual(resp_ok.status_code, 200)
+
+        # Release script is mocked here and does not actually release a slot, but it should still
+        # be called in the decorator after the view function returns.
+        self.assertEqual(self.mock_limiter_release.await_count, limit)
+        user_id = Token.objects.first().user.id
+        rel_calls = [call(keys=[concurrency_key(user_id)])] * limit
+        self.assertEqual(self.mock_limiter_release.await_args_list, rel_calls)
+
+        # Here is the important check: the next request should be blocked.
+        blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("too many concurrent requests", blocked.json()["error"]["message"])
+
+        self.assertEqual(self.mock_limiter_acquire.await_count, limit + 1)
+        ttl = settings.AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS
+        acq_calls = [call(keys=[concurrency_key(user_id)], args=[limit, ttl])] * (limit + 1)
+        self.assertEqual(self.mock_limiter_acquire.await_args_list, acq_calls)
+
+    def test_concurrent_requests_from_different_users(self):
+        """Calls to `acquire` are distinguishable by user id."""
+        user_id = Token.objects.first().user.id
+        token_value_2, user_id_2 = self.create_new_user()
+
+        resp_1 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(resp_1.status_code, 200)
+
+        req_2 = self._build_chat_completion_request(self.MESSAGES, stream=False)
+        req_2["headers"] = _build_chat_headers(token_value_2)
+        resp_2 = self.client.post(**req_2, content_type="application/json")
+        self.assertEqual(resp_2.status_code, 200)
+
+        limit = settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
+        ttl = settings.AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS
+
+        self.assertEqual(self.mock_limiter_acquire.await_count, 2)
+        acq_calls = [
+            call(keys=[concurrency_key(user_id)], args=[limit, ttl]),
+            call(keys=[concurrency_key(user_id_2)], args=[limit, ttl]),
+        ]
+        self.assertEqual(self.mock_limiter_acquire.await_args_list, acq_calls)
+        self.assertEqual(self.mock_limiter_release.await_count, 2)
+        req_calls = [call(keys=[concurrency_key(user_id)]), call(keys=[concurrency_key(user_id_2)])]
+        self.assertEqual(self.mock_limiter_release.await_args_list, req_calls)
+
+    @async_to_sync
+    async def test_concurrent_request_limit_streaming(self):
+        limit = settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
+        # The acquire script returns 1 when a request is allowed, 0 when over the limit.
+        self.mock_limiter_acquire.side_effect = [1] * limit + [0]
+
+        token = await Token.objects.select_related("user").afirst()
+        user_id = token.user.id
+        ttl = settings.AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS
+        key = concurrency_key(user_id)
+
+        # 1. Open `limit` streaming requests concurrently, but DO NOT consume
+        #    their bodies yet -> slots stay held while the streams are open.
+        responses_ok = await asyncio.gather(
+            *(
+                self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+                for _ in range(limit)
+            )
+        )
+        for resp in responses_ok:
+            self.assertEqual(resp.status_code, 200)
+
+        self.assertEqual(
+            self.mock_limiter_release.await_count,
+            0,
+            "Release script should not be called before a streaming response is consumed",
+        )
+
+        # 2. Streaming or not, the next request is over the limit -> 429.
+        blocked = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("too many concurrent requests", blocked.json()["error"]["message"])
+        self.assertEqual(
+            self.mock_limiter_acquire.await_count,
+            limit + 1,
+            "Acquire script should be called before every request",
+        )
+        acq_calls = [call(keys=[key], args=[limit, ttl])] * (limit + 1)
+        self.assertEqual(self.mock_limiter_acquire.await_args_list, acq_calls)
+        self.assertEqual(self.mock_limiter_release.await_count, 0)
+
+        # 3. Only now consume the open streams. This should release every held spot.
+        await asyncio.gather(*(_read_streaming_response_lines(resp) for resp in responses_ok))
+
+        self.assertEqual(
+            self.mock_limiter_release.await_count,
+            limit,
+            "Release script should be called once per streaming response",
+        )
+        rel_calls = [call(keys=[key])] * limit
+        self.assertEqual(self.mock_limiter_release.await_args_list, rel_calls)
+
+    @async_to_sync
+    async def test_concurrent_requests_limit_slot_released_if_exc_in_view(self):
+        """If the view function fails, the slot for the request is released,
+        and the original exception propagates."""
+        limit = settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
+        ttl = settings.AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS
+        token = await Token.objects.select_related("user").afirst()
+        key = concurrency_key(token.user.id)
+
+        async def failing_view(request: ASGIRequest, **kwargs: Any):
+            raise ValueError("view goes boom")
+
+        request = MagicMock(spec=ASGIRequest)
+
+        # When the view raises, the slot is released.
+        with self.assertRaises(ValueError):
+            await check_limits(failing_view)(request, token=token)
+
+        self.assertEqual(self.mock_limiter_acquire.await_count, 1)
+        self.assertEqual(
+            self.mock_limiter_acquire.await_args_list, [call(keys=[key], args=[limit, ttl])]
+        )
+        self.assertEqual(self.mock_limiter_release.await_count, 1)
+        self.assertEqual(self.mock_limiter_release.await_args_list, [call(keys=[key])])

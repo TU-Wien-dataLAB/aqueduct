@@ -150,9 +150,7 @@ with httpx.stream("POST", url, json=body, headers=headers, timeout=300) as respo
                 continue
             message = json.loads(event.data)
             print(message)
-            if message.get("id") == body["id"] and (
-                "result" in message or "error" in message
-            ):
+            if message.get("id") == body["id"] and ("result" in message or "error" in message):
                 break
         else:
             raise RuntimeError("SSE stream ended before the JSON-RPC response")

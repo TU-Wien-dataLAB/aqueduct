@@ -116,6 +116,41 @@ class GatewayIntegrationTestCase(TestCase):
         self.addCleanup(release_patcher.stop)
 
 
+class ChatCompletionsBase(GatewayIntegrationTestCase):
+    MESSAGES: ClassVar[list[dict[str, str]]] = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Write me a short poem!"},
+    ]
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.url = reverse("gateway:chat_completions")
+
+    def _build_chat_completion_request(self, messages, stream=False, **payload_kwargs) -> dict:
+        """
+        Helper to build headers, payload, and endpoint for chat completion requests.
+        """
+        payload = _build_chat_payload(self.model, messages, stream=stream, **payload_kwargs)
+        return {"path": self.url, "data": json.dumps(payload), "headers": self.headers}
+
+    def _send_chat_completion(self, messages, **payload_kwargs):
+        """
+        Helper to send a chat completion request (non-streaming) to the mock server,
+        using Django test client.
+        """
+        request = self._build_chat_completion_request(messages, stream=False, **payload_kwargs)
+        return self.client.post(**request, content_type="application/json")
+
+    async def _send_chat_completion_streaming(self, messages, **payload_kwargs):
+        """
+        Helper to send a streaming chat completion request to the mock server,
+        using Django async test client.
+        """
+        request = self._build_chat_completion_request(messages, stream=True, **payload_kwargs)
+        return await self.async_client.post(**request, content_type="application/json")
+
+
 class GatewayFilesTestCase(GatewayIntegrationTestCase):
     @classmethod
     def setUpClass(cls):

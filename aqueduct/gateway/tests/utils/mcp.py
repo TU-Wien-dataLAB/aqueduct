@@ -1,250 +1,246 @@
+"""Live MCP test infrastructure; the upstream is the real npm reference server."""
+
 import json
 import logging
 import os
-import socket
+import signal
 import subprocess
 import time
-from contextlib import asynccontextmanager
-from copy import deepcopy
-from functools import wraps
+from contextlib import asynccontextmanager, suppress
+from http import HTTPStatus
 from pathlib import Path
-from typing import ClassVar
+from tempfile import TemporaryDirectory
+from typing import Any, ClassVar
 
-import httpx
+import httpx2
 from channels.testing import ChannelsLiveServerTestCase
 from daphne.testing import DaphneProcess
 from django.test import override_settings
-from mcp import ClientSession
+from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
-from gateway.tests.utils.test_runner import (
-    get_mcp_server_port,
-    get_shared_mcp_server_process,
-    set_shared_mcp_server,
-)
-from management.models import Request
+from gateway.tests.utils.test_runner import get_shared_mcp_server
 from mock_api.helpers import get_available_port
 
 logger = logging.getLogger(__name__)
 
-MCP_CONFIG_PATH = Path("/tmp/aqueduct/test-mcp-config.json")
-MCP_TEST_CONFIG = {
-    "mcpServers": {"test-server": {"type": "streamable-http", "url": "http://localhost:3001/mcp"}}
-}
+MCP_PROTOCOL_VERSION = "2026-07-28"
+MCP_PACKAGE = "@modelcontextprotocol/server-everything@2.0.0"
+TASKS_EXTENSION = "io.modelcontextprotocol/tasks"
+ROUTER_CONFIG_PATH = Path(__file__).resolve().parents[4] / "example_router_config.yaml"
 
 
-def _is_cancel_scope_error(exc):
-    """
-    Recursively check if an exception or ExceptionGroup contains a cancel scope error.
-
-    The cancel scope error is a known race condition in anyio's task group cleanup
-    that can occur during MCP session teardown. It manifests as nested ExceptionGroups
-    containing errors with "cancel scope" in the message.
-    """
-    if "cancel scope" in str(exc).lower():
-        return True
-    if isinstance(exc, ExceptionGroup):
-        for sub_exc in exc.exceptions:
-            if _is_cancel_scope_error(sub_exc):
-                return True
-    return False
+def modern_params(params=None, capabilities=None):
+    """The modern protocol's per-request identity/capabilities envelope."""
+    return {
+        **(params or {}),
+        "_meta": {
+            "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
+            "io.modelcontextprotocol/clientInfo": {"name": "aqueduct-tests", "version": "1"},
+            "io.modelcontextprotocol/clientCapabilities": capabilities or {},
+        },
+    }
 
 
-def skip_on_cancel_scope_error(test_func):
-    """
-    Decorator to skip MCP tests when encountering the cancel scope error.
+class MCPEverythingServer:
+    """One lazy, suite-wide npm subprocess, with bounded startup and group cleanup."""
 
-    This is a known race condition in anyio/MCP SDK where cancel scopes can get out of sync
-    during session cleanup. This can randomly occur on any MCP test. When detected, the test
-    is skipped rather than marked as failed.
+    def __init__(self):
+        self.directory = TemporaryDirectory(prefix="aqueduct-mcp-")
+        self.config_path = Path(self.directory.name) / "config.json"
+        self.log_path = Path(self.directory.name) / "server.log"
+        self.port = get_available_port()
+        self.url = f"http://127.0.0.1:{self.port}/mcp"
+        self.process = None
+        self.log_file = None
+        self.config_path.write_text(
+            json.dumps(
+                {"mcpServers": {"test-server": {"type": "streamable-http", "url": self.url}}}
+            )
+        )
 
-    Usage:
-        @async_to_sync
-        @skip_on_cancel_scope_error
-        async def test_something(self):
-            ...
-    """
-
-    @wraps(test_func)
-    async def wrapper(self, *args, **kwargs):
+    def start(self):
+        self.log_file = self.log_path.open("w")
         try:
-            return await test_func(self, *args, **kwargs)
-        except (Exception, ExceptionGroup) as e:
-            # Check if this is the cancel scope error (a race condition in anyio/MCP SDK)
-            # This can occur during session cleanup when cancel scopes exit in unexpected order.
-            if _is_cancel_scope_error(e):
-                self.skipTest(f"Skipping due to cancel scope race condition: {e}")
-            raise
+            self.process = subprocess.Popen(
+                ["npx", "--prefer-offline", "-y", MCP_PACKAGE, "streamableHttp"],
+                env={**os.environ, "PORT": str(self.port)},
+                cwd=self.directory.name,
+                stdout=self.log_file,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            deadline = time.monotonic() + 60
+            with httpx2.Client(timeout=1, trust_env=False) as client:
+                while time.monotonic() < deadline:
+                    if self.process.poll() is not None:
+                        raise RuntimeError("MCP reference server exited during startup")
+                    try:
+                        response = client.post(
+                            self.url,
+                            headers={
+                                "Accept": "application/json, text/event-stream",
+                                "Mcp-Method": "server/discover",
+                                "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+                            },
+                            json={
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "server/discover",
+                                "params": modern_params(),
+                            },
+                        )
+                    except httpx2.TransportError:
+                        time.sleep(0.1)
+                        continue
+                    if response.status_code != HTTPStatus.OK or "result" not in response.json():
+                        raise RuntimeError(f"MCP discovery failed: {response.text}")
+                    logger.info("MCP reference server ready at %s", self.url)
+                    return
+            raise RuntimeError("MCP reference server was not ready within 60 seconds")
+        except Exception as error:
+            output = self.log_path.read_text()
+            self.stop()
+            raise RuntimeError(f"Unable to start {MCP_PACKAGE}: {error}\n{output}") from error
 
-    return wrapper
+    def stop(self):
+        try:
+            if self.process is not None:
+                # npx spawns node: terminate the whole new session, even if npx exited first.
+                with suppress(ProcessLookupError):
+                    os.killpg(self.process.pid, signal.SIGTERM)
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    with suppress(ProcessLookupError):
+                        os.killpg(self.process.pid, signal.SIGKILL)
+                    self.process.wait(timeout=5)
+                # The npm launcher can exit before a stubborn child does.
+                with suppress(ProcessLookupError):
+                    os.killpg(self.process.pid, signal.SIGKILL)
+        finally:
+            self.process = None
+            if self.log_file is not None:
+                self.log_file.close()
+                self.log_file = None
+            self.directory.cleanup()
 
 
 class MCPDaphneProcess(DaphneProcess):
+    def __init__(self, *args, **kwargs):
+        # Capture in the parent: macOS multiprocessing uses spawn, not fork.
+        self.mcp_config_path = str(get_shared_mcp_server().config_path)
+        super().__init__(*args, **kwargs)
+
+    def start(self):
+        super().start()
+        deadline = time.monotonic() + 30
+        while not self.ready.wait(timeout=0.1):
+            if not self.is_alive() or time.monotonic() >= deadline:
+                self.terminate()
+                self.join(timeout=5)
+                if self.is_alive():
+                    self.kill()
+                    self.join(timeout=5)
+                raise RuntimeError("Live Django ASGI server failed to start within 30 seconds")
+
     def run(self):
         from django.conf import settings
 
-        settings.MCP_CONFIG_FILE_PATH = str(MCP_CONFIG_PATH)
-        logger.info("Updating MCP_CONFIG_FILE_PATH: %s", settings.MCP_CONFIG_FILE_PATH)
-
-        # Configure MCP security settings for testing
+        settings.MCP_CONFIG_FILE_PATH = self.mcp_config_path
+        settings.LITELLM_ROUTER_CONFIG_FILE_PATH = str(ROUTER_CONFIG_PATH)
+        settings.AUTHENTICATION_BACKENDS = ["gateway.authentication.TokenAuthenticationBackend"]
         settings.MCP_ENABLE_DNS_REBINDING_PROTECTION = True
-        settings.MCP_ALLOWED_HOSTS = ["localhost:8000", "localhost:*", "127.0.0.1:*"]
-        settings.MCP_ALLOWED_ORIGINS = [
-            "http://localhost:3000",
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-        ]
-
-        # Allow test hosts in Django's ALLOWED_HOSTS so requests reach our security decorator
-        # Add common test hosts that we'll use to test the security decorator
-        if "evil.testserver" not in settings.ALLOWED_HOSTS:
-            settings.ALLOWED_HOSTS.append("evil.testserver")
-        if "malicious.com" not in settings.ALLOWED_HOSTS:
-            settings.ALLOWED_HOSTS.append("malicious.com")
-
-        logger.info(
-            "MCP Security: Protection=%s, Hosts=%s",
-            settings.MCP_ENABLE_DNS_REBINDING_PROTECTION,
-            settings.MCP_ALLOWED_HOSTS,
-        )
-
+        settings.MCP_ALLOWED_HOSTS = ["localhost:*", "127.0.0.1:*"]
+        settings.MCP_ALLOWED_ORIGINS = ["http://localhost:*", "http://127.0.0.1:*"]
+        # Let deliberately bad hosts reach the MCP transport-security decorator.
+        settings.ALLOWED_HOSTS = ["*"]
         super().run()
 
 
 @override_settings(OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/")
 class MCPLiveServerTestCase(ChannelsLiveServerTestCase):
-    """
-    Live server test case for MCP endpoints using Django's LiveServerTestCase.
-    Provides a running server for testing HTTP endpoints with httpx.
-    """
+    """Real ASGI gateway + real reference server; no mocked transport or relay."""
 
     serve_static = False
     ProtocolServerProcess = MCPDaphneProcess
-
     fixtures: ClassVar[list[str]] = ["gateway_data.json"]
-    mcp_server_process: subprocess.Popen | None = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.upstream = get_shared_mcp_server()
+        cls.headers = {"Authorization": "Bearer sk-123abc"}
+        try:
+            super().setUpClass()
+        except BaseException:
+            # Channels only restores this setting on a successful class teardown.
+            modified_settings = getattr(cls, "_live_server_modified_settings", None)
+            if modified_settings is not None:
+                modified_settings.disable()
+            raise
 
     @property
     def mcp_url(self):
         return f"{self.live_server_url}/mcp-servers/test-server/mcp"
 
     @asynccontextmanager
-    async def client_session(self):
+    async def mcp_client(self, **kwargs):
+        # SDK v2 uses httpx2 (not the gateway's httpx), and Client negotiates
+        # server/discover automatically. Disable its cache so calls hit the relay.
         async with (
-            httpx.AsyncClient(headers=self.headers) as client,
-            streamable_http_client(self.mcp_url, http_client=client) as (
-                read_stream,
-                write_stream,
-                _,
-            ),
-            ClientSession(read_stream, write_stream) as session,
+            httpx2.AsyncClient(headers=self.headers, timeout=10, trust_env=False) as http_client,
+            Client(
+                streamable_http_client(self.mcp_url, http_client=http_client),
+                read_timeout_seconds=10,
+                cache=None,
+                **kwargs,
+            ) as client,
         ):
-            yield session
+            yield client
 
-    async def assert_request_logged(self, n: int = 1):
-        # Check that (only) initialize request was logged
-
-        mcp_requests = await Request.objects.acount()
-        self.assertEqual(mcp_requests, n, f"There should be exactly {n} logged MCP request.")
-
-    @classmethod
-    def _write_mcp_config(cls):
-        MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with MCP_CONFIG_PATH.open("w") as f:
-            json.dump(MCP_TEST_CONFIG, f)
-
-    @classmethod
-    def _update_mcp_config_port(cls, port: int):
-        config = deepcopy(MCP_TEST_CONFIG)
-        config["mcpServers"]["test-server"]["url"] = f"http://localhost:{port}/mcp"
-
-        MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with MCP_CONFIG_PATH.open("w") as f:
-            json.dump(config, f)
-
-    @classmethod
-    def _start_mcp_server(cls):
-        """Start the MCP everything server on a random available port."""
-        port = get_available_port()
-
-        cls.mcp_server_port = port
-        cls._update_mcp_config_port(port)
-
-        logger.info("Starting MCP everything server on port %s...", port)
-        try:
-            env = os.environ.copy()
-            env["PORT"] = str(port)
-            cls.mcp_server_process = subprocess.Popen(
-                [
-                    "npx",
-                    "--prefer-offline",  # only download when missing => tests can run offline
-                    "-y",
-                    "@modelcontextprotocol/server-everything@2025.11.25",
-                    "streamableHttp",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env=env,
-                cwd=str(MCP_CONFIG_PATH.parent),
-                start_new_session=True,
+    async def rpc(
+        self, method, params=None, *, headers=None, capabilities=None, request_id=1
+    ) -> tuple[httpx2.Response, dict[str, Any]]:
+        """Send JSON-RPC without the SDK; return the HTTP response and parsed JSON/SSE payload."""
+        params = modern_params(params, capabilities)
+        full_headers = {
+            **self.headers,
+            "Accept": "application/json, text/event-stream",
+            "Mcp-Method": method,
+            "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+        }
+        name = params.get("uri" if method == "resources/read" else "name")
+        if method in {"tools/call", "prompts/get", "resources/read"} and name is not None:
+            full_headers["Mcp-Name"] = name
+        # The tasks extension declares taskId as its name parameter. The relay
+        # need not know that extension: its client supplies Mcp-Name explicitly.
+        if method in {"tasks/get", "tasks/update", "tasks/cancel"}:
+            full_headers["Mcp-Name"] = params["taskId"]
+        full_headers.update(headers or {})
+        async with httpx2.AsyncClient(timeout=10, trust_env=False) as client:
+            response = await client.post(
+                self.mcp_url,
+                headers=full_headers,
+                json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params},
             )
-        except FileNotFoundError as err:
-            raise RuntimeError(
-                "npx command not found. Please ensure Node.js and npm are installed."
-            ) from err
-
-        # Set global variables enabling the tests to share the MCP server process
-        set_shared_mcp_server(cls.mcp_server_process, cls.mcp_server_port)
-
-        # Wait for server to be ready by checking if it accepts connections
-        logger.info("Waiting for MCP server to accept connections on port %s...", port)
-        start_time = time.time()
-        timeout = 30
-        last_error = None
-
-        while time.time() - start_time < timeout:
-            # Check if process is still running
-            if cls.mcp_server_process.poll() is not None:
-                stdout, _ = cls.mcp_server_process.communicate()
-                raise RuntimeError(f"MCP server failed to start. stdout: {stdout}")
-
-            # Try to connect to the server
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    sock.settimeout(1.0)
-                    sock.connect(("localhost", port))
-                    logger.info("✓ MCP everything server started successfully on port %s", port)
-                    return
-            except (ConnectionRefusedError, OSError) as e:
-                last_error = e
-                time.sleep(0.5)
-
-        # If we get here, timeout occurred
-        raise RuntimeError(
-            f"MCP server did not accept connections within {timeout} seconds. "
-            f"Last error: {last_error}"
-        )
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.headers = {"Authorization": "Bearer sk-123abc", "Content-Type": "application/json"}
-
-        # If another test class has already created the MCP server, it will be reused.
-        # Otherwise, write MCP config, create the MCP server process, and set necessary
-        # global variables. Next tests to use the `MCPLiveServerTestCase` class as base
-        # class will reuse the same process.
-        # Note: Teardown is handled by the test runner, after all the tests finished running.
-        mcp_process = get_shared_mcp_server_process()
-        if mcp_process is None:
-            cls._write_mcp_config()
-            cls._start_mcp_server()
+        if "text/event-stream" in response.headers.get("content-type", ""):
+            messages = [
+                json.loads(line[5:])
+                for line in response.text.splitlines()
+                if line.startswith("data:")
+            ]
+            finals = [message for message in messages if message.get("id") == request_id]
+            self.assertEqual(len(finals), 1, response.text)
+            payload = finals[0]
         else:
-            mcp_port = get_mcp_server_port()
-            assert mcp_port is not None, (
-                "Global MCP test server port is not set, even though the server process "
-                "exists already. This should not happen!"
-            )
-            cls.mcp_server_process = mcp_process
-            cls.mcp_server_port = mcp_port
+            payload = response.json()
+        if "jsonrpc" in payload:
+            self.assertEqual(payload["id"], request_id)
+        return response, payload
+
+    async def assert_requests_logged(self, count):
+        from management.models import Request
+
+        requests = Request.objects.filter(path="/mcp-servers/test-server/mcp")
+        self.assertEqual(await requests.acount(), count)
+        self.assertEqual(await requests.exclude(status_code=200).acount(), 0)

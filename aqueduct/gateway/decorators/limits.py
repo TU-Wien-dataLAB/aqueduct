@@ -70,7 +70,9 @@ class RedisConcurrencyLimiter:
     def __init__(self, redis_client: Redis, refresh_interval: int = 30):
         self.redis = redis_client
         self.ttl = settings.AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS
-        self.refresh_interval = refresh_interval
+        # Refresh interval has to be safely smaller than ttl; otherwise slots of long-running
+        # stream requests may expire before the streaming is over!
+        self.refresh_interval = min(refresh_interval, self.ttl // 2)
 
     async def acquire(self, user_id: int) -> bool:
         limit = concurrency_limit_for(user_id)
@@ -121,9 +123,9 @@ def check_limits(view_func: AsyncView) -> AsyncView:
         user_id = token.user.id
         if not await limiter.acquire(user_id):
             return error_response(
-                "User sent too many concurrent requests",
+                f"User with id={user_id} sent too many concurrent requests",
                 status=429,
-                headers={"Retry-After": "30"},  # TODO: retry-after value???
+                headers={"Retry-After": "10"},
             )
 
         # 2. Check rate limits

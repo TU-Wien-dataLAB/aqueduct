@@ -14,10 +14,11 @@ dependencies = [
     "django-silk>=5.5.0",
     "django-tos>=1.1.0, <1.2",  # 1.2 rewrote the middleware (new-style __call__)
     "httpx>=0.28.1, <1",
-    "litellm==1.85.2",
+    "httpx2>=2.16.0",
+    "litellm==1.109.0.dev1",
     "mcp==1.25.0",
     "mozilla-django-oidc>=4.0.1",
-    "openai==2.36.0",
+    "openai==3.26.0",
     "whitenoise>=6.9.0",
 ]
 

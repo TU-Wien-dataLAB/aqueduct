@@ -19,6 +19,9 @@ urlpatterns = [
     # Embeddings endpoints
     path("embeddings", views.embeddings, name="embeddings"),
     path("v1/embeddings", views.embeddings, name="v1_embeddings"),
+    # Decisions endpoints (non-streaming)
+    path("decisions", views.decisions, name="decisions"),
+    path("v1/decisions", views.decisions, name="v1_decisions"),
     # Models endpoints
     path("models", views.models, name="models"),
     path("v1/models", views.models, name="v1_models"),

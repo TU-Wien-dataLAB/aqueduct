@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import ClassVar, Literal
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -10,8 +10,11 @@ from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from fakeredis import FakeServer
+from fakeredis.aioredis import FakeRedis
 from tos.models import TermsOfService, UserAgreement
 
+from gateway.decorators.limits import RedisConcurrencyLimiter, get_limiter, get_redis_client
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.test_runner import get_shared_mock_server
 from management.models import Org, Token, UserProfile
@@ -101,19 +104,17 @@ class GatewayIntegrationTestCase(TestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        # Patch the scripts limiting concurrent user requests, registered to run on Redis server.
-        # Default: allow all requests through (return_value=1).
-        acquire_patcher = patch(
-            "gateway.decorators.limits.acquire_script", AsyncMock(return_value=1)
-        )
-        release_patcher = patch(
-            "gateway.decorators.limits.release_script", AsyncMock(return_value=1)
-        )
-        # These mocks can be overwritten by individual tests.
-        self.mock_limiter_acquire = acquire_patcher.start()
-        self.addCleanup(acquire_patcher.stop)
-        self.mock_limiter_release = release_patcher.start()
-        self.addCleanup(release_patcher.stop)
+        # Patch the Redis server to use `fakeredis`.
+        server = FakeServer()
+        self.redis = FakeRedis(server=server, decode_responses=True)
+        get_redis_client.cache_clear()
+        get_limiter.cache_clear()
+        self.addCleanup(get_redis_client.cache_clear)
+        self.addCleanup(get_limiter.cache_clear)
+        limiter = RedisConcurrencyLimiter(self.redis)
+        redis_limiter_patcher = patch("gateway.decorators.limits.get_limiter", return_value=limiter)
+        redis_limiter_patcher.start()
+        self.addCleanup(redis_limiter_patcher.stop)
 
 
 class ChatCompletionsBase(GatewayIntegrationTestCase):

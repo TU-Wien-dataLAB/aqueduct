@@ -34,6 +34,7 @@ dev = [
     "celery-types>=0.26.0",
     "channels[daphne]>=4.3.1",
     "django-stubs[compatible-mypy]==5.2.9",
+    "fakeredis[lua]>=2.40.0",
     "fastapi>=0.115.12",
     "mypy==1.19.1",
     "pre-commit>=4.2.0",

@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator
-from functools import wraps
+from functools import lru_cache, wraps
 from typing import TYPE_CHECKING, Any, cast
 
 import redis.asyncio as aioredis
@@ -10,7 +10,6 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.http.response import StreamingHttpResponse
-from redis import Redis
 
 from gateway.decorators.types import AsyncView, ViewResult
 from gateway.rate_limiting import check_and_reserve, has_any_limit
@@ -52,9 +51,15 @@ return 0
 """
 
 
-redis_client = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
-acquire_script = redis_client.register_script(ACQUIRE_LUA)
-release_script = redis_client.register_script(RELEASE_LUA)
+@lru_cache(maxsize=1)
+def get_redis_client() -> aioredis.Redis:
+    async_redis = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    return cast("aioredis.Redis", async_redis)
+
+
+@lru_cache(maxsize=1)
+def get_limiter() -> "RedisConcurrencyLimiter":
+    return RedisConcurrencyLimiter(get_redis_client())
 
 
 def concurrency_key(user_id: int) -> str:
@@ -67,8 +72,10 @@ def concurrency_limit_for(user_id: int) -> int:
 
 
 class RedisConcurrencyLimiter:
-    def __init__(self, redis_client: Redis, refresh_interval: int = 30):
+    def __init__(self, redis_client: aioredis.Redis, refresh_interval: int = 30):
         self.redis = redis_client
+        self.acquire_script = redis_client.register_script(ACQUIRE_LUA)
+        self.release_script = redis_client.register_script(RELEASE_LUA)
         self.ttl = settings.AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS
         # Refresh interval has to be safely smaller than ttl; otherwise slots of long-running
         # stream requests may expire before the streaming is over!
@@ -76,11 +83,11 @@ class RedisConcurrencyLimiter:
 
     async def acquire(self, user_id: int) -> bool:
         limit = concurrency_limit_for(user_id)
-        ok = await acquire_script(keys=[concurrency_key(user_id)], args=[limit, self.ttl])
+        ok = await self.acquire_script(keys=[concurrency_key(user_id)], args=[limit, self.ttl])
         return bool(ok)
 
     async def release(self, user_id: int) -> bool:
-        ok = await release_script(keys=[concurrency_key(user_id)])
+        ok = await self.release_script(keys=[concurrency_key(user_id)])
         return bool(ok)
 
     async def _refresh_ttl_loop(self, key: str, stop_event: asyncio.Event) -> None:
@@ -108,9 +115,6 @@ class RedisConcurrencyLimiter:
             await self.release(user_id)
 
 
-limiter = RedisConcurrencyLimiter(redis_client)
-
-
 def check_limits(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
@@ -121,6 +125,7 @@ def check_limits(view_func: AsyncView) -> AsyncView:
 
         # 1. Check concurrent requests limit, using a Redis counter
         user_id = token.user.id
+        limiter = get_limiter()
         if not await limiter.acquire(user_id):
             return error_response(
                 f"User with id={user_id} sent too many concurrent requests",
@@ -161,7 +166,7 @@ def check_limits(view_func: AsyncView) -> AsyncView:
         try:
             response = await view_func(request, *args, **kwargs)
         except Exception:
-            # Make sure we release the connection slot if there is an error.
+            # Make sure we release the concurrent requests slot if there is an error.
             await limiter.release(user_id)
             raise
 

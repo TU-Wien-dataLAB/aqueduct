@@ -10,8 +10,11 @@ from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from fakeredis import FakeServer
+from fakeredis.aioredis import FakeRedis
 from tos.models import TermsOfService, UserAgreement
 
+from gateway.decorators.limits import RedisConcurrencyLimiter, get_limiter, get_redis_client
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.test_runner import get_shared_mock_server
 from management.models import Org, Token, UserProfile
@@ -76,18 +79,13 @@ class GatewayIntegrationTestCase(TestCase):
                 {"OPENAI_BASE_URL": cls.mock_server.base_url, "OPENAI_API_KEY": "fake_openai_key"},
             )
             cls._patcher.start()
+            cls.addClassCleanup(cls._patcher.stop)
 
             # We want to override the files API url for all tests.
             settings.AQUEDUCT_FILES_API_URL = cls.mock_server.base_url
             settings.AQUEDUCT_FILES_API_KEY = "test_key"
 
         cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
-
-    @classmethod
-    def tearDownClass(cls):
-        if hasattr(cls, "_patcher") and cls._patcher:
-            cls._patcher.stop()
-        super().tearDownClass()
 
     @staticmethod
     def create_new_user() -> tuple[str, int]:
@@ -103,6 +101,55 @@ class GatewayIntegrationTestCase(TestCase):
         token_value = new_token._set_new_key()
         new_token.save()
         return token_value, new_user.id
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Patch the Redis server to use `fakeredis`.
+        server = FakeServer()
+        self.redis = FakeRedis(server=server, decode_responses=True)
+        get_redis_client.cache_clear()
+        get_limiter.cache_clear()
+        self.addCleanup(get_redis_client.cache_clear)
+        self.addCleanup(get_limiter.cache_clear)
+        limiter = RedisConcurrencyLimiter(self.redis)
+        redis_limiter_patcher = patch("gateway.decorators.limits.get_limiter", return_value=limiter)
+        redis_limiter_patcher.start()
+        self.addCleanup(redis_limiter_patcher.stop)
+
+
+class ChatCompletionsBase(GatewayIntegrationTestCase):
+    MESSAGES: ClassVar[list[dict[str, str]]] = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Write me a short poem!"},
+    ]
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.url = reverse("gateway:chat_completions")
+
+    def _build_chat_completion_request(self, messages, stream=False, **payload_kwargs) -> dict:
+        """
+        Helper to build headers, payload, and endpoint for chat completion requests.
+        """
+        payload = _build_chat_payload(self.model, messages, stream=stream, **payload_kwargs)
+        return {"path": self.url, "data": json.dumps(payload), "headers": self.headers}
+
+    def _send_chat_completion(self, messages, **payload_kwargs):
+        """
+        Helper to send a chat completion request (non-streaming) to the mock server,
+        using Django test client.
+        """
+        request = self._build_chat_completion_request(messages, stream=False, **payload_kwargs)
+        return self.client.post(**request, content_type="application/json")
+
+    async def _send_chat_completion_streaming(self, messages, **payload_kwargs):
+        """
+        Helper to send a streaming chat completion request to the mock server,
+        using Django async test client.
+        """
+        request = self._build_chat_completion_request(messages, stream=True, **payload_kwargs)
+        return await self.async_client.post(**request, content_type="application/json")
 
 
 class GatewayFilesTestCase(GatewayIntegrationTestCase):

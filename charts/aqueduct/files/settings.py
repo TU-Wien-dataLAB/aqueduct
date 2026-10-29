@@ -166,6 +166,14 @@ AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS = int(os.getenv("AQUEDUCT_RATE_LIMIT_LOCK_T
 AQUEDUCT_HOURLY_LIMIT_MULTIPLIER = int(os.getenv("AQUEDUCT_HOURLY_LIMIT_MULTIPLIER", "60"))
 AQUEDUCT_DAILY_LIMIT_MULTIPLIER = int(os.getenv("AQUEDUCT_DAILY_LIMIT_MULTIPLIER", "1440"))
 
+# Concurrent requests per user limiting (tracked in Redis)
+AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT = int(
+    os.getenv("AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT", "3")
+)
+AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS = int(
+    os.getenv("AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS", "600")
+)
+
 # External Files/Batches API endpoint (required)
 AQUEDUCT_FILES_API_URL = os.environ.get("AQUEDUCT_FILES_API_URL")
 AQUEDUCT_FILES_API_KEY = os.environ.get("AQUEDUCT_FILES_API_KEY", None)
@@ -234,8 +242,9 @@ TOS_GATEWAY_VALIDATION = os.getenv("TOS_GATEWAY_VALIDATION", "True").lower() == 
 
 # Celery Settings -------------------------------------------------------
 
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
 CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
-CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_WORKER_CONCURRENCY = os.environ.get("CELERY_WORKER_CONCURRENCY", 1)
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
@@ -243,7 +252,7 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
-CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ["application/json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -356,7 +365,7 @@ else:
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": CELERY_BROKER_URL,
+        "LOCATION": REDIS_URL,
     }
 }
 

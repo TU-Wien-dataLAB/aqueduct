@@ -11,7 +11,7 @@ from django.core.handlers.asgi import ASGIRequest
 from openai import AsyncStream
 from openai.types.responses import ResponseCreatedEvent, ResponseStreamEvent
 
-from gateway.config import get_openai_client, get_router
+from gateway.config import get_openai_client, get_router, get_router_config
 from gateway.decorators.response_cache import register_response_in_cache
 
 log = logging.getLogger("aqueduct")
@@ -38,6 +38,16 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
     Used when direct OpenAI SDK client is needed instead of LiteLLM router
     (e.g., Responses API, Batches API).
     """
+    router = get_router()
+    # Direct SDK endpoints need a pinned deployment (including response retrieval).
+    # Accept unambiguous public names; keep explicit IDs for multi-deployment models.
+    if router.get_deployment(model_id=model) is None and any(
+        model == entry.get("model_name") for entry in get_router_config().get("model_list", [])
+    ):
+        deployment_ids = router.get_model_ids(model_name=model)
+        if len(deployment_ids) == 1:
+            model = deployment_ids[0]
+
     try:
         client: openai.AsyncClient = get_openai_client(model)
     except ValueError:
@@ -51,7 +61,6 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
             body=None,
         ) from None
 
-    router = get_router()
     deployment: litellm.Deployment | None = router.get_deployment(model_id=model)
 
     if deployment is None:

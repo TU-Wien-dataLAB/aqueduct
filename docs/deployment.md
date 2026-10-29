@@ -172,6 +172,32 @@ valkey:
 The app auto-derives the Valkey connection (no `celery.brokerUrl` override
 needed).
 
+## Public-model RPM limits
+
+Append a public-model budget to the existing Helm `env` list (preserve its database settings),
+using identical values on every gateway process:
+
+```yaml
+- name: AQUEDUCT_MODEL_RPM_LIMITS
+  value: '{"gpt-4.1-nano": 60, "gpt-4o-mini-tts": 30}'
+```
+
+Use canonical public model names and positive integer RPM values, not aliases or wildcard names.
+An empty mapping (the default) disables this policy. Unconfigured public models have no model RPM
+ceiling; token limits remain independent, including their existing best-effort contention policy.
+When model budgets are configured, clients must use registered public names, Aqueduct aliases or
+explicitly configured legacy deployment IDs; all resolve to the same public-model budget.
+Unknown SDK-only names and dynamically expanded wildcard names are rejected. Direct OpenAI SDK
+endpoints accept a public name when it maps to one deployment; with multiple deployments, keep
+using configured deployment IDs so Responses objects remain pinned to their original backend.
+
+Verify the shared Django cache uses Redis/Valkey with atomic increments. Aliases and all tokens share
+one budget per public model, reset at UTC minute boundaries. Each admitted client request counts
+once, even if the upstream fails or its stream is interrupted; SDK retries/fallback attempts and
+batch-job contents are not separately limited. Cache errors return 500 instead of bypassing the
+model budget. This is not deployment/provider-wide enforcement; no routing-SDK Redis connection
+is required.
+
 ## Notes
 
 - User and admin management will be covered in the User Guide.

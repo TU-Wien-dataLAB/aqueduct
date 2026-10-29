@@ -6,7 +6,9 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 
+from gateway.config import get_public_model_name
 from gateway.decorators.types import AsyncView, ViewResult
+from gateway.model_rate_limiting import check_model_limit
 from gateway.rate_limiting import check_and_reserve, has_any_limit
 from gateway.response_error import error_response
 
@@ -51,6 +53,28 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                     return error_response(
                         error_message, status=429, headers={"Retry-After": str(retry_after)}
                     )
+
+            model = (kwargs.get("pydantic_model") or {}).get("model")
+            if model and settings.AQUEDUCT_MODEL_RPM_LIMITS:
+                model = get_public_model_name(model)
+                if model is None:
+                    return error_response(
+                        "Unknown public model. Use a configured model name or its Aqueduct alias.",
+                        param="model",
+                        status=400,
+                    )
+                rpm = settings.AQUEDUCT_MODEL_RPM_LIMITS.get(model)
+                if rpm is not None:
+                    # Do not let excluded tokens consume capacity shared by all users.
+                    if await sync_to_async(token.model_excluded)(model):
+                        return error_response("Model not found!", status=404)
+                    allowed, retry_after = await sync_to_async(check_model_limit)(model, rpm)
+                    if not allowed:
+                        return error_response(
+                            f"Model request limit ({rpm}/min) exceeded for '{model}'.",
+                            status=429,
+                            headers={"Retry-After": str(retry_after)},
+                        )
 
         except Exception as e:
             log.exception("Error checking rate limits for Token %r: %s", token.name, e)

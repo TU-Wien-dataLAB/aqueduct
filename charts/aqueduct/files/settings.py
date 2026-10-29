@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import json
 import logging
 import os
 import sys
@@ -154,6 +155,8 @@ REQUEST_RETENTION_DAYS = float(os.environ.get("REQUEST_RETENTION_DAYS", 7))
 REQUEST_RETENTION_SCHEDULE = os.environ.get("REQUEST_RETENTION_SCHEDULE", "0 4 * * *")
 
 LITELLM_ROUTER_CONFIG_FILE_PATH = os.environ.get("LITELLM_ROUTER_CONFIG_FILE_PATH")
+# Canonical public model name -> shared requests per minute, across all tokens/replicas.
+AQUEDUCT_MODEL_RPM_LIMITS = json.loads(os.getenv("AQUEDUCT_MODEL_RPM_LIMITS", "{}"))
 
 AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST: list[str] = []
 AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST: list[str] = []

@@ -133,6 +133,9 @@ env:
     value: "django.db.backends.postgresql"
   # - name: DATABASE_ENGINE
   #   value: "django.db.backends.sqlite3"
+  # Shared public-model RPM limits; canonical names, not aliases or upstream deployments.
+  # - name: AQUEDUCT_MODEL_RPM_LIMITS
+  #   value: '{"gpt-4.1-nano": 60}'
 
 # Extra environment variables appended to the web (Django/daphne) container
 # only. Use this to set per-container values such as the PostgreSQL pool size,

@@ -36,6 +36,37 @@ def get_files_api_client() -> openai.AsyncClient:
 
 
 def _validate_router_config(config: dict[str, Any]) -> None:
+    public_names = {model.get("model_name") for model in config.get("model_list", [])}
+    limits = settings.AQUEDUCT_MODEL_RPM_LIMITS
+    if not isinstance(limits, dict) or any(
+        not isinstance(name, str)
+        or "*" in name
+        or name not in public_names
+        or type(rpm) is not int
+        or rpm <= 0
+        for name, rpm in limits.items()
+    ):
+        raise RuntimeError(
+            "AQUEDUCT_MODEL_RPM_LIMITS must map canonical public model names to positive "
+            "integer RPM limits; aliases, unknown names and wildcard names are not supported."
+        )
+
+    # Deployment/provider quotas cannot be made global by adding routing processes.
+    # Public-model admission is owned by Aqueduct, not the upstream routing SDK.
+    sections = [config, config.get("default_litellm_params") or {}]
+    for model in config.get("model_list", []):
+        sections.extend([model, model.get("litellm_params") or {}, model.get("model_info") or {}])
+    if any(
+        section.get(field) is not None
+        for section in sections
+        for field in ("rpm", "tpm", "max_parallel_requests", "default_max_parallel_requests")
+    ):
+        raise RuntimeError(
+            "Router deployment/provider RPM, TPM and concurrency limits are unsupported. "
+            "Move RPM policy to AQUEDUCT_MODEL_RPM_LIMITS (canonical public model names); "
+            "enforce provider-wide quotas, TPM and concurrency upstream."
+        )
+
     # Validate alias uniqueness
     alias_to_model: dict[str, str] = {}
     model_list = config.get("model_list", [])
@@ -134,6 +165,23 @@ def resolve_model_alias(model_or_alias: str) -> str:
 
     # Not an alias or a model; still return as-is to return standard error down the line
     return model_or_alias
+
+
+def get_public_model_name(model_or_alias: str) -> str | None:
+    """Canonical name for admission, including explicitly configured legacy IDs.
+
+    Do not rewrite the request's model: direct SDK endpoints still need their
+    concrete deployment ID, but those requests must share the public-model budget.
+    """
+    resolved = resolve_model_alias(model_or_alias)
+    models = get_router_config().get("model_list", [])
+    if any(resolved == model.get("model_name") for model in models):
+        return resolved
+    for model in models:
+        deployment_id = (model.get("model_info") or {}).get("id")
+        if deployment_id is not None and resolved == str(deployment_id):
+            return cast("str", model["model_name"])
+    return None
 
 
 def get_model_request_limit_multiplier(model_name: str) -> float:

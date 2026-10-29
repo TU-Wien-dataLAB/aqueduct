@@ -1,0 +1,131 @@
+{{/* Keep revision Jobs and their read grants so retained old ReplicaSets can
+     recover during a failed upgrade. A reinstallation must not reuse stale success. */}}
+{{- if and .Release.IsInstall (lookup "batch/v1" "Job" .Release.Namespace (include "aqueduct.migrationName" .)) }}
+{{- fail "Retained migration Job exists from an earlier installation. Review and remove obsolete migration Jobs/Roles/RoleBindings before reinstalling this release name." }}
+{{- end }}
+{{/* A regular release Job, not a hook: dependencies can bootstrap on install.
+     Application init containers wait for its success on both install and upgrade. */}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "aqueduct.migrationName" . }}
+  labels:
+    app: {{ .Release.Name }}
+    component: migrate
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+        component: migrate
+    spec:
+      restartPolicy: Never
+      {{- include "aqueduct.scheduling" .Values.migrate.scheduling | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      initContainers:
+        - name: wait-for-database
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.migrate.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
+          command: [ "python", "/etc/aqueduct/wait_for_database.py" ]
+          env:
+            {{- include "aqueduct.env" . | nindent 12 }}
+            {{- include "aqueduct.databasePoolEnv" .Values.migrate.databasePool | nindent 12 }}
+            {{- with .Values.migrate.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: settings-py
+              mountPath: /app/aqueduct/aqueduct/settings.py
+              subPath: settings.py
+            - name: router-config
+              mountPath: /etc/aqueduct/router_config.yaml
+              subPath: router_config.yaml
+            - name: migration-gate
+              mountPath: /etc/aqueduct/wait_for_database.py
+              subPath: wait_for_database.py
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.migrate.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
+          command: [ "python", "manage.py", "migrate", "--noinput" ]
+          env:
+            {{- include "aqueduct.env" . | nindent 12 }}
+            {{- include "aqueduct.databasePoolEnv" .Values.migrate.databasePool | nindent 12 }}
+            {{- with .Values.migrate.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: settings-py
+              mountPath: /app/aqueduct/aqueduct/settings.py
+              subPath: settings.py
+      volumes:
+        - name: router-config
+          configMap:
+            name: {{ .Release.Name }}-router-config
+        - name: migration-gate
+          configMap:
+            name: {{ include "aqueduct.migrationGateName" . }}
+        - name: settings-py
+          configMap:
+            name: {{ .Release.Name }}-settings
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "aqueduct.migrationGateName" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "aqueduct.migrationName" . }}
+  labels:
+    app: {{ .Release.Name }}
+    component: migrate
+  annotations:
+    helm.sh/resource-policy: keep
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    resourceNames: [{{ include "aqueduct.migrationName" . | quote }}]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "aqueduct.migrationName" . }}
+  labels:
+    app: {{ .Release.Name }}
+    component: migrate
+  annotations:
+    helm.sh/resource-policy: keep
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "aqueduct.migrationGateName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "aqueduct.migrationName" . }}
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aqueduct.migrationGateName" . }}
+data:
+  wait_for_database.py: |
+    {{- .Files.Get "files/wait_for_database.py" | nindent 4 }}
+  wait_for_migrations.py: |
+    {{- .Files.Get "files/wait_for_migrations.py" | nindent 4 }}

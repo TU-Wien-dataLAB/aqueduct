@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-celery-beat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      component: celery-beat
+  template:
+    metadata:
+      annotations:
+        checksum/settings: {{ include (print $.Template.BasePath "/configmap-settings.yaml") . | toString | sha256sum }}
+      labels:
+        app: {{ .Release.Name }}
+        component: celery-beat
+    spec:
+      serviceAccountName: {{ include "aqueduct.migrationGateName" . }}
+      initContainers:
+        {{- include "aqueduct.migrationGate" . | nindent 8 }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      {{- include "aqueduct.scheduling" .Values.celery.beatScheduling | nindent 6 }}
+      containers:
+        - name: celery-beat
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.celery.beatContainerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.celery.beatResources | nindent 12 }}
+          command: [ "python", "-m", "celery", "-A", "aqueduct", "beat", "-l", "INFO" ]
+          env:
+            {{- include "aqueduct.env" . | nindent 12 }}
+            {{- include "aqueduct.databasePoolEnv" .Values.celery.beatDatabasePool | nindent 12 }}
+            {{- with .Values.celery.beatExtraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: settings-py
+              mountPath: /app/aqueduct/aqueduct/settings.py
+              subPath: settings.py
+      volumes:
+        - name: migration-gate
+          configMap:
+            name: {{ include "aqueduct.migrationGateName" . }}
+        - name: settings-py
+          configMap:
+            name: {{ .Release.Name }}-settings

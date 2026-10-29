@@ -1,6 +1,7 @@
 ---
 title: Deployment
 nav_order: 4
+has_children: true
 ---
 
 # Deployment
@@ -11,9 +12,16 @@ nav_order: 4
 > **Planned topics:**
 > - Writing and using a Helm chart for Aqueduct
 > - Required configuration (secrets, settings.py for orgs etc.)
-> - Scaling
 > - Authentication (OIDC/Dex) configuration
 > - Reverse proxy and HTTPS setup
+
+## Horizontal scaling
+
+- [Roll out horizontal scaling](horizontal-scaling-rollout.md): legacy Beat transition, staging
+  validation, load measurements, promotion and recovery.
+
+Production web replicas remain **1** until two-replica staging validation passes. Staging evidence
+and measurements are currently **pending / not run**; this is not an end-to-end HA or slowdown-fix claim.
 
 ## Database
 

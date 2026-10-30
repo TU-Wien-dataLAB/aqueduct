@@ -3,7 +3,12 @@ kind: Deployment
 metadata:
   name: {{ .Release.Name }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.web.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: {{ .Release.Name }}
@@ -17,18 +22,10 @@ spec:
         app: {{ .Release.Name }}
         component: web
     spec:
+      serviceAccountName: {{ include "aqueduct.migrationGateName" . }}
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
-      affinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - {{ .Release.Name }}
-              topologyKey: kubernetes.io/hostname
+      {{- include "aqueduct.scheduling" .Values.web | nindent 6 }}
       containers:
         - name: django
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -54,6 +51,7 @@ spec:
           {{- end }}
           env:
             {{- include "aqueduct.env" . | nindent 12 }}
+            {{- include "aqueduct.databasePoolEnv" .Values.web.databasePool | nindent 12 }}
             {{- with .Values.web.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -70,6 +68,7 @@ spec:
               mountPath: /etc/aqueduct/mcp.json
               subPath: mcp.json
       initContainers:
+        {{- include "aqueduct.migrationGate" . | nindent 8 }}
         - name: collectstatic
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -81,40 +80,10 @@ spec:
           volumeMounts:
             - name: staticfiles
               mountPath: /app/aqueduct/staticfiles
-        - name: migrate
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          securityContext:
-            {{- toYaml .Values.migrate.containerSecurityContext | nindent 12 }}
-          resources:
-            {{- toYaml .Values.migrate.resources | nindent 12 }}
-          command: [ "python", "manage.py", "migrate" ]
-          env:
-            {{- include "aqueduct.env" . | nindent 12 }}
-          volumeMounts:
-            - name: settings-py
-              mountPath: /app/aqueduct/aqueduct/settings.py
-              subPath: settings.py
-        # sidecar container for celery beat
-        - name: celery-beat
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          securityContext:
-            {{- toYaml .Values.celery.beatContainerSecurityContext | nindent 12 }}
-          resources:
-            {{- toYaml .Values.celery.beatResources | nindent 12 }}
-          restartPolicy: Always
-          command: [ "python", "-m", "celery", "-A", "aqueduct", "beat", "-l", "INFO" ]
-          env:
-            {{- include "aqueduct.env" . | nindent 12 }}
-            {{- with .Values.celery.beatExtraEnv }}
-            {{- toYaml . | nindent 12 }}
-            {{- end }}
-          volumeMounts:
-            - name: settings-py
-              mountPath: /app/aqueduct/aqueduct/settings.py
-              subPath: settings.py
       volumes:
+        - name: migration-gate
+          configMap:
+            name: {{ include "aqueduct.migrationGateName" . }}
         - name: settings-py
           configMap:
             name: {{ .Release.Name }}-settings

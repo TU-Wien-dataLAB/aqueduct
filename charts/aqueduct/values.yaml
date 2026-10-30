@@ -31,7 +31,10 @@ securityContext:
     type: RuntimeDefault
 
 collectstatic:
-  resources: { }
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
   containerSecurityContext:
     allowPrivilegeEscalation: false
     capabilities:
@@ -39,7 +42,20 @@ collectstatic:
         - ALL
 
 migrate:
-  resources: { }
+  scheduling:
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    topologySpreadConstraints: []
+  activeDeadlineSeconds: 600
+  extraEnv: []
+  databasePool:
+    minSize: 0
+    maxSize: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
   containerSecurityContext:
     allowPrivilegeEscalation: false
     capabilities:
@@ -70,9 +86,20 @@ oidc:
 celery:
   # Extra environment variables appended to the celery worker container only.
   workerExtraEnv: []
-  # Extra environment variables appended to the celery beat sidecar container only.
+  # Extra environment variables appended to the standalone celery beat container only.
   beatExtraEnv: []
-  beatResources: { }
+  beatScheduling:
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    topologySpreadConstraints: []
+  beatDatabasePool:
+    minSize: 0
+    maxSize: 2
+  beatResources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
   beatContainerSecurityContext:
     allowPrivilegeEscalation: false
     capabilities:
@@ -89,7 +116,17 @@ celery:
   schedule: "0 4 * * *"
   workerDeployment:
     replicas: 1
-    resources: { }
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    topologySpreadConstraints: []
+    databasePool:
+      minSize: 0
+      maxSize: 2
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
     containerSecurityContext:
       allowPrivilegeEscalation: false
       capabilities:
@@ -141,8 +178,21 @@ env:
 # only. Use this to set per-container values such as the PostgreSQL pool size,
 # which should differ between the web server, celery worker, and celery beat.
 web:
+  replicas: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Set selectors to app: <release>, component: web to spread only this release.
+  topologySpreadConstraints: []
   extraEnv: []
-  resources: { }
+  databasePool:
+    minSize: 0
+    maxSize: 10
+  # Initial requests, not measured capacity guarantees. Set limits after staging measurements.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 3Gi
   containerSecurityContext:
     allowPrivilegeEscalation: false
     capabilities:

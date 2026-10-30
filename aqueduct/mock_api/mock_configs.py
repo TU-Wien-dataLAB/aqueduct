@@ -195,6 +195,14 @@ def responses_detail_response(ids: PathIds) -> dict[str, Any]:
     ).model_dump()
 
 
+def systemone_detail_response(ids: PathIds) -> dict[str, Any]:
+    return {
+        "answers": [{"name": "visible_damage", "type": "predicate", "probability": 0.92}],
+        "model": "gpt-6-luna",
+        "usage": {"input_tokens": 15, "output_tokens": 9, "total_tokens": 24},
+    }
+
+
 def vector_store_detail_response(ids: PathIds) -> dict[str, Any]:
     """Return VectorStore with the ID from the URL (retrieve) or a newly generated one (create)."""
     vs_id = ids[0] if ids else _unique_id("vs")
@@ -423,6 +431,7 @@ default_post_configs = {
         ).model_dump()
     ),
     "responses": MockConfig(response_data=responses_detail_response),
+    "systemone": MockConfig(response_data=systemone_detail_response),
     "vector_stores": MockConfig(response_data=vector_store_detail_response),
     "vector_stores/id": MockConfig(response_data=vector_store_update_response),
     "vector_stores/id/file_batches": MockConfig(

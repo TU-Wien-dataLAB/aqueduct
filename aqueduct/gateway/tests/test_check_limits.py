@@ -382,9 +382,9 @@ class TokenRateLimitTest(ChatCompletionsBase):
 
 
 @override_settings(AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT=3, AQUEDUCT_RATE_LIMIT_ENABLED=False)
-class ConcurrentRequestLimitTest(ChatCompletionsBase):
+class ConcurrentRequestsLimitTest(ChatCompletionsBase):
     @async_to_sync
-    async def test_concurrent_request_limit(self):
+    async def test_concurrent_requests_limit(self):
         limit = settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
 
         # 1. Open `limit` streaming requests concurrently, but DO NOT consume
@@ -411,12 +411,18 @@ class ConcurrentRequestLimitTest(ChatCompletionsBase):
         self.assertEqual(resp.status_code, 200)
 
     @async_to_sync
-    async def test_concurrent_requests_from_different_users(self):
-        """Concurrent streaming requests are counted per user id."""
-        token_value_2, _ = await sync_to_async(self.create_new_user)()
+    async def test_concurrent_requests_from_different_tokens_same_user(self):
+        """Concurrent streaming requests are counted per token, not per user."""
+        token = await Token.objects.select_related("user").afirst()
+        user = token.user
+        # Create a new token for the same user
+        new_token = Token(name="TestToken", user=user)
+        token_value_2 = new_token._set_new_key()
+        await new_token.asave()
+
         limit = settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
 
-        # 1. Open `limit` streaming requests by the same user concurrently
+        # 1. Open `limit` streaming requests authorised by the same token concurrently
         # (slots stay held while the streams are open).
         responses_ok = await asyncio.gather(
             *(
@@ -427,7 +433,7 @@ class ConcurrentRequestLimitTest(ChatCompletionsBase):
         for resp in responses_ok:
             self.assertEqual(resp.status_code, 200)
 
-        # 2. The next request by the same user is over the limit -> 429.
+        # 2. The next request authorised by the same token is over the limit -> 429.
         blocked = await sync_to_async(self._send_chat_completion)(
             self.MESSAGES, max_completion_tokens=5
         )
@@ -435,7 +441,7 @@ class ConcurrentRequestLimitTest(ChatCompletionsBase):
         self.assertEqual(blocked.status_code, 429)
         self.assertIn("too many concurrent requests", blocked.json()["error"]["message"])
 
-        # 3. Another user sends a request; it should pass.
+        # 3. The user sends a request with the other token; it should pass.
         req_2 = self._build_chat_completion_request(self.MESSAGES, stream=False)
         req_2["headers"] = _build_chat_headers(token_value_2)
         resp_2 = await self.async_client.post(**req_2, content_type="application/json")
@@ -445,8 +451,8 @@ class ConcurrentRequestLimitTest(ChatCompletionsBase):
     async def test_concurrent_requests_limit_slot_released_if_exc_in_view(self):
         """If the view function fails, the slot for the request is released,
         and the original exception propagates."""
-        token = await Token.objects.select_related("user").afirst()
-        user_id = token.user.id
+        token = await Token.objects.afirst()
+        assert token is not None
 
         async def failing_view(request: ASGIRequest, **kwargs: Any):
             raise ValueError("view goes boom")
@@ -457,5 +463,5 @@ class ConcurrentRequestLimitTest(ChatCompletionsBase):
         with self.assertRaises(ValueError):
             await check_concurrency_limits(failing_view)(request, token=token)
 
-        # The acquire bumped the counter to 1; the exception path released it back to 0.
-        self.assertEqual(await self.redis.get(concurrency_key(user_id)), "0")
+        # The `acquire` bumped the counter to 1; the exception path released it back to 0.
+        self.assertEqual(await self.redis.get(concurrency_key(token)), "0")

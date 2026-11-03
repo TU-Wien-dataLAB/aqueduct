@@ -166,7 +166,7 @@ AQUEDUCT_RATE_LIMIT_LOCK_TTL_SECONDS = int(os.getenv("AQUEDUCT_RATE_LIMIT_LOCK_T
 AQUEDUCT_HOURLY_LIMIT_MULTIPLIER = int(os.getenv("AQUEDUCT_HOURLY_LIMIT_MULTIPLIER", "60"))
 AQUEDUCT_DAILY_LIMIT_MULTIPLIER = int(os.getenv("AQUEDUCT_DAILY_LIMIT_MULTIPLIER", "1440"))
 
-# Concurrent requests per user limiting (tracked in Redis)
+# Concurrent requests per token limiting (tracked in Redis)
 AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT = int(
     os.getenv("AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT", "3")
 )

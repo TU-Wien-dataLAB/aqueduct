@@ -16,11 +16,7 @@ from gateway.rate_limiting import check_and_reserve, has_any_limit
 from gateway.response_error import error_response
 
 if TYPE_CHECKING:
-    from django.contrib.auth import get_user_model
-
     from management.models import Token
-
-    User = get_user_model()
 
 
 log = logging.getLogger("aqueduct")
@@ -62,12 +58,12 @@ def get_limiter() -> "RedisConcurrencyLimiter":
     return RedisConcurrencyLimiter(get_redis_client())
 
 
-def concurrency_key(user_id: int) -> str:
-    return f"user:concurrency:{user_id}"
+def concurrency_key(token: "Token") -> str:
+    return f"user:concurrency:{token.id}"
 
 
-def concurrency_limit_for(user_id: int) -> int:
-    """A static value for now. Allows to adjust the limits on the per-user basis, if needed."""
+def concurrency_limit_for(token: "Token") -> int:
+    """A static value for now. Allows to adjust the limits on the per-token basis, if needed."""
     return settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
 
 
@@ -81,13 +77,13 @@ class RedisConcurrencyLimiter:
         # stream requests may expire before the streaming is over!
         self.refresh_interval = min(refresh_interval, self.ttl // 2)
 
-    async def acquire(self, user_id: int) -> bool:
-        limit = concurrency_limit_for(user_id)
-        ok = await self.acquire_script(keys=[concurrency_key(user_id)], args=[limit, self.ttl])
+    async def acquire(self, token: "Token") -> bool:
+        limit = concurrency_limit_for(token)
+        ok = await self.acquire_script(keys=[concurrency_key(token)], args=[limit, self.ttl])
         return bool(ok)
 
-    async def release(self, user_id: int) -> bool:
-        ok = await self.release_script(keys=[concurrency_key(user_id)])
+    async def release(self, token: "Token") -> bool:
+        ok = await self.release_script(keys=[concurrency_key(token)])
         return bool(ok)
 
     async def _refresh_ttl_loop(self, key: str, stop_event: asyncio.Event) -> None:
@@ -100,9 +96,11 @@ class RedisConcurrencyLimiter:
             else:
                 return
 
-    async def wrap_stream(self, stream: AsyncIterator[bytes], user_id: int) -> AsyncGenerator[Any]:
+    async def wrap_stream(
+        self, stream: AsyncIterator[bytes], token: "Token"
+    ) -> AsyncGenerator[Any]:
         """Hold the slot and prevent key expiry for the whole stream."""
-        key = concurrency_key(user_id)
+        key = concurrency_key(token)
         stop_event = asyncio.Event()
         watchdog = asyncio.create_task(self._refresh_ttl_loop(key, stop_event))
         try:
@@ -112,10 +110,12 @@ class RedisConcurrencyLimiter:
             stop_event.set()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await watchdog
-            await self.release(user_id)
+            await self.release(token)
 
 
 def check_concurrency_limits(view_func: AsyncView) -> AsyncView:
+    """Check concurrency limits per token."""
+
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         token: Token | None = kwargs.get("token")
@@ -125,12 +125,11 @@ def check_concurrency_limits(view_func: AsyncView) -> AsyncView:
             )
             return error_response("Internal server error", status=500)
 
-        # Check concurrent requests limit, using a Redis counter
-        user_id = token.user.id
+        # Check concurrent requests limit per token, using a Redis counter
         limiter = get_limiter()
-        if not await limiter.acquire(user_id):
+        if not await limiter.acquire(token):
             return error_response(
-                f"User with id={user_id} sent too many concurrent requests",
+                f"Token {token.name} sent too many concurrent requests",
                 status=429,
                 headers={"Retry-After": "10"},
             )
@@ -139,16 +138,16 @@ def check_concurrency_limits(view_func: AsyncView) -> AsyncView:
             response: ViewResult = await view_func(request, *args, **kwargs)
         except Exception:
             # Make sure we release the concurrent requests slot if there is an error.
-            await limiter.release(user_id)
+            await limiter.release(token)
             raise
 
         if isinstance(response, StreamingHttpResponse):
             # Keep the slot held for the full stream duration.
             streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
-            response.streaming_content = limiter.wrap_stream(streaming_content, user_id)
+            response.streaming_content = limiter.wrap_stream(streaming_content, token)
         else:
             # Response is fully generated; release now.
-            await limiter.release(user_id)
+            await limiter.release(token)
 
         return response
 

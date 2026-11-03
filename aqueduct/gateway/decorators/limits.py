@@ -115,15 +115,17 @@ class RedisConcurrencyLimiter:
             await self.release(user_id)
 
 
-def check_limits(view_func: AsyncView) -> AsyncView:
+def check_concurrency_limits(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         token: Token | None = kwargs.get("token")
         if not token:
-            log.error("check_limits decorator used without @token_authenticated decorator")
+            log.error(
+                "check_concurrency_limits decorator used without token_authenticated decorator"
+            )
             return error_response("Internal server error", status=500)
 
-        # 1. Check concurrent requests limit, using a Redis counter
+        # Check concurrent requests limit, using a Redis counter
         user_id = token.user.id
         limiter = get_limiter()
         if not await limiter.acquire(user_id):
@@ -133,7 +135,36 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                 headers={"Retry-After": "10"},
             )
 
-        # 2. Check rate limits
+        try:
+            response: ViewResult = await view_func(request, *args, **kwargs)
+        except Exception:
+            # Make sure we release the concurrent requests slot if there is an error.
+            await limiter.release(user_id)
+            raise
+
+        if isinstance(response, StreamingHttpResponse):
+            # Keep the slot held for the full stream duration.
+            streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
+            response.streaming_content = limiter.wrap_stream(streaming_content, user_id)
+        else:
+            # Response is fully generated; release now.
+            await limiter.release(user_id)
+
+        return response
+
+    return wrapper
+
+
+def check_rate_limits(view_func: AsyncView) -> AsyncView:
+    """Check token's rate limits, if enabled."""
+
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
+        token: Token | None = kwargs.get("token")
+        if not token:
+            log.error("check_rate_limits decorator used without token_authenticated decorator")
+            return error_response("Internal server error", status=500)
+
         limits = await sync_to_async(token.get_limit)()
         log.debug("Rate limits for Token %r (ID: %s): %s", token.name, token.id, limits)
 
@@ -163,20 +194,6 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                     error_message, status=429, headers={"Retry-After": str(retry_after)}
                 )
 
-        try:
-            response = await view_func(request, *args, **kwargs)
-        except Exception:
-            # Make sure we release the concurrent requests slot if there is an error.
-            await limiter.release(user_id)
-            raise
-
-        if isinstance(response, StreamingHttpResponse):
-            # Keep the slot held for the full stream duration.
-            streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
-            response.streaming_content = limiter.wrap_stream(streaming_content, user_id)
-        else:
-            # Response is fully generated; release now.
-            await limiter.release(user_id)
-        return response
+        return await view_func(request, *args, **kwargs)
 
     return wrapper

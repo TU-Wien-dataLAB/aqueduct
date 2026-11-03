@@ -3,7 +3,7 @@ from gateway.decorators.availability import check_model_availability
 from gateway.decorators.body import FileSizeError, ensure_usage, parse_body, resolve_alias
 from gateway.decorators.errors import catch_router_exceptions
 from gateway.decorators.files import process_batch_file, require_files_api_client
-from gateway.decorators.limits import check_limits
+from gateway.decorators.limits import check_concurrency_limits, check_rate_limits
 from gateway.decorators.log import log_request
 from gateway.decorators.mcp import (
     check_mcp_server_availability,
@@ -16,9 +16,10 @@ from gateway.decorators.responses import check_tool_availability, validate_respo
 __all__ = [
     "FileSizeError",
     "catch_router_exceptions",
-    "check_limits",
+    "check_concurrency_limits",
     "check_mcp_server_availability",
     "check_model_availability",
+    "check_rate_limits",
     "check_tool_availability",
     "ensure_usage",
     "log_request",

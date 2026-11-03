@@ -12,8 +12,7 @@ from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 from openai.types.chat import ChatCompletion
 
-from gateway.decorators import check_limits
-from gateway.decorators.limits import concurrency_key
+from gateway.decorators.limits import check_concurrency_limits, concurrency_key
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import ChatCompletionsBase
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
@@ -355,11 +354,11 @@ class TokenRateLimitTest(ChatCompletionsBase):
             f"Rate limit exceeded. Request limit (1.5/min) (Retry after {retry_after}s).",
         )
 
-    def test_check_limits_uses_no_request_table_sql(self):
+    def test_check_rate_limits_uses_no_request_table_sql(self):
         """A rate-limited (429) request issues no SQL against ``management_request``.
 
-        ``check_limits`` now reads from the cache, not the ``Request`` table. A
-        blocked request returns 429 before ``log_request`` runs, so it must not
+        ``check_rate_limits`` now reads from the cache, not the ``Request`` table.
+        A blocked request returns 429 before ``log_request`` runs, so it must not
         touch ``management_request`` at all (no aggregate SELECT, no INSERT).
         """
         self._setup_limits("org", "requests_per_minute", 1)
@@ -377,7 +376,7 @@ class TokenRateLimitTest(ChatCompletionsBase):
         self.assertEqual(
             request_table_queries,
             [],
-            "check_limits must not query the Request table; found: "
+            "check_rate_limits must not query the Request table; found: "
             + " | ".join(request_table_queries),
         )
 
@@ -456,7 +455,7 @@ class ConcurrentRequestLimitTest(ChatCompletionsBase):
 
         # When the view raises, the slot is released.
         with self.assertRaises(ValueError):
-            await check_limits(failing_view)(request, token=token)
+            await check_concurrency_limits(failing_view)(request, token=token)
 
         # The acquire bumped the counter to 1; the exception path released it back to 0.
         self.assertEqual(await self.redis.get(concurrency_key(user_id)), "0")

@@ -423,6 +423,31 @@ default_post_configs = {
         ).model_dump()
     ),
     "responses": MockConfig(response_data=responses_detail_response),
+    "rerank": MockConfig(
+        # Wire (Jina-style) format: litellm's rerank handler transforms this into
+        # a RerankResponse (reading `usage` for token accounting).
+        response_data={
+            "id": "rerank-mock-1",
+            "results": [
+                {
+                    "index": 2,
+                    "relevance_score": 0.97,
+                    "document": {"text": "Aqueduct is an AI gateway developed by TU Wien."},
+                },
+                {
+                    "index": 0,
+                    "relevance_score": 0.84,
+                    "document": {"text": "Aqueduct supports multiple AI model providers."},
+                },
+                {
+                    "index": 1,
+                    "relevance_score": 0.12,
+                    "document": {"text": "Vienna is the capital of Austria."},
+                },
+            ],
+            "usage": {"total_tokens": 42},
+        }
+    ),
     "vector_stores": MockConfig(response_data=vector_store_detail_response),
     "vector_stores/id": MockConfig(response_data=vector_store_update_response),
     "vector_stores/id/file_batches": MockConfig(

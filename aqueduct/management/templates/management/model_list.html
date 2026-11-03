@@ -57,12 +57,14 @@
                         <div class="flex items-center gap-1.5 mt-2">
                             <span class="status status-md
                                 {% if mode == "embedding" %}status-info
+                                {% elif mode == "rerank" %}status-success
                                 {% elif mode == "audio_speech" %}status-secondary
                                 {% elif mode == "audio_transcriptions" %}status-accent
                                 {% elif mode == "image_generations" %}status-warning
                                 {% endif %}"></span>
                             <span class="text-xs text-base-content/60">
                                 {% if mode == "embedding" %}Embedding
+                                {% elif mode == "rerank" %}Reranking
                                 {% elif mode == "audio_speech" %}Text-to-Speech
                                 {% elif mode == "audio_transcriptions" %}Speech-to-Text
                                 {% elif mode == "image_generations" %}Image Generation

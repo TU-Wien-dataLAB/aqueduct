@@ -9,7 +9,6 @@ from typing import Any, Literal, TypeVar
 from asgiref.sync import sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http.response import HttpResponseBase, StreamingHttpResponse
-from litellm.types.rerank import RerankResponse
 from litellm.types.utils import (
     EmbeddingResponse,
     ModelResponse,
@@ -214,19 +213,8 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
                 cached_input_tokens=cached_input_tokens,
                 reasoning_tokens=reasoning_tokens,
             )
-    else:
-        # Rerank responses carry token usage in ``meta`` (a plain dict with
-        # ``tokens`` / ``billed_units`` entries) rather than a top-level
-        # ``usage`` field.
-        if isinstance(data, RerankResponse):
-            meta: dict[str, Any] | None = data.meta
-            tokens: dict[str, Any] | None = (meta or {}).get("tokens")
-            billed: dict[str, Any] | None = (meta or {}).get("billed_units")
-            input_tokens = (
-                (tokens or {}).get("input_tokens") or (billed or {}).get("total_tokens") or 0
-            )
-            return Usage(input_tokens=input_tokens, output_tokens=0)
 
+    else:
         # Handle responses API format (top-level usage or in response field)
         usage = getattr(data, "usage", None)
         if not usage and hasattr(data, "response"):

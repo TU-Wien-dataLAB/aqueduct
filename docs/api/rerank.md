@@ -6,7 +6,7 @@ nav_order: 3
 
 # Rerank
 
-The `/rerank` endpoint reranks a list of documents by their relevance to a query, using a dedicated reranking model. It is intended for Retrieval-Augmented Generation (RAG) pipelines and exposes the [LiteLLM-compatible `/v1/rerank` API](https://docs.litellm.ai/docs/rerank).
+The `/rerank` endpoint reranks a list of documents by their relevance to a query, using a dedicated reranking model. It is intended for Retrieval-Augmented Generation (RAG) pipelines and uses the Jina-style `/v1/rerank` API that OpenAI-compatible backends (e.g. llama.cpp, vLLM) expose.
 
 ## HTTP Request
 
@@ -104,7 +104,7 @@ for result in response.json()["results"]:
 
 ## Provider Notes
 
-Reranking is relayed through the LiteLLM Router, so the backing model is configured in the [router config](../user-guide/models.md) like any other model. LiteLLM only supports a fixed set of rerank providers — notably **not** the generic `openai/` prefix. For an OpenAI-compatible (e.g. llama.cpp / vLLM) rerank endpoint, configure the deployment with the `hosted_vllm/` provider prefix so the gateway posts to its `/rerank` route:
+The request is relayed directly to the deployment's OpenAI-compatible endpoint (``{api_base}/rerank``), so the backing model is configured in the [router config](../user-guide/models.md) like any other model. For an OpenAI-compatible (e.g. llama.cpp / vLLM) rerank endpoint, configure the deployment's ``api_base`` to end in ``/v1`` and set a model ``id`` so the gateway can resolve the deployment:
 
 ```yaml
 model_list:

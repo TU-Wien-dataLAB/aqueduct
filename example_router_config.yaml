@@ -21,6 +21,7 @@ model_list:
     api_base: "os.environ/HOSTED_VLLM_API_BASE"
     api_key: "os.environ/OPENAI_API_KEY"
   model_info:
+    id: bge-reranker-v2-m3
     mode: rerank
     aliases: ["reranker"]
 - model_name: gpt-4o-mini-tts

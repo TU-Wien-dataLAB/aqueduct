@@ -129,23 +129,6 @@ class RerankTest(GatewayIntegrationTestCase):
         super().setUpClass()
         cls.url = reverse("gateway:rerank")
 
-    def setUp(self):
-        super().setUp()
-        # The router is lru_cached and shared between tests; litellm reads the
-        # HOSTED_VLLM_API_BASE env var at request time, so point it at the mock.
-        get_router.cache_clear()
-        if settings.TESTS_USE_MOCK_API:
-            self._env_patcher = patch.dict(
-                "os.environ", {"HOSTED_VLLM_API_BASE": self.mock_server.base_url}
-            )
-            self._env_patcher.start()
-
-    def tearDown(self):
-        if settings.TESTS_USE_MOCK_API and hasattr(self, "_env_patcher"):
-            self._env_patcher.stop()
-        get_router.cache_clear()
-        super().tearDown()
-
     def test_rerank(self):
         """
         Sends a simple rerank request to the mock server using the Django test
@@ -187,8 +170,7 @@ class RerankTest(GatewayIntegrationTestCase):
 
         response_json = response.json()
 
-        # Rerank responses should have 'id', 'results', and 'meta' fields
-        self.assertIn("id", response_json)
+        # Rerank responses should have 'results' with index and score
         self.assertIn("results", response_json)
         self.assertIsInstance(response_json["results"], list)
         self.assertGreater(len(response_json["results"]), 0)
@@ -197,13 +179,22 @@ class RerankTest(GatewayIntegrationTestCase):
         self.assertIn("relevance_score", result)
         self.assertIn("document", result)
 
+        # The request body is forwarded to the upstream rerank endpoint
+        forwarded = self.mock_server.get_last_request("rerank")
+        self.assertIsNotNone(forwarded, "The rerank request should reach the upstream mock.")
+        self.assertEqual(forwarded["model"], self.model)
+        self.assertEqual(forwarded["query"], payload["query"])
+        self.assertEqual(forwarded["documents"], payload["documents"])
+        self.assertEqual(forwarded["top_n"], 3)
+        self.assertNotIn("timeout", forwarded)
+
         # Check that the database contains one request and endpoint matches
         requests = list(Request.objects.all())
         self.assertEqual(len(requests), 1, "There should be exactly one request after rerank.")
         req = requests[0]
         self.assertIn("rerank", req.path, "Request endpoint should be for rerank.")
         self.assertEqual(req.model, self.model)
-        # litellm maps the rerank usage to input tokens
+        # Rerank usage is reported as input tokens
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertEqual(req.output_tokens, 0, "output_tokens should be 0")
         self.assertEqual(req.cached_input_tokens, 0)

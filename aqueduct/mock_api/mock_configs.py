@@ -445,7 +445,7 @@ default_post_configs = {
                     "document": {"text": "Vienna is the capital of Austria."},
                 },
             ],
-            "usage": {"total_tokens": 42},
+            "usage": {"prompt_tokens": 42, "total_tokens": 42},
         }
     ),
     "vector_stores": MockConfig(response_data=vector_store_detail_response),

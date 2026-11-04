@@ -40,6 +40,9 @@ jobs:
       - name: Run mypy type check
         run: cd aqueduct && uv run mypy
 
+      - name: Install live MCP reference server
+        run: npm exec --yes --package=@modelcontextprotocol/server-everything@2.0.0 -- node --version
+
       - name: Gateway Tests
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -48,7 +51,7 @@ jobs:
           START_VLLM_SERVER: ${{ matrix.start }}
           DJANGO_LOG_LEVEL: WARNING
           OIDC_OP_JWKS_ENDPOINT: https://example.com/application/o/example/jwks/
-        run: uv run ${{ matrix.start == 'true' && '--extra vllm' || '' }} python aqueduct/manage.py test gateway
+        run: cd aqueduct && uv run ${{ matrix.start == 'true' && '--extra vllm' || '' }} python manage.py test gateway
 
   compose:
     runs-on: ubuntu-latest

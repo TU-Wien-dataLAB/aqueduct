@@ -19,12 +19,6 @@ log = logging.getLogger("aqueduct")
 def log_request(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
-        is_initialize = kwargs.get("is_initialize", False)
-
-        if request.path.startswith("/mcp-servers/") and not is_initialize:
-            kwargs["request_log"] = None
-            return await view_func(request, *args, **kwargs)
-
         pydantic_model: dict[str, Any] | None = kwargs.get("pydantic_model")
         token = kwargs.get("token")
         request_log = Request(

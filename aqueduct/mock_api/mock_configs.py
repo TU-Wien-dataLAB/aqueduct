@@ -199,25 +199,6 @@ def responses_detail_response(ids: PathIds) -> dict[str, Any]:
     ).model_dump()
 
 
-def decisions_detail_response(ids: PathIds) -> dict[str, Any]:
-    """Return a non-streaming Decisions API response (evaluated answers + usage)."""
-    return Decision(
-        answers=[
-            AnswerAnswerResourcePredicate(name="visible_damage", probability=0.92, type="predicate")
-        ],
-        model="gpt-6-luna",
-        usage=DecisionUsage(
-            input_tokens=15,
-            input_tokens_details=DecisionUsageInputTokensDetails(
-                cache_write_tokens=0, cached_tokens=0
-            ),
-            output_tokens=9,
-            output_tokens_details=DecisionUsageOutputTokensDetails(reasoning_tokens=0),
-            total_tokens=24,
-        ),
-    ).model_dump()
-
-
 def vector_store_detail_response(ids: PathIds) -> dict[str, Any]:
     """Return VectorStore with the ID from the URL (retrieve) or a newly generated one (create)."""
     vs_id = ids[0] if ids else _unique_id("vs")
@@ -446,7 +427,25 @@ default_post_configs = {
         ).model_dump()
     ),
     "responses": MockConfig(response_data=responses_detail_response),
-    "decisions": MockConfig(response_data=decisions_detail_response),
+    "decisions": MockConfig(
+        response_data=Decision(
+            answers=[
+                AnswerAnswerResourcePredicate(
+                    name="visible_damage", probability=0.92, type="predicate"
+                )
+            ],
+            model="gpt-6-luna",
+            usage=DecisionUsage(
+                input_tokens=15,
+                input_tokens_details=DecisionUsageInputTokensDetails(
+                    cache_write_tokens=0, cached_tokens=0
+                ),
+                output_tokens=9,
+                output_tokens_details=DecisionUsageOutputTokensDetails(reasoning_tokens=0),
+                total_tokens=24,
+            ),
+        ).model_dump()
+    ),
     "vector_stores": MockConfig(response_data=vector_store_detail_response),
     "vector_stores/id": MockConfig(response_data=vector_store_update_response),
     "vector_stores/id/file_batches": MockConfig(

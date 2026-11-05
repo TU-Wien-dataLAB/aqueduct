@@ -12,6 +12,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from tos.models import TermsOfService, UserAgreement
 
+from gateway.config import get_router
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.test_runner import get_shared_mock_server
 from management.models import Org, Token, UserProfile
@@ -85,8 +86,6 @@ class GatewayIntegrationTestCase(TestCase):
 
     def setUp(self):
         super().setUp()
-        from gateway.config import get_router
-
         get_router.cache_clear()
 
     @classmethod

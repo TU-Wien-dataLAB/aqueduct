@@ -31,8 +31,8 @@ def check_limits(view_func: AsyncView) -> AsyncView:
             limits = await sync_to_async(token.get_limit)()
             log.debug("Rate limits for Token %r (ID: %s): %s", token.name, token.id, limits)
 
+            model = (kwargs.get("pydantic_model") or {}).get("model")
             if settings.AQUEDUCT_RATE_LIMIT_ENABLED and has_any_limit(limits):
-                model = (kwargs.get("pydantic_model") or {}).get("model")
                 allowed, exceeded = await sync_to_async(check_and_reserve)(limits, token.id, model)
                 if not allowed:
                     messages = (
@@ -54,12 +54,12 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                         error_message, status=429, headers={"Retry-After": str(retry_after)}
                     )
 
-            model = (kwargs.get("pydantic_model") or {}).get("model")
             if model and settings.AQUEDUCT_MODEL_RPM_LIMITS:
                 model = get_public_model_name(model)
                 if model is None:
                     return error_response(
-                        "Unknown public model. Use a configured model name or its Aqueduct alias.",
+                        "Unknown public model. Use a configured model name, its Aqueduct alias, "
+                        "or a configured deployment ID.",
                         param="model",
                         status=400,
                     )
@@ -71,7 +71,8 @@ def check_limits(view_func: AsyncView) -> AsyncView:
                     allowed, retry_after = await sync_to_async(check_model_limit)(model, rpm)
                     if not allowed:
                         return error_response(
-                            f"Model request limit ({rpm}/min) exceeded for '{model}'.",
+                            f"Model request limit ({rpm}/min) exceeded for '{model}' "
+                            f"(Retry after {retry_after}s).",
                             status=429,
                             headers={"Retry-After": str(retry_after)},
                         )

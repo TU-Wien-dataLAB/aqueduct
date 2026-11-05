@@ -137,7 +137,7 @@ async def mcp_server(
 
     method_header = request.headers.get(MCP_METHOD_HEADER)
     if not method_header:
-        log.error("Missing %s header for MCP server '%s'", MCP_METHOD_HEADER, name)
+        log.debug("Missing %s header for MCP server '%s'", MCP_METHOD_HEADER, name)
         return error_response(f"Missing {MCP_METHOD_HEADER} header", status=400)
 
     if json_rpc_message is None:
@@ -148,7 +148,7 @@ async def mcp_server(
         server_config = mcp_config[name]
         url = server_config["url"]
     except KeyError:
-        log.exception("MCP server '%s' not found", name)
+        log.debug("MCP server '%s' not found", name)
         return error_response(f"MCP server '{name}' not found", status=404)
     except RuntimeError as e:
         log.exception("Unable to load MCP config: %s", e)

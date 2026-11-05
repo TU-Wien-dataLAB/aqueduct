@@ -52,6 +52,7 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
             )
             self.assertEqual(response.status_code, 429)
             self.assertEqual(response["Retry-After"], "15")
+            self.assertIn("(Retry after 15s)", response.json()["error"]["message"])
             upstream.assert_not_awaited()
 
     def test_excluded_tokens_cannot_consume_a_public_model_budget(self):
@@ -74,6 +75,7 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
         ) as upstream:
             response = self.post_embedding("internal-deployment-id")
             self.assertEqual(response.status_code, 400)
+            self.assertIn("deployment ID", response.json()["error"]["message"])
             upstream.assert_not_awaited()
 
     @override_settings(AQUEDUCT_MODEL_RPM_LIMITS={"text-embedding-ada-002": 2})
@@ -100,6 +102,35 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
             response = self.post_embedding("embed")
             self.assertEqual(response.status_code, 500)
             upstream.assert_not_awaited()
+
+    def test_literal_wildcard_model_names_pin_to_one_deployment(self):
+        config = deepcopy(get_router_config())
+        original = next(
+            model for model in config["model_list"] if model["model_name"] == "gpt-4.1-nano"
+        )
+        original["model_name"] = "wild/*"
+        original["model_info"]["id"] = "wild-backend"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "router.json"
+            path.write_text(json.dumps(config))
+            with override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=path):
+                for loader in (get_router, get_router_config, get_openai_client):
+                    loader.cache_clear()
+                    self.addCleanup(loader.cache_clear)
+                url = reverse("gateway:v1_responses")
+
+                def create(model):
+                    return self.client.post(
+                        url,
+                        data=json.dumps({"model": model, "input": "Hello"}),
+                        headers=self.headers,
+                        content_type="application/json",
+                    )
+
+                # The literal wildcard name pins to its single deployment;
+                # expanded names are unknown.
+                self.assertEqual(create("wild/*").status_code, 200)
+                self.assertEqual(create("wild/foo").status_code, 400)
 
     @override_settings(AQUEDUCT_MODEL_RPM_LIMITS={"gpt-4.1-nano": 2, "dall-e-2": 2})
     def test_direct_openai_endpoints_share_public_budgets_with_legacy_deployment_ids(self):

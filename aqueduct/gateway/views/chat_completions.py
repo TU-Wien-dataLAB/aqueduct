@@ -23,6 +23,7 @@ from gateway.decorators import (
     tos_accepted,
 )
 from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
+from gateway.views.utils import router_kwargs
 from management.models import Request
 
 
@@ -48,7 +49,7 @@ async def chat_completions(
 ) -> RawJsonResponse | RawStreamingResponse:
     router = get_router()
     chat_completion: CustomStreamWrapper | ModelResponse = await router.acompletion(
-        **pydantic_model
+        **router_kwargs(pydantic_model, openai.types.chat.CompletionCreateParams)
     )
     if isinstance(chat_completion, CustomStreamWrapper):
         return RawStreamingResponse(streaming_content=chat_completion, request_log=request_log)

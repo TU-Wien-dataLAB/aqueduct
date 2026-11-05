@@ -606,6 +606,32 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         mock_view_func.assert_called_once_with(request, response_id, **kwargs)
         self.assertEqual(result.status_code, 200)
 
+    @patch("gateway.decorators.responses.get_mcp_config")
+    async def test_check_tool_availability_excluded_server_url_with_other_label(
+        self, mock_get_mcp_config
+    ):
+        """An excluded MCP server stays excluded when the tool names it only by URL."""
+        mock_view_func = AsyncMock()
+        mock_get_mcp_config.return_value = {"internal": {"url": "http://mcp-internal:8080"}}
+
+        request = AsyncMock()
+        request.build_absolute_uri = MagicMock(side_effect=lambda path: f"http://testserver{path}")
+
+        token = MagicMock()
+        token.mcp_server_excluded = MagicMock(side_effect=lambda name: name == "internal")
+        tool = {
+            "type": "mcp",
+            "server_label": "anything",
+            "server_url": "http://testserver/mcp-servers/internal/mcp",
+        }
+        kwargs = {"token": token, "pydantic_model": {"tools": [tool]}}
+
+        result = await check_tool_availability(mock_view_func)(request, "resp_id", **kwargs)
+
+        mock_view_func.assert_not_called()
+        self.assertEqual(result.status_code, 404)
+        self.assertEqual(tool["server_url"], "http://testserver/mcp-servers/internal/mcp")
+
     @override_settings(RESPONSES_API_ALLOWED_NATIVE_TOOLS=["allowed_tool"])
     async def test_check_tool_availability_invalid_tool_type(self):
         """

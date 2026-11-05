@@ -19,6 +19,7 @@ from gateway.decorators import (
     parse_body,
     process_file_content,
     resolve_alias,
+    run_plugins,
     token_authenticated,
     tos_accepted,
 )
@@ -38,6 +39,7 @@ from management.models import Request
 @check_model_availability
 @normalize_reasoning_fields
 @log_request
+@run_plugins
 @catch_router_exceptions
 async def chat_completions(
     request: ASGIRequest,

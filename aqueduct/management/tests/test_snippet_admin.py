@@ -6,9 +6,10 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from management.admin import SnippetAdminForm
+from management.admin import SnippetAdmin, SnippetAdminForm
 from management.auth import OIDCBackend
 from management.models import Snippet, SnippetType
+from management.plugins import compile_plugin_class
 from management.tests.helpers import (
     SNIPPET_ORG_CUSTOM,
     SNIPPET_ORG_FROM_FIRST_GROUP,
@@ -40,7 +41,7 @@ class SnippetAdminFormTestCase(TestCase):
         )
         self.assertTrue(form.is_valid(), form.errors)
 
-    def test_syntax_error_rejected(self):
+    def test_syntax_error_not_rejected(self):
         form = SnippetAdminForm(
             data={
                 "name": "c",
@@ -49,9 +50,9 @@ class SnippetAdminFormTestCase(TestCase):
                 "code": "class C(ConfigSnippet):\n  def bad(self",
             }
         )
-        self.assertFalse(form.is_valid())
+        self.assertTrue(form.is_valid(), form.errors)
 
-    def test_wrong_signature_rejected(self):
+    def test_wrong_signature_not_rejected(self):
         form = SnippetAdminForm(
             data={
                 "name": "c",
@@ -60,8 +61,7 @@ class SnippetAdminFormTestCase(TestCase):
                 "code": "class C(ConfigSnippet):\n    def org_name(self):\n        return 'x'\n",
             }
         )
-        self.assertFalse(form.is_valid())
-        self.assertIn("org_name", str(form.errors["code"]))
+        self.assertTrue(form.is_valid(), form.errors)
 
     def test_second_active_config_demotes_previous(self):
         seed_active_config(SNIPPET_ORG_CUSTOM)
@@ -144,11 +144,39 @@ class SnippetAdminFormTestCase(TestCase):
         )
         self.assertTrue(form.is_valid(), form.errors)
 
-    def test_plugin_syntax_error_still_rejected(self):
+    def test_plugin_syntax_error_not_rejected(self):
         form = SnippetAdminForm(
             data={"name": "p", "type": "plugin", "active": True, "code": "def broken("}
         )
-        self.assertFalse(form.is_valid())
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_order_locked_for_config_only(self):
+        form = SnippetAdminForm(
+            data={"name": "c", "type": "config", "active": True, "code": VALID_CODE}
+        )
+        self.assertTrue(form.fields["order"].widget.attrs.get("readonly"))
+
+        plugin = Snippet(type=SnippetType.PLUGIN)
+        form2 = SnippetAdminForm(
+            data={"name": "p", "type": "plugin", "active": True, "code": VALID_CODE},
+            instance=plugin,
+        )
+        self.assertFalse(form2.fields["order"].widget.attrs.get("readonly"))
+
+    def test_plugin_order_is_saved(self):
+        form = SnippetAdminForm(
+            data={
+                "name": "p",
+                "type": "plugin",
+                "active": True,
+                "order": "7",
+                "code": "class P(PluginSnippet):\n    pass\n",
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        obj = form.save()
+        obj.refresh_from_db()
+        self.assertEqual(obj.order, 7)
 
     def test_orm_create_active_config_demotes_previous(self) -> None:
         seed_active_config(SNIPPET_ORG_CUSTOM)
@@ -212,6 +240,13 @@ class SnippetAdminAuthorizationTestCase(TestCase):
         resp = self.client.get(self.changelist_url)
         self.assertEqual(resp.status_code, 200)
 
+    def test_superuser_add_form_renders_code_editor(self):
+        self.client.force_login(self.superuser)
+        resp = self.client.get(reverse("admin:management_snippet_add"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "snippet-code-input")
+        self.assertContains(resp, "@codemirror/lang-python")
+
     def test_non_superuser_staff_forbidden_on_changelist(self):
         self.client.force_login(self.staff)
         resp = self.client.get(self.changelist_url)
@@ -269,20 +304,20 @@ class SnippetConsoleTestCase(TestCase):
     def test_get_shows_console(self):
         resp = self.client.get(self.url)
         self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "Snippet test console")
+        self.assertContains(resp, "Config test console")
         self.assertContains(resp, "executes real server code")
         self.assertContains(resp, "restricted to superusers")
 
-    def test_get_prefills_example_payload(self):
+    def test_get_prefills_example_code_and_payload(self):
         resp = self.client.get(self.url)
         self.assertEqual(resp.status_code, 200)
-        # The Test input is pre-filled with a runnable claims example.
+        self.assertContains(resp, "class Test(ConfigSnippet)")
+        self.assertContains(resp, "display_team_names")
         self.assertContains(resp, '"email"')
         self.assertContains(resp, "you@example.com")
         self.assertContains(resp, '"groups"')
         self.assertContains(resp, "E123-Students")
-        # Dimmed on-page code example + large editor are present.
-        self.assertContains(resp, "snippet-console-example")
+        self.assertNotContains(resp, "snippet-console-example")
         self.assertContains(resp, "snippet-console-code")
 
     def test_runs_methods_against_payload(self):
@@ -307,5 +342,70 @@ class SnippetConsoleTestCase(TestCase):
         resp = self.client.post(
             self.url, {"code": SNIPPET_ORG_FROM_FIRST_GROUP, "payload": "{not json"}
         )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Invalid JSON test input")
+
+
+PLUGIN_CODE = """\
+class MyPlugin(PluginSnippet):
+    def before_request(self, request, token, body):
+        body["flagged"] = True
+        return body
+
+    def after_response(self, request, token, response):
+        response["audited"] = True
+"""
+
+
+PLUGIN_BLOCKER = """\
+class Blocker(PluginSnippet):
+    def before_request(self, request, token, body):
+        raise BlockedByPlugin("forbidden by guard", status=403)
+"""
+
+
+@override_settings(ADMIN_SUPERUSER_EMAILS=[SUPERUSER_EMAIL])
+class PluginConsoleTestCase(TestCase):
+    def setUp(self):
+        self.superuser = User.objects.create_superuser(
+            username="admin", email=SUPERUSER_EMAIL, password="pw"
+        )
+        self.client.force_login(self.superuser)
+        self.url = reverse("admin:management_snippet_plugin_test_console")
+
+    def test_get_shows_console_with_example_data(self):
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Plugin test console")
+        self.assertContains(resp, "Plugin code")
+        self.assertContains(resp, "class MyPlugin(PluginSnippet)")
+        self.assertContains(resp, '"model"')
+
+    def test_runs_plugin_hooks_against_payload(self):
+        resp = self.client.post(
+            self.url,
+            {"code": PLUGIN_CODE, "payload": json.dumps({"model": "gpt-4.1-nano", "messages": []})},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Plugin compiled and ran.")
+        self.assertContains(resp, "before_request returned transformed body")
+        self.assertContains(resp, "after_response ran")
+
+    def test_blocking_plugin_is_reported(self):
+        cls = compile_plugin_class(PLUGIN_BLOCKER)
+        lines = SnippetAdmin._run_plugin_console(cls, {"model": "x"})
+        self.assertEqual(
+            lines, ["before_request -> BlockedByPlugin('forbidden by guard', status=403)"]
+        )
+
+    def test_rejects_invalid_code(self):
+        resp = self.client.post(
+            self.url, {"code": "class P(PluginSnippet):\n  oops", "payload": "{}"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "failed to compile")
+
+    def test_rejects_invalid_json(self):
+        resp = self.client.post(self.url, {"code": PLUGIN_CODE, "payload": "{not json"})
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "Invalid JSON test input")

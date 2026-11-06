@@ -395,6 +395,9 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
             content_type="application/json",
         )
 
+    def _last_upstream_input(self):
+        return (self.mock_server.get_last_request("responses") or {}).get("input")
+
     def test_extra_body_cannot_override_the_checked_model(self):
         org = Org.objects.get(name="E060")
         org.add_excluded_model("dall-e-2")
@@ -408,6 +411,36 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         upstream_body = self.mock_server.get_last_request("responses")
         self.assertEqual(upstream_body["model"], self.model)
         self.assertEqual(upstream_body["top_k"], 5)
+
+    def test_previous_response_id_of_another_user_is_rejected(self):
+        register_response_in_cache("resp_of_someone", model=self.model, email="someone@example.com")
+
+        response = self._create(
+            {"model": self.model, "input": "other user", "previous_response_id": "resp_of_someone"}
+        )
+
+        self.assertEqual(response.status_code, 404, response.content)
+        self.assertEqual(response.json()["error"]["param"], "previous_response_id")
+        self.assertNotEqual(self._last_upstream_input(), "other user")
+
+    def test_unknown_previous_response_id_is_rejected(self):
+        response = self._create(
+            {"model": self.model, "input": "unknown id", "previous_response_id": "resp_unknown"}
+        )
+
+        self.assertEqual(response.status_code, 404, response.content)
+        self.assertNotEqual(self._last_upstream_input(), "unknown id")
+
+    def test_own_previous_response_id_is_forwarded(self):
+        register_response_in_cache("resp_mine", model=self.model, email="me@example.com")
+
+        response = self._create(
+            {"model": self.model, "input": "Hi", "previous_response_id": "resp_mine"}
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        upstream_body = self.mock_server.get_last_request("responses")
+        self.assertEqual(upstream_body["previous_response_id"], "resp_mine")
 
 
 class CheckToolAvailabilityTest(GatewayIntegrationTestCase):

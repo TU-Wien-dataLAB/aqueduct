@@ -27,7 +27,7 @@ from gateway.decorators.response_cache import (
 )
 from gateway.response_error import error_response
 from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
-from gateway.views.utils import ResponseRegistrationWrapper, oai_client_from_body
+from gateway.views.utils import ResponseRegistrationWrapper, oai_client_from_body, router_kwargs
 from management.models import Request, Token
 
 
@@ -62,7 +62,7 @@ async def create_response(
     pydantic_model["model"] = model_relay
 
     resp: Response | AsyncStream[ResponseStreamEvent] = await client.responses.create(
-        **pydantic_model
+        **router_kwargs(pydantic_model, openai.types.responses.ResponseCreateParams)
     )
 
     if isinstance(resp, AsyncStream):

@@ -12,7 +12,7 @@ from gateway.decorators.response_cache import register_response_in_cache
 from gateway.response_type import RawJsonResponse
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from management.models import Request, Token
+from management.models import Org, Request, Token
 from mock_api.mock_configs import MockStreamingConfig, default_post_stream_configs
 
 User = get_user_model()
@@ -386,6 +386,28 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(
             delete_response_me.status_code, 200, "User1 should be able to delete their own response"
         )
+
+    def _create(self, payload):
+        return self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+    def test_extra_body_cannot_override_the_checked_model(self):
+        org = Org.objects.get(name="E060")
+        org.add_excluded_model("dall-e-2")
+        org.save()
+
+        response = self._create(
+            {"model": self.model, "input": "Hi", "extra_body": {"model": "dall-e-2", "top_k": 5}}
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        upstream_body = self.mock_server.get_last_request("responses")
+        self.assertEqual(upstream_body["model"], self.model)
+        self.assertEqual(upstream_body["top_k"], 5)
 
 
 class CheckToolAvailabilityTest(GatewayIntegrationTestCase):

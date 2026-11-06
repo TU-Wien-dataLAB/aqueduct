@@ -19,6 +19,8 @@ urlpatterns = [
     # Embeddings endpoints
     path("embeddings", views.embeddings, name="embeddings"),
     path("v1/embeddings", views.embeddings, name="v1_embeddings"),
+    path("systemone", views.systemone, name="systemone"),
+    path("v1/systemone", views.systemone, name="v1_systemone"),
     # Models endpoints
     path("models", views.models, name="models"),
     path("v1/models", views.models, name="v1_models"),

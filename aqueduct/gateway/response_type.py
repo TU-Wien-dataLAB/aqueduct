@@ -213,6 +213,7 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
                 cached_input_tokens=cached_input_tokens,
                 reasoning_tokens=reasoning_tokens,
             )
+
     else:
         # Handle responses API format (top-level usage or in response field)
         usage = getattr(data, "usage", None)

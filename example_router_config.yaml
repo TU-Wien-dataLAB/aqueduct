@@ -14,6 +14,16 @@ model_list:
     mode: embedding
     aliases: ["embedding", "embed"]
     request_limit_multiplier: 2.0
+- model_name: bge-reranker-v2-m3
+  litellm_params:
+    model: hosted_vllm/bge-reranker-v2-m3
+    # Resolved at request time; tests point it at the mock server.
+    api_base: "os.environ/HOSTED_VLLM_API_BASE"
+    api_key: "os.environ/OPENAI_API_KEY"
+  model_info:
+    id: bge-reranker-v2-m3
+    mode: rerank
+    aliases: ["reranker"]
 - model_name: gpt-4o-mini-tts
   litellm_params:
     model: openai/gpt-4o-mini-tts

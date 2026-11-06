@@ -15,6 +15,7 @@ or plain HTTP clients (e.g., `curl`) to make requests.
 |------------------------------|-------------|-----------------------------------------|
 | `/completions`               | POST        | Text completions                        |
 | `/chat/completions`          | POST        | Chat-based completions                  |
+| `/rerank`                    | POST        | Rerank documents by relevance           |
 | `/embeddings`                | POST        | Text embeddings                         |
 | `/models`                    | GET         | List available models                   |
 | `/files`                     | GET, POST   | Manage input files for batch processing |
@@ -40,7 +41,7 @@ Click an endpoint below to learn more:
 
 - [Completions](completions.md)
 - [Chat Completions](chat-completions.md)
-- [Embeddings](embeddings.md)
+- [Rerank](rerank.md)
 - [List Models](models.md)
 - [Files](files.md)
 - [Batches](batches.md)

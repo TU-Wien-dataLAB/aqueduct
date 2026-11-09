@@ -8,13 +8,18 @@ from django.db import models
 from django.utils import timezone
 
 from gateway.config import resolve_model_alias
-from management.models.mixins import LimitSet, MCPServerExclusionMixin, ModelExclusionMixin
+from management.models.mixins import (
+    LimitMixin,
+    LimitSet,
+    MCPServerExclusionMixin,
+    ModelExclusionMixin,
+)
 from management.models.service_account import ServiceAccount
 
 _T = TypeVar("_T")
 
 
-class Token(models.Model):
+class Token(LimitMixin, models.Model):
     """
     Represents an authentication token (e.g., API Key), associated with a User
     and optionally a Service Account.
@@ -23,7 +28,7 @@ class Token(models.Model):
     name = models.CharField(verbose_name="Token name", max_length=255, null=False)
     # Link to the standard Django User model
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,  # Use settings.AUTH_USER_MODEL
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="custom_auth_tokens",  # Changed related_name to avoid potential clashes
     )
@@ -125,15 +130,20 @@ class Token(models.Model):
         org = profile.org
         return retrieval_function(profile, org)
 
-    def get_limit(self) -> "LimitSet":
+    def get_rate_limits(self) -> "LimitSet":
         """
         Determines the effective rate limits for this token, returning a LimitSet dataclass.
         Assumes database integrity for related objects.
 
         Hierarchy Rules:
+        Limits set on the token itself override any limits from its related objects.
+        If no limits are set, the following fallbacks are considered:
         - Service Account Token: Uses Team limits, falls back to Org limits.
         - User Token: Uses UserProfile limits, falls back to Org limits.
         """
+        token_limits = LimitSet.from_objects(self, None)
+        if token_limits.has_any_rate_limit():
+            return token_limits
         return self._get_from_hierarchy(LimitSet.from_objects)
 
     @classmethod

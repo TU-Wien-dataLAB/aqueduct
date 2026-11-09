@@ -35,7 +35,7 @@ class TokenRateLimitTest(ChatCompletionsBase):
 
     def _setup_limits(self, kind: str, field: str, value: int):
         """
-        Set a rate limit for the given kind ('org', 'team', 'user') and field.
+        Set a rate limit for the given kind ('org', 'team', 'user', 'token') and field.
         Returns the object whose limit was set.
 
         For 'team', also ensure the service account is associated with the test token.
@@ -80,6 +80,11 @@ class TokenRateLimitTest(ChatCompletionsBase):
             setattr(profile, field, value)
             profile.save(update_fields=[field])
             return profile
+        if kind == "token":
+            token = Token.objects.get(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
+            setattr(token, field, value)
+            token.save(update_fields=[field])
+
         raise ValueError(f"Unknown kind: {kind}")
 
     def _rate_limit_test_template(

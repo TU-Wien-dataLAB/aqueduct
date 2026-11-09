@@ -147,7 +147,7 @@ def check_and_reserve(
     same-token lock contention we fail open (allow the request) to avoid latency
     spikes — no worse than the read races this replaces.
     """
-    if not has_any_limit(limits):
+    if not limits.has_any_rate_limit():
         return True, []
 
     windows = limits.windows()

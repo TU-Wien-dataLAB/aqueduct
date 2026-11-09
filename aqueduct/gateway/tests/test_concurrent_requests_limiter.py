@@ -1,19 +1,22 @@
 import asyncio
-from unittest.mock import MagicMock
 
 from asgiref.sync import async_to_sync
-from django.test import SimpleTestCase, override_settings
+from django.contrib.auth import get_user_model
+from django.test import override_settings
 from fakeredis import FakeServer
 from fakeredis.aioredis import FakeRedis
 
 from gateway.decorators.limits import RedisConcurrencyLimiter, concurrency_key
+from gateway.tests.utils.base import GatewayIntegrationTestCase
 from management.models import Token
+
+User = get_user_model()
 
 
 @override_settings(
     AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT=3, AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=120
 )
-class RedisConcurrencyLimiterTests(SimpleTestCase):
+class RedisConcurrencyLimiterTests(GatewayIntegrationTestCase):
     """Unit tests for RedisConcurrencyLimiter, using fakeredis.
 
     The Lua scripts (``acquire_script`` / ``release_script``) are executed
@@ -24,9 +27,12 @@ class RedisConcurrencyLimiterTests(SimpleTestCase):
         self.server = FakeServer()
         self.redis = FakeRedis(server=self.server, decode_responses=True)
         self.limiter = RedisConcurrencyLimiter(self.redis, refresh_interval=30)
-        self.token = MagicMock(spec=Token)
+        self.token = Token.objects.get(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
         self.key = concurrency_key(self.token)
-        self.token_2 = MagicMock(spec=Token)
+        new_user = User.objects.create_user(username="OtherUser", email="other@example.com")
+        self.token_2 = Token(name="TestToken", user=new_user)
+        self.token_2._set_new_key()
+        self.token_2.save()
         self.key_2 = concurrency_key(self.token_2)
 
     # ------------------------------ acquire ------------------------------

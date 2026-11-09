@@ -12,7 +12,7 @@ from django.core.handlers.asgi import ASGIRequest
 from django.http.response import StreamingHttpResponse
 
 from gateway.decorators.types import AsyncView, ViewResult
-from gateway.rate_limiting import check_and_reserve, has_any_limit
+from gateway.rate_limiting import check_and_reserve
 from gateway.response_error import error_response
 
 if TYPE_CHECKING:
@@ -63,7 +63,9 @@ def concurrency_key(token: "Token") -> str:
 
 
 def concurrency_limit_for(token: "Token") -> int:
-    """A static value for now. Allows to adjust the limits on the per-token basis, if needed."""
+    """Determines concurrent requests limit for the token."""
+    if token.concurrent_requests_limit is not None:
+        return token.concurrent_requests_limit
     return settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
 
 
@@ -125,6 +127,9 @@ def check_concurrency_limits(view_func: AsyncView) -> AsyncView:
             )
             return error_response("Internal server error", status=500)
 
+        if not settings.AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_ENABLED:
+            return await view_func(request, *args, **kwargs)
+
         # Check concurrent requests limit per token, using a Redis counter
         limiter = get_limiter()
         if not await limiter.acquire(token):
@@ -164,10 +169,10 @@ def check_rate_limits(view_func: AsyncView) -> AsyncView:
             log.error("check_rate_limits decorator used without token_authenticated decorator")
             return error_response("Internal server error", status=500)
 
-        limits = await sync_to_async(token.get_limit)()
+        limits = await sync_to_async(token.get_rate_limits)()
         log.debug("Rate limits for Token %r (ID: %s): %s", token.name, token.id, limits)
 
-        if settings.AQUEDUCT_RATE_LIMIT_ENABLED and has_any_limit(limits):
+        if settings.AQUEDUCT_RATE_LIMIT_ENABLED and limits.has_any_rate_limit():
             model = (kwargs.get("pydantic_model") or {}).get("model")
             try:
                 allowed, exceeded = await sync_to_async(check_and_reserve)(limits, token.id, model)

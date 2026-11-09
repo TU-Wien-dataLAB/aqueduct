@@ -124,6 +124,13 @@ class LimitSet:
             ),
         ]
 
+    def has_any_rate_limit(self) -> bool:
+        """Returns True if any window has any non-None limit."""
+        return any(
+            rpm is not None or itpm is not None or otpm is not None
+            for _name, _secs, rpm, itpm, otpm in self.windows()
+        )
+
 
 class LimitMixin(models.Model):
     """

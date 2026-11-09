@@ -18,7 +18,6 @@ from gateway.rate_limiting import (
     _bucket_key,
     check_and_reserve,
     get_per_token_usage,
-    has_any_limit,
     record_token_usage,
 )
 from management.models import LimitSet, Usage
@@ -340,6 +339,6 @@ class LimitSetResolutionTest(SimpleTestCase):
         self.assertEqual(windows[2][3], 5 * 1440)  # settings default daily mult
 
     def test_has_no_limit_fast_path(self):
-        self.assertFalse(has_any_limit(LimitSet()))
-        self.assertTrue(has_any_limit(LimitSet(requests_per_minute=1)))
-        self.assertTrue(has_any_limit(LimitSet(input_tokens_per_minute=1)))
+        self.assertFalse(LimitSet().has_any_rate_limit())
+        self.assertTrue(LimitSet(requests_per_minute=1).has_any_rate_limit())
+        self.assertTrue(LimitSet(input_tokens_per_minute=1).has_any_rate_limit())

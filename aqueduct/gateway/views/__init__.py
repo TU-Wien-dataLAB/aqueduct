@@ -7,6 +7,7 @@ from gateway.views.image_generation import image_generation
 from gateway.views.models import model_group_info, models
 from gateway.views.responses import create_response, get_response_input_items, response
 from gateway.views.speech import speech
+from gateway.views.systemone import systemone
 from gateway.views.transcriptions import transcriptions
 from gateway.views.vector_store_file_batches import (
     vector_store_file_batch,
@@ -38,6 +39,7 @@ __all__ = [
     "models",
     "response",
     "speech",
+    "systemone",
     "transcriptions",
     "vector_store",
     "vector_store_file",

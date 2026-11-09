@@ -14,7 +14,7 @@ HOURS_PER_DAY = 24
 MINUTES_PER_DAY = HOURS_PER_DAY * MINUTES_PER_HOUR
 
 
-@dataclasses.dataclass(frozen=True)  # frozen=True makes instances immutable
+@dataclasses.dataclass(frozen=True)
 class LimitSet:
     """Represents a resolved set of rate limits.
 
@@ -157,6 +157,11 @@ class LimitMixin(models.Model):
         blank=True,
         help_text="Daily limit = per-minute limit x this. Null = fallback (default 1440). "
         "Valid range 1-1440 (a day has 1440 minutes). Lower = stricter sustained cap.",
+    )
+    concurrent_requests_limit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum parallel requests allowed. Null means use fallback or no limit.",
     )
 
     class Meta:

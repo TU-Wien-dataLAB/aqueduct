@@ -7,7 +7,6 @@ from typing import ClassVar
 from unittest.mock import patch
 
 from asgiref.sync import async_to_sync
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -2506,17 +2505,8 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
         super().setUp()
         get_router_config.cache_clear()
         get_router.cache_clear()
-        if settings.TESTS_USE_MOCK_API:
-            # The rerank deployment uses the hosted_vllm provider, which resolves
-            # its api_base from this env var at request time.
-            self._rerank_env_patcher = patch.dict(
-                "os.environ", {"HOSTED_VLLM_API_BASE": self.mock_server.base_url}
-            )
-            self._rerank_env_patcher.start()
 
     def tearDown(self):
-        if settings.TESTS_USE_MOCK_API and hasattr(self, "_rerank_env_patcher"):
-            self._rerank_env_patcher.stop()
         get_router_config.cache_clear()
         get_router.cache_clear()
         super().tearDown()

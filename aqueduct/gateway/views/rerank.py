@@ -61,9 +61,7 @@ async def rerank(
     OpenAI-compatible backend (``{api_base}/rerank``), forwarding ``query``
     and ``documents`` and returning the scored ``results``.
     """
-    model = pydantic_model.get("model")
-    if not isinstance(model, str):
-        return error_response("Missing required parameter: model", param="model", status=400)
+    model = pydantic_model["model"]
 
     client, model_relay = oai_client_from_body(model, request)
     pydantic_model["model"] = model_relay

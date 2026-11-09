@@ -1,7 +1,7 @@
 ---
 title: Rerank
 parent: API Reference
-nav_order: 3
+nav_order: 10
 ---
 
 # Rerank

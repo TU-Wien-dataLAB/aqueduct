@@ -172,6 +172,28 @@ valkey:
 The app auto-derives the Valkey connection (no `celery.brokerUrl` override
 needed).
 
+## Upgrading
+
+### To chart 0.2.0
+
+The web Deployment's selector now includes `component: web`. Before, it
+selected only `app: <release>`, which the Celery worker pods carry too, so
+tools that resolve `deployment/<release>` to a pod (`kubectl exec`,
+`kubectl logs`, `kubectl port-forward`) could pick a worker pod.
+
+A Deployment's selector is immutable, so `helm upgrade` fails with
+`field is immutable` unless the old Deployment is removed first. Delete it
+without its pods, then upgrade:
+
+```bash
+kubectl delete deployment <release> --cascade=orphan -n <ns>
+helm upgrade <release> ... -n <ns>
+```
+
+The pods keep running. The new Deployment adopts the existing ReplicaSet, so
+nothing restarts unless the upgrade changes the pod template anyway. With Argo
+CD, delete the Deployment the same way, then sync.
+
 ## Notes
 
 - User and admin management will be covered in the User Guide.

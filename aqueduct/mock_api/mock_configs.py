@@ -424,8 +424,8 @@ default_post_configs = {
     ),
     "responses": MockConfig(response_data=responses_detail_response),
     "rerank": MockConfig(
-        # Wire (Jina-style) format: litellm's rerank handler transforms this into
-        # a RerankResponse (reading `usage` for token accounting).
+        # Jina-style wire format, returned as-is by the upstream. The gateway
+        # reads usage.prompt_tokens for token accounting (get_token_usage).
         response_data={
             "id": "rerank-mock-1",
             "results": [

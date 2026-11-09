@@ -167,6 +167,9 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+        response_json = response.json()
+        self.assertEqual(response_json["error"]["message"], "Missing required parameter: model")
+        self.assertEqual(response_json["error"]["param"], "model")
 
     async def test_systemone_unknown_model(self):
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)

@@ -44,9 +44,9 @@ async def systemone(
         return error_response("Missing required parameter: model", param="model", status=400)
 
     client, model_relay = oai_client_from_body(model, request)
-    pydantic_model["model"] = model_relay
 
-    body = dict(pydantic_model)
+    body = pydantic_model.copy()
+    body["model"] = model_relay
     body.pop("timeout", None)
 
     response = cast("dict[str, Any]", await client.post("/systemone", cast_to=object, body=body))

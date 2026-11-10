@@ -12,7 +12,7 @@ from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 from openai.types.chat import ChatCompletion
 
-from gateway.decorators.limits import check_concurrency_limits, concurrency_key
+from gateway.decorators.limits import check_token_concurrency_limits, token_concurrency_key
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import ChatCompletionsBase
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
@@ -452,11 +452,13 @@ class TokenRateLimitTest(ChatCompletionsBase):
         )
 
 
-@override_settings(AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT=3, AQUEDUCT_RATE_LIMIT_ENABLED=False)
+@override_settings(
+    AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT=3, AQUEDUCT_RATE_LIMIT_ENABLED=False
+)
 class ConcurrentRequestsLimitTest(ChatCompletionsBase):
     @async_to_sync
-    async def test_concurrent_requests_limit(self):
-        limit = settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
+    async def test_concurrent_requests_limit_per_token(self):
+        limit = settings.AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT
 
         # 1. Open `limit` streaming requests concurrently, but DO NOT consume
         #    their bodies yet -> slots stay held while the streams are open.
@@ -491,7 +493,7 @@ class ConcurrentRequestsLimitTest(ChatCompletionsBase):
         token_value_2 = new_token._set_new_key()
         await new_token.asave()
 
-        limit = settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
+        limit = settings.AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT
 
         # 1. Open `limit` streaming requests authorised by the same token concurrently
         # (slots stay held while the streams are open).
@@ -519,7 +521,7 @@ class ConcurrentRequestsLimitTest(ChatCompletionsBase):
         self.assertEqual(resp_2.status_code, 200)
 
     @async_to_sync
-    async def test_concurrent_requests_limit_slot_released_if_exc_in_view(self):
+    async def test_token_concurrent_requests_limit_slot_released_if_exc_in_view(self):
         """If the view function fails, the slot for the request is released,
         and the original exception propagates."""
         token = await Token.objects.afirst()
@@ -532,7 +534,7 @@ class ConcurrentRequestsLimitTest(ChatCompletionsBase):
 
         # When the view raises, the slot is released.
         with self.assertRaises(ValueError):
-            await check_concurrency_limits(failing_view)(request, token=token)
+            await check_token_concurrency_limits(failing_view)(request, token=token)
 
         # The `acquire` bumped the counter to 1; the exception path released it back to 0.
-        self.assertEqual(await self.redis.get(concurrency_key(token)), "0")
+        self.assertEqual(await self.redis.get(token_concurrency_key(token)), "0")

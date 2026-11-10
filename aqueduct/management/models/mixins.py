@@ -88,7 +88,7 @@ class LimitSet:
             daily_limit_multiplier=_resolve("daily_limit_multiplier"),
             # Note: the concurrency limit does not default to None!
             concurrent_requests_limit=_resolve("concurrent_requests_limit")
-            or settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT,
+            or settings.AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT,
         )
 
     def _hourly_mult(self) -> int:

@@ -12,9 +12,9 @@ from pydantic import ConfigDict, RootModel, TypeAdapter
 
 from gateway.decorators import (
     catch_router_exceptions,
-    check_concurrency_limits,
     check_model_availability,
     check_rate_limits,
+    check_token_concurrency_limits,
     log_request,
     parse_body,
     resolve_alias,
@@ -37,7 +37,7 @@ class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(TranscriptionCreateParams))
-@check_concurrency_limits
+@check_token_concurrency_limits
 @check_rate_limits
 @resolve_alias
 @check_model_availability

@@ -11,6 +11,7 @@ from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.http.response import StreamingHttpResponse
 
+from gateway.config import get_model_max_parallel_requests, resolve_model_alias
 from gateway.decorators.types import AsyncView, ViewResult
 from gateway.rate_limiting import check_and_reserve
 from gateway.response_error import error_response
@@ -58,11 +59,11 @@ def get_limiter() -> "RedisConcurrencyLimiter":
     return RedisConcurrencyLimiter(get_redis_client())
 
 
-def concurrency_key(token: "Token") -> str:
-    return f"user:concurrency:{token.id}"
+def token_concurrency_key(token: "Token") -> str:
+    return f"token:concurrency:{token.id}"
 
 
-def concurrency_limit_for(token: "Token") -> int:
+def token_concurrency_limit(token: "Token") -> int:
     """Returns concurrent requests limit for the token."""
     if token.concurrent_requests_limit is not None:
         # Short-circuit if the limit is set on the token to avoid db queries
@@ -70,23 +71,39 @@ def concurrency_limit_for(token: "Token") -> int:
     return token.get_limits().concurrent_requests_limit
 
 
+def model_concurrency_key(model_name: str) -> str:
+    return f"model:concurrency:{resolve_model_alias(model_name)}"
+
+
+def model_concurrency_limit(model: str) -> int:
+    """Returns the concurrent requests limit for a specific model.
+
+    Looks up an optional per-model override defined in
+    ``AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMITS``,
+    falling back to the default model concurrency limit.
+    """
+    configured = get_model_max_parallel_requests(model)
+    if configured is not None:
+        return configured
+    return settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT
+
+
 class RedisConcurrencyLimiter:
     def __init__(self, redis_client: aioredis.Redis, refresh_interval: int = 30):
         self.redis = redis_client
         self.acquire_script = redis_client.register_script(ACQUIRE_LUA)
         self.release_script = redis_client.register_script(RELEASE_LUA)
-        self.ttl = settings.AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS
+        self.ttl = settings.AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS
         # Refresh interval has to be safely smaller than ttl; otherwise slots of long-running
         # stream requests may expire before the streaming is over!
         self.refresh_interval = min(refresh_interval, self.ttl // 2)
 
-    async def acquire(self, token: "Token") -> bool:
-        limit = concurrency_limit_for(token)
-        ok = await self.acquire_script(keys=[concurrency_key(token)], args=[limit, self.ttl])
+    async def acquire(self, key: str, limit: int) -> bool:
+        ok = await self.acquire_script(keys=[key], args=[limit, self.ttl])
         return bool(ok)
 
-    async def release(self, token: "Token") -> bool:
-        ok = await self.release_script(keys=[concurrency_key(token)])
+    async def release(self, key: str) -> bool:
+        ok = await self.release_script(keys=[key])
         return bool(ok)
 
     async def _refresh_ttl_loop(self, key: str, stop_event: asyncio.Event) -> None:
@@ -99,11 +116,8 @@ class RedisConcurrencyLimiter:
             else:
                 return
 
-    async def wrap_stream(
-        self, stream: AsyncIterator[bytes], token: "Token"
-    ) -> AsyncGenerator[Any]:
+    async def wrap_stream(self, stream: AsyncIterator[bytes], key: str) -> AsyncGenerator[Any]:
         """Hold the slot and prevent key expiry for the whole stream."""
-        key = concurrency_key(token)
         stop_event = asyncio.Event()
         watchdog = asyncio.create_task(self._refresh_ttl_loop(key, stop_event))
         try:
@@ -113,49 +127,100 @@ class RedisConcurrencyLimiter:
             stop_event.set()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await watchdog
-            await self.release(token)
+            await self.release(key)
 
 
-def check_concurrency_limits(view_func: AsyncView) -> AsyncView:
-    """Check concurrency limits per token."""
+async def _run_with_concurrency_limit(
+    key: str,
+    limit: int,
+    error_message: str,
+    view_func: AsyncView,
+    request: ASGIRequest,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> ViewResult:
+    """Acquire a slot for concurrent requests, run the view, then release the slot.
+
+    The slot is released as soon as a non-streaming response is produced, or kept
+    for the full duration of a streaming response. On an exception the slot is
+    always released before the error propagates.
+    """
+    limiter = get_limiter()
+    if not await limiter.acquire(key, limit):
+        return error_response(error_message, status=429, headers={"Retry-After": "10"})
+
+    try:
+        response: ViewResult = await view_func(request, *args, **kwargs)
+    except Exception:
+        # Make sure we release the concurrent requests slot if there is an error.
+        await limiter.release(key)
+        raise
+
+    if isinstance(response, StreamingHttpResponse):
+        # Keep the slot held for the full stream duration.
+        streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
+        response.streaming_content = limiter.wrap_stream(streaming_content, key)
+    else:
+        # Response is fully generated; release now.
+        await limiter.release(key)
+
+    return response
+
+
+def check_token_concurrency_limits(view_func: AsyncView) -> AsyncView:
+    """Check concurrent requests limits per token."""
 
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         token: Token | None = kwargs.get("token")
         if not token:
-            log.error(
-                "check_concurrency_limits decorator used without token_authenticated decorator"
-            )
+            log.error("check_token_concurrency_limits used without token_authenticated decorator")
             return error_response("Internal server error", status=500)
 
-        if not settings.AQUEDUCT_CONCURRENT_REQUESTS_LIMIT_ENABLED:
+        if not settings.AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_ENABLED:
             return await view_func(request, *args, **kwargs)
 
         # Check concurrent requests limit per token, using a Redis counter
-        limiter = get_limiter()
-        if not await limiter.acquire(token):
-            return error_response(
-                f"Token {token.name} sent too many concurrent requests",
-                status=429,
-                headers={"Retry-After": "10"},
-            )
+        limit = await sync_to_async(token_concurrency_limit)(token)
+        return await _run_with_concurrency_limit(
+            token_concurrency_key(token),
+            limit,
+            f"Token {token.name} sent too many concurrent requests",
+            view_func,
+            request,
+            args,
+            kwargs,
+        )
 
-        try:
-            response: ViewResult = await view_func(request, *args, **kwargs)
-        except Exception:
-            # Make sure we release the concurrent requests slot if there is an error.
-            await limiter.release(token)
-            raise
+    return wrapper
 
-        if isinstance(response, StreamingHttpResponse):
-            # Keep the slot held for the full stream duration.
-            streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
-            response.streaming_content = limiter.wrap_stream(streaming_content, token)
-        else:
-            # Response is fully generated; release now.
-            await limiter.release(token)
 
-        return response
+def check_model_concurrency_limits(view_func: AsyncView) -> AsyncView:
+    """Check concurrent requests limits per model."""
+
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
+        token: Token | None = kwargs.get("token")
+        if not token:
+            log.error("check_model_concurrency_limits used without token_authenticated decorator")
+            return error_response("Internal server error", status=500)
+
+        if not settings.AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMIT_ENABLED:
+            return await view_func(request, *args, **kwargs)
+
+        model = (kwargs.get("pydantic_model") or {}).get("model")
+        if not model:
+            return await view_func(request, *args, **kwargs)
+
+        return await _run_with_concurrency_limit(
+            model_concurrency_key(model),
+            model_concurrency_limit(model),
+            f"Too many concurrent requests for model {model}",
+            view_func,
+            request,
+            args,
+            kwargs,
+        )
 
     return wrapper
 

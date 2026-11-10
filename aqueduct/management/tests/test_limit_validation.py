@@ -56,7 +56,8 @@ class LimitSetResolutionTest(SimpleTestCase):
         self.assertEqual(limits.hourly_limit_multiplier, 3)  # from team
         self.assertEqual(limits.daily_limit_multiplier, 1440)  # from org
         self.assertEqual(
-            limits.concurrent_requests_limit, settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
+            limits.concurrent_requests_limit,
+            settings.AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT,
         )  # default
 
     @override_settings(AQUEDUCT_HOURLY_LIMIT_MULTIPLIER=60, AQUEDUCT_DAILY_LIMIT_MULTIPLIER=1440)

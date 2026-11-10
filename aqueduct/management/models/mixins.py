@@ -1,5 +1,4 @@
 import dataclasses
-from typing import Optional
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -16,7 +15,7 @@ MINUTES_PER_DAY = HOURS_PER_DAY * MINUTES_PER_HOUR
 
 @dataclasses.dataclass(frozen=True)
 class LimitSet:
-    """Represents a resolved set of rate limits.
+    """Represents a resolved set of rate and concurrency limits.
 
     The per-minute limits are the primary caps. The hourly/daily limits are
     derived from the per-minute limits via ``hourly_limit_multiplier`` /
@@ -30,23 +29,32 @@ class LimitSet:
     output_tokens_per_minute: int | None = None
     hourly_limit_multiplier: int | None = None
     daily_limit_multiplier: int | None = None
+    concurrent_requests_limit: int | None = None
 
     # Add future limit fields here with default None
 
     @classmethod
     def from_objects(
-        cls, specific_limiter: Optional["LimitMixin"], org_limiter: Optional["LimitMixin"]
+        cls,
+        specific_limiter: "LimitMixin",
+        fallback_limiter: "LimitMixin | None" = None,
+        org_limiter: "LimitMixin | None" = None,
     ) -> "LimitSet":
         """
-        Creates a LimitSet by resolving limits from a specific limiter
-        (like Team or UserProfile) and a fallback Org limiter object.
+        Creates a LimitSet by resolving limits from a specific limiter (like
+        Token, Team or UserProfile) and the fallback limiter object.
 
+        The fallback object should be related to the specific limiter, e.g. for
+        a Token, the fallback can be a Team or a UserProfile; for a Team
+        or UserProfile, it would be an Org.
         Each field is resolved independently through the hierarchy
-        (specific -> org -> None), exactly like the per-minute fields.
+        (specific -> fallback -> default).
 
         Args:
-            specific_limiter: The object with the primary limits (e.g., Team, UserProfile).
-            org_limiter: The object with the fallback limits (Org).
+            specific_limiter: The object with the primary limits (e.g., Token,
+                Team, UserProfile).
+            fallback_limiter: The object with the fallback limits
+                (e.g. Team/UserProfile, Org).
 
         Returns:
             A LimitSet instance with the effectively resolved limits.
@@ -62,6 +70,12 @@ class LimitSet:
             if specific_value is not None:
                 return specific_value
 
+            fallback_value: int | None = (
+                getattr(fallback_limiter, field_name, None) if fallback_limiter else None
+            )
+            if fallback_value is not None:
+                return fallback_value
+
             org_value: int | None = getattr(org_limiter, field_name, None) if org_limiter else None
             return org_value
 
@@ -71,6 +85,9 @@ class LimitSet:
             output_tokens_per_minute=_resolve("output_tokens_per_minute"),
             hourly_limit_multiplier=_resolve("hourly_limit_multiplier"),
             daily_limit_multiplier=_resolve("daily_limit_multiplier"),
+            # Note: the concurrency limit does not default to None!
+            concurrent_requests_limit=_resolve("concurrent_requests_limit")
+            or settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT,
         )
 
     def _hourly_mult(self) -> int:

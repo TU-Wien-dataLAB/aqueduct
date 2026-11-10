@@ -1,7 +1,7 @@
 import hashlib
 import secrets
-from collections.abc import Callable
-from typing import Any, Optional, TypeVar
+import typing
+from typing import Any, Optional
 
 from django.conf import settings
 from django.db import models
@@ -16,7 +16,8 @@ from management.models.mixins import (
 )
 from management.models.service_account import ServiceAccount
 
-_T = TypeVar("_T")
+if typing.TYPE_CHECKING:
+    from management.models import Org, Team, UserProfile
 
 
 class Token(LimitMixin, models.Model):
@@ -117,7 +118,7 @@ class Token(LimitMixin, models.Model):
         """
         super().clean()
 
-    def _get_from_hierarchy(self, retrieval_function: Callable[..., _T]) -> _T:
+    def _get_obj_hierarchy(self) -> "tuple[UserProfile | Team, Org]":
         token_instance = Token.objects.select_related(
             "user__profile__org", "service_account__team__org"
         ).get(pk=self.pk)
@@ -125,10 +126,10 @@ class Token(LimitMixin, models.Model):
         if token_instance.service_account:
             team = token_instance.service_account.team
             org = team.org
-            return retrieval_function(team, org)
+            return team, org
         profile = token_instance.user.profile
         org = profile.org
-        return retrieval_function(profile, org)
+        return profile, org
 
     def get_rate_limits(self) -> "LimitSet":
         """
@@ -141,10 +142,8 @@ class Token(LimitMixin, models.Model):
         - Service Account Token: Uses Team limits, falls back to Org limits.
         - User Token: Uses UserProfile limits, falls back to Org limits.
         """
-        token_limits = LimitSet.from_objects(self, None)
-        if token_limits.has_any_rate_limit():
-            return token_limits
-        return self._get_from_hierarchy(LimitSet.from_objects)
+        hierarchy = self._get_obj_hierarchy()
+        return LimitSet.from_objects(self, *hierarchy)
 
     @classmethod
     def _exclusion_list_from_objects(
@@ -173,7 +172,8 @@ class Token(LimitMixin, models.Model):
         - Service Account Token: Uses the Team exclusion list, falls back to the Org exclusion list.
         - User Token: Uses the UserProfile exclusion list, falls back to the Org exclusion list.
         """
-        return self._get_from_hierarchy(Token._exclusion_list_from_objects)
+        hierarchy = self._get_obj_hierarchy()
+        return Token._exclusion_list_from_objects(*hierarchy)
 
     def model_excluded(self, model: str) -> bool:
         # Resolve alias to actual model name before checking exclusion
@@ -212,7 +212,8 @@ class Token(LimitMixin, models.Model):
         - Service Account Token: Uses the Team exclusion list, falls back to the Org exclusion list.
         - User Token: Uses the UserProfile exclusion list, falls back to the Org exclusion list.
         """
-        return self._get_from_hierarchy(Token._mcp_server_exclusion_list_from_objects)
+        hierarchy = self._get_obj_hierarchy()
+        return Token._mcp_server_exclusion_list_from_objects(*hierarchy)
 
     def mcp_server_excluded(self, server_name: str) -> bool:
         return server_name in self.mcp_server_exclusion_list()

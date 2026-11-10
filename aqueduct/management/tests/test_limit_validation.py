@@ -40,7 +40,7 @@ class LimitSetResolutionTest(TestCase):
     @override_settings(AQUEDUCT_HOURLY_LIMIT_MULTIPLIER=60, AQUEDUCT_DAILY_LIMIT_MULTIPLIER=1440)
     def test_windows_applies_settings_defaults_and_scales(self):
         org = Org.objects.create(name="TestOrg2", requests_per_minute=10)
-        limits = LimitSet.from_objects(org, None)
+        limits = LimitSet.from_objects(org)
         windows = limits.windows()
         self.assertEqual(windows[0], ("min", 60, 10, None, None))
         self.assertEqual(windows[1], ("hour", 3600, 600, None, None))  # 10 x 60
@@ -53,7 +53,7 @@ class LimitSetResolutionTest(TestCase):
             hourly_limit_multiplier=6,
             daily_limit_multiplier=120,
         )
-        limits = LimitSet.from_objects(org, None)
+        limits = LimitSet.from_objects(org)
         windows = limits.windows()
         self.assertEqual(windows[1][2], 60)  # 10 x 6 (object value, not settings default)
         self.assertEqual(windows[2][2], 1200)  # 10 x 120

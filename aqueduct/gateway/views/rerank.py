@@ -25,9 +25,11 @@ log = logging.getLogger("aqueduct")
 
 
 class RerankRequestParams(TypedDict):
-    """Jina-style rerank request body, proxied to the upstream endpoint.
+    """Rerank request body, proxied as-is to the upstream endpoint.
 
-    Served by OpenAI-compatible backends (llama.cpp / vLLM) under ``/v1/rerank``.
+    Accepts the Jina-style and Cohere-style fields served by OpenAI-compatible
+    backends (llama.cpp / vLLM) under ``/v1/rerank``. Undeclared fields are
+    still forwarded - only the declared ones are validated.
     """
 
     model: str

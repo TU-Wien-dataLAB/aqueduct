@@ -16,10 +16,7 @@ model_list:
     request_limit_multiplier: 2.0
 - model_name: bge-reranker-v2-m3
   litellm_params:
-    model: hosted_vllm/bge-reranker-v2-m3
-    # Resolved at request time. When unset (as in tests) the client falls
-    # back to OPENAI_BASE_URL, which the test base points at the mock.
-    api_base: "os.environ/HOSTED_VLLM_API_BASE"
+    model: openai/bge-reranker-v2-m3
     api_key: "os.environ/OPENAI_API_KEY"
   model_info:
     id: bge-reranker-v2-m3

@@ -8,7 +8,7 @@ from mcp import JSONRPCResponse
 from mcp.types import JSONRPCMessage
 from pydantic import BaseModel
 
-from gateway.response_type import RawJsonResponse, RawStreamingResponse
+from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
 from management.models import Usage
 
 
@@ -122,3 +122,49 @@ class TestRawStreamingResponse(SimpleTestCase):
         for chunk_raw in chunks:
             payload = json.loads(chunk_raw.decode().removeprefix("data: "))
             self.assertTrue(payload["result"]["test"].endswith("!"))
+
+
+class TestGetTokenUsage(SimpleTestCase):
+    def test_jina_style_usage(self):
+        response = {
+            "model": "reranker",
+            "object": "list",
+            "usage": {"prompt_tokens": 170, "total_tokens": 170},
+            "results": [{"index": 0, "relevance_score": 0.9}],
+        }
+        self.assertEqual(
+            get_token_usage(response),
+            Usage(input_tokens=170, output_tokens=0, cached_input_tokens=0, reasoning_tokens=0),
+        )
+
+    def test_cohere_style_meta_tokens(self):
+        response = {
+            "id": "rerank-1",
+            "results": [{"index": 0, "relevance_score": 0.9}],
+            "meta": {
+                "api_version": {"version": "1"},
+                "tokens": {"input_tokens": 42, "output_tokens": 3},
+            },
+        }
+        self.assertEqual(
+            get_token_usage(response),
+            Usage(input_tokens=42, output_tokens=3, cached_input_tokens=0, reasoning_tokens=0),
+        )
+
+    def test_top_level_usage_wins_over_meta(self):
+        response = {
+            "id": "rerank-1",
+            "usage": {"prompt_tokens": 10, "total_tokens": 10},
+            "results": [],
+            "meta": {"tokens": {"input_tokens": 99, "output_tokens": 99}},
+        }
+        self.assertEqual(
+            get_token_usage(response),
+            Usage(input_tokens=10, output_tokens=0, cached_input_tokens=0, reasoning_tokens=0),
+        )
+
+    def test_missing_usage_gives_zero(self):
+        self.assertEqual(
+            get_token_usage({"results": []}),
+            Usage(input_tokens=0, output_tokens=0, cached_input_tokens=0, reasoning_tokens=0),
+        )

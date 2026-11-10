@@ -59,9 +59,9 @@ async def rerank(
 ) -> RawJsonResponse:
     """Handler for POST /v1/rerank - Ranks documents by relevance to a query.
 
-    Proxies the Jina-style rerank request to the configured model's
-    OpenAI-compatible backend (``{api_base}/rerank``), forwarding ``query``
-    and ``documents`` and returning the scored ``results``.
+    Proxies the rerank request (Jina-style and Cohere-style wire
+    formats) to the configured model's OpenAI-compatible backend
+    (``{api_base}/rerank``) and returns the scored ``results`` unchanged.
     """
     model = pydantic_model["model"]
 

@@ -341,7 +341,7 @@ class HasLimitSetFilter(admin.SimpleListFilter):
     parameter_name = "has_limit"
 
     def lookups(self, request, model_admin) -> list[tuple[str, str]]:
-        return (("yes", "Yes"), ("no", "No"))
+        return [("yes", "Yes"), ("no", "No")]
 
     def queryset(self, request, queryset: QuerySet) -> QuerySet:
         has_any = Q(
@@ -665,9 +665,9 @@ class TokenAdmin(admin.ModelAdmin):
         """
         if token.service_account:
             team = token.service_account.team
-            return LimitSet.from_objects(team, team.org)
+            return LimitSet.from_objects(team, [team.org])
         profile = token.user.profile
-        return LimitSet.from_objects(profile, profile.org)
+        return LimitSet.from_objects(profile, [profile.org])
 
     def _usage_percent(self, token: Token, window_name: str, window_index: int) -> str:
         limits = self._token_limits(token)

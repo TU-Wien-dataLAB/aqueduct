@@ -63,10 +63,11 @@ def concurrency_key(token: "Token") -> str:
 
 
 def concurrency_limit_for(token: "Token") -> int:
-    """Determines concurrent requests limit for the token."""
+    """Returns concurrent requests limit for the token."""
     if token.concurrent_requests_limit is not None:
+        # Short-circuit if the limit is set on the token to avoid db queries
         return token.concurrent_requests_limit
-    return settings.AQUEDUCT_DEFAULT_CONCURRENT_REQUESTS_LIMIT
+    return token.get_limits().concurrent_requests_limit
 
 
 class RedisConcurrencyLimiter:
@@ -169,7 +170,7 @@ def check_rate_limits(view_func: AsyncView) -> AsyncView:
             log.error("check_rate_limits decorator used without token_authenticated decorator")
             return error_response("Internal server error", status=500)
 
-        limits = await sync_to_async(token.get_rate_limits)()
+        limits = await sync_to_async(token.get_limits)()
         log.debug("Rate limits for Token %r (ID: %s): %s", token.name, token.id, limits)
 
         if settings.AQUEDUCT_RATE_LIMIT_ENABLED and limits.has_any_rate_limit():

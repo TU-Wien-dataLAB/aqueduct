@@ -1,9 +1,14 @@
 import dataclasses
+from functools import partial
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import BooleanField, JSONField
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 # Physical maxima used to validate the hourly/daily limit multipliers: an hour has
 # 60 minutes and a day has 1440 minutes (24 hours). A larger-window limit above
@@ -11,6 +16,22 @@ from django.db.models import BooleanField, JSONField
 MINUTES_PER_HOUR = 60
 HOURS_PER_DAY = 24
 MINUTES_PER_DAY = HOURS_PER_DAY * MINUTES_PER_HOUR
+
+
+def _resolve_limits(
+    field_name: str, specific_limiter: "LimitMixin", fallbacks: "Iterable[LimitMixin] | None" = None
+) -> int | None:
+    """Resolves a single limit field value from the hierarchy of limiters."""
+    # Get value from the specific level first, defaulting to `None`
+    specific_value: int | None = getattr(specific_limiter, field_name, None)
+    if specific_value is not None:
+        return specific_value
+
+    if fallbacks:
+        specific, *fallbacks_left = fallbacks
+        return _resolve_limits(field_name, specific, fallbacks_left)
+
+    return None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -24,60 +45,40 @@ class LimitSet:
     derived limit for that metric in every larger window.
     """
 
+    concurrent_requests_limit: int
     requests_per_minute: int | None = None
     input_tokens_per_minute: int | None = None
     output_tokens_per_minute: int | None = None
     hourly_limit_multiplier: int | None = None
     daily_limit_multiplier: int | None = None
-    concurrent_requests_limit: int | None = None
 
     # Add future limit fields here with default None
 
     @classmethod
     def from_objects(
-        cls,
-        specific_limiter: "LimitMixin",
-        fallback_limiter: "LimitMixin | None" = None,
-        org_limiter: "LimitMixin | None" = None,
+        cls, specific_limiter: "LimitMixin", fallback_limiters: "Iterable[LimitMixin] | None" = None
     ) -> "LimitSet":
         """
         Creates a LimitSet by resolving limits from a specific limiter (like
-        Token, Team or UserProfile) and the fallback limiter object.
+        Token, Team or UserProfile) and the fallback limiter objects.
 
-        The fallback object should be related to the specific limiter, e.g. for
-        a Token, the fallback can be a Team or a UserProfile; for a Team
-        or UserProfile, it would be an Org.
+        The fallback objects should be related to the specific limiter, e.g. for
+        a Token, the fallbacks can be [Team, Org] or [UserProfile, Org].
         Each field is resolved independently through the hierarchy
-        (specific -> fallback -> default).
+        (specific -> fallback -> next fallback -> ... -> default).
 
         Args:
             specific_limiter: The object with the primary limits (e.g., Token,
                 Team, UserProfile).
-            fallback_limiter: The object with the fallback limits
-                (e.g. Team/UserProfile, Org).
+            fallback_limiters: An ordered iterable of objects with the fallback
+                limits (e.g. [Team, Org]).
 
         Returns:
             A LimitSet instance with the effectively resolved limits.
         """
-
-        # Helper to resolve a single limit field value using the hierarchy
-        def _resolve(field_name: str) -> int | None:
-            # Get value from the specific level first
-            # Use getattr for safe access, defaulting to None if field absent
-            specific_value: int | None = (
-                getattr(specific_limiter, field_name, None) if specific_limiter else None
-            )
-            if specific_value is not None:
-                return specific_value
-
-            fallback_value: int | None = (
-                getattr(fallback_limiter, field_name, None) if fallback_limiter else None
-            )
-            if fallback_value is not None:
-                return fallback_value
-
-            org_value: int | None = getattr(org_limiter, field_name, None) if org_limiter else None
-            return org_value
+        _resolve = partial(
+            _resolve_limits, specific_limiter=specific_limiter, fallbacks=fallback_limiters
+        )
 
         return cls(
             requests_per_minute=_resolve("requests_per_minute"),

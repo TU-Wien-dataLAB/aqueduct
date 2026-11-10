@@ -131,9 +131,10 @@ class Token(LimitMixin, models.Model):
         org = profile.org
         return profile, org
 
-    def get_rate_limits(self) -> "LimitSet":
+    def get_limits(self) -> "LimitSet":
         """
-        Determines the effective rate limits for this token, returning a LimitSet dataclass.
+        Determines the effective limits (rate and concurrency) for this token.
+
         Assumes database integrity for related objects.
 
         Hierarchy Rules:
@@ -143,7 +144,7 @@ class Token(LimitMixin, models.Model):
         - User Token: Uses UserProfile limits, falls back to Org limits.
         """
         hierarchy = self._get_obj_hierarchy()
-        return LimitSet.from_objects(self, *hierarchy)
+        return LimitSet.from_objects(self, hierarchy)
 
     @classmethod
     def _exclusion_list_from_objects(

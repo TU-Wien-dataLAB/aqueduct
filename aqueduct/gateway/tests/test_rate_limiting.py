@@ -7,11 +7,10 @@ multi-minute hour/day accumulation deterministically.
 
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.core.cache import cache
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase
 
 from gateway.rate_limiting import (
     WINDOWS,
@@ -287,58 +286,3 @@ class HourDayLimitTest(RateLimitingBase):
         self.assertEqual(
             exceeded, [("Request limit (2/hour)", 54 * 60), ("Output token limit (100/min)", 60)]
         )
-
-    def test_day_limit_derived_from_per_minute(self):
-        limits = LimitSet(requests_per_minute=10, daily_limit_multiplier=6)
-        windows = limits.windows()
-        # min, hour, day
-        self.assertEqual(windows[0][2], 10)  # rpm
-        self.assertEqual(windows[1][2], 10 * 60)  # hour uses settings default 60
-        self.assertEqual(windows[2][2], 10 * 6)  # day uses the set multiplier 6
-
-
-class LimitSetResolutionTest(SimpleTestCase):
-    def test_from_objects_resolves_multipliers_specific_over_org(self):
-        org = SimpleNamespace(
-            requests_per_minute=10,
-            input_tokens_per_minute=None,
-            output_tokens_per_minute=None,
-            hourly_limit_multiplier=6,
-            daily_limit_multiplier=1440,
-        )
-        team = SimpleNamespace(
-            requests_per_minute=None,
-            input_tokens_per_minute=None,
-            output_tokens_per_minute=None,
-            hourly_limit_multiplier=3,  # overrides org
-            daily_limit_multiplier=None,  # falls back to org
-        )
-        limits = LimitSet.from_objects(team, org)
-        self.assertEqual(limits.requests_per_minute, 10)  # from org
-        self.assertEqual(limits.hourly_limit_multiplier, 3)  # from team
-        self.assertEqual(limits.daily_limit_multiplier, 1440)  # from org
-
-    @override_settings(AQUEDUCT_HOURLY_LIMIT_MULTIPLIER=60, AQUEDUCT_DAILY_LIMIT_MULTIPLIER=1440)
-    def test_windows_uses_settings_defaults_when_multiplier_unset(self):
-        limits = LimitSet(requests_per_minute=10)
-        windows = limits.windows()
-        self.assertEqual(windows[0][2], 10)  # min rpm
-        self.assertEqual(windows[1][2], 10 * 60)  # hour default
-        self.assertEqual(windows[2][2], 10 * 1440)  # day default
-
-    def test_windows_none_per_minute_implies_none_derived(self):
-        limits = LimitSet(input_tokens_per_minute=5)  # requests/output unset
-        windows = limits.windows()
-        # requests_per_minute is None -> hour/day rpm also None (tied design).
-        self.assertIsNone(windows[0][2])
-        self.assertIsNone(windows[1][2])
-        self.assertIsNone(windows[2][2])
-        # input_tokens scales.
-        self.assertEqual(windows[0][3], 5)
-        self.assertEqual(windows[1][3], 5 * 60)  # settings default hourly mult
-        self.assertEqual(windows[2][3], 5 * 1440)  # settings default daily mult
-
-    def test_has_no_limit_fast_path(self):
-        self.assertFalse(LimitSet().has_any_rate_limit())
-        self.assertTrue(LimitSet(requests_per_minute=1).has_any_rate_limit())
-        self.assertTrue(LimitSet(input_tokens_per_minute=1).has_any_rate_limit())

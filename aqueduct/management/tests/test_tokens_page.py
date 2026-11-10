@@ -59,7 +59,7 @@ class TokensPageTest(TestCase):
         )
 
         token_id = 1  # "My Token" from the fixture
-        limits = LimitSet.from_objects(profile, profile.org)
+        limits = LimitSet.from_objects(profile, [profile.org])
         for _ in range(6):
             allowed, _ = check_and_reserve(limits, token_id, model=None)
             self.assertTrue(allowed)

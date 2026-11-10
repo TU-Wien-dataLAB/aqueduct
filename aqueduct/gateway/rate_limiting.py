@@ -125,19 +125,6 @@ def _evaluate(
     return exceeded
 
 
-def has_any_limit(limits: LimitSet) -> bool:
-    """Return True if any window has any non-None limit.
-
-    Tokens with no limits at all skip the cache entirely (preserves the no-op
-    fast path). Because hour/day limits are derived from per-minute, this is True
-    iff at least one per-minute limit is set.
-    """
-    return any(
-        rpm is not None or itpm is not None or otpm is not None
-        for _name, _secs, rpm, itpm, otpm in limits.windows()
-    )
-
-
 def check_and_reserve(
     limits: LimitSet, token_id: int, model: str | None
 ) -> tuple[bool, list[tuple[str, int]]]:

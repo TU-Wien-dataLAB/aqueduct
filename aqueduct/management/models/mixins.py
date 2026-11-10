@@ -92,7 +92,7 @@ class LimitSet:
         return None if base is None else base * mult
 
     def windows(self) -> list[tuple[str, int, int | None, int | None, int | None]]:
-        """Effective per-window limits.
+        """Effective per-window rate limits.
 
         Returns a list of ``(name, window_seconds, rpm, input_tokens, output_tokens)``,
         finest window first (``min``, ``hour``, ``day``). Hour/day limits are derived
@@ -125,7 +125,7 @@ class LimitSet:
         ]
 
     def has_any_rate_limit(self) -> bool:
-        """Returns True if any window has any non-None limit."""
+        """Returns True if any window has any non-None rate limit."""
         return any(
             rpm is not None or itpm is not None or otpm is not None
             for _name, _secs, rpm, itpm, otpm in self.windows()
@@ -134,7 +134,7 @@ class LimitSet:
 
 class LimitMixin(models.Model):
     """
-    An abstract base model providing common rate limit fields.
+    An abstract base model providing common usage limit fields.
     Set fields to `None` to indicate no specific limit at this level (use fallback).
     """
 

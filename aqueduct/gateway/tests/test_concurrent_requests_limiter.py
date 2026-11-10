@@ -26,7 +26,7 @@ class RedisConcurrencyLimiterTests(GatewayIntegrationTestCase):
     def setUp(self) -> None:
         self.server = FakeServer()
         self.redis = FakeRedis(server=self.server, decode_responses=True)
-        self.limiter = RedisConcurrencyLimiter(self.redis, refresh_interval=30)
+        self.limiter = RedisConcurrencyLimiter(self.redis)
         self.token = Token.objects.get(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
         self.key = concurrency_key(self.token)
         new_user = User.objects.create_user(username="OtherUser", email="other@example.com")

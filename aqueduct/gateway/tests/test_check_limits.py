@@ -84,6 +84,7 @@ class TokenRateLimitTest(ChatCompletionsBase):
             token = Token.objects.get(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
             setattr(token, field, value)
             token.save(update_fields=[field])
+            return token
 
         raise ValueError(f"Unknown kind: {kind}")
 
@@ -196,6 +197,20 @@ class TokenRateLimitTest(ChatCompletionsBase):
             limit_desc="user requests_per_minute",
         )
 
+    def test_token_rate_limit_requests_per_minute(self):
+        """
+        Edits the requests_per_minute of Token for user 'Me' to 1, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="token",
+            field="requests_per_minute",
+            value=1,
+            messages=self.MESSAGES,
+            max_completion_tokens=5,
+            limit_desc="token requests_per_minute",
+        )
+
     def test_org_rate_limit_input_tokens_per_minute(self):
         """
         Edits the input_tokens_per_minute of Org 'E060' to 5, then makes two requests.
@@ -238,6 +253,20 @@ class TokenRateLimitTest(ChatCompletionsBase):
             limit_desc="user input_tokens_per_minute",
         )
 
+    def test_token_rate_limit_input_tokens_per_minute(self):
+        """
+        Edits input_tokens_per_minute of Token for user 'Me' to 5,
+        then makes two requests. The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="token",
+            field="input_tokens_per_minute",
+            value=5,
+            messages=self.MESSAGES,
+            max_completion_tokens=1,
+            limit_desc="token input_tokens_per_minute",
+        )
+
     def test_org_rate_limit_output_tokens_per_minute(self):
         """
         Edits the output_tokens_per_minute of Org 'E060' to 5, then makes two requests.
@@ -278,6 +307,43 @@ class TokenRateLimitTest(ChatCompletionsBase):
             messages=self.MESSAGES,
             max_completion_tokens=10,
             limit_desc="user output_tokens_per_minute",
+        )
+
+    def test_token_rate_limit_output_tokens_per_minute(self):
+        """
+        Edits output_tokens_per_minute of Token for user 'Me' to 5,
+        then makes two requests. The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="token",
+            field="output_tokens_per_minute",
+            value=5,
+            messages=self.MESSAGES,
+            max_completion_tokens=10,
+            limit_desc="token output_tokens_per_minute",
+        )
+
+    def test_token_rate_limits_override_other_limits(self):
+        """Rate limits set on the token should override those from the related objects."""
+        self._setup_limits("token", "requests_per_minute", 1)
+        self._setup_limits("token", "input_tokens_per_minute", 1)
+        self._setup_limits("token", "output_tokens_per_minute", 1)
+        # The org, team, and user profile have higher limits, but these will not apply.
+        self._setup_limits("org", "requests_per_minute", 5)
+        self._setup_limits("team", "input_tokens_per_minute", 5)
+        self._setup_limits("user", "output_tokens_per_minute", 5)
+
+        first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(first.status_code, 200)
+
+        blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        retry_after = blocked.headers["Retry-After"]
+        self.assertEqual(
+            blocked.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (1/min) (Retry after {retry_after}s), "
+            f"Input token limit (1/min) (Retry after {retry_after}s), "
+            f"Output token limit (1/min) (Retry after {retry_after}s).",
         )
 
     def test_rate_limit_message_lists_each_exceeded_limit(self):

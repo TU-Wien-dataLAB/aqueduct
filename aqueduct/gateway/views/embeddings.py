@@ -9,8 +9,10 @@ from pydantic import TypeAdapter
 from gateway.config import get_router
 from gateway.decorators import (
     catch_router_exceptions,
-    check_limits,
     check_model_availability,
+    check_model_concurrency_limits,
+    check_rate_limits,
+    check_token_concurrency_limits,
     ensure_usage,
     log_request,
     parse_body,
@@ -30,7 +32,9 @@ if TYPE_CHECKING:
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
-@check_limits
+@check_token_concurrency_limits
+@check_model_concurrency_limits
+@check_rate_limits
 @ensure_usage
 @resolve_alias
 @check_model_availability

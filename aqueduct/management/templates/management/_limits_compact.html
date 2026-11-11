@@ -19,5 +19,9 @@ A value of None renders as "—".
       <span class="opacity-50">Output tokens/min</span>
       <span class="font-semibold text-secondary tabular-nums">{% if limit_object.output_tokens_per_minute is None %}—{% else %}{{ limit_object.output_tokens_per_minute|intcomma }}{% endif %}</span>
     </span>
+    <span class="inline-flex items-center gap-1">
+      <span class="opacity-50">Concurrent requests</span>
+      <span class="font-semibold text-secondary tabular-nums">{% if limit_object.concurrent_requests_limit is None %}—{% else %}{{ limit_object.concurrent_requests_limit|intcomma }}{% endif %}</span>
+    </span>
   </div>
 </details>

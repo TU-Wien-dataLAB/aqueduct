@@ -141,6 +141,7 @@ class UserProfileAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm)
             "output_tokens_per_minute",
             "hourly_limit_multiplier",
             "daily_limit_multiplier",
+            "concurrent_requests_limit",
             "excluded_models",
             "merge_exclusion_lists",
             "excluded_mcp_servers",
@@ -341,7 +342,7 @@ class HasLimitSetFilter(admin.SimpleListFilter):
     parameter_name = "has_limit"
 
     def lookups(self, request, model_admin) -> list[tuple[str, str]]:
-        return (("yes", "Yes"), ("no", "No"))
+        return [("yes", "Yes"), ("no", "No")]
 
     def queryset(self, request, queryset: QuerySet) -> QuerySet:
         has_any = Q(
@@ -417,6 +418,7 @@ class TeamAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
             "output_tokens_per_minute",
             "hourly_limit_multiplier",
             "daily_limit_multiplier",
+            "concurrent_requests_limit",
             "excluded_models",
             "merge_exclusion_lists",
             "excluded_mcp_servers",
@@ -457,6 +459,7 @@ class TeamAdmin(admin.ModelAdmin):
                     "output_tokens_per_minute",
                     "hourly_limit_multiplier",
                     "daily_limit_multiplier",
+                    "concurrent_requests_limit",
                 )
             },
         ),
@@ -563,6 +566,7 @@ class OrgAdminForm(ExcludedModelsAdminForm, ExcludedMCPServersAdminForm):
             "output_tokens_per_minute",
             "hourly_limit_multiplier",
             "daily_limit_multiplier",
+            "concurrent_requests_limit",
             "excluded_models",
             "merge_exclusion_lists",
             "excluded_mcp_servers",
@@ -616,6 +620,23 @@ class ServiceAccountAdmin(admin.ModelAdmin):
     team_link.short_description = "Team"
 
 
+class TokenAdminForm(forms.ModelForm):
+    class Meta:
+        model = Token
+        fields: ClassVar[list[str]] = [
+            "name",
+            "user",
+            "service_account",
+            "expires_at",
+            "requests_per_minute",
+            "input_tokens_per_minute",
+            "output_tokens_per_minute",
+            "hourly_limit_multiplier",
+            "daily_limit_multiplier",
+            "concurrent_requests_limit",
+        ]
+
+
 @admin.register(Token)
 class TokenAdmin(admin.ModelAdmin):
     list_display: ClassVar[tuple] = (
@@ -634,6 +655,23 @@ class TokenAdmin(admin.ModelAdmin):
         "service_account__team__org",
     ]
     list_filter: ClassVar[list] = ["service_account__team__name"]
+    form = TokenAdminForm
+    fieldsets: ClassVar[tuple] = (
+        (None, {"fields": ("name", "user", "service_account", "expires_at")}),
+        (
+            "Rate Limits",
+            {
+                "fields": (
+                    "requests_per_minute",
+                    "input_tokens_per_minute",
+                    "output_tokens_per_minute",
+                    "hourly_limit_multiplier",
+                    "daily_limit_multiplier",
+                    "concurrent_requests_limit",
+                )
+            },
+        ),
+    )
 
     def changelist_view(self, request, extra_context=None) -> HttpResponse:
         # Stash the request so list_display methods can lazily build a single
@@ -665,9 +703,9 @@ class TokenAdmin(admin.ModelAdmin):
         """
         if token.service_account:
             team = token.service_account.team
-            return LimitSet.from_objects(team, team.org)
+            return LimitSet.from_objects(team, [team.org])
         profile = token.user.profile
-        return LimitSet.from_objects(profile, profile.org)
+        return LimitSet.from_objects(profile, [profile.org])
 
     def _usage_percent(self, token: Token, window_name: str, window_index: int) -> str:
         limits = self._token_limits(token)

@@ -47,7 +47,7 @@ class TokenAdminUsageColumnsTest(TestCase):
     def _set_per_minute_limit(self, profile: UserProfile, rpm: int) -> LimitSet:
         profile.requests_per_minute = rpm
         profile.save(update_fields=["requests_per_minute"])
-        return LimitSet.from_objects(profile, profile.org)
+        return LimitSet.from_objects(profile, [profile.org])
 
     def test_changelist_shows_hourly_and_daily_usage_percentages(self):
         """Token 1 (user token) resolves limits via its UserProfile.

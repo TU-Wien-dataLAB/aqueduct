@@ -229,6 +229,37 @@ def get_all_model_request_limit_multipliers() -> dict[str, float]:
     return multipliers
 
 
+def get_model_max_parallel_requests(model_name: str) -> int | None:
+    """
+    Get the max parallel requests (concurrency limit) for a given model from the
+    router config's ``model_info.max_parallel_requests``.
+
+    Mirrors LiteLLM's ``max_parallel_requests`` setting, and falls back to the
+    ``default_max_parallel_requests`` router setting. Returns ``None`` if neither
+    is configured.
+
+    Args:
+        model_name: The model name (or alias, will be resolved)
+
+    Returns:
+        The configured max parallel requests, or ``None`` if not set.
+    """
+    resolved = resolve_model_alias(model_name)
+    config = get_router_config()
+    model_list = config.get("model_list", [])
+
+    for model in model_list:
+        if model.get("model_name") == resolved:
+            max_parallel_requests = model.get("model_info", {}).get("max_parallel_requests")
+            if max_parallel_requests is not None:
+                return int(max_parallel_requests)
+            if (default := config.get("default_max_parallel_requests")) is not None:
+                return int(default)
+            break
+
+    return None
+
+
 def get_model_supports_response_format(model_name: str) -> bool:
     """
     Whether the model's upstream API accepts the `response_format` request parameter.

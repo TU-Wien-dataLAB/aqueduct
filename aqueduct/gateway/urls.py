@@ -22,6 +22,9 @@ urlpatterns = [
     # Rerank endpoints
     path("rerank", views.rerank, name="rerank"),
     path("v1/rerank", views.rerank, name="v1_rerank"),
+    # Decisions endpoints (non-streaming)
+    path("decisions", views.decisions, name="decisions"),
+    path("v1/decisions", views.decisions, name="v1_decisions"),
     # Models endpoints
     path("models", views.models, name="models"),
     path("v1/models", views.models, name="v1_models"),

@@ -29,6 +29,10 @@ from openai.types import (
 )
 from openai.types.audio import Transcription
 from openai.types.audio.transcription import UsageDuration
+from openai.types.decision import AnswerAnswerResourcePredicate, Decision
+from openai.types.decision import Usage as DecisionUsage
+from openai.types.decision import UsageInputTokensDetails as DecisionUsageInputTokensDetails
+from openai.types.decision import UsageOutputTokensDetails as DecisionUsageOutputTokensDetails
 from openai.types.images_response import Usage as ImageUsage
 from openai.types.images_response import UsageInputTokensDetails
 from openai.types.responses import (
@@ -187,7 +191,7 @@ def responses_detail_response(ids: PathIds) -> dict[str, Any]:
         status="completed",
         usage=ResponseUsage(
             input_tokens=13,
-            input_tokens_details=InputTokensDetails(cached_tokens=0),
+            input_tokens_details=InputTokensDetails(cache_write_tokens=0, cached_tokens=0),
             output_tokens=21,
             output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
             total_tokens=34,
@@ -447,6 +451,24 @@ default_post_configs = {
             ],
             "usage": {"prompt_tokens": 42, "total_tokens": 42},
         }
+    "decisions": MockConfig(
+        response_data=Decision(
+            answers=[
+                AnswerAnswerResourcePredicate(
+                    name="visible_damage", probability=0.92, type="predicate"
+                )
+            ],
+            model="gpt-6-luna",
+            usage=DecisionUsage(
+                input_tokens=15,
+                input_tokens_details=DecisionUsageInputTokensDetails(
+                    cache_write_tokens=0, cached_tokens=0
+                ),
+                output_tokens=9,
+                output_tokens_details=DecisionUsageOutputTokensDetails(reasoning_tokens=0),
+                total_tokens=24,
+            ),
+        ).model_dump()
     ),
     "vector_stores": MockConfig(response_data=vector_store_detail_response),
     "vector_stores/id": MockConfig(response_data=vector_store_update_response),
@@ -653,7 +675,7 @@ _responses_stream_data: list[BaseModel] = [
             status="completed",
             usage=ResponseUsage(
                 input_tokens=13,
-                input_tokens_details=InputTokensDetails(cached_tokens=0),
+                input_tokens_details=InputTokensDetails(cache_write_tokens=0, cached_tokens=0),
                 output_tokens=7,
                 output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
                 total_tokens=17,

@@ -41,6 +41,7 @@ Click an endpoint below to learn more:
 
 - [Completions](completions.md)
 - [Chat Completions](chat-completions.md)
+- [Embeddings](embeddings.md)
 - [Rerank](rerank.md)
 - [List Models](models.md)
 - [Files](files.md)

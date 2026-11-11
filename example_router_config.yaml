@@ -6,6 +6,13 @@ model_list:
   model_info:
     id: gpt-4.1-nano
     aliases: ["main", "coding"]
+- model_name: gpt-6-luna
+  litellm_params:
+    model: openai/gpt-6-luna
+    api_key: "os.environ/OPENAI_API_KEY"
+  model_info:
+    id: gpt-6-luna
+    aliases: ["decision"]
 - model_name: text-embedding-ada-002
   litellm_params:
     model: openai/text-embedding-ada-002

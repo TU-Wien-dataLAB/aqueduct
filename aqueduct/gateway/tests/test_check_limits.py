@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -8,12 +9,22 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.handlers.asgi import ASGIRequest
 from django.db import connection
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from openai.types.chat import ChatCompletion
 
-from gateway.decorators.limits import check_token_concurrency_limits, token_concurrency_key
-from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
+from gateway.config import get_model_max_parallel_requests
+from gateway.decorators.limits import (
+    check_token_concurrency_limits,
+    model_concurrency_key,
+    model_concurrency_limit,
+    token_concurrency_key,
+)
+from gateway.tests.utils import (
+    _build_chat_headers,
+    _build_chat_payload,
+    _read_streaming_response_lines,
+)
 from gateway.tests.utils.base import ChatCompletionsBase
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
 
@@ -453,9 +464,14 @@ class TokenRateLimitTest(ChatCompletionsBase):
 
 
 @override_settings(
-    AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT=3, AQUEDUCT_RATE_LIMIT_ENABLED=False
+    AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMIT_ENABLED=False,
+    AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT=3,
+    AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_ENABLED=True,
+    AQUEDUCT_RATE_LIMIT_ENABLED=False,
 )
-class ConcurrentRequestsLimitTest(ChatCompletionsBase):
+class TokenConcurrentRequestsLimitTest(ChatCompletionsBase):
+    """Integration tests for the per-token concurrency limit decorator."""
+
     @async_to_sync
     async def test_concurrent_requests_limit_per_token(self):
         limit = settings.AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT
@@ -475,7 +491,7 @@ class ConcurrentRequestsLimitTest(ChatCompletionsBase):
         blocked = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
 
         self.assertEqual(blocked.status_code, 429)
-        self.assertIn("too many concurrent requests", blocked.json()["error"]["message"])
+        self.assertIn("sent too many concurrent requests", blocked.json()["error"]["message"])
 
         # 3. Only now consume the open streams. This should release every held spot.
         await asyncio.gather(*(_read_streaming_response_lines(resp) for resp in responses_ok))
@@ -538,3 +554,196 @@ class ConcurrentRequestsLimitTest(ChatCompletionsBase):
 
         # The `acquire` bumped the counter to 1; the exception path released it back to 0.
         self.assertEqual(await self.redis.get(token_concurrency_key(token)), "0")
+
+
+@override_settings(
+    AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMIT_ENABLED=True,
+    AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT=2,
+    AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_ENABLED=False,
+    AQUEDUCT_RATE_LIMIT_ENABLED=False,
+)
+class ModelConcurrentRequestsLimitTest(ChatCompletionsBase):
+    """Integration tests for the per-model concurrency limit decorator."""
+
+    @async_to_sync
+    async def test_concurrent_requests_limit_per_model_enforced(self):
+        """Open ``limit`` streams to the same model, then a further one -> 429."""
+        limit = settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT
+
+        # 1. Open `limit` streaming requests to the same model but do not consume
+        #    them yet -> the model slots stay held.
+        responses_ok = await asyncio.gather(
+            *(
+                self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+                for _ in range(limit)
+            )
+        )
+        for resp in responses_ok:
+            self.assertEqual(resp.status_code, 200)
+
+        # 2. The next request to the same model is over the per-model limit -> 429.
+        blocked = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn(
+            f"Too many concurrent requests for model {self.model}",
+            blocked.json()["error"]["message"],
+        )
+
+        # 3. Consuming the open streams releases every held slot.
+        await asyncio.gather(*(_read_streaming_response_lines(resp) for resp in responses_ok))
+
+        resp = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(resp.status_code, 200)
+
+    @async_to_sync
+    async def test_model_concurrency_is_global_across_tokens(self):
+        """Concurrent streaming requests are counted per model, not per token or user."""
+        # No limits are set in the router config; use the default from the settings.
+        limit = settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT
+
+        token = await Token.objects.select_related("user").afirst()
+        user = token.user
+        # Create a new token for the same user
+        new_token = Token(name="TestToken", user=user)
+        token_value_2 = new_token._set_new_key()
+        await new_token.asave()
+
+        # 1. Fill every model slot using the same token (streams held open).
+        responses_ok = await asyncio.gather(
+            *(
+                self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+                for _ in range(limit)
+            )
+        )
+        for resp in responses_ok:
+            self.assertEqual(resp.status_code, 200)
+
+        # 2. The same model under a different token is still over the model limit.
+        req_2 = self._build_chat_completion_request(self.MESSAGES, stream=False)
+        req_2["headers"] = _build_chat_headers(token_value_2)
+        blocked = await self.async_client.post(**req_2, content_type="application/json")
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("Too many concurrent requests for model", blocked.json()["error"]["message"])
+
+        # 3. Requests to a different model are not blocked.
+        req_3 = self._build_chat_completion_request(self.MESSAGES, stream=True)
+        req_3["data"] = json.dumps(
+            _build_chat_payload("text-embedding-ada-002", self.MESSAGES, stream=False)
+        )
+        resp_ok = await self.async_client.post(**req_3, content_type="application/json")
+        self.assertEqual(resp_ok.status_code, 200)
+
+        # 4. Free the model slots before the test ends.
+        await asyncio.gather(*(_read_streaming_response_lines(resp) for resp in responses_ok))
+
+    @async_to_sync
+    async def test_model_concurrency_limit_read_from_config(self):
+        """Model's ``max_parallel_requests`` from config overrides the default from settings."""
+        with patch("gateway.decorators.limits.get_model_max_parallel_requests", return_value=1):
+            # 1st stream holds the single allowed request.
+            first = await self._send_chat_completion_streaming(
+                self.MESSAGES, max_completion_tokens=5
+            )
+            self.assertEqual(first.status_code, 200)
+
+            # 2nd request to the same model is over the configured limit -> 429.
+            blocked = await self._send_chat_completion_streaming(
+                self.MESSAGES, max_completion_tokens=5
+            )
+            self.assertEqual(blocked.status_code, 429)
+            self.assertIn(
+                "Too many concurrent requests for model", blocked.json()["error"]["message"]
+            )
+
+            # Release the held stream.
+            await _read_streaming_response_lines(first)
+
+    @async_to_sync
+    async def test_model_concurrency_aliases_share_counter(self):
+        """Aliases resolving to the same model share one concurrency counter."""
+        limit = settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT
+        # "main" and "coding" both resolve to gpt-4.1-nano in the router config.
+        self.assertEqual(model_concurrency_key("main"), model_concurrency_key("coding"))
+
+        held_streams = []
+        for _ in range(limit):
+            req = self._build_chat_completion_request(self.MESSAGES, stream=True)
+            req["data"] = json.dumps(
+                _build_chat_payload("main", self.MESSAGES, stream=True, max_completion_tokens=5)
+            )
+            resp = await self.async_client.post(**req, content_type="application/json")
+            held_streams.append(resp)
+            self.assertEqual(resp.status_code, 200)
+
+        # A request via the *other* alias of the same model is over the limit -> 429.
+        req = self._build_chat_completion_request(self.MESSAGES, stream=True)
+        req["data"] = json.dumps(
+            _build_chat_payload("coding", self.MESSAGES, stream=True, max_completion_tokens=5)
+        )
+        blocked = await self.async_client.post(**req, content_type="application/json")
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("Too many concurrent requests for model", blocked.json()["error"]["message"])
+
+        await asyncio.gather(*(_read_streaming_response_lines(r) for r in held_streams))
+
+
+@override_settings(AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT=7)
+class ModelConcurrencyLimitResolutionTest(SimpleTestCase):
+    """Resolution tests for the per-model concurrency limit.
+
+    The limit comes from the router config, then falls back to the settings default:
+      1. the model's own ``model_info.max_parallel_requests``,
+      2. the router-wide ``default_max_parallel_requests``,
+      3. ``AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT``.
+    """
+
+    def _config(self, *, per_model=None, default=None, aliases=None):
+        model_info = {}
+        if per_model is not None:
+            model_info["max_parallel_requests"] = per_model
+        if aliases is not None:
+            model_info["aliases"] = aliases
+        model = {"model_name": "gpt-4o", "litellm_params": {}}
+        if model_info:
+            model["model_info"] = model_info
+        config = {"model_list": [model]}
+        if default is not None:
+            config["default_max_parallel_requests"] = default
+        return config
+
+    def _resolve(self, model="gpt-4o", **config_kwargs):
+        with patch("gateway.config.get_router_config", return_value=self._config(**config_kwargs)):
+            return get_model_max_parallel_requests(model)
+
+    def _decorator_limit(self, model="gpt-4o", **config_kwargs):
+        with patch("gateway.config.get_router_config", return_value=self._config(**config_kwargs)):
+            return model_concurrency_limit(model)
+
+    # ---- get_model_max_parallel_requests: config priority ----
+
+    def test_model_max_parallel_requests_takes_priority(self):
+        self.assertEqual(self._resolve(per_model=5, default=20), 5)
+
+    def test_router_default_max_parallel_requests_used(self):
+        self.assertEqual(self._resolve(default=20), 20)
+
+    def test_none_when_nothing_configured(self):
+        self.assertIsNone(self._resolve())
+
+    # ---- model_concurrency_limit: full resolution ----
+
+    def test_model_concurrency_limit_falls_back_to_settings_default(self):
+        self.assertEqual(
+            self._decorator_limit(), settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT
+        )
+
+    def test_model_concurrency_limit_resolves_aliases(self):
+        self.assertEqual(
+            self._decorator_limit(model="coding", per_model=5, default=20, aliases=["coding"]), 5
+        )
+
+    def test_model_concurrency_limit_uses_settings_default_for_unknown_model(self):
+        self.assertEqual(
+            self._decorator_limit(model="does-not-exist", default=20),
+            settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT,
+        )

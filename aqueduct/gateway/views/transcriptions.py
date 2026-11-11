@@ -13,6 +13,7 @@ from pydantic import ConfigDict, RootModel, TypeAdapter
 from gateway.decorators import (
     catch_router_exceptions,
     check_model_availability,
+    check_model_concurrency_limits,
     check_rate_limits,
     check_token_concurrency_limits,
     log_request,
@@ -38,6 +39,7 @@ class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
 @tos_accepted
 @parse_body(model=TypeAdapter(TranscriptionCreateParams))
 @check_token_concurrency_limits
+@check_model_concurrency_limits
 @check_rate_limits
 @resolve_alias
 @check_model_availability

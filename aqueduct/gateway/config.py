@@ -187,8 +187,9 @@ def get_model_max_parallel_requests(model_name: str) -> int | None:
     Get the max parallel requests (concurrency limit) for a given model from the
     router config's ``model_info.max_parallel_requests``.
 
-    Mirrors LiteLLM's ``max_parallel_requests`` setting. Returns ``None`` if the
-    model is present in the config but does not configure a value.
+    Mirrors LiteLLM's ``max_parallel_requests`` setting, and falls back to the
+    ``default_max_parallel_requests`` router setting. Returns ``None`` if neither
+    is configured.
 
     Args:
         model_name: The model name (or alias, will be resolved)
@@ -205,6 +206,8 @@ def get_model_max_parallel_requests(model_name: str) -> int | None:
             max_parallel_requests = model.get("model_info", {}).get("max_parallel_requests")
             if max_parallel_requests is not None:
                 return int(max_parallel_requests)
+            if (default := config.get("default_max_parallel_requests")) is not None:
+                return int(default)
             break
 
     return None

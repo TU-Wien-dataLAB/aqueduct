@@ -53,6 +53,23 @@ jobs:
           OIDC_OP_JWKS_ENDPOINT: https://example.com/application/o/example/jwks/
         run: cd aqueduct && uv run ${{ matrix.start == 'true' && '--extra vllm' || '' }} python manage.py test gateway
 
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4  # v4.3.1
+        with:
+          version: v3.18.6
+
+      - name: Lint chart
+        run: helm lint charts/aqueduct
+
+      - name: Render chart
+        run: helm template aqueduct charts/aqueduct > /dev/null
+
   compose:
     runs-on: ubuntu-latest
     steps:

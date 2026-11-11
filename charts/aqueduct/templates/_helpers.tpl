@@ -4,7 +4,9 @@ Usage:
   {{- include "aqueduct.env" . | nindent 12 }}
 */}}
 {{- define "aqueduct.env" }}
-{{ toYaml .Values.env | nindent 0 }}
+{{- with .Values.env }}
+{{ toYaml . | nindent 0 }}
+{{- end }}
 - name: DJANGO_DEBUG
   value: "False"
 {{- if .Values.ingress.enabled }}
@@ -20,6 +22,14 @@ Usage:
   valueFrom:
   {{ toYaml .Values.djangoSecretKey.valueFrom | nindent 4 }}
   {{- end }}
+{{/* Match Django's default; keep PostgreSQL validation for engines resolved via valueFrom. */}}
+{{- $databaseEngine := "django.db.backends.sqlite3" }}
+{{- range .Values.env }}
+  {{- if eq .name "DATABASE_ENGINE" }}
+    {{- $databaseEngine = .value | default "django.db.backends.postgresql" }}
+  {{- end }}
+{{- end }}
+{{- if ne $databaseEngine "django.db.backends.sqlite3" }}
 # Postgres configuration
 # The connection target is resolved by the `aqueduct.db.*` helpers below:
 # explicit `database.*` values win; otherwise the app auto-derives the CNPG
@@ -35,6 +45,7 @@ Usage:
   value: {{ include "aqueduct.db.host" . | quote }}
 - name: POSTGRES_PORT
   value: {{ include "aqueduct.db.port" . | quote }}
+{{- end }}
 # OIDC configuration
 - name: OIDC_RP_SIGN_ALGO
   value: {{ .Values.oidc.signAlgo | quote }}

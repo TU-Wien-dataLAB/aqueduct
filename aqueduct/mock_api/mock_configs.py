@@ -427,6 +427,31 @@ default_post_configs = {
         ).model_dump()
     ),
     "responses": MockConfig(response_data=responses_detail_response),
+    "rerank": MockConfig(
+        # Jina-style wire format, returned as-is by the upstream. The gateway
+        # reads usage.prompt_tokens for token accounting (get_token_usage).
+        response_data={
+            "id": "rerank-mock-1",
+            "results": [
+                {
+                    "index": 2,
+                    "relevance_score": 0.97,
+                    "document": {"text": "Aqueduct is an AI gateway developed by TU Wien."},
+                },
+                {
+                    "index": 0,
+                    "relevance_score": 0.84,
+                    "document": {"text": "Aqueduct supports multiple AI model providers."},
+                },
+                {
+                    "index": 1,
+                    "relevance_score": 0.12,
+                    "document": {"text": "Vienna is the capital of Austria."},
+                },
+            ],
+            "usage": {"prompt_tokens": 42, "total_tokens": 42},
+        }
+    ),
     "decisions": MockConfig(
         response_data=Decision(
             answers=[

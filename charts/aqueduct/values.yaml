@@ -81,7 +81,7 @@ silk:
 
 cors:
   allowAllOrigins: true
-  urlsRegex: "^/(v1/)?(completions|chat/completions|embeddings|models|audio/|images/|files|batches|responses|mcp-servers/|vector_stores)"
+  urlsRegex: "^/(v1/)?(completions|chat/completions|embeddings|rerank|models|audio/|images/|files|batches|responses|mcp-servers/|vector_stores)"
 
 tos:
   enabled: false

@@ -19,6 +19,9 @@ urlpatterns = [
     # Embeddings endpoints
     path("embeddings", views.embeddings, name="embeddings"),
     path("v1/embeddings", views.embeddings, name="v1_embeddings"),
+    # Rerank endpoints
+    path("rerank", views.rerank, name="rerank"),
+    path("v1/rerank", views.rerank, name="v1_rerank"),
     # Decisions endpoints (non-streaming)
     path("decisions", views.decisions, name="decisions"),
     path("v1/decisions", views.decisions, name="v1_decisions"),

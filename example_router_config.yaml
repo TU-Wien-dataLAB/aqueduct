@@ -21,6 +21,14 @@ model_list:
     mode: embedding
     aliases: ["embedding", "embed"]
     request_limit_multiplier: 2.0
+- model_name: bge-reranker-v2-m3
+  litellm_params:
+    model: openai/bge-reranker-v2-m3
+    api_key: "os.environ/OPENAI_API_KEY"
+  model_info:
+    id: bge-reranker-v2-m3
+    mode: rerank
+    aliases: ["reranker"]
 - model_name: gpt-4o-mini-tts
   litellm_params:
     model: openai/gpt-4o-mini-tts

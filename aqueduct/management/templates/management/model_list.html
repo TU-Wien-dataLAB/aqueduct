@@ -92,6 +92,10 @@
                                 <span class="font-mono">{{ model.litellm_params.rpm|default:"—" }}</span>
                             </div>
                             <div class="flex gap-4">
+                                <span class="text-base-content/60">Concurrent requests limit:</span>
+                                <span class="font-mono">{% if model.litellm_params.max_parallel_requests %}{{ model.litellm_params.max_parallel_requests }}{% else %}—{% endif %}</span>
+                            </div>
+                            <div class="flex gap-4">
                                 <span class="text-base-content/60">Timeout:</span>
                                 <span class="font-mono">{% if model.litellm_params.timeout %}{{ model.litellm_params.timeout }}s{% else %}—{% endif %}</span>
                             </div>

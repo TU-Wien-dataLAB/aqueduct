@@ -2,16 +2,14 @@ import logging
 from typing import Any
 
 from django.core.handlers.asgi import ASGIRequest
-from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from litellm import BadRequestError
 from openai.types import ImageGenerateParams, ImagesResponse
 from pydantic import ConfigDict, TypeAdapter
 
-from management.models import Request
-
-from .decorators import (
+from gateway.config import get_model_supports_response_format
+from gateway.decorators import (
     catch_router_exceptions,
     check_limits,
     check_model_availability,
@@ -21,7 +19,9 @@ from .decorators import (
     token_authenticated,
     tos_accepted,
 )
-from .utils import _get_token_usage, oai_client_from_body
+from gateway.response_type import RawJsonResponse, get_token_usage
+from gateway.views.utils import oai_client_from_body
+from management.models import Request
 
 log = logging.getLogger("aqueduct")
 
@@ -42,7 +42,7 @@ async def image_generation(
     request_log: Request,
     *args: Any,
     **kwargs: Any,
-) -> JsonResponse:
+) -> RawJsonResponse:
     if pydantic_model.get("stream"):
         # LiteLLM cannot parse a Stream response, so we don't support streaming for now
         raise BadRequestError(
@@ -63,6 +63,11 @@ async def image_generation(
     model_name: str = pydantic_model.get("model") or ""
     client, model_relay = oai_client_from_body(model_name, request)
     pydantic_model["model"] = model_relay
+    if not get_model_supports_response_format(model_name):
+        # Models with `supports_response_format: false` in model_info (e.g.
+        # gpt-image) reject the response_format parameter. They only return
+        # b64_json, which is the only format we support anyway.
+        pydantic_model.pop("response_format", None)
 
     try:
         resp: ImagesResponse = await client.images.generate(**pydantic_model)
@@ -73,7 +78,6 @@ async def image_generation(
             "Unexpected argument in request body", pydantic_model.get("model"), llm_provider=None
         ) from err
 
-    data = resp.model_dump(exclude_unset=True)
-    request_log.token_usage = _get_token_usage(data)
+    request_log.token_usage = get_token_usage(resp)
 
-    return JsonResponse(data)
+    return RawJsonResponse(resp)

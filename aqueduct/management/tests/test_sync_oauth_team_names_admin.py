@@ -10,8 +10,12 @@ from django.contrib.messages.storage.cookie import CookieStorage
 from django.test import RequestFactory, TestCase, override_settings
 
 from management.admin import TeamAdmin, sync_oauth_team_names_action
-from management.models import Org, Team
-from management.tests.helpers import map_team_names_empty, map_team_names_strip_suffix
+from management.models import Org, Snippet, SnippetType, Team
+from management.tests.helpers import (
+    SNIPPET_NO_TEAMS,
+    SNIPPET_TEAM_NAMES_AND_MAP,
+    seed_active_config,
+)
 
 User = get_user_model()
 
@@ -30,6 +34,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
             username="admin", email="admin@example.com", password="admin"
         )
         self.modeladmin = TeamAdmin(Team, site)
+        seed_active_config(SNIPPET_TEAM_NAMES_AND_MAP)
 
     def _create_request(self):
         request = self.factory.get("/admin/management/team/")
@@ -38,14 +43,13 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         return request
 
     def test_update_team_names(self):
-        """Test team names are updated based on mapping function."""
+        """Test team names are updated based on the snippet's display mapping."""
         Team.objects.create(name="E123-Students", org=self.org, oauth_group_name="E123-Students")
 
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
-            sync_oauth_team_names_action(self.modeladmin, request, queryset)
+        sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123-Students")
         self.assertEqual(team.name, "E123")
@@ -58,8 +62,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
-            sync_oauth_team_names_action(self.modeladmin, request, queryset)
+        sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123-Students")
         self.assertEqual(team.name, "E123-Duplicate")
@@ -71,8 +74,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
-            sync_oauth_team_names_action(self.modeladmin, request, queryset)
+        sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="")
         self.assertEqual(team.name, "ManualTeam")
@@ -84,23 +86,20 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
-            sync_oauth_team_names_action(self.modeladmin, request, queryset)
+        sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123")
         self.assertEqual(team.name, "E123")
 
     def test_warning_on_deletion(self):
-        """Test warning message when teams would be deleted."""
+        """Test warning message when teams would be deleted (empty mapping)."""
+        seed_active_config(SNIPPET_NO_TEAMS)
         Team.objects.create(name="E123", org=self.org, oauth_group_name="E123-Students")
 
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with (
-            patch.object(self.modeladmin, "message_user") as mock_msg,
-            override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_empty),
-        ):
+        with patch.object(self.modeladmin, "message_user") as mock_msg:
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team = Team.objects.get(oauth_group_name="E123-Students")
@@ -122,8 +121,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.filter(pk=team1.pk)
 
-        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
-            sync_oauth_team_names_action(self.modeladmin, request, queryset)
+        sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         team1.refresh_from_db()
         team2.refresh_from_db()
@@ -131,18 +129,25 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         self.assertEqual(team1.name, "E123")
         self.assertEqual(team2.name, "E456-Students")
 
-    def test_no_function_configured(self):
-        """Test handling when function is not configured."""
-        Team.objects.create(name="E123", org=self.org, oauth_group_name="E123")
+    def test_default_mapping_when_no_snippet(self):
+        """With no active config snippet, the default identity mapping leaves names unchanged."""
+        Snippet.objects.filter(type=SnippetType.CONFIG, active=True).update(active=False)
+
+        team = Team.objects.create(name="E123", org=self.org, oauth_group_name="E123")
 
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=None):
+        with patch.object(self.modeladmin, "message_user") as mock_msg:
             sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
-        team = Team.objects.get(oauth_group_name="E123")
+        team.refresh_from_db()
         self.assertEqual(team.name, "E123")
+        self.assertTrue(Team.objects.filter(oauth_group_name="E123").exists())
+        mock_msg.assert_called()
+        message = mock_msg.call_args[0][1]
+        self.assertIn("Skipped", message)
+        self.assertIn("Name unchanged", message)
 
     def test_multiple_teams_updated(self):
         """Test updating multiple teams at once."""
@@ -153,8 +158,7 @@ class SyncOauthTeamNamesAdminActionTestCase(TestCase):
         request = self._create_request()
         queryset = Team.objects.all()
 
-        with override_settings(OAUTH_DISPLAY_TEAM_NAMES_FUNCTION=map_team_names_strip_suffix):
-            sync_oauth_team_names_action(self.modeladmin, request, queryset)
+        sync_oauth_team_names_action(self.modeladmin, request, queryset)
 
         self.assertEqual(Team.objects.get(oauth_group_name="E123-Students").name, "E123")
         self.assertEqual(Team.objects.get(oauth_group_name="E456-Staff").name, "E456")

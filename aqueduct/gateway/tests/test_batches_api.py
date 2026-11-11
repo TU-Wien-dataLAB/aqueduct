@@ -8,7 +8,7 @@ from django.urls import reverse
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayBatchesTestCase
 from management.models import Batch as BatchModel
-from management.models import BatchStatus, Org, ServiceAccount, Team, Token, UserProfile
+from management.models import BatchStatus, FileObject, Org, ServiceAccount, Team, Token, UserProfile
 from mock_api.mock_configs import MockConfig
 
 User = get_user_model()
@@ -102,6 +102,47 @@ class TestBatchesAPI(GatewayBatchesTestCase):
         resp = self.client.get("/batches", headers=headers2)
         ids2 = [b["id"] for b in resp.json().get("data", [])]
         self.assertCountEqual(ids2, [b2.id])
+
+    def test_list_batches_with_output_and_error_files(self):
+        """GET /batches returns 200 when a finished batch has output/error files."""
+        token1 = Token.objects.get(pk=1)
+        fid = self._create_jsonl_file()
+        now = 1773058900
+        f_out = FileObject.objects.create(
+            id="file-test-output",
+            bytes=100,
+            created_at=now,
+            filename="output.jsonl",
+            purpose="batch_output",
+            token=token1,
+        )
+        f_err = FileObject.objects.create(
+            id="file-test-error",
+            bytes=50,
+            created_at=now,
+            filename="error.jsonl",
+            purpose="batch_output",
+            token=token1,
+        )
+        b1 = BatchModel.objects.create(
+            completion_window="24h",
+            created_at=now,
+            endpoint=self.url_chat,
+            id="batch-test-completed",
+            input_file_id=fid,
+            output_file=f_out,
+            error_file=f_err,
+            status=BatchStatus.COMPLETED,
+            token=token1,
+        )
+
+        resp = self.client.get("/batches", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json().get("data", [])
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], b1.id)
+        self.assertEqual(data[0]["output_file_id"], f_out.id)
+        self.assertEqual(data[0]["error_file_id"], f_err.id)
 
     def test_max_user_batches_limit(self):
         """POST /batches should enforce MAX_USER_BATCHES and reject the fourth batch."""

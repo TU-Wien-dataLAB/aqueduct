@@ -1,42 +1,27 @@
 import logging
-from typing import Literal
+from typing import Any
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
-from .models import Org, Team, TeamMembership, UserProfile
+from management.models import Org, Team, TeamMembership, UserGroup, UserProfile
+from management.snippets import get_config_snippet
 
 User = get_user_model()
 
 log = logging.getLogger("aqueduct")
 
 
-def default_org_name() -> Literal["default"]:
-    """
-    Returns the default organization name.
-    """
-    return "default"
-
-
-def get_org_name(claims) -> str | None:
-    """
-    Extracts the organization name from the OIDC claims payload.
-    """
-    if hasattr(settings, "ORG_NAME_FROM_OIDC_FUNCTION"):
-        return settings.ORG_NAME_FROM_OIDC_FUNCTION(claims)
-    return default_org_name()
-
-
 class OIDCBackend(OIDCAuthenticationBackend):
-    def _org(self, claims) -> Org | None:
-        if not (org_name := get_org_name(claims)):
-            return None  # Authentication fails if no org can be determined
-        org, _created = Org.objects.get_or_create(name=org_name)
+    def _org(self, claims: dict[str, Any]) -> Org | None:
+        if not (org_name := get_config_snippet().org_name(claims)):
+            return None
+        org, _ = Org.objects.get_or_create(name=org_name)
         return org
 
-    def _get_team_names(self, claims) -> list[str]:
+    def _get_team_names(self, claims: dict[str, Any]) -> list[str]:
         """
         Extract the raw team (group) names from OAuth claims.
 
@@ -46,16 +31,17 @@ class OIDCBackend(OIDCAuthenticationBackend):
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
             return []
 
-        extract_func = getattr(settings, "OAUTH_TEAM_NAMES_FUNCTION", lambda claims: None)
-
         try:
-            team_names = extract_func(claims)
+            team_names = get_config_snippet().team_names(claims)
         except Exception as e:
-            log.exception("Error calling OAUTH_TEAM_NAMES_FUNCTION: %s", e)
+            log.exception("Error calling config snippet team_names(): %s", e)
             return []
 
         if not isinstance(team_names, list):
-            log.error("OAUTH_TEAM_NAMES_FUNCTION must return a list of strings")
+            log.error(
+                "Config snippet team_names() must return a list of strings; got %r",
+                type(team_names).__name__,
+            )
             return []
 
         return team_names
@@ -64,22 +50,20 @@ class OIDCBackend(OIDCAuthenticationBackend):
         """
         Map raw team names to (display_team_name, team_name) tuples.
 
-        Delegates to settings.OAUTH_DISPLAY_TEAM_NAMES_FUNCTION, which maps each
-        extracted team name to its display team name.
-
         Returns:
             List of (display_team_name, team_name) tuples, or empty list if none.
         """
-        map_func = getattr(settings, "OAUTH_DISPLAY_TEAM_NAMES_FUNCTION", lambda names: None)
-
         try:
-            result = map_func(team_names)
+            result = get_config_snippet().display_team_names(team_names)
         except Exception as e:
-            log.exception("Error calling OAUTH_DISPLAY_TEAM_NAMES_FUNCTION: %s", e)
+            log.exception("Error calling config snippet display_team_names(): %s", e)
             return []
 
         if not isinstance(result, list):
-            log.error("OAUTH_DISPLAY_TEAM_NAMES_FUNCTION must return a list of tuples")
+            log.error(
+                "Config snippet display_team_names() must return a list of tuples; got %r",
+                type(result).__name__,
+            )
             return []
 
         team_mappings = []
@@ -93,25 +77,134 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
         return team_mappings
 
-    def _update_user_role(self, user: User, profile: UserProfile, team_names: list[str]):
-        """
-        Sync the user's role from the raw OAuth team (group) names.
+    def _update_user_role(
+        self, user: User, profile: UserProfile, team_names: list[str], claims: dict[str, Any]
+    ) -> None:
+        snippet = get_config_snippet()
 
-        A user is an admin if their raw team name appears in settings.ADMIN_GROUP.
-        Otherwise they fall back to the regular 'user' role. Staff/superuser
-        flags on the Django User are derived from admin status.
+        try:
+            group = snippet.user_group(claims)
+        except Exception as e:
+            log.exception("Error calling config snippet user_group(): %s", e)
+            group = UserGroup.USER
 
-        Note: admin determination uses the raw team/group name extracted from
-        the claims (same as team sync), not the display team name.
-        """
-        is_admin = bool(getattr(settings, "ADMIN_GROUP", None) in team_names)
+        if group not in UserGroup.values:
+            log.error(
+                "Config snippet user_group() returned invalid group %r; falling back to 'user'",
+                group,
+            )
+            group = UserGroup.USER
 
-        profile.group = "admin" if is_admin else "user"
+        admin_group = getattr(settings, "ADMIN_GROUP", "")
+        if admin_group and admin_group in team_names:
+            group = UserGroup.ADMIN
+
+        admin_superuser_emails = getattr(settings, "ADMIN_SUPERUSER_EMAILS", [])
+        is_superuser_email = user.email and user.email.lower() in admin_superuser_emails
+
+        profile.group = group
         profile.save()
 
-        user.is_staff = is_admin
-        user.is_superuser = is_admin
+        is_superuser = (group == UserGroup.ADMIN) or is_superuser_email
+        user.is_staff = is_superuser
+        user.is_superuser = is_superuser
         user.save()
+
+    @staticmethod
+    def _update_team_membership(
+        profile: UserProfile,
+        teams_to_update: list[tuple[Team, str, str]],
+        teams_by_name: dict[str, Team],
+    ):
+        """Rename OAuth teams to match current group names and ensure membership."""
+        org = profile.org
+        added = []
+
+        for team, team_name, original_group_name in teams_to_update:
+            if team.name != team_name:
+                existing = teams_by_name.get(team_name)
+                collision = existing is not None and existing.pk != team.pk
+
+                if collision:
+                    log.warning(
+                        "Cannot rename team '%s' -> '%s': name collision (org: %s, "
+                        "oauth_group: '%s'). Reusing existing team as-is.",
+                        team.name,
+                        team_name,
+                        org.name,
+                        original_group_name,
+                    )
+                else:
+                    log.info(
+                        "Renaming team '%s' -> '%s' (org: %s, oauth_group: '%s')",
+                        team.name,
+                        team_name,
+                        org.name,
+                        original_group_name,
+                    )
+
+                    old_name = team.name
+                    team.name = team_name
+                    team.save(update_fields=["name"])
+
+                    teams_by_name.pop(old_name, None)
+                    teams_by_name[team_name] = team
+
+            added.append(team)
+
+        TeamMembership.objects.bulk_create(
+            [TeamMembership(user_profile=profile, team=team) for team in added],
+            ignore_conflicts=True,
+        )
+
+        for team in added:
+            log.info("Added user '%s' to team '%s' (%s)", profile.user.email, team.name, org.name)
+
+    @staticmethod
+    def _add_team_membership(profile: UserProfile, teams_to_add: list[tuple[str, str]]):
+        """Create OAuth teams (or reuse an existing team by name) and ensure membership."""
+        org = profile.org
+        added = []
+
+        for team_name, original_group_name in teams_to_add:
+            team, created = Team.objects.get_or_create(
+                name=team_name, org=org, defaults={"oauth_group_name": original_group_name}
+            )
+            if created:
+                log.info("Created team '%s' for org '%s'", team_name, org.name)
+            else:
+                log.info("Reused existing team '%s' for org '%s'", team_name, org.name)
+            added.append((team_name, team))
+
+        TeamMembership.objects.bulk_create(
+            [TeamMembership(user_profile=profile, team=team) for _, team in added],
+            ignore_conflicts=True,
+        )
+
+        for team_name, _ in added:
+            log.info("Added user '%s' to team '%s' (%s)", profile.user.email, team_name, org.name)
+
+    @staticmethod
+    def _remove_team_membership(profile: UserProfile, team_names: set[str]):
+        """Remove the user from teams no longer present in their OAuth groups."""
+        enable_removal = getattr(settings, "ENABLE_OAUTH_GROUP_REMOVAL", True)
+        org = profile.org
+
+        teams = Team.objects.filter(name__in=team_names, org=org)
+        for team in teams:
+            is_oauth_managed = bool(team.oauth_group_name)
+
+            if is_oauth_managed or enable_removal:
+                TeamMembership.objects.filter(user_profile=profile, team=team).delete()
+                log.info(
+                    "Removed user '%s' from team '%s' (%s)", profile.user.email, team.name, org.name
+                )
+            else:
+                log.info(
+                    "Skipping removal from non-OAuth team '%s' for user '%s'",
+                    team.name,
+                    profile.user.email,
+                )
 
     def _sync_team_membership(self, user: User, profile: UserProfile, team_names: list[str]):
         """
@@ -125,112 +218,56 @@ class OIDCBackend(OIDCAuthenticationBackend):
         - Respects org boundaries (teams must belong to user's org)
         """
         if not getattr(settings, "ENABLE_OAUTH_GROUP_MANAGEMENT", False):
+            log.info(
+                "Skipping synchronization of teams %s (ENABLE_OAUTH_GROUP_MANAGEMENT=False)",
+                sorted(team_names),
+            )
             return
 
         if not team_names:
             return
 
         team_mappings = self._get_teams(team_names=team_names)
+        enable_creation = getattr(settings, "ENABLE_OAUTH_GROUP_CREATION", True)
 
-        org = profile.org
         with transaction.atomic():
             existing_memberships = set(
-                TeamMembership.objects.filter(user_profile=profile).values_list(
-                    "team__name", flat=True
-                )
+                TeamMembership.objects.filter(user_profile=profile)
+                .exclude(team__oauth_group_name__in=["", None])
+                .values_list("team__name", flat=True)
             )
 
             target_team_names = {team_name for team_name, _ in team_mappings}
-            team_name_to_original = dict(team_mappings)
 
-            teams_to_add = [
-                (name, team_name_to_original[name])
-                for name in target_team_names - existing_memberships
-            ]
-            teams_to_remove = existing_memberships - target_team_names
+            org_teams = list(Team.objects.filter(org=profile.org))
+            teams_by_oauth = {
+                org_team.oauth_group_name: org_team
+                for org_team in org_teams
+                if org_team.oauth_group_name
+            }
+            teams_by_name = {org_team.name: org_team for org_team in org_teams}
 
-            enable_creation = getattr(settings, "ENABLE_OAUTH_GROUP_CREATION", True)
-            enable_removal = getattr(settings, "ENABLE_OAUTH_GROUP_REMOVAL", True)
-
-            for team_name, original_group_name in teams_to_add:
-                # Look up by oauth_group_name first, so renaming the mapping
-                # function renames existing teams instead of creating duplicates.
-                existing = Team.objects.filter(
-                    oauth_group_name=original_group_name, org=org
-                ).first()
-
-                if existing is not None:
-                    if existing.name != team_name:
-                        # Check for name collision before renaming
-                        collision = (
-                            Team.objects.filter(name=team_name, org=org)
-                            .exclude(pk=existing.pk)
-                            .exists()
-                        )
-                        if collision:
-                            log.warning(
-                                "Cannot rename team '%s' -> '%s': name collision (org: %s, "
-                                "oauth_group: '%s'). Reusing existing team as-is.",
-                                existing.name,
-                                team_name,
-                                org.name,
-                                original_group_name,
-                            )
-                        else:
-                            log.info(
-                                "Renaming team '%s' -> '%s' (org: %s, oauth_group: '%s')",
-                                existing.name,
-                                team_name,
-                                org.name,
-                                original_group_name,
-                            )
-                            existing.name = team_name
-                            existing.save(update_fields=["name"])
-                    team = existing
-                    created = False
-                elif (
-                    not enable_creation
-                    and not Team.objects.filter(name=team_name, org=org).exists()
-                ):
-                    log.info("Skipping team '%s' (ENABLE_OAUTH_GROUP_CREATION=False)", team_name)
+            to_update, to_add = [], []
+            for team_name, original_group_name in team_mappings:
+                if team_name in existing_memberships:
                     continue
+                team = teams_by_oauth.get(original_group_name)
+                if team is not None:
+                    to_update.append((team, team_name, original_group_name))
+                elif enable_creation or team_name in teams_by_name:
+                    to_add.append((team_name, original_group_name))
                 else:
-                    team, created = Team.objects.get_or_create(
-                        name=team_name, org=org, defaults={"oauth_group_name": original_group_name}
-                    )
+                    log.info("Skipping team '%s' (ENABLE_OAUTH_GROUP_CREATION=False)", team_name)
 
-                if created:
-                    log.info("Created team '%s' for org '%s'", team_name, org.name)
-                else:
-                    log.info("Reused existing team '%s' for org '%s'", team_name, org.name)
+            self._update_team_membership(
+                profile=profile, teams_to_update=to_update, teams_by_name=teams_by_name
+            )
+            self._add_team_membership(profile=profile, teams_to_add=to_add)
 
-                TeamMembership.objects.get_or_create(user_profile=profile, team=team)
-                log.info("Added user '%s' to team '%s' (%s)", user.email, team_name, org.name)
+            teams_to_remove = existing_memberships - target_team_names
+            self._remove_team_membership(profile=profile, team_names=teams_to_remove)
 
-            for team_name in teams_to_remove:
-                try:
-                    team = Team.objects.get(name=team_name, org=org)
-                    is_oauth_managed = bool(team.oauth_group_name)
-                    if is_oauth_managed or enable_removal:
-                        TeamMembership.objects.filter(user_profile=profile, team=team).delete()
-                        log.info(
-                            "Removed user '%s' from team '%s' (%s)", user.email, team_name, org.name
-                        )
-                    else:
-                        log.info(
-                            "Skipping removal from non-OAuth team '%s' for user '%s'",
-                            team_name,
-                            user.email,
-                        )
-                except Team.DoesNotExist:
-                    log.warning(
-                        "Team '%s' not found for removal (org: %s, user: %s)",
-                        team_name,
-                        org.name,
-                        user.email,
-                    )
-
-    def create_user(self, claims) -> User | None:
+    def create_user(self, claims: dict[str, Any]) -> User | None:
         org = self._org(claims)
         if not org:
             return None  # Authentication fails if no org can be determined
@@ -240,7 +277,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
         team_names = self._get_team_names(claims)
 
-        self._update_user_role(user, profile, team_names)
+        self._update_user_role(user, profile, team_names, claims)
 
         log.info("Created user '%s' (%s)", user.email, profile.group)
 
@@ -248,7 +285,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
         return user
 
-    def update_user(self, user, claims) -> User:
+    def update_user(self, user, claims: dict[str, Any]) -> User:
         """Update existing user with new claims, if necessary save, and return user"""
         org = self._org(claims)
         if not org:
@@ -258,7 +295,7 @@ class OIDCBackend(OIDCAuthenticationBackend):
 
         team_names = self._get_team_names(claims)
 
-        self._update_user_role(user, profile, team_names)
+        self._update_user_role(user, profile, team_names, claims)
 
         log.info("Updated user '%s' (%s)", user.email, profile.group)
 

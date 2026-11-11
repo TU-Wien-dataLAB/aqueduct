@@ -1,23 +1,35 @@
 import base64
 import json
 from http import HTTPStatus
+from importlib import import_module
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import patch
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import TransactionTestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from httpx import Request as HttpxRequest
 from httpx import Response
-from litellm.types.utils import Choices, Message, ModelResponse, Usage
+from litellm.types.utils import (
+    Choices,
+    Message,
+    ModelResponse,
+    TextChoices,
+    TextCompletionResponse,
+    Usage,
+)
 from openai.types.chat import ChatCompletion
 
 from gateway.config import (
     get_all_model_request_limit_multipliers,
     get_model_request_limit_multiplier,
+    get_model_supports_response_format,
     get_router_config,
 )
 from gateway.tests.utils import (
@@ -32,7 +44,13 @@ from gateway.tests.utils.base import (
     GatewayIntegrationTestCase,
 )
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
-from mock_api.mock_configs import MockConfig, MockStreamingConfig, convert_to_stream_data
+from management.models import Usage as AqueductUsage
+from mock_api.mock_configs import (
+    MockConfig,
+    MockStreamingConfig,
+    convert_to_stream_data,
+    responses_detail_response,
+)
 
 User = get_user_model()
 
@@ -93,6 +111,11 @@ class EmbeddingTest(GatewayIntegrationTestCase):
         self.assertIsNotNone(req.output_tokens)
         self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
         self.assertEqual(req.output_tokens, 0, "output_tokens should be 0")
+        self.assertEqual(
+            req.cached_input_tokens,
+            0,
+            "No cached input tokens were reported for this embedding request.",
+        )
         self.assertEqual(req.user_id, "")
 
 
@@ -205,7 +228,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.response_type.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -282,7 +305,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.response_type.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -395,7 +418,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.response_type.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -501,7 +524,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         }
 
         with patch(
-            "gateway.views.decorators.extract_text_with_tika",
+            "gateway.decorators.response_type.extract_text_with_tika",
             return_value="This is a test file content for base64 encoding.",
         ):
             response = self.client.post(
@@ -551,7 +574,8 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         )
 
         with patch(
-            "gateway.views.decorators.httpx.AsyncClient.put", return_value=tika_response_mock
+            "gateway.decorators.response_type.httpx.AsyncClient.put",
+            return_value=tika_response_mock,
         ):
             response = self.client.post(
                 self.url,
@@ -621,7 +645,7 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertEqual(
             req.status_code,
             504,
-            f"Logged streaming timeout request should have status_code=504, got {req.status_code}",
+            f"Logged timeout request should have status_code=504, got {req.status_code}",
         )
         self.assertIn(
             "chat/completions",
@@ -629,27 +653,25 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
             f"Request path should be /chat/completions, got {req.path}",
         )
         self.assertIsNotNone(
-            req.response_time_ms, "Response time should be recorded even for streaming timeout"
+            req.response_time_ms, "Response time should be recorded even for timeout"
         )
         self.assertGreater(
             req.response_time_ms,
             0,
-            f"Response time should be > 0 for streaming timeout, got {req.response_time_ms}",
+            f"Response time should be > 0 for timeout, got {req.response_time_ms}",
         )
         self.assertIsNotNone(
-            req.processing_time_ms, "Processing time should be recorded even for streaming timeout"
+            req.processing_time_ms, "Processing time should be recorded even for timeout"
         )
         self.assertGreater(
             req.processing_time_ms,
             0,
-            f"Processing time should be > 0 for streaming timeout, got {req.processing_time_ms}",
+            f"Processing time should be > 0 for timeout, got {req.processing_time_ms}",
         )
         # Access token_id instead of token to avoid async issues
-        self.assertIsNotNone(req.token_id, "Token should be recorded for streaming timeout")
+        self.assertIsNotNone(req.token_id, "Token should be recorded for timeout")
         self.assertEqual(
-            req.model,
-            self.model,
-            f"Model should be {self.model} for streaming timeout, got {req.model}",
+            req.model, self.model, f"Model should be {self.model} for timeout, got {req.model}"
         )
 
     @override_settings(STREAM_REQUEST_TIMEOUT=5)
@@ -1185,6 +1207,242 @@ class ChatCompletionsIntegrationTest(ChatCompletionsBase):
         self.assertNotIn("reasoning_content", content_delta)
 
 
+class TokenUsageDetailsTest(ChatCompletionsBase):
+    @staticmethod
+    def _chat_completion_payload(
+        prompt_tokens, completion_tokens, cached_tokens=None, reasoning_tokens=None
+    ) -> dict:
+        usage = Usage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            **(
+                {"prompt_tokens_details": {"cached_tokens": cached_tokens}}
+                if cached_tokens is not None
+                else {}
+            ),
+            **(
+                {"completion_tokens_details": {"reasoning_tokens": reasoning_tokens}}
+                if reasoning_tokens is not None
+                else {}
+            ),
+        )
+        return ModelResponse(
+            id="chatcmpl-cached-tokens",
+            object="chat.completion",
+            created=1768398242,
+            model="gpt-4.1-nano",
+            choices=[
+                Choices(
+                    index=0,
+                    message=Message(role="assistant", content="Cached response."),
+                    finish_reason="stop",
+                )
+            ],
+            usage=usage,
+        ).model_dump()
+
+    def _run_chat_completion_and_get_request(self, response_data):
+        with self.mock_server.patch_external_api(
+            "chat/completions", MockConfig(response_data=response_data)
+        ):
+            response = self._send_chat_completion(self.MESSAGES)
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.content}")
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "Expected one logged request.")
+        return requests[0]
+
+    def test_chat_completion_records_token_details(self):
+        req = self._run_chat_completion_and_get_request(
+            self._chat_completion_payload(1000, 10, cached_tokens=800, reasoning_tokens=6)
+        )
+        self.assertEqual(req.input_tokens, 1000, "Input tokens should include cached tokens.")
+        self.assertEqual(req.cached_input_tokens, 800)
+        self.assertEqual(req.output_tokens, 10)
+        self.assertEqual(req.reasoning_tokens, 6)
+        self.assertEqual(req.token_usage.total_tokens, 1010)
+
+    def test_chat_completion_without_cache_details_stores_zero(self):
+        req = self._run_chat_completion_and_get_request(
+            self._chat_completion_payload(20, 10, cached_tokens=None)
+        )
+        self.assertEqual(req.input_tokens, 20)
+        self.assertEqual(req.cached_input_tokens, 0)
+        self.assertEqual(req.output_tokens, 10)
+        self.assertEqual(req.reasoning_tokens, 0)
+        self.assertEqual(req.token_usage.total_tokens, 30)
+
+    def test_response_without_usage_stores_zero(self):
+        data = self._chat_completion_payload(20, 10, cached_tokens=5)
+        del data["usage"]
+        req = self._run_chat_completion_and_get_request(data)
+        self.assertEqual(req.input_tokens, 0)
+        self.assertEqual(req.cached_input_tokens, 0)
+        self.assertEqual(req.output_tokens, 0)
+        self.assertEqual(req.reasoning_tokens, 0)
+
+    def test_cached_input_tokens_cannot_exceed_input_tokens(self):
+        req = self._run_chat_completion_and_get_request(
+            self._chat_completion_payload(1000, 10, cached_tokens=5000)
+        )
+        self.assertEqual(req.input_tokens, 1000)
+        self.assertEqual(
+            req.cached_input_tokens, 1000, "Cached input tokens should not exceed input tokens."
+        )
+
+    async def test_chat_completion_streaming_records_token_details(self):
+        stream_data = [
+            ModelResponse(
+                id="chatcmpl-cached-stream",
+                created=1768398242,
+                model="gpt-4.1-nano",
+                object="chat.completion.chunk",
+                choices=[{"index": 0, "delta": {"role": "assistant", "content": "Cached stream."}}],
+            ).model_dump(),
+            ModelResponse(
+                id="chatcmpl-cached-stream",
+                created=1768398242,
+                model="gpt-4.1-nano",
+                object="chat.completion.chunk",
+                choices=[],
+                usage=Usage(
+                    prompt_tokens=1000,
+                    completion_tokens=10,
+                    total_tokens=1010,
+                    prompt_tokens_details={"cached_tokens": 800},
+                    completion_tokens_details={"reasoning_tokens": 6},
+                ),
+            ).model_dump(),
+        ]
+        mock_resp = MockStreamingConfig(response_data=convert_to_stream_data(stream_data))
+        with self.mock_server.patch_external_api("chat/completions", mock_resp):
+            request = self._build_chat_completion_request(self.MESSAGES, stream=True)
+            response = await self.async_client.post(**request, content_type="application/json")
+
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.status_code}")
+        await _read_streaming_response_lines(response)
+
+        requests = [r async for r in Request.objects.all()]
+        self.assertEqual(len(requests), 1, "Expected one logged request.")
+        req = requests[0]
+        self.assertEqual(req.input_tokens, 1000, "Input tokens should include cached tokens.")
+        self.assertEqual(
+            req.cached_input_tokens, 800, "Cached input tokens should come from the final chunk."
+        )
+        self.assertEqual(req.output_tokens, 10)
+        self.assertEqual(req.reasoning_tokens, 6)
+        self.assertEqual(req.token_usage.total_tokens, 1010)
+
+    def test_completions_records_token_details(self):
+        # LiteLLM sends text completion requests to chat/completions for chat-only models.
+        chat_data = self._chat_completion_payload(1000, 10, cached_tokens=800, reasoning_tokens=6)
+        text_data = TextCompletionResponse(
+            id="cmpl-cached-tokens",
+            object="text_completion",
+            created=1768398242,
+            model="gpt-4.1-nano",
+            choices=[
+                TextChoices(
+                    text="This is a mock completion response.",
+                    index=0,
+                    logprobs=None,
+                    finish_reason="stop",
+                )
+            ],
+            usage=Usage(prompt_tokens=1000, completion_tokens=10, total_tokens=1010),
+        ).model_dump()
+        text_data["usage"]["prompt_tokens_details"] = {"cached_tokens": 800}
+        text_data["usage"]["completion_tokens_details"] = {"reasoning_tokens": 6}
+
+        with (
+            self.mock_server.patch_external_api(
+                "chat/completions", MockConfig(response_data=chat_data)
+            ),
+            self.mock_server.patch_external_api("completions", MockConfig(response_data=text_data)),
+        ):
+            response = self.client.post(
+                reverse("gateway:completions"),
+                data=json.dumps({"model": self.model, "prompt": "Hello"}),
+                headers=self.headers,
+                content_type="application/json",
+            )
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.content}")
+
+        requests = list(Request.objects.all())
+        self.assertEqual(len(requests), 1, "Expected one logged request.")
+        req = requests[0]
+        self.assertEqual(req.input_tokens, 1000)
+        self.assertEqual(req.cached_input_tokens, 800)
+        self.assertEqual(req.output_tokens, 10)
+        self.assertEqual(req.reasoning_tokens, 6)
+        self.assertEqual(req.token_usage.total_tokens, 1010)
+
+    async def test_responses_api_records_token_details(self):
+        response_data = responses_detail_response(())
+        response_data["usage"]["input_tokens"] = 1000
+        response_data["usage"]["input_tokens_details"] = {"cached_tokens": 800}
+        response_data["usage"]["output_tokens"] = 10
+        response_data["usage"]["output_tokens_details"] = {"reasoning_tokens": 6}
+        response_data["usage"]["total_tokens"] = 1010
+
+        with self.mock_server.patch_external_api(
+            "responses", MockConfig(response_data=response_data)
+        ):
+            response = await self.async_client.post(
+                reverse("gateway:v1_responses"),
+                data=json.dumps(
+                    {
+                        "model": self.model,
+                        "input": [{"role": "user", "content": "Hello, how are you?"}],
+                        "max_output_tokens": 50,
+                    }
+                ),
+                headers=self.headers,
+                content_type="application/json",
+            )
+        self.assertEqual(response.status_code, 200, f"Expected 200 OK, got {response.content}")
+
+        requests = [r async for r in Request.objects.all()]
+        self.assertEqual(len(requests), 1, "Expected one logged request.")
+        req = requests[0]
+        self.assertEqual(req.input_tokens, 1000)
+        self.assertEqual(req.cached_input_tokens, 800)
+        self.assertEqual(req.output_tokens, 10)
+        self.assertEqual(req.reasoning_tokens, 6)
+        self.assertEqual(req.token_usage.total_tokens, 1010)
+
+    def test_token_usage_setter_limits_cached_input_tokens(self):
+        req = Request()
+        req.token_usage = AqueductUsage(input_tokens=100, output_tokens=5, cached_input_tokens=500)
+        self.assertEqual(req.cached_input_tokens, 100)
+
+        req.token_usage = AqueductUsage(input_tokens=100, output_tokens=5, cached_input_tokens=-5)
+        self.assertEqual(req.cached_input_tokens, 0)
+
+        req.token_usage = AqueductUsage(input_tokens=100, output_tokens=5, cached_input_tokens=40)
+        self.assertEqual(req.cached_input_tokens, 40)
+        self.assertEqual(req.token_usage, AqueductUsage(100, 5, 40))
+
+    def test_token_usage_setter_limits_reasoning_tokens(self):
+        for reported, expected in [(-5, 0), (50, 20), (12, 12)]:
+            with self.subTest(reported=reported):
+                req = Request()
+                req.token_usage = AqueductUsage(
+                    input_tokens=10, output_tokens=20, reasoning_tokens=reported
+                )
+                self.assertEqual(req.reasoning_tokens, expected)
+                self.assertEqual(req.token_usage.reasoning_tokens, expected)
+                self.assertEqual(req.token_usage.total_tokens, 30)
+
+    def test_reasoning_tokens_cannot_exceed_output_tokens(self):
+        req = self._run_chat_completion_and_get_request(
+            self._chat_completion_payload(20, 10, reasoning_tokens=50)
+        )
+        self.assertEqual(req.output_tokens, 10)
+        self.assertEqual(req.reasoning_tokens, 10)
+        self.assertEqual(req.token_usage.total_tokens, 30)
+
+
 class ListModelsIntegrationTest(GatewayIntegrationTestCase):
     def _send_model_list_request(self):
         return self.client.get("/models", content_type="application/json", headers=self.headers)
@@ -1218,6 +1476,51 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
         self.assertEqual(len(requests), 1, "There should be exactly one request after list models.")
         req = requests[0]
         self.assertIn("models", req.path, "Request endpoint should be for model listing.")
+
+    def test_model_group_info_exposes_context_window(self):
+        """The LiteLLM /model_group/info endpoint exposes token limits, so
+        LiteLLM-aware clients read the context window from the gateway."""
+        models_view = import_module("gateway.views.models")
+
+        config = {
+            "model_list": [
+                {
+                    "model_name": self.model,
+                    "litellm_params": {"model": f"openai/{self.model}"},
+                    "model_info": {
+                        "id": self.model,
+                        "max_tokens": 262144,
+                        "max_output_tokens": 32768,
+                        "supports_vision": True,
+                    },
+                },
+                {
+                    "model_name": "explicit-model",
+                    "litellm_params": {"model": "openai/explicit-model"},
+                    "model_info": {"max_input_tokens": 999999, "max_tokens": 262144},
+                },
+                {
+                    "model_name": "no-info-model",
+                    "litellm_params": {"model": "openai/no-info-model"},
+                },
+            ]
+        }
+        with patch.object(models_view, "get_router_config", return_value=config):
+            response = self.client.get(
+                "/model_group/info", content_type="application/json", headers=self.headers
+            )
+
+        self.assertEqual(response.status_code, 200)
+        entries = {entry["model_group"]: entry for entry in response.json()}
+        info = entries[self.model]["model_info"]
+        # max_input_tokens is derived from max_tokens (the context length)
+        self.assertEqual(info["max_input_tokens"], 262144)
+        self.assertEqual(info["max_output_tokens"], 32768)
+        self.assertTrue(info["supports_vision"])
+        # An explicit max_input_tokens in the config is never overwritten
+        self.assertEqual(entries["explicit-model"]["model_info"]["max_input_tokens"], 999999)
+        # Models without token limits get no token fields at all
+        self.assertNotIn("max_input_tokens", entries["no-info-model"]["model_info"])
 
     def test_list_models_with_invalid_token(self):
         """
@@ -1282,6 +1585,18 @@ class ListModelsIntegrationTest(GatewayIntegrationTestCase):
 
 
 class TokenLimitTest(ChatCompletionsBase):
+    def setUp(self):
+        super().setUp()
+        # Rate-limit counts now live in the cache (LocMemCache under test), which
+        # is shared in-process across tests within the same window. Clear it so
+        # bucket counts from a previous test in the same minute/hour/day don't
+        # bleed into this one (DB transaction rollback no longer resets them).
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
     def _setup_limits(self, kind: str, field: str, value: int):
         """
         Set a rate limit for the given kind ('org', 'team', 'user') and field.
@@ -1378,6 +1693,10 @@ class TokenLimitTest(ChatCompletionsBase):
             429,
             f"Expected 429 Too Many Requests, got {response2.status_code}: {response2.content}",
         )
+        # The exceeded minute bucket ends within a minute
+        retry_after = int(response2.headers["Retry-After"])
+        self.assertGreaterEqual(retry_after, 1)
+        self.assertLessEqual(retry_after, 60)
         # Optionally, check error message
         try:
             error_json = response2.json()
@@ -1519,10 +1838,7 @@ class TokenLimitTest(ChatCompletionsBase):
             limit_desc="user output_tokens_per_minute",
         )
 
-    @patch(
-        "gateway.views.decorators.get_all_model_request_limit_multipliers",
-        return_value={"gpt-4.1-nano": 2.0},
-    )
+    @patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=2.0)
     def test_per_model_request_limit_multiplier_budget(self, mock_multipliers):
         """
         Tests that per-model multipliers act as a budget cost.
@@ -1533,9 +1849,6 @@ class TokenLimitTest(ChatCompletionsBase):
         """
         # Set request limit to 3
         self._setup_limits("org", "requests_per_minute", 3)
-
-        # Clear cached request counts from fixture setup
-        Request.objects.all().delete()
 
         # Requests 1-6 should succeed (weighted cost up to 2.5 < 3)
         for i in range(6):
@@ -1553,14 +1866,13 @@ class TokenLimitTest(ChatCompletionsBase):
             429,
             f"Expected 429 Too Many Requests, got {response7.status_code}: {response7.content}",
         )
+        retry_after = response7.headers["Retry-After"]
         self.assertEqual(
-            response7.json()["error"]["message"], "Rate limit exceeded. Request limit (6/min)."
+            response7.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (6/min) (Retry after {retry_after}s).",
         )
 
-    @patch(
-        "gateway.views.decorators.get_all_model_request_limit_multipliers",
-        return_value={"gpt-4.1-nano": 0.5},
-    )
+    @patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=0.5)
     def test_per_model_expensive_multiplier_limits_requests(self, mock_multipliers):
         """
         Tests that a model with multiplier < 1 costs more budget per request.
@@ -1573,9 +1885,6 @@ class TokenLimitTest(ChatCompletionsBase):
         # Set request limit to 3
         self._setup_limits("org", "requests_per_minute", 3)
 
-        # Clear cached request counts from fixture setup
-        Request.objects.all().delete()
-
         # First request: weighted = 0 < 3
         response1 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
         self.assertEqual(response1.status_code, 200)
@@ -1587,8 +1896,51 @@ class TokenLimitTest(ChatCompletionsBase):
         # Third request: weighted = 4.0 >= 3
         response3 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
         self.assertEqual(response3.status_code, 429)
+        retry_after = response3.headers["Retry-After"]
         self.assertEqual(
-            response3.json()["error"]["message"], "Rate limit exceeded. Request limit (1.5/min)."
+            response3.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (1.5/min) (Retry after {retry_after}s).",
+        )
+
+    def test_rate_limit_message_lists_each_exceeded_limit(self):
+        self._setup_limits("org", "requests_per_minute", 1)
+        self._setup_limits("org", "output_tokens_per_minute", 1)
+        first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(first.status_code, 200)
+
+        blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        retry_after = blocked.headers["Retry-After"]
+        self.assertEqual(
+            blocked.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (1/min) (Retry after {retry_after}s), "
+            f"Output token limit (1/min) (Retry after {retry_after}s).",
+        )
+
+    def test_check_limits_uses_no_request_table_sql(self):
+        """A rate-limited (429) request issues no SQL against ``management_request``.
+
+        ``check_limits`` now reads from the cache, not the ``Request`` table. A
+        blocked request returns 429 before ``log_request`` runs, so it must not
+        touch ``management_request`` at all (no aggregate SELECT, no INSERT).
+        """
+        self._setup_limits("org", "requests_per_minute", 1)
+        # First request consumes the minute bucket (and creates its Request row).
+        first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(first.status_code, 200)
+
+        # Capture SQL during the second (blocked) request.
+        with CaptureQueriesContext(connection) as ctx:
+            blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        request_table_queries = [
+            q["sql"] for q in ctx.captured_queries if "management_request" in q["sql"]
+        ]
+        self.assertEqual(
+            request_table_queries,
+            [],
+            "check_limits must not query the Request table; found: "
+            + " | ".join(request_table_queries),
         )
 
 
@@ -1893,6 +2245,95 @@ class ModelAliasConfigValidationTest(TransactionTestCase):
 
             multiplier = get_model_request_limit_multiplier("unknown-model")
             self.assertEqual(multiplier, 1.0)
+
+    def test_get_model_supports_response_format_returns_false_when_configured(self):
+        """
+        Test that get_model_supports_response_format returns False when explicitly configured.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-image-1",
+                    "litellm_params": {
+                        "model": "openai/gpt-image-1",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"supports_response_format": False},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            self.assertFalse(get_model_supports_response_format("gpt-image-1"))
+
+    def test_get_model_supports_response_format_defaults_to_true(self):
+        """
+        Test that get_model_supports_response_format defaults to True when not configured.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "dall-e-2",
+                    "litellm_params": {
+                        "model": "openai/dall-e-2",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["image"]},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            self.assertTrue(get_model_supports_response_format("dall-e-2"))
+
+    def test_get_model_supports_response_format_resolves_alias(self):
+        """
+        Test that get_model_supports_response_format resolves aliases correctly.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-image-1",
+                    "litellm_params": {
+                        "model": "openai/gpt-image-1",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["img"], "supports_response_format": False},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            # Should resolve the alias and return the configured value
+            self.assertFalse(get_model_supports_response_format("img"))
+
+    def test_get_model_supports_response_format_true_for_unknown_model(self):
+        """
+        Test that get_model_supports_response_format returns True for unknown models.
+        """
+        mock_config = {
+            "model_list": [
+                {
+                    "model_name": "gpt-4o",
+                    "litellm_params": {
+                        "model": "openai/gpt-4o",
+                        "api_key": "os.environ/OPENAI_API_KEY",
+                    },
+                    "model_info": {"aliases": ["default"]},
+                }
+            ]
+        }
+
+        with patch("pathlib.Path.open"), patch("yaml.safe_load", return_value=mock_config):
+            get_router_config.cache_clear()
+
+            self.assertTrue(get_model_supports_response_format("unknown-model"))
 
     def test_get_all_model_request_limit_multipliers(self):
         """

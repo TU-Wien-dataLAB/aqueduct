@@ -3,6 +3,7 @@ import logging.config
 import os
 import secrets
 from json import JSONDecodeError
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from starlette.requests import Request
@@ -47,6 +48,7 @@ logger = logging.getLogger("fastapi")
 
 
 delays_enabled = os.getenv("MOCK_API_DELAYS", "false").lower() == "true"
+last_requests: dict[str, Any] = {}
 
 
 app = FastAPI(debug=True)
@@ -87,6 +89,15 @@ async def reset_endpoint(path: str) -> dict[str, str]:
     return {"message": f"Reset the special mock response for {path}"}
 
 
+@app.get("/last_request/{path:path}")
+async def get_last_request(path: str) -> JSONResponse:
+    """Return the JSON body of the last POST request captured for `path`."""
+    normalized_path = path.strip("/").removeprefix("v1/")
+    if normalized_path not in last_requests:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="No request captured for path")
+    return JSONResponse({"body": last_requests[normalized_path]})
+
+
 @app.delete("/{path:path}")
 @app.get("/{path:path}")
 @app.post("/{path:path}")
@@ -98,6 +109,11 @@ async def mock_endpoint(path: str, request: Request) -> Response:
     before returning a response.
     """
     path = path.strip("/").removeprefix("v1/")
+    if request.method == "POST":
+        try:
+            last_requests[path] = await request.json()
+        except (AttributeError, JSONDecodeError, UnicodeDecodeError):
+            last_requests[path] = None
     ids: tuple[str, ...] = ()
 
     try:

@@ -29,7 +29,8 @@ The app's PostgreSQL connection is fully configurable under `database:` in
 connection: the `<release>-postgres-rw` service, database/user `aqueduct`, and
 the password from the operator-created `<cluster>-app` Secret. Set
 `database.host` (and credentials) explicitly to point the app at an external
-PostgreSQL instance instead.
+PostgreSQL instance instead. If CNPG is disabled, also set `database.name`,
+`database.username`, and either `database.password` or `database.existingSecret`.
 
 ### Migrating from an external PostgreSQL instance
 
@@ -59,8 +60,10 @@ cnpg:
 
 Runbook:
 
-1. Deploy with `bootstrapFromExternal.enabled: true`. The app keeps running
-   against the source (point `database.host` at it) while CNPG clones the data.
+1. Stop writes to the source before cloning and keep them stopped until cutover;
+   `pg_basebackup` does not continuously replicate subsequent changes. Deploy
+   with `bootstrapFromExternal.enabled: true` and `database.host` pointing at
+   the source.
 2. Wait for the CNPG cluster to become ready:
    `kubectl get cluster -n <ns>` (`READY 1`, `STATUS: Cluster in healthy state`).
 3. Cut over by pointing the app at CNPG (a `helm upgrade` is enough; no DB
@@ -103,6 +106,31 @@ The broker holds only transient Celery task messages (`valkey.dataStorage` is
 disabled by default), so there is no persistent data.
 
 ## Upgrading
+
+### Before upgrading from the Bitnami-backed chart
+
+> **Back up your database before upgrading.** This chart removes the Bitnami
+> PostgreSQL and Redis workloads. Upgrading before migrating can interrupt
+> service and connect Aqueduct to a new, empty database. The old broker's
+> pending tasks can also be lost.
+
+1. Check whether the current release still uses Bitnami PostgreSQL or Redis.
+   If it does, stay on the previous chart until migration is complete. Install
+   the CNPG operator and follow the [previous chart's migration guide](https://github.com/TU-Wien-dataLAB/aqueduct/blob/f6e8598ba5dc2c048ae216ae5d9bbbe8192ad50b/docs/deployment.md#database)
+   to bring up CNPG and Valkey alongside the old services. Stop writes before
+   cloning, keep them stopped until cutover, and verify the copied data and
+   application connection. Drain pending Celery tasks before switching brokers.
+2. Verify the application uses CNPG and Valkey (or explicitly configured
+   external replacements) and that the new services are healthy. Confirm the
+   database backup can be restored.
+3. Update your values for the new chart. Remove `postgresql`, `redis`, and
+   `global.postgresql` settings; explicitly enable `cnpg` and `valkey` if using
+   them. If using external services, configure `database` and `celery.brokerUrl`
+   instead. Review retained settings when using `helm upgrade --reuse-values`:
+   old `cnpg.enabled: false` or `valkey.enabled: false` values can prevent the
+   replacement services from starting.
+4. Upgrade the chart and verify the application and Celery worker. For upgrades
+   from before chart 0.2.0, also follow the Deployment selector steps below.
 
 ### To chart 0.2.0
 

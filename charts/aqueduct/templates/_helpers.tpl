@@ -141,19 +141,31 @@ Resolution order for each field:
 {{- end -}}
 
 {{- define "aqueduct.db.host" -}}
-{{- .Values.database.host | default (ternary (include "aqueduct.cnpg.host" .) .Values.global.postgresql.fullnameOverride .Values.cnpg.enabled) -}}
+{{- if .Values.cnpg.enabled -}}
+{{- .Values.database.host | default (include "aqueduct.cnpg.host" .) -}}
+{{- else -}}
+{{- required "database.host is required when cnpg.enabled is false" .Values.database.host -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "aqueduct.db.port" -}}
-{{- .Values.database.port | default (ternary "5432" .Values.global.postgresql.service.ports.postgresql .Values.cnpg.enabled) | default "5432" -}}
+{{- .Values.database.port | default "5432" -}}
 {{- end -}}
 
 {{- define "aqueduct.db.name" -}}
-{{- .Values.database.name | default (ternary (.Values.cnpg.cluster.database | default "aqueduct") (.Values.global.postgresql.auth.database | default "aqueduct") .Values.cnpg.enabled) | default "aqueduct" -}}
+{{- if .Values.cnpg.enabled -}}
+{{- .Values.database.name | default (.Values.cnpg.cluster.database | default "aqueduct") -}}
+{{- else -}}
+{{- required "database.name is required when cnpg.enabled is false" .Values.database.name -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "aqueduct.db.username" -}}
-{{- .Values.database.username | default (ternary (.Values.cnpg.cluster.owner | default "aqueduct") .Values.global.postgresql.auth.username .Values.cnpg.enabled) | default "aqueduct" -}}
+{{- if .Values.cnpg.enabled -}}
+{{- .Values.database.username | default (.Values.cnpg.cluster.owner | default "aqueduct") -}}
+{{- else -}}
+{{- required "database.username is required when cnpg.enabled is false" .Values.database.username -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -186,13 +198,8 @@ valueFrom:
   secretKeyRef:
     name: {{ include "aqueduct.cnpg.clusterName" . }}-app
     key: password
-{{- else if .Values.global.postgresql.auth.existingSecret }}
-valueFrom:
-  secretKeyRef:
-    name: {{ .Values.global.postgresql.auth.existingSecret }}
-    key: {{ .Values.global.postgresql.auth.secretKeys.userPasswordKey | default "password" }}
 {{- else }}
-value: {{ .Values.global.postgresql.auth.password | quote }}
+{{- fail "database.password or database.existingSecret is required when cnpg.enabled is false" }}
 {{- end }}
 {{- end -}}
 

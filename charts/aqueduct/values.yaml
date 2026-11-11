@@ -1,21 +1,3 @@
-global:
-  security:
-    allowInsecureImages: true # allow legacy containers until a new solution is found
-  postgresql:
-    fullnameOverride: "postgresql"
-    auth:
-      username: aqueduct
-      password: aqueduct
-      database: aqueduct
-      # existingSecret: ""
-      # secretKeys:
-      #   adminPasswordKey: ""
-      #   userPasswordKey: ""
-      #   replicationPasswordKey: ""
-    service:
-      ports:
-        postgresql: "5432"
-
 image:
   repository: ghcr.io/tu-wien-datalab/aqueduct
   tag: latest
@@ -109,15 +91,16 @@ logLevel: "WARNING"
 
 # PostgreSQL connection for the Aqueduct app. Leave `host`/`name`/`username`/
 # `password` empty to auto-derive them from the CNPG cluster (`cnpg.enabled`).
-# Set `host` explicitly to pin the app to an external PostgreSQL instance.
+# When CNPG is disabled, set `host`, `name`, `username`, and a password or
+# existing Secret explicitly for the external PostgreSQL instance.
 database:
   host: ""
   port: "5432"
   name: ""
   username: ""
   # Credentials: provide `password` directly, OR reference an `existingSecret`.
-  # When both are empty, the password is read from the operator-created
-  # `<cluster>-app` Secret.
+  # When CNPG is enabled and both are empty, the password is read from the
+  # operator-created `<cluster>-app` Secret.
   password: ""
   existingSecret: ""
   secretKeys:

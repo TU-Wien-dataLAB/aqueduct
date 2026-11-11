@@ -13,17 +13,17 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='org',
             name='concurrent_requests_limit',
-            field=models.PositiveIntegerField(blank=True, help_text='Maximum parallel requests allowed. Null means use fallback or no limit.', null=True),
+            field=models.PositiveIntegerField(blank=True, help_text='Maximum parallel requests allowed. Null means use fallback or configured default.', null=True),
         ),
         migrations.AddField(
             model_name='team',
             name='concurrent_requests_limit',
-            field=models.PositiveIntegerField(blank=True, help_text='Maximum parallel requests allowed. Null means use fallback or no limit.', null=True),
+            field=models.PositiveIntegerField(blank=True, help_text='Maximum parallel requests allowed. Null means use fallback or configured default.', null=True),
         ),
         migrations.AddField(
             model_name='token',
             name='concurrent_requests_limit',
-            field=models.PositiveIntegerField(blank=True, help_text='Maximum parallel requests allowed. Null means use fallback or no limit.', null=True),
+            field=models.PositiveIntegerField(blank=True, help_text='Maximum parallel requests allowed. Null means use fallback or configured default.', null=True),
         ),
         migrations.AddField(
             model_name='token',
@@ -53,6 +53,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='userprofile',
             name='concurrent_requests_limit',
-            field=models.PositiveIntegerField(blank=True, help_text='Maximum parallel requests allowed. Null means use fallback or no limit.', null=True),
+            field=models.PositiveIntegerField(blank=True, help_text='Maximum parallel requests allowed. Null means use fallback or configured default.', null=True),
         ),
     ]

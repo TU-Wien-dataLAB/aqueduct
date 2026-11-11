@@ -188,7 +188,8 @@ class LimitMixin(models.Model):
     concurrent_requests_limit = models.PositiveIntegerField(
         null=True,
         blank=True,
-        help_text="Maximum parallel requests allowed. Null means use fallback or no limit.",
+        help_text="Maximum parallel requests allowed. Null means use fallback or configured "
+        "default.",
     )
 
     class Meta:

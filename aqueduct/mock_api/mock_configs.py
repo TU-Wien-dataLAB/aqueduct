@@ -451,6 +451,7 @@ default_post_configs = {
             ],
             "usage": {"prompt_tokens": 42, "total_tokens": 42},
         }
+    ),
     "decisions": MockConfig(
         response_data=Decision(
             answers=[

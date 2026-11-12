@@ -125,19 +125,6 @@ def _evaluate(
     return exceeded
 
 
-def has_any_limit(limits: LimitSet) -> bool:
-    """Return True if any window has any non-None limit.
-
-    Tokens with no limits at all skip the cache entirely (preserves the no-op
-    fast path). Because hour/day limits are derived from per-minute, this is True
-    iff at least one per-minute limit is set.
-    """
-    return any(
-        rpm is not None or itpm is not None or otpm is not None
-        for _name, _secs, rpm, itpm, otpm in limits.windows()
-    )
-
-
 def check_and_reserve(
     limits: LimitSet, token_id: int, model: str | None
 ) -> tuple[bool, list[tuple[str, int]]]:
@@ -147,7 +134,7 @@ def check_and_reserve(
     same-token lock contention we fail open (allow the request) to avoid latency
     spikes — no worse than the read races this replaces.
     """
-    if not has_any_limit(limits):
+    if not limits.has_any_rate_limit():
         return True, []
 
     windows = limits.windows()
@@ -217,17 +204,16 @@ def record_token_usage(token_id: int, usage: Usage) -> None:
 def get_per_token_usage(token_ids: Collection[int]) -> dict[int, dict[str, dict[str, float]]]:
     """Return current usage buckets per token, per window (for display).
 
-    Like ``get_aggregate_usage`` but keyed by token id so each token's own
-    consumption can be shown independently (e.g. per-token usage bars on the
-    tokens page). A single ``cache.get_many`` fetches every ``(token, window)``
-    bucket at once.
+    Returns a dict keyed by token id, so each token's own consumption can be
+    shown independently (e.g. per-token usage bars on the tokens page). Each
+    token id key maps to a window-keyed dict (``min``, ``hour``, ``day``
+    — matching ``WINDOWS``) of ``{"req": float, "in": int, "out": int}``.
+    Tokens with no recorded usage get zero buckets.
+    A single ``cache.get_many`` fetches every ``(token, window)`` bucket at once.
 
-    Returns a dict keyed by token id, each mapping to a window-keyed dict
-    (``min``, ``hour``, ``day`` — matching ``WINDOWS``) of
-    ``{"req": float, "in": int, "out": int}``. Tokens with no recorded usage
-    get zero buckets.
-
-    Reads are lockless (see ``get_aggregate_usage``).
+    Reads are lockless: values may be a momentarily stale snapshot of a
+    check/reserve or record in flight, which is acceptable for analytics
+    display and avoids needlessly contending the per-token locks.
     """
     now = timezone.now()
     # Map each cache key back to (token_id, window_name) for per-token grouping.
@@ -249,25 +235,3 @@ def get_per_token_usage(token_ids: Collection[int]) -> dict[int, dict[str, dict[
         result[tid][name]["in"] = bucket["in"]
         result[tid][name]["out"] = bucket["out"]
     return result
-
-
-def get_aggregate_usage(token_ids: Collection[int]) -> dict[str, dict[str, float]]:
-    """Sum current usage buckets across multiple tokens, per window (for display).
-
-    Returns a dict keyed by window name (``min``, ``hour``, ``day``) — matching
-    ``WINDOWS`` — each mapping to ``{"req": float, "in": int, "out": int}``,
-    summed across all given tokens.
-
-    Reads are lockless: values may be a momentarily stale snapshot of a
-    check/reserve or record in flight, which is acceptable for analytics
-    display and avoids needlessly contending the per-token locks.
-    """
-    totals: dict[str, dict[str, float]] = {
-        name: {"req": 0.0, "in": 0, "out": 0} for name, _secs in WINDOWS
-    }
-    for per_token in get_per_token_usage(token_ids).values():
-        for name, _secs in WINDOWS:
-            totals[name]["req"] += per_token[name]["req"]
-            totals[name]["in"] += per_token[name]["in"]
-            totals[name]["out"] += per_token[name]["out"]
-    return totals

@@ -2,6 +2,7 @@
 
 import json
 import tempfile
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -17,9 +18,20 @@ from gateway.tests.utils.base import INTEGRATION_TEST_BACKEND, GatewayIntegratio
 from management.models import Token
 
 
-@override_settings(
-    AQUEDUCT_MODEL_RPM_LIMITS={"text-embedding-ada-002": 1}, AQUEDUCT_RATE_LIMIT_ENABLED=False
-)
+@contextmanager
+def model_rpm_limits(limits):
+    config = get_router_config()
+    updated = deepcopy(config)
+    for model in updated["model_list"]:
+        info = model.setdefault("model_info", {})
+        info.pop("rpm", None)
+        if model["model_name"] in limits:
+            info["rpm"] = limits[model["model_name"]]
+    with patch.dict(config, updated, clear=True):
+        yield
+
+
+@override_settings(AQUEDUCT_RATE_LIMIT_ENABLED=False)
 class PublicModelLimitTests(GatewayIntegrationTestCase):
     def setUp(self):
         super().setUp()
@@ -27,6 +39,7 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
             self.skipTest("These model names require the OpenAI test configuration")
         cache.clear()
         self.addCleanup(cache.clear)
+        self.enterContext(model_rpm_limits({"text-embedding-ada-002": 1}))
         clock = patch(
             "django.utils.timezone.now",
             return_value=datetime(2026, 7, 2, 10, 0, 45, 500000, tzinfo=UTC),
@@ -78,7 +91,7 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
             self.assertIn("deployment ID", response.json()["error"]["message"])
             upstream.assert_not_awaited()
 
-    @override_settings(AQUEDUCT_MODEL_RPM_LIMITS={"text-embedding-ada-002": 2})
+    @model_rpm_limits({"text-embedding-ada-002": 2})
     def test_budget_resets_at_the_next_utc_minute(self):
         for _ in range(2):
             self.assertEqual(self.post_embedding("embed").status_code, 200)
@@ -89,7 +102,7 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
         self.clock.return_value += timedelta(seconds=1)
         self.assertEqual(self.post_embedding("embed").status_code, 200)
 
-    @override_settings(AQUEDUCT_MODEL_RPM_LIMITS={})
+    @model_rpm_limits({})
     def test_unconfigured_models_do_not_touch_the_admission_cache(self):
         with patch("django.core.cache.cache.incr", side_effect=ConnectionError("unavailable")):
             self.assertEqual(self.post_embedding("embed").status_code, 200)
@@ -132,7 +145,7 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
                 self.assertEqual(create("wild/*").status_code, 200)
                 self.assertEqual(create("wild/foo").status_code, 400)
 
-    @override_settings(AQUEDUCT_MODEL_RPM_LIMITS={"gpt-4.1-nano": 2, "dall-e-2": 2})
+    @model_rpm_limits({"gpt-4.1-nano": 2, "dall-e-2": 2})
     def test_direct_openai_endpoints_share_public_budgets_with_legacy_deployment_ids(self):
         config = deepcopy(get_router_config())
         for model in config["model_list"]:
@@ -165,7 +178,7 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
                             )
                             self.assertEqual(response.status_code, expected)
 
-    @override_settings(AQUEDUCT_MODEL_RPM_LIMITS={"gpt-4.1-nano": 1})
+    @model_rpm_limits({"gpt-4.1-nano": 1})
     def test_multi_deployment_responses_stay_pinned_and_share_the_public_budget(self):
         config = deepcopy(get_router_config())
         original = next(
@@ -173,7 +186,8 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
         )
         original["model_info"]["id"] = "first-backend"
         second = deepcopy(original)
-        second["model_info"] = {"id": "second-backend"}
+        second["model_info"]["id"] = "second-backend"
+        second["model_info"].pop("aliases", None)
         config["model_list"].append(second)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "router.json"
@@ -212,8 +226,8 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
                     self.assertEqual(create("second-backend").status_code, 429)
                     select.assert_not_called()
 
-    @override_settings(AQUEDUCT_MODEL_RPM_LIMITS={"gpt-4o-mini-tts": 1, "gpt-4.1-nano": 1})
     async def test_speech_and_streaming_chat_have_independent_model_budgets(self):
+        self.enterContext(model_rpm_limits({"gpt-4o-mini-tts": 1, "gpt-4.1-nano": 1}))
         for endpoint, payload in [
             ("speech", {"model": "voice", "input": "Hello", "voice": "alloy"}),
             (

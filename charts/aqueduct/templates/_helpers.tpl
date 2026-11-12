@@ -65,7 +65,7 @@ Usage:
 - name: OIDC_RP_CLIENT_SECRET
   value: {{ .Values.oidc.clientSecret | quote }}
 {{- end }}
-- name: CELERY_BROKER_URL
+- name: REDIS_URL
   value: {{ include "aqueduct.celery.brokerUrl" . | quote }}
 - name: CELERY_WORKER_CONCURRENCY
   value: {{ .Values.celery.workerConcurrency | quote }}

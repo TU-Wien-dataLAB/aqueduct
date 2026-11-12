@@ -1,10 +1,14 @@
 import dataclasses
-from typing import Optional
+from functools import partial
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import BooleanField, JSONField
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 # Physical maxima used to validate the hourly/daily limit multipliers: an hour has
 # 60 minutes and a day has 1440 minutes (24 hours). A larger-window limit above
@@ -14,9 +18,25 @@ HOURS_PER_DAY = 24
 MINUTES_PER_DAY = HOURS_PER_DAY * MINUTES_PER_HOUR
 
 
-@dataclasses.dataclass(frozen=True)  # frozen=True makes instances immutable
+def _resolve_limits(
+    field_name: str, specific_limiter: "LimitMixin", fallbacks: "Iterable[LimitMixin] | None" = None
+) -> int | None:
+    """Resolves a single limit field value from the hierarchy of limiters."""
+    # Get value from the specific level first, defaulting to `None`
+    specific_value: int | None = getattr(specific_limiter, field_name, None)
+    if specific_value is not None:
+        return specific_value
+
+    if fallbacks:
+        specific, *fallbacks_left = fallbacks
+        return _resolve_limits(field_name, specific, fallbacks_left)
+
+    return None
+
+
+@dataclasses.dataclass(frozen=True)
 class LimitSet:
-    """Represents a resolved set of rate limits.
+    """Represents a resolved set of rate and concurrency limits.
 
     The per-minute limits are the primary caps. The hourly/daily limits are
     derived from the per-minute limits via ``hourly_limit_multiplier`` /
@@ -25,6 +45,7 @@ class LimitSet:
     derived limit for that metric in every larger window.
     """
 
+    concurrent_requests_limit: int
     requests_per_minute: int | None = None
     input_tokens_per_minute: int | None = None
     output_tokens_per_minute: int | None = None
@@ -35,35 +56,29 @@ class LimitSet:
 
     @classmethod
     def from_objects(
-        cls, specific_limiter: Optional["LimitMixin"], org_limiter: Optional["LimitMixin"]
+        cls, specific_limiter: "LimitMixin", fallback_limiters: "Iterable[LimitMixin] | None" = None
     ) -> "LimitSet":
         """
-        Creates a LimitSet by resolving limits from a specific limiter
-        (like Team or UserProfile) and a fallback Org limiter object.
+        Creates a LimitSet by resolving limits from a specific limiter (like
+        Token, Team or UserProfile) and the fallback limiter objects.
 
+        The fallback objects should be related to the specific limiter, e.g. for
+        a Token, the fallbacks can be [Team, Org] or [UserProfile, Org].
         Each field is resolved independently through the hierarchy
-        (specific -> org -> None), exactly like the per-minute fields.
+        (specific -> fallback -> next fallback -> ... -> default).
 
         Args:
-            specific_limiter: The object with the primary limits (e.g., Team, UserProfile).
-            org_limiter: The object with the fallback limits (Org).
+            specific_limiter: The object with the primary limits (e.g., Token,
+                Team, UserProfile).
+            fallback_limiters: An ordered iterable of objects with the fallback
+                limits (e.g. [Team, Org]).
 
         Returns:
             A LimitSet instance with the effectively resolved limits.
         """
-
-        # Helper to resolve a single limit field value using the hierarchy
-        def _resolve(field_name: str) -> int | None:
-            # Get value from the specific level first
-            # Use getattr for safe access, defaulting to None if field absent
-            specific_value: int | None = (
-                getattr(specific_limiter, field_name, None) if specific_limiter else None
-            )
-            if specific_value is not None:
-                return specific_value
-
-            org_value: int | None = getattr(org_limiter, field_name, None) if org_limiter else None
-            return org_value
+        _resolve = partial(
+            _resolve_limits, specific_limiter=specific_limiter, fallbacks=fallback_limiters
+        )
 
         return cls(
             requests_per_minute=_resolve("requests_per_minute"),
@@ -71,6 +86,9 @@ class LimitSet:
             output_tokens_per_minute=_resolve("output_tokens_per_minute"),
             hourly_limit_multiplier=_resolve("hourly_limit_multiplier"),
             daily_limit_multiplier=_resolve("daily_limit_multiplier"),
+            # Note: the concurrency limit does not default to None!
+            concurrent_requests_limit=_resolve("concurrent_requests_limit")
+            or settings.AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT,
         )
 
     def _hourly_mult(self) -> int:
@@ -92,7 +110,7 @@ class LimitSet:
         return None if base is None else base * mult
 
     def windows(self) -> list[tuple[str, int, int | None, int | None, int | None]]:
-        """Effective per-window limits.
+        """Effective per-window rate limits.
 
         Returns a list of ``(name, window_seconds, rpm, input_tokens, output_tokens)``,
         finest window first (``min``, ``hour``, ``day``). Hour/day limits are derived
@@ -124,10 +142,17 @@ class LimitSet:
             ),
         ]
 
+    def has_any_rate_limit(self) -> bool:
+        """Returns True if any window has any non-None rate limit."""
+        return any(
+            rpm is not None or itpm is not None or otpm is not None
+            for _name, _secs, rpm, itpm, otpm in self.windows()
+        )
+
 
 class LimitMixin(models.Model):
     """
-    An abstract base model providing common rate limit fields.
+    An abstract base model providing common usage limit fields.
     Set fields to `None` to indicate no specific limit at this level (use fallback).
     """
 
@@ -157,6 +182,11 @@ class LimitMixin(models.Model):
         blank=True,
         help_text="Daily limit = per-minute limit x this. Null = fallback (default 1440). "
         "Valid range 1-1440 (a day has 1440 minutes). Lower = stricter sustained cap.",
+    )
+    concurrent_requests_limit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum parallel requests allowed. Null means use fallback or no limit.",
     )
 
     class Meta:

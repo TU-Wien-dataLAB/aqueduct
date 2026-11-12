@@ -174,18 +174,24 @@ needed).
 
 ## Public-model RPM limits
 
-Append a public-model budget to the existing Helm `env` list (preserve its database settings),
-using identical values on every gateway process:
+Set a positive integer `model_info.rpm` in the router configuration shared by every gateway
+process, alongside the optional concurrency limit:
 
 ```yaml
-- name: AQUEDUCT_MODEL_RPM_LIMITS
-  value: '{"gpt-4.1-nano": 60, "gpt-4o-mini-tts": 30}'
+model_list:
+  - model_name: gpt-4.1-nano
+    litellm_params:
+      model: openai/gpt-4.1-nano
+    model_info:
+      rpm: 60
+      max_parallel_requests: 3
 ```
 
-Use canonical public model names and positive integer RPM values, not aliases or wildcard names.
-An empty mapping (the default) disables this policy. Unconfigured public models have no model RPM
-ceiling; token limits remain independent, including their existing best-effort contention policy.
-When model budgets are configured, clients must use registered public names, Aqueduct aliases or
+Move legacy top-level or `litellm_params.rpm` values to `model_info.rpm`; deployment-level RPM
+settings are rejected. When multiple deployments have the same public name, give each the same
+`model_info.rpm`: they share one budget, not one allowance per deployment. Omit `rpm` for no
+additional model RPM ceiling. Token rate limits and model concurrency limits remain independent.
+Clients must use registered public names, Aqueduct aliases or
 explicitly configured legacy deployment IDs; all resolve to the same public-model budget.
 Unknown SDK-only names and dynamically expanded wildcard names are rejected. Direct OpenAI SDK
 endpoints accept a public name when it maps to one deployment; with multiple deployments, keep

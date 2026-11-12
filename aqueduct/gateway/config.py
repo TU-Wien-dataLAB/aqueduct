@@ -36,36 +36,22 @@ def get_files_api_client() -> openai.AsyncClient:
 
 
 def _validate_router_config(config: dict[str, Any]) -> None:
-    public_names = {model.get("model_name") for model in config.get("model_list", [])}
-    limits = settings.AQUEDUCT_MODEL_RPM_LIMITS
-    if not isinstance(limits, dict) or any(
-        not isinstance(name, str)
-        or "*" in name
-        or name not in public_names
-        or type(rpm) is not int
-        or rpm <= 0
-        for name, rpm in limits.items()
-    ):
-        raise RuntimeError(
-            "AQUEDUCT_MODEL_RPM_LIMITS must map canonical public model names to positive "
-            "integer RPM limits; aliases, unknown names and wildcard names are not supported."
-        )
+    # RPM belongs to the public model, not to individual SDK deployments.
+    limits: dict[str, int | None] = {}
+    for model in config.get("model_list", []):
+        rpm = model.get("model_info", {}).get("rpm")
+        if rpm is not None and (type(rpm) is not int or rpm <= 0):
+            raise RuntimeError("model_info.rpm must be a positive integer")
+        name = model.get("model_name")
+        if name in limits and limits[name] != rpm:
+            raise RuntimeError(f"Conflicting model_info.rpm values for '{name}'")
+        limits[name] = rpm
 
-    # Deployment/provider quotas cannot be made global by adding routing processes.
-    # Public-model admission is owned by Aqueduct, not the upstream routing SDK.
     sections = [config, config.get("default_litellm_params") or {}]
     for model in config.get("model_list", []):
-        sections.extend([model, model.get("litellm_params") or {}, model.get("model_info") or {}])
-    if any(
-        section.get(field) is not None
-        for section in sections
-        for field in ("rpm", "tpm", "max_parallel_requests", "default_max_parallel_requests")
-    ):
-        raise RuntimeError(
-            "Router deployment/provider RPM, TPM and concurrency limits are unsupported. "
-            "Move RPM policy to AQUEDUCT_MODEL_RPM_LIMITS (canonical public model names); "
-            "enforce provider-wide quotas, TPM and concurrency upstream."
-        )
+        sections.extend([model, model.get("litellm_params") or {}])
+    if any(section.get("rpm") is not None for section in sections):
+        raise RuntimeError("Move router/deployment RPM limits to model_info.rpm")
 
     # Validate alias uniqueness
     alias_to_model: dict[str, str] = {}
@@ -228,6 +214,43 @@ def get_all_model_request_limit_multipliers() -> dict[str, float]:
             multipliers[model_name] = float(multiplier) if multiplier is not None else 1.0
 
     return multipliers
+
+
+def get_model_rpm(model_name: str) -> int | None:
+    """Get the public model's RPM limit from ``model_info.rpm``, if configured."""
+    resolved = get_public_model_name(model_name)
+    for model in get_router_config().get("model_list", []):
+        if model.get("model_name") == resolved:
+            return cast("int | None", model.get("model_info", {}).get("rpm"))
+    return None
+
+
+def get_model_max_parallel_requests(model_name: str) -> int | None:
+    """
+    Get the max parallel requests (concurrency limit) for a given model from the
+    router config's ``model_info.max_parallel_requests``.
+
+    Mirrors LiteLLM's ``max_parallel_requests`` setting. Returns ``None`` if the
+    model is present in the config but does not configure a value.
+
+    Args:
+        model_name: The model name (or alias, will be resolved)
+
+    Returns:
+        The configured max parallel requests, or ``None`` if not set.
+    """
+    resolved = resolve_model_alias(model_name)
+    config = get_router_config()
+    model_list = config.get("model_list", [])
+
+    for model in model_list:
+        if model.get("model_name") == resolved:
+            max_parallel_requests = model.get("model_info", {}).get("max_parallel_requests")
+            if max_parallel_requests is not None:
+                return int(max_parallel_requests)
+            break
+
+    return None
 
 
 def get_model_supports_response_format(model_name: str) -> bool:

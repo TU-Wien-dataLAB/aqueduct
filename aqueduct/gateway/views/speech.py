@@ -14,8 +14,8 @@ from gateway.decorators import (
     check_model_availability,
     check_model_concurrency_limits,
     check_model_rate_limits,
-    check_rate_limits,
     check_token_concurrency_limits,
+    check_token_rate_limits,
     ensure_usage,
     log_request,
     parse_body,
@@ -33,7 +33,7 @@ from management.models import Request
 @parse_body(model=TypeAdapter(openai.types.audio.SpeechCreateParams))
 @check_token_concurrency_limits
 @check_model_concurrency_limits
-@check_rate_limits
+@check_token_rate_limits
 @check_model_rate_limits
 @resolve_alias
 @ensure_usage

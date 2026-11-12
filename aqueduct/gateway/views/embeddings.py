@@ -12,8 +12,8 @@ from gateway.decorators import (
     check_model_availability,
     check_model_concurrency_limits,
     check_model_rate_limits,
-    check_rate_limits,
     check_token_concurrency_limits,
+    check_token_rate_limits,
     ensure_usage,
     log_request,
     parse_body,
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 @parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
 @check_token_concurrency_limits
 @check_model_concurrency_limits
-@check_rate_limits
+@check_token_rate_limits
 @check_model_rate_limits
 @ensure_usage
 @resolve_alias

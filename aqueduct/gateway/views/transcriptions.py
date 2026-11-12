@@ -15,8 +15,8 @@ from gateway.decorators import (
     check_model_availability,
     check_model_concurrency_limits,
     check_model_rate_limits,
-    check_rate_limits,
     check_token_concurrency_limits,
+    check_token_rate_limits,
     log_request,
     parse_body,
     resolve_alias,
@@ -41,7 +41,7 @@ class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
 @parse_body(model=TypeAdapter(TranscriptionCreateParams))
 @check_token_concurrency_limits
 @check_model_concurrency_limits
-@check_rate_limits
+@check_token_rate_limits
 @check_model_rate_limits
 @resolve_alias
 @check_model_availability

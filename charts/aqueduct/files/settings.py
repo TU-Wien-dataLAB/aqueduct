@@ -45,6 +45,8 @@ if os.getenv("SECURE_PROXY_SSL_HEADER", "False").lower() == "true":
 if os.getenv("USE_X_FORWARDED_HOST", "False").lower() == "true":
     USE_X_FORWARDED_HOST = True
 
+CSRF_COOKIE_DOMAIN = os.getenv("CSRF_COOKIE_DOMAIN") or None
+
 _csrf_origins = os.getenv("CSRF_TRUSTED_ORIGINS", "").split()
 if _csrf_origins:
     CSRF_TRUSTED_ORIGINS = _csrf_origins

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -12,8 +13,12 @@ from litellm import Router
 
 log = logging.getLogger("aqueduct")
 
+_openai_client_cache: dict[
+    tuple[str, int], tuple[asyncio.AbstractEventLoop, openai.AsyncClient]
+] = {}
+_files_api_client_cache: dict[int, tuple[asyncio.AbstractEventLoop, openai.AsyncClient]] = {}
 
-@lru_cache(maxsize=1)
+
 def get_files_api_client() -> openai.AsyncClient:
     """
     Get configured OpenAI client for Files/Batches API.
@@ -23,11 +28,29 @@ def get_files_api_client() -> openai.AsyncClient:
     - Automatic error handling and retries
     - Type safety
 
-    The client is cached since the configuration is static.
+    The client is cached per event loop.
     """
     if not settings.AQUEDUCT_FILES_API_URL:
         raise ValueError("AQUEDUCT_FILES_API_URL must be configured")
 
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return _build_files_api_client()
+
+    cached = _files_api_client_cache.get(id(loop))
+    if cached is not None and not cached[0].is_closed():
+        return cached[1]
+
+    client = _build_files_api_client()
+    _files_api_client_cache[id(loop)] = (loop, client)
+    _evict_closed_loop_clients(_files_api_client_cache)
+    return client
+
+
+def _build_files_api_client() -> openai.AsyncClient:
+    if not settings.AQUEDUCT_FILES_API_URL:
+        raise ValueError("AQUEDUCT_FILES_API_URL must be configured")
     return openai.AsyncClient(
         base_url=f"{settings.AQUEDUCT_FILES_API_URL.rstrip('/')}/v1",
         api_key=settings.AQUEDUCT_FILES_API_KEY or "unused",
@@ -96,8 +119,24 @@ def get_router() -> Router:
     return Router(**config, num_retries=settings.API_MAX_RETRIES)
 
 
-@lru_cache(maxsize=32)
 def get_openai_client(model: str) -> openai.AsyncClient:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return _build_openai_client(model)
+
+    key = (model, id(loop))
+    cached = _openai_client_cache.get(key)
+    if cached is not None and not cached[0].is_closed():
+        return cached[1]
+
+    client = _build_openai_client(model)
+    _openai_client_cache[key] = (loop, client)
+    _evict_closed_loop_clients(_openai_client_cache)
+    return client
+
+
+def _build_openai_client(model: str) -> openai.AsyncClient:
     router = get_router()
     deployment = router.get_deployment(model_id=model)
     if deployment is None:
@@ -115,6 +154,14 @@ def get_openai_client(model: str) -> openai.AsyncClient:
         timeout=timeout,
         max_retries=settings.API_MAX_RETRIES,
     )
+
+
+def _evict_closed_loop_clients(
+    cache: dict[Any, tuple[asyncio.AbstractEventLoop, openai.AsyncClient]],
+) -> None:
+    stale = [key for key, (loop, _) in cache.items() if loop.is_closed()]
+    for key in stale:
+        del cache[key]
 
 
 class MCPServerConfig(TypedDict):
@@ -230,8 +277,9 @@ def get_model_max_parallel_requests(model_name: str) -> int | None:
     Get the max parallel requests (concurrency limit) for a given model from the
     router config's ``model_info.max_parallel_requests``.
 
-    Mirrors LiteLLM's ``max_parallel_requests`` setting. Returns ``None`` if the
-    model is present in the config but does not configure a value.
+    Mirrors LiteLLM's ``max_parallel_requests`` setting, and falls back to the
+    ``default_max_parallel_requests`` router setting. Returns ``None`` if neither
+    is configured.
 
     Args:
         model_name: The model name (or alias, will be resolved)
@@ -248,6 +296,8 @@ def get_model_max_parallel_requests(model_name: str) -> int | None:
             max_parallel_requests = model.get("model_info", {}).get("max_parallel_requests")
             if max_parallel_requests is not None:
                 return int(max_parallel_requests)
+            if (default := config.get("default_max_parallel_requests")) is not None:
+                return int(default)
             break
 
     return None

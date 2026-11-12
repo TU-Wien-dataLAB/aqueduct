@@ -57,8 +57,7 @@ return 0
 
 @lru_cache(maxsize=1)
 def get_redis_client() -> aioredis.Redis:
-    async_redis = aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
-    return cast("aioredis.Redis", async_redis)
+    return aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
 
 @lru_cache(maxsize=1)

@@ -3,7 +3,7 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 
-import httpx
+import httpx2
 import litellm
 import openai
 from django.core.cache import cache
@@ -38,35 +38,28 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
     Used when direct OpenAI SDK client is needed instead of LiteLLM router
     (e.g., Responses API, Batches API).
     """
-    router = get_router()
-    # Direct SDK endpoints need a pinned deployment (including response retrieval).
-    # Accept unambiguous public names; keep explicit IDs for multi-deployment models.
-    if router.get_deployment(model_id=model) is None:
-        deployment_ids = router.get_model_ids(model_name=model)
-        if len(deployment_ids) == 1:
-            model = deployment_ids[0]
-
     try:
         client: openai.AsyncClient = get_openai_client(model)
     except ValueError:
         log.exception("Incompatible model '%s'! Is model id set in router config?", model)
         raise openai.NotFoundError(
             message=f"Incompatible model '{model}'!",
-            response=httpx.Response(
-                request=httpx.Request(method=request.method, url=request.build_absolute_uri()),
+            response=httpx2.Response(
+                request=httpx2.Request(method=request.method, url=request.build_absolute_uri()),
                 status_code=404,
             ),
             body=None,
         ) from None
 
+    router = get_router()
     deployment: litellm.Deployment | None = router.get_deployment(model_id=model)
 
     if deployment is None:
         log.error("Model '%s' not found in router deployments", model)
         raise openai.NotFoundError(
             message=f"Model '{model}' not found!",
-            response=httpx.Response(
-                request=httpx.Request(method=request.method, url=request.build_absolute_uri()),
+            response=httpx2.Response(
+                request=httpx2.Request(method=request.method, url=request.build_absolute_uri()),
                 status_code=404,
             ),
             body=None,

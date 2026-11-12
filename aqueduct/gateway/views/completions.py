@@ -12,6 +12,7 @@ from gateway.config import get_router
 from gateway.decorators import (
     catch_router_exceptions,
     check_model_availability,
+    check_model_concurrency_limits,
     check_model_rate_limits,
     check_rate_limits,
     check_token_concurrency_limits,
@@ -32,6 +33,7 @@ from management.models import Request
 @tos_accepted
 @parse_body(model=TypeAdapter(openai.types.CompletionCreateParams))
 @check_token_concurrency_limits
+@check_model_concurrency_limits
 @check_rate_limits
 @check_model_rate_limits
 @ensure_usage

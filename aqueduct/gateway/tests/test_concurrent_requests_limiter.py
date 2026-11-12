@@ -96,7 +96,7 @@ class RedisConcurrencyLimiterTests(GatewayIntegrationTestCase):
 
     # ---------------------------- wrap_stream ----------------------------
     async def _collect_stream(self, stream):
-        return [chunk async for chunk in self.limiter.wrap_stream(stream, self.token)]
+        return [chunk async for chunk in self.limiter.wrap_stream(stream, self.key)]
 
     @async_to_sync
     async def test_wrap_stream_yields_all_chunks_and_releases(self):
@@ -107,7 +107,7 @@ class RedisConcurrencyLimiterTests(GatewayIntegrationTestCase):
             yield b"chunk-1"
             yield b"chunk-2"
 
-        chunks = await self._collect_stream(self.limiter.wrap_stream(stream(), self.token))
+        chunks = await self._collect_stream(self.limiter.wrap_stream(stream(), self.key))
         self.assertEqual(chunks, [b"chunk-1", b"chunk-2"])
         # The slot is released once the stream is fully consumed.
         counter = await self.redis.get(self.key)
@@ -122,7 +122,7 @@ class RedisConcurrencyLimiterTests(GatewayIntegrationTestCase):
             raise ValueError("boom")
 
         with self.assertRaises(ValueError):
-            await self._collect_stream(self.limiter.wrap_stream(stream(), self.token))
+            await self._collect_stream(self.limiter.wrap_stream(stream(), self.key))
 
         counter = await self.redis.get(self.key)
         self.assertEqual(int(counter), 0)

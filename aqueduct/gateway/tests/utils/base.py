@@ -14,6 +14,7 @@ from fakeredis import FakeServer
 from fakeredis.aioredis import FakeRedis
 from tos.models import TermsOfService, UserAgreement
 
+from gateway.config import get_router
 from gateway.decorators.limits import RedisConcurrencyLimiter, get_limiter, get_redis_client
 from gateway.tests.utils import _build_chat_headers, _build_chat_payload
 from gateway.tests.utils.test_runner import get_shared_mock_server
@@ -104,6 +105,7 @@ class GatewayIntegrationTestCase(TestCase):
 
     def setUp(self) -> None:
         super().setUp()
+        get_router.cache_clear()
         # Patch the Redis server to use `fakeredis`.
         server = FakeServer()
         self.redis = FakeRedis(server=server, decode_responses=True)
@@ -162,20 +164,6 @@ class GatewayFilesTestCase(GatewayIntegrationTestCase):
         headers.pop("Content-Type", None)
         cls.headers = headers
         cls.url_files = reverse("gateway:files")
-
-    def setUp(self):
-        super().setUp()
-        # Clear the cached client so it picks up the test settings (override_settings)
-        from gateway.config import get_files_api_client
-
-        get_files_api_client.cache_clear()
-
-    def tearDown(self):
-        # Clear the cached client so it doesn't affect other tests
-        from gateway.config import get_files_api_client
-
-        get_files_api_client.cache_clear()
-        super().tearDown()
 
 
 @override_settings(

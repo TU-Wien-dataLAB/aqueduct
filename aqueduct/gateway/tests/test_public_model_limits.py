@@ -12,7 +12,7 @@ from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
 
-from gateway.config import get_openai_client, get_router, get_router_config
+from gateway.config import get_router, get_router_config
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import INTEGRATION_TEST_BACKEND, GatewayIntegrationTestCase
 from management.models import Token
@@ -116,35 +116,6 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
             self.assertEqual(response.status_code, 500)
             upstream.assert_not_awaited()
 
-    def test_literal_wildcard_model_names_pin_to_one_deployment(self):
-        config = deepcopy(get_router_config())
-        original = next(
-            model for model in config["model_list"] if model["model_name"] == "gpt-4.1-nano"
-        )
-        original["model_name"] = "wild/*"
-        original["model_info"]["id"] = "wild-backend"
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "router.json"
-            path.write_text(json.dumps(config))
-            with override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=path):
-                for loader in (get_router, get_router_config, get_openai_client):
-                    loader.cache_clear()
-                    self.addCleanup(loader.cache_clear)
-                url = reverse("gateway:v1_responses")
-
-                def create(model):
-                    return self.client.post(
-                        url,
-                        data=json.dumps({"model": model, "input": "Hello"}),
-                        headers=self.headers,
-                        content_type="application/json",
-                    )
-
-                # The literal wildcard name pins to its single deployment;
-                # expanded names are unknown.
-                self.assertEqual(create("wild/*").status_code, 200)
-                self.assertEqual(create("wild/foo").status_code, 400)
-
     @model_rpm_limits({"gpt-4.1-nano": 2, "dall-e-2": 2})
     def test_direct_openai_endpoints_share_public_budgets_with_legacy_deployment_ids(self):
         config = deepcopy(get_router_config())
@@ -154,7 +125,7 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
             path = Path(directory) / "router.json"
             path.write_text(json.dumps(config))
             with override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=path):
-                for loader in (get_router, get_router_config, get_openai_client):
+                for loader in (get_router, get_router_config):
                     loader.cache_clear()
                     self.addCleanup(loader.cache_clear)
                 for endpoint, payload in [
@@ -164,15 +135,10 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
                     with self.subTest(endpoint=endpoint):
                         url = reverse(f"gateway:{endpoint}")
                         public = "gpt-4.1-nano" if endpoint == "v1_responses" else "dall-e-2"
-                        for name, expected in [
-                            (payload["model"], 200),
-                            (f"private-{public}", 200),
-                            (payload["model"], 429),
-                            (f"private-{public}", 429),
-                        ]:
+                        for expected in [200, 200, 429]:
                             response = self.client.post(
                                 url,
-                                data=json.dumps({**payload, "model": name}),
+                                data=json.dumps({**payload, "model": f"private-{public}"}),
                                 headers=self.headers,
                                 content_type="application/json",
                             )
@@ -193,7 +159,7 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
             path = Path(directory) / "router.json"
             path.write_text(json.dumps(config))
             with override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=path):
-                for loader in (get_router, get_router_config, get_openai_client):
+                for loader in (get_router, get_router_config):
                     loader.cache_clear()
                     self.addCleanup(loader.cache_clear)
                 with patch(

@@ -45,7 +45,9 @@ class LimitSet:
     derived limit for that metric in every larger window.
     """
 
-    concurrent_requests_limit: int
+    concurrent_requests_limit: int = dataclasses.field(
+        default_factory=lambda: settings.AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT
+    )
     requests_per_minute: int | None = None
     input_tokens_per_minute: int | None = None
     output_tokens_per_minute: int | None = None
@@ -186,7 +188,8 @@ class LimitMixin(models.Model):
     concurrent_requests_limit = models.PositiveIntegerField(
         null=True,
         blank=True,
-        help_text="Maximum parallel requests allowed. Null means use fallback or no limit.",
+        help_text="Maximum parallel requests allowed. Null means use fallback or configured "
+        "default.",
     )
 
     class Meta:

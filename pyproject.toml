@@ -14,10 +14,11 @@ dependencies = [
     "django-silk>=5.5.0",
     "django-tos>=1.1.0, <1.2",  # 1.2 rewrote the middleware (new-style __call__)
     "httpx>=0.28.1, <1",
-    "litellm==1.85.2",
+    "httpx2>=2.16.0",
+    "litellm==1.108.0",
     "mcp==2.2.0",  # v2: stateless 2026-07-28 protocol core
     "mozilla-django-oidc>=4.0.1",
-    "openai==2.36.0",
+    "openai==3.26.0",
     "whitenoise>=6.9.0",
 ]
 
@@ -35,7 +36,7 @@ dev = [
     "fastapi>=0.115.12",
     "mypy==1.19.1",
     "pre-commit>=4.2.0",
-    "ruff>=0.15.5",
+    "ruff==0.17.3",
     "tbump>=6.11.0",
 ]
 dev-locust = [

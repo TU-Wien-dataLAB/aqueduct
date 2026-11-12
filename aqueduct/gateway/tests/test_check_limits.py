@@ -439,7 +439,7 @@ class TokenRateLimitTest(ChatCompletionsBase):
     def test_check_rate_limits_uses_no_request_table_sql(self):
         """A rate-limited (429) request issues no SQL against ``management_request``.
 
-        ``check_rate_limits`` now reads from the cache, not the ``Request`` table.
+        ``check_token_rate_limits`` now reads from the cache, not the ``Request`` table.
         A blocked request returns 429 before ``log_request`` runs, so it must not
         touch ``management_request`` at all (no aggregate SELECT, no INSERT).
         """
@@ -458,7 +458,7 @@ class TokenRateLimitTest(ChatCompletionsBase):
         self.assertEqual(
             request_table_queries,
             [],
-            "check_rate_limits must not query the Request table; found: "
+            "check_token_rate_limits must not query the Request table; found: "
             + " | ".join(request_table_queries),
         )
 

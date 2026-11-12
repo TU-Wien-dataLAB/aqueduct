@@ -11,8 +11,15 @@ from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.http.response import StreamingHttpResponse
 
-from gateway.config import get_model_max_parallel_requests, resolve_model_alias
+from gateway.config import (
+    get_model_max_parallel_requests,
+    get_model_rpm,
+    get_public_model_name,
+    get_router_config,
+    resolve_model_alias,
+)
 from gateway.decorators.types import AsyncView, ViewResult
+from gateway.model_rate_limiting import check_model_limit
 from gateway.rate_limiting import check_and_reserve
 from gateway.response_error import error_response
 
@@ -224,14 +231,64 @@ def check_model_concurrency_limits(view_func: AsyncView) -> AsyncView:
     return wrapper
 
 
-def check_rate_limits(view_func: AsyncView) -> AsyncView:
+def check_model_rate_limits(view_func: AsyncView) -> AsyncView:
+    """Reserve one request from the shared public-model minute budget."""
+
+    @wraps(view_func)
+    async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
+        token: Token | None = kwargs.get("token")
+        if not token:
+            log.error("check_model_rate_limits used without token_authenticated decorator")
+            return error_response("Internal server error", status=500)
+
+        model = (kwargs.get("pydantic_model") or {}).get("model")
+        if not model:
+            return await view_func(request, *args, **kwargs)
+
+        try:
+            model = get_public_model_name(model)
+            if model is None and any(
+                entry.get("model_info", {}).get("rpm") is not None
+                for entry in get_router_config().get("model_list", [])
+            ):
+                return error_response(
+                    "Unknown public model. Use a configured model name, its Aqueduct alias, "
+                    "or a configured deployment ID.",
+                    param="model",
+                    status=400,
+                )
+            rpm = get_model_rpm(model) if model is not None else None
+            if model is not None and rpm is not None:
+                # Excluded tokens must not consume capacity shared by all users.
+                if await sync_to_async(token.model_excluded)(model):
+                    return error_response("Model not found!", status=404)
+                allowed, retry_after = await sync_to_async(check_model_limit)(model, rpm)
+                if not allowed:
+                    return error_response(
+                        f"Model request limit ({rpm}/min) exceeded for '{model}' "
+                        f"(Retry after {retry_after}s).",
+                        status=429,
+                        headers={"Retry-After": str(retry_after)},
+                    )
+        except Exception:
+            log.exception("Error checking model rate limits for Token %r", token.name)
+            return error_response("Internal gateway error checking rate limits", status=500)
+
+        return await view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+def check_token_rate_limits(view_func: AsyncView) -> AsyncView:
     """Check token's rate limits, if enabled."""
 
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         token: Token | None = kwargs.get("token")
         if not token:
-            log.error("check_rate_limits decorator used without token_authenticated decorator")
+            log.error(
+                "check_token_rate_limits decorator used without token_authenticated decorator"
+            )
             return error_response("Internal server error", status=500)
 
         limits = await sync_to_async(token.get_limits)()

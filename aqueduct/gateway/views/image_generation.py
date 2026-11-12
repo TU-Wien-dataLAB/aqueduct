@@ -13,8 +13,9 @@ from gateway.decorators import (
     catch_router_exceptions,
     check_model_availability,
     check_model_concurrency_limits,
-    check_rate_limits,
+    check_model_rate_limits,
     check_token_concurrency_limits,
+    check_token_rate_limits,
     log_request,
     parse_body,
     resolve_alias,
@@ -35,7 +36,8 @@ log = logging.getLogger("aqueduct")
 @parse_body(model=TypeAdapter(ImageGenerateParams, config=ConfigDict(extra="forbid")))
 @check_token_concurrency_limits
 @check_model_concurrency_limits
-@check_rate_limits
+@check_token_rate_limits
+@check_model_rate_limits
 @resolve_alias
 @check_model_availability
 @log_request

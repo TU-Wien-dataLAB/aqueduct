@@ -213,6 +213,16 @@ model's `model_info`:
   limit scaled by this factor (e.g. "Request limit (6/min)" for a limit of 3 and a
   multiplier of 2).
 
+- **`rpm`** — a positive integer limiting requests per UTC minute for this public
+  model, shared across aliases, configured deployment IDs, tokens and gateway
+  replicas. Omitted means no model RPM ceiling. Deployments with the same public
+  name must configure the same value. Each admitted request counts once, including
+  upstream failures and interrupted streams; SDK retries do not count separately.
+  Exhausted budgets return 429 with `Retry-After`; shared-cache errors return 500.
+  The Django cache must use shared Redis/Valkey with atomic increments. Legacy
+  router/deployment `rpm` fields are rejected; use `model_info.rpm` instead.
+  This is independent of token rate limits and concurrent in-flight requests.
+
 - **`max_parallel_requests`** — the maximum number of requests that can run at the
   same time for this model. Anything beyond it gets a 429. If a model doesn't set
   this, the router's global `default_max_parallel_requests` applies; if that's also unset,

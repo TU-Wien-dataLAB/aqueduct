@@ -1,16 +1,11 @@
 import asyncio
 
 from asgiref.sync import async_to_sync
-from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, override_settings
 from fakeredis import FakeServer
 from fakeredis.aioredis import FakeRedis
 
-from gateway.decorators.limits import RedisConcurrencyLimiter, token_concurrency_key
-from gateway.tests.utils.base import GatewayIntegrationTestCase
-from management.models import Token
-
-User = get_user_model()
+from gateway.decorators.limits import RedisConcurrencyLimiter
 
 
 @override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
@@ -46,53 +41,9 @@ class RedisConcurrencyLimiterRecoveryTests(SimpleTestCase):
         finally:
             await redis.aclose()
 
-    async def test_heartbeat_renews_only_its_own_lease(self):
-        redis = FakeRedis(server=FakeServer(), decode_responses=True)
-        limiter = RedisConcurrencyLimiter(redis, refresh_interval=0.1)
-        key = "token:concurrency:heartbeat-recovery"
-        entered = asyncio.Event()
-        finish = asyncio.Event()
 
-        async def stream():
-            entered.set()
-            await finish.wait()
-            yield b"done"
-
-        async def consume(lease):
-            return [chunk async for chunk in limiter.wrap_stream(stream(), key, lease)]
-
-        task = None
-        try:
-            orphan = await limiter.acquire(key, 2)
-            healthy = await limiter.acquire(key, 2)
-            self.assertIsNotNone(orphan)
-            self.assertIsNotNone(healthy)
-            task = asyncio.create_task(consume(healthy))
-            await asyncio.wait_for(entered.wait(), timeout=1)
-            self.assertIsNone(await limiter.acquire(key, 2))
-
-            await asyncio.sleep(2.2)
-            self.assertFalse(task.done())
-            replacement = await limiter.acquire(key, 2)
-            self.assertIsNotNone(replacement, "Healthy heartbeat kept the orphan alive")
-            try:
-                # A late release from the dead worker cannot remove the new lease.
-                self.assertFalse(await limiter.release(key, orphan))
-                self.assertIsNone(await limiter.acquire(key, 2))
-            finally:
-                await limiter.release(key, replacement)
-        finally:
-            finish.set()
-            if task is not None:
-                await asyncio.wait_for(task, timeout=1)
-            await redis.aclose()
-
-
-@override_settings(
-    AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT=3,
-    AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=120,
-)
-class RedisConcurrencyLimiterTests(GatewayIntegrationTestCase):
+@override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=120)
+class RedisConcurrencyLimiterTests(SimpleTestCase):
     """Unit tests for RedisConcurrencyLimiter, using fakeredis.
 
     The Lua scripts (``acquire_script`` / ``release_script``) are executed
@@ -100,16 +51,11 @@ class RedisConcurrencyLimiterTests(GatewayIntegrationTestCase):
     """
 
     def setUp(self) -> None:
-        self.server = FakeServer()
-        self.redis = FakeRedis(server=self.server, decode_responses=True)
+        self.redis = FakeRedis(server=FakeServer(), decode_responses=True)
         self.limiter = RedisConcurrencyLimiter(self.redis)
-        self.token = Token.objects.get(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
-        self.key = token_concurrency_key(self.token)
-        new_user = User.objects.create_user(username="OtherUser", email="other@example.com")
-        token_2 = Token(name="TestToken", user=new_user)
-        token_2._set_new_key()
-        token_2.save()
-        self.key_2 = token_concurrency_key(token_2)
+        self.key = "token:concurrency:1:leases"
+        self.key_2 = "token:concurrency:2:leases"
+        self.addCleanup(async_to_sync(self.redis.aclose))
 
     # ------------------------------ acquire ------------------------------
     @async_to_sync
@@ -165,64 +111,3 @@ class RedisConcurrencyLimiterTests(GatewayIntegrationTestCase):
         await self.limiter.release(self.key, lease)
         self.assertEqual(await self.redis.zcard(self.key), 0)
         self.assertEqual(await self.redis.zcard(self.key_2), 1)
-
-    # ---------------------------- wrap_stream ----------------------------
-    async def _collect_stream(self, stream, lease):
-        return [chunk async for chunk in self.limiter.wrap_stream(stream, self.key, lease)]
-
-    @async_to_sync
-    async def test_wrap_stream_yields_all_chunks_and_releases(self):
-        lease = await self.limiter.acquire(self.key, 42)
-        self.assertEqual(await self.redis.zcard(self.key), 1)
-
-        async def stream():
-            yield b"chunk-1"
-            yield b"chunk-2"
-
-        chunks = await self._collect_stream(stream(), lease)
-        self.assertEqual(chunks, [b"chunk-1", b"chunk-2"])
-        # The slot is released once the stream is fully consumed.
-        self.assertEqual(await self.redis.zcard(self.key), 0)
-
-    @async_to_sync
-    async def test_wrap_stream_releases_if_stream_raises(self):
-        lease = await self.limiter.acquire(self.key, 42)
-
-        async def stream():
-            yield b"chunk-1"
-            raise ValueError("boom")
-
-        with self.assertRaises(ValueError):
-            await self._collect_stream(stream(), lease)
-
-        self.assertEqual(await self.redis.zcard(self.key), 0)
-
-    # ------------------------- _refresh_ttl_loop -------------------------
-    @async_to_sync
-    async def test_refresh_ttl_loop_extends_ttl(self):
-        limiter = RedisConcurrencyLimiter(self.redis, refresh_interval=0.01)
-        lease = await limiter.acquire(self.key, 1)
-        await self.redis.expire(self.key, 1)
-
-        stop_event = asyncio.Event()
-        task = asyncio.create_task(limiter._refresh_ttl_loop(self.key, lease, stop_event))
-        try:
-            await asyncio.sleep(0.05)
-            self.assertGreater(await self.redis.ttl(self.key), 1)  # refreshed
-        finally:
-            stop_event.set()
-            await task
-
-    @async_to_sync
-    async def test_refresh_ttl_loop_stops_when_event_set(self):
-        limiter = RedisConcurrencyLimiter(self.redis, refresh_interval=0.01)
-        lease = await limiter.acquire(self.key, 1)
-        await self.redis.expire(self.key, 2)
-
-        stop_event = asyncio.Event()
-        stop_event.set()
-        task = asyncio.create_task(limiter._refresh_ttl_loop(self.key, lease, stop_event))
-        await task
-
-        # Stopping the heartbeat also releases its lease.
-        self.assertEqual(await self.redis.zcard(self.key), 0)

@@ -126,7 +126,29 @@ class RedisConcurrencyLimiter:
         ok = await self.release_script(keys=[key], args=[lease])
         return bool(ok)
 
-    async def _refresh_ttl_loop(self, key: str, lease: str, stop_event: asyncio.Event) -> None:
+
+class _LeaseLifetime:
+    """Hold the slot and prevent lease expiry for the whole request."""
+
+    def __init__(self, limiter: RedisConcurrencyLimiter, key: str, lease: str):
+        self._limiter = limiter
+        self._key = key
+        self._lease = lease
+        self._loop = asyncio.get_running_loop()
+        self._stop_event = asyncio.Event()
+        self._watchdog = asyncio.create_task(self._refresh_ttl_loop())
+        self._streaming = False
+
+    async def __aenter__(self) -> "_LeaseLifetime":
+        return self
+
+    async def __aexit__(self, exc_type: type[BaseException] | None, *_: object) -> None:
+        # Make sure we release the concurrent requests slot if there is an error
+        # (including cancellation), or the non-streaming response is fully generated.
+        if exc_type is not None or not self._streaming:
+            await self._aclose()
+
+    async def _refresh_ttl_loop(self) -> None:
         """Periodically check if the event's flag is not set, and extend the TTL of the lease.
 
         Release the concurrent requests slot when the loop stops.
@@ -134,38 +156,43 @@ class RedisConcurrencyLimiter:
         try:
             while True:
                 try:
-                    await asyncio.wait_for(stop_event.wait(), timeout=self.refresh_interval)
+                    await asyncio.wait_for(
+                        self._stop_event.wait(), timeout=self._limiter.refresh_interval
+                    )
                 except TimeoutError:
-                    if not await self.refresh_script(keys=[key], args=[lease, self.ttl]):
+                    if not await self._limiter.refresh_script(
+                        keys=[self._key], args=[self._lease, self._limiter.ttl]
+                    ):
                         return
                 else:
                     return
         finally:
-            await self.release(key, lease)
+            await self._limiter.release(self._key, self._lease)
 
-    async def wrap_stream(
-        self,
-        stream: AsyncIterator[bytes],
-        key: str,
-        lease: str,
-        stop_event: asyncio.Event | None = None,
-        watchdog: asyncio.Task[None] | None = None,
-    ) -> AsyncGenerator[Any]:
-        """Hold the slot and prevent lease expiry for the whole stream.
+    async def _aclose(self) -> None:
+        self._stop_event.set()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._watchdog
 
-        Continue the view's refresh loop if it has already been started.
-        """
-        if stop_event is None:
-            stop_event = asyncio.Event()
-        if watchdog is None:
-            watchdog = asyncio.create_task(self._refresh_ttl_loop(key, lease, stop_event))
+    def _close(self) -> None:
+        # Django may close a response without ever starting its async iterator.
+        # close() can run in a worker thread, so signal the owning event loop.
+        self._loop.call_soon_threadsafe(self._stop_event.set)
+
+    async def _wrap_stream(self, stream: AsyncIterator[bytes]) -> AsyncGenerator[bytes]:
+        """Hold the slot and prevent lease expiry for the whole stream."""
         try:
             async for chunk in stream:
                 yield chunk
         finally:
-            stop_event.set()
-            with contextlib.suppress(asyncio.CancelledError):
-                await watchdog
+            await self._aclose()
+
+    def wrap_response(self, response: StreamingHttpResponse) -> None:
+        # Keep the slot held for the full stream duration.
+        streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
+        response.streaming_content = self._wrap_stream(streaming_content)
+        response._resource_closers.append(self._close)  # type: ignore[attr-defined]
+        self._streaming = True
 
 
 async def _run_with_concurrency_limit(
@@ -188,32 +215,11 @@ async def _run_with_concurrency_limit(
     if lease is None:
         return error_response(error_message, status=429, headers={"Retry-After": "10"})
 
-    stop_event = asyncio.Event()
-    watchdog = asyncio.create_task(limiter._refresh_ttl_loop(key, lease, stop_event))
-    handed_off = False
-    try:
+    async with _LeaseLifetime(limiter, key, lease) as lifetime:
         response: ViewResult = await view_func(request, *args, **kwargs)
         if isinstance(response, StreamingHttpResponse):
-            # Keep the slot held for the full stream duration.
-            streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
-            response.streaming_content = limiter.wrap_stream(
-                streaming_content, key, lease, stop_event, watchdog
-            )
-            # Django may close a response without ever starting its async iterator.
-            # close() can run in a worker thread, so signal the owning event loop.
-            loop = asyncio.get_running_loop()
-            response._resource_closers.append(  # type: ignore[attr-defined]
-                lambda: loop.call_soon_threadsafe(stop_event.set)
-            )
-            handed_off = True
+            lifetime.wrap_response(response)
         return response
-    finally:
-        # Make sure we release the concurrent requests slot if there is an error
-        # (including cancellation), or the non-streaming response is fully generated.
-        if not handed_off:
-            stop_event.set()
-            with contextlib.suppress(asyncio.CancelledError):
-                await watchdog
 
 
 def check_token_concurrency_limits(view_func: AsyncView) -> AsyncView:

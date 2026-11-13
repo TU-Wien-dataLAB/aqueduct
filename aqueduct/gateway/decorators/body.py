@@ -22,7 +22,7 @@ class FileSizeError(Exception):
     """Raised when file size limits are exceeded."""
 
 
-def _parse_multipart_body(request: ASGIRequest) -> dict[str, Any]:
+def _parse_multipart_body(request: ASGIRequest, image_edit: bool = False) -> dict[str, Any]:
     """
     Parse the body of a "multipart/form-data" POST request into a Python dict.
     Validate file sizes of the files attached to the request.
@@ -34,8 +34,11 @@ def _parse_multipart_body(request: ASGIRequest) -> dict[str, Any]:
     Returns:
         dict with request's body items and files.
     """
-    data = {}
+    data: dict[str, Any] = {}
     for key, value in request.POST.items():
+        if image_edit and key in {"prompt", "model", "user", "user_id"}:
+            data[key] = value
+            continue
         try:
             data[key] = json.loads(value)  # type: ignore[arg-type]
         except (TypeError, json.JSONDecodeError):
@@ -55,23 +58,30 @@ def _parse_multipart_body(request: ASGIRequest) -> dict[str, Any]:
     max_total_size_bytes = max_total_size_mb * 1024 * 1024
     total_file_size_bytes = 0
 
-    for key, file in request.FILES.items():
-        assert isinstance(file, UploadedFile) and isinstance(file.size, int)
-        if file.size > max_file_bytes:
-            log.error("File in request too large")
-            raise FileSizeError(f"File '{key}' exceeds maximum size of {max_file_size_mb}MB")
+    for key, files in request.FILES.lists():
+        is_image = image_edit and key in {"image", "image[]"}
+        selected_files = files if is_image else files[-1:]
+        values = []
+        for file in selected_files:
+            assert isinstance(file, UploadedFile) and isinstance(file.size, int)
+            if file.size > max_file_bytes:
+                log.error("File in request too large")
+                raise FileSizeError(f"File '{key}' exceeds maximum size of {max_file_size_mb}MB")
 
-        total_file_size_bytes += file.size
-        if total_file_size_bytes > max_total_size_bytes:
-            log.error("Files in request too large")
-            raise FileSizeError(f"Total file size exceeds maximum of {max_total_size_mb}MB")
+            total_file_size_bytes += file.size
+            if total_file_size_bytes > max_total_size_bytes:
+                log.error("Files in request too large")
+                raise FileSizeError(f"Total file size exceeds maximum of {max_total_size_mb}MB")
+            values.append(file.read())
+        data[key] = values if is_image and (len(values) > 1 or key == "image[]") else values[0]
 
-        data[key] = file.read()
+    if image_edit and "image[]" in request.FILES:
+        data["image"] = data.pop("image[]")
 
     return data
 
 
-def parse_body(model: TypeAdapter[Any]) -> Decorator:
+def parse_body(model: TypeAdapter[Any], *, image_edit: bool = False) -> Decorator:
     """
     Decorator that parses and validates HTTP request bodies for async view functions.
 
@@ -109,8 +119,14 @@ def parse_body(model: TypeAdapter[Any]) -> Decorator:
                     log.exception("JSON decode error: %s, body was: %r", e, request.body)
                     return error_response(f"Invalid JSON: {e!s}", status=400)
             elif content_type.startswith("multipart/form-data"):
+                if image_edit and (
+                    ("image" in request.FILES and "image[]" in request.FILES)
+                    or "image" in request.POST
+                    or "image[]" in request.POST
+                ):
+                    return error_response("Invalid image fields", status=400)
                 try:
-                    data = _parse_multipart_body(request)
+                    data = _parse_multipart_body(request, image_edit=image_edit)
                 except FileSizeError as e:
                     return error_response(str(e), status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             else:
@@ -142,12 +158,19 @@ def parse_body(model: TypeAdapter[Any]) -> Decorator:
             # OpenAI usually expects a name for the file object (not just bytes).
             # This only works if the field is also typed as bytes.
             # Additionally, add the size information - for convenience.
-            for key, file in request.FILES.items():
-                assert isinstance(file, UploadedFile) and isinstance(file.size, int)
-                buffer: io.BytesIO = io.BytesIO(data[key])
-                buffer.name = file.name
-                buffer.size = file.size  # type: ignore[attr-defined]
-                data[key] = buffer
+            for key, files in request.FILES.lists():
+                is_image = image_edit and key in {"image", "image[]"}
+                selected_files = files if is_image else files[-1:]
+                data_key = "image" if image_edit and key == "image[]" else key
+                values = data[data_key] if isinstance(data[data_key], list) else [data[data_key]]
+                buffers = []
+                for file, value in zip(selected_files, values, strict=True):
+                    assert isinstance(file, UploadedFile) and isinstance(file.size, int)
+                    buffer: io.BytesIO = io.BytesIO(value)
+                    buffer.name = file.name
+                    buffer.size = file.size  # type: ignore[attr-defined]
+                    buffers.append(buffer)
+                data[data_key] = buffers if isinstance(data[data_key], list) else buffers[0]
 
             kwargs["pydantic_model"] = data
             kwargs["pydantic_model"]["timeout"] = settings.RELAY_REQUEST_TIMEOUT

@@ -15,7 +15,9 @@ from gateway.decorators import (
     check_model_availability,
     log_request,
     parse_body,
+    plugin_errors,
     resolve_alias,
+    run_plugins,
     token_authenticated,
     tos_accepted,
 )
@@ -35,7 +37,9 @@ log = logging.getLogger("aqueduct")
 @resolve_alias
 @check_model_availability
 @log_request
+@run_plugins
 @catch_router_exceptions
+@plugin_errors
 async def image_generation(
     request: ASGIRequest,
     pydantic_model: ImageGenerateParams,

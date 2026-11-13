@@ -14,7 +14,9 @@ from gateway.decorators import (
     ensure_usage,
     log_request,
     parse_body,
+    plugin_errors,
     resolve_alias,
+    run_plugins,
     token_authenticated,
     tos_accepted,
 )
@@ -35,7 +37,9 @@ if TYPE_CHECKING:
 @resolve_alias
 @check_model_availability
 @log_request
+@run_plugins
 @catch_router_exceptions
+@plugin_errors
 async def embeddings(
     request: ASGIRequest,
     pydantic_model: openai.types.EmbeddingCreateParams,

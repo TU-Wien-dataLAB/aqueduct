@@ -15,6 +15,23 @@ nav_order: 4
 > - Authentication (OIDC/Dex) configuration
 > - Reverse proxy and HTTPS setup
 
+## Access key expiration
+
+Set `MAX_ACCESS_KEY_EXPIRATION_DAYS` to a positive integer to limit the expiration
+of user and service-account keys. The default, `-1`, imposes no maximum. New or
+edited keys with no expiration or a later expiration are capped at the current
+time plus the configured number of days; earlier expirations are preserved.
+
+Run `python manage.py migrate` with the new setting whenever enabling or reducing
+the limit. This shortens existing keys with no expiration or an expiration beyond
+the new deadline; it does not extend earlier expirations. The Helm chart and
+Docker Compose run migrations during deployment. All application and migration
+processes must use the same setting. In Helm, set it under the shared `env` list,
+not `web.extraEnv`, so the migration container receives it too. A restart without
+running migrations does not update existing keys. Increasing or disabling the limit
+does not restore previously shortened expirations; already-expired keys are never
+reactivated by reconciliation.
+
 ## Database
 
 The chart ships one PostgreSQL backend, the **CloudNativePG cluster**

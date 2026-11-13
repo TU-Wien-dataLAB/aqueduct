@@ -37,6 +37,14 @@ class ServiceAccountForm(forms.ModelForm):
         if not self.team:
             # This indicates a programming error in the view setup
             raise ValueError("Team instance must be provided to the ServiceAccountForm.")
+        self._describe_expiration_limit()
+
+    def _describe_expiration_limit(self):
+        days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
+        if days != -1:
+            self.fields[
+                "token_expires_at"
+            ].help_text = f"An omitted or later date is limited to {days} days from now."
 
     def clean(self) -> dict:
         cleaned_data = super().clean()
@@ -79,7 +87,7 @@ class ServiceAccountForm(forms.ModelForm):
                 )
         expires_at = cleaned_data.get("token_expires_at")
         if expires_at and expires_at <= timezone.now():
-            self.add_error("expires_at", "Expiration date must be in the future.")
+            self.add_error("token_expires_at", "Expiration date must be in the future.")
         return cleaned_data
 
 
@@ -148,6 +156,11 @@ class TokenCreateForm(forms.ModelForm):
         if not self.user:
             raise ValueError("User must be provided to TokenCreateForm.")
         self.fields["expires_at"].input_formats = ["%Y-%m-%dT%H:%M"]
+        days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
+        if days != -1:
+            self.fields[
+                "expires_at"
+            ].help_text = f"An omitted or later date is limited to {days} days from now."
 
     def clean(self) -> dict:
         cleaned_data = super().clean()

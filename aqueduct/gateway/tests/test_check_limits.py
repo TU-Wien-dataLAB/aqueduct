@@ -1,5 +1,6 @@
 import asyncio
 import json
+from http import HTTPStatus
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +10,7 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.handlers.asgi import ASGIRequest
 from django.db import connection
-from django.http import HttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.test import SimpleTestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from fakeredis import FakeServer
@@ -558,7 +559,7 @@ class TokenConcurrentRequestsLimitTest(ChatCompletionsBase):
             await check_token_concurrency_limits(failing_view)(request, token=token)
 
         # The `acquire` bumped the counter to 1; the exception path released it back to 0.
-        self.assertEqual(await self.redis.get(token_concurrency_key(token)), "0")
+        self.assertEqual(await self.redis.zcard(token_concurrency_key(token)), 0)
 
 
 @override_settings(
@@ -738,6 +739,38 @@ class ConcurrencyDecoratorLifecycleTests(SimpleTestCase):
                         task.cancel()
                         await asyncio.gather(task, return_exceptions=True)
                         await redis.aclose()
+
+    async def test_closing_unstarted_stream_restores_capacity(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="closed", concurrent_requests_limit=1)
+        request = MagicMock(spec=ASGIRequest)
+
+        async def stream():
+            yield b"done"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        @check_token_concurrency_limits
+        async def healthy_view(request, **kwargs):
+            return HttpResponse()
+
+        with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+            response = await streaming_view(request, token=token)
+            try:
+                await sync_to_async(response.close)()
+                for _ in range(20):
+                    replacement = await healthy_view(request, token=token)
+                    if replacement.status_code == HTTPStatus.OK:
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertEqual(replacement.status_code, 200)
+            finally:
+                # Also clean up on the pre-fix implementation, where close leaks.
+                _ = [chunk async for chunk in response.streaming_content]
+                await redis.aclose()
 
     @override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
     async def test_running_view_retains_capacity_beyond_ttl(self):

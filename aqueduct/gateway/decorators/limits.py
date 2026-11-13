@@ -4,6 +4,7 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from functools import lru_cache, wraps
 from typing import TYPE_CHECKING, Any, cast
+from uuid import uuid4
 
 import redis.asyncio as aioredis
 from asgiref.sync import sync_to_async
@@ -23,28 +24,36 @@ if TYPE_CHECKING:
 log = logging.getLogger("aqueduct")
 
 
-# Lua: increment the counter for the `KEYS[1]` key, or undo-and-reject if over limit.
-# ARGV[1] = limit, ARGV[2] = TTL: the key auto-resets after this time in case the backend
-# failed to call the release script for whatever reason (i.e. worker failure).
+# Each sorted-set member is a request lease, scored by its expiry in Redis time.
+# Key expiry only collects idle sets; admission always prunes individual expired leases.
+# ARGV: limit, TTL (seconds), lease ID.
 ACQUIRE_LUA = """
-local c = redis.call('INCR', KEYS[1])
-if c > tonumber(ARGV[1]) then
-    redis.call('DECR', KEYS[1])
+local t = redis.call('TIME')
+local now = tonumber(t[1]) + tonumber(t[2]) / 1000000
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[1]) then
     return 0
 end
+redis.call('ZADD', KEYS[1], now + tonumber(ARGV[2]), ARGV[3])
 redis.call('EXPIRE', KEYS[1], ARGV[2])
 return 1
 """
 
-
-# Lua: decrement the counter for the `KEYS[1]` key, making sure it does not become negative.
 RELEASE_LUA = """
-local c = redis.call('GET', KEYS[1])
-if c and tonumber(c) > 0 then
-    redis.call('DECR', KEYS[1])
-    return 1
+return redis.call('ZREM', KEYS[1], ARGV[1])
+"""
+
+# Renew only this request's live lease; never resurrect an expired lease.
+REFRESH_LUA = """
+local t = redis.call('TIME')
+local now = tonumber(t[1]) + tonumber(t[2]) / 1000000
+local expiry = redis.call('ZSCORE', KEYS[1], ARGV[1])
+if not expiry or tonumber(expiry) <= now then
+    return 0
 end
-return 0
+redis.call('ZADD', KEYS[1], 'XX', now + tonumber(ARGV[2]), ARGV[1])
+redis.call('EXPIRE', KEYS[1], ARGV[2])
+return 1
 """
 
 
@@ -58,8 +67,10 @@ def get_limiter() -> "RedisConcurrencyLimiter":
     return RedisConcurrencyLimiter(get_redis_client())
 
 
+# Separate from legacy string counters to avoid Redis WRONGTYPE errors. Drain
+# counter-based workers before deployment: mixed versions use separate pools.
 def token_concurrency_key(token: "Token") -> str:
-    return f"token:concurrency:{token.id}"
+    return f"token:concurrency:{token.id}:leases"
 
 
 def token_concurrency_limit(token: "Token") -> int:
@@ -71,7 +82,7 @@ def token_concurrency_limit(token: "Token") -> int:
 
 
 def model_concurrency_key(model_name: str) -> str:
-    return f"model:concurrency:{resolve_model_alias(model_name)}"
+    return f"model:concurrency:{resolve_model_alias(model_name)}:leases"
 
 
 def model_concurrency_limit(model: str) -> int:
@@ -88,45 +99,61 @@ def model_concurrency_limit(model: str) -> int:
 
 
 class RedisConcurrencyLimiter:
-    def __init__(self, redis_client: aioredis.Redis, refresh_interval: int = 30):
+    def __init__(self, redis_client: aioredis.Redis, refresh_interval: float = 30):
         self.redis = redis_client
         self.acquire_script = redis_client.register_script(ACQUIRE_LUA)
         self.release_script = redis_client.register_script(RELEASE_LUA)
+        self.refresh_script = redis_client.register_script(REFRESH_LUA)
         self.ttl = settings.AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS
         # Refresh interval has to be safely smaller than ttl; otherwise slots of long-running
         # stream requests may expire before the streaming is over!
-        self.refresh_interval = min(refresh_interval, self.ttl // 2)
+        self.refresh_interval = min(refresh_interval, self.ttl / 2)
 
-    async def acquire(self, key: str, limit: int) -> bool:
-        ok = await self.acquire_script(keys=[key], args=[limit, self.ttl])
+    async def acquire(self, key: str, limit: int) -> str | None:
+        """Return an owned lease, or None when all slots are occupied."""
+        lease = uuid4().hex
+        ok = await self.acquire_script(keys=[key], args=[limit, self.ttl, lease])
+        return lease if ok else None
+
+    async def release(self, key: str, lease: str) -> bool:
+        """Release only the supplied lease, even if it has already expired."""
+        ok = await self.release_script(keys=[key], args=[lease])
         return bool(ok)
 
-    async def release(self, key: str) -> bool:
-        ok = await self.release_script(keys=[key])
-        return bool(ok)
+    async def _refresh_ttl_loop(self, key: str, lease: str, stop_event: asyncio.Event) -> None:
+        """Own the lease until stopped, renewing only this request's expiry."""
+        try:
+            while True:
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=self.refresh_interval)
+                except TimeoutError:
+                    if not await self.refresh_script(keys=[key], args=[lease, self.ttl]):
+                        return
+                else:
+                    return
+        finally:
+            await self.release(key, lease)
 
-    async def _refresh_ttl_loop(self, key: str, stop_event: asyncio.Event) -> None:
-        """Periodically check if the event's flag is not set, and extend the TTL of the key."""
-        while True:
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=self.refresh_interval)
-            except TimeoutError:
-                await self.redis.expire(key, self.ttl)
-            else:
-                return
-
-    async def wrap_stream(self, stream: AsyncIterator[bytes], key: str) -> AsyncGenerator[Any]:
-        """Hold the slot and prevent key expiry for the whole stream."""
-        stop_event = asyncio.Event()
-        watchdog = asyncio.create_task(self._refresh_ttl_loop(key, stop_event))
+    async def wrap_stream(
+        self,
+        stream: AsyncIterator[bytes],
+        key: str,
+        lease: str,
+        stop_event: asyncio.Event | None = None,
+        watchdog: asyncio.Task[None] | None = None,
+    ) -> AsyncGenerator[Any]:
+        """Hold the slot, taking over the view's heartbeat when supplied."""
+        if stop_event is None:
+            stop_event = asyncio.Event()
+        if watchdog is None:
+            watchdog = asyncio.create_task(self._refresh_ttl_loop(key, lease, stop_event))
         try:
             async for chunk in stream:
                 yield chunk
         finally:
             stop_event.set()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
+            with contextlib.suppress(asyncio.CancelledError):
                 await watchdog
-            await self.release(key)
 
 
 async def _run_with_concurrency_limit(
@@ -145,25 +172,34 @@ async def _run_with_concurrency_limit(
     always released before the error propagates.
     """
     limiter = get_limiter()
-    if not await limiter.acquire(key, limit):
+    lease = await limiter.acquire(key, limit)
+    if lease is None:
         return error_response(error_message, status=429, headers={"Retry-After": "10"})
 
+    stop_event = asyncio.Event()
+    watchdog = asyncio.create_task(limiter._refresh_ttl_loop(key, lease, stop_event))
+    handed_off = False
     try:
         response: ViewResult = await view_func(request, *args, **kwargs)
-    except Exception:
-        # Make sure we release the concurrent requests slot if there is an error.
-        await limiter.release(key)
-        raise
-
-    if isinstance(response, StreamingHttpResponse):
-        # Keep the slot held for the full stream duration.
-        streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
-        response.streaming_content = limiter.wrap_stream(streaming_content, key)
-    else:
-        # Response is fully generated; release now.
-        await limiter.release(key)
-
-    return response
+        if isinstance(response, StreamingHttpResponse):
+            streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
+            response.streaming_content = limiter.wrap_stream(
+                streaming_content, key, lease, stop_event, watchdog
+            )
+            # Django may close a response without ever starting its async iterator.
+            # close() can run in a worker thread, so signal the owning event loop.
+            loop = asyncio.get_running_loop()
+            response._resource_closers.append(  # type: ignore[attr-defined]
+                lambda: loop.call_soon_threadsafe(stop_event.set)
+            )
+            handed_off = True
+        return response
+    finally:
+        # Includes cancellation; streams clean up on iteration or response close.
+        if not handed_off:
+            stop_event.set()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watchdog
 
 
 def check_token_concurrency_limits(view_func: AsyncView) -> AsyncView:

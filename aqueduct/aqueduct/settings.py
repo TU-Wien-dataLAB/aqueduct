@@ -124,6 +124,10 @@ LOGIN_URL = "/login/"  # Where to redirect if user is not logged in
 # Aqueduct Settings ------------------------------------------------------
 
 MAX_USER_TOKENS = 3
+# -1 disables the maximum lifetime; otherwise use a positive number of days.
+MAX_ACCESS_KEY_EXPIRATION_DAYS = int(os.getenv("MAX_ACCESS_KEY_EXPIRATION_DAYS", "-1"))
+if MAX_ACCESS_KEY_EXPIRATION_DAYS != -1 and MAX_ACCESS_KEY_EXPIRATION_DAYS <= 0:
+    raise ValueError("MAX_ACCESS_KEY_EXPIRATION_DAYS must be -1 or a positive integer")
 MAX_SERVICE_ACCOUNTS_PER_TEAM = 10
 
 MAX_USER_BATCHES = int(os.environ.get("MAX_USER_BATCHES", 10))

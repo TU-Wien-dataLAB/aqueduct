@@ -71,8 +71,8 @@ def token_authenticated(token_auth_only: bool) -> Decorator:
                     .afirst()
                 )
 
-            if not token:
-                log.error("Token not found during authentication")
+            if not token or (token_key and token.is_expired):
+                log.error("Token not found or expired during authentication")
                 return unauthorized_response
             kwargs["token"] = token
             return await view_func(request, *args, **kwargs)

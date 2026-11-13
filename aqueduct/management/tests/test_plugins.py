@@ -11,6 +11,7 @@ from management.plugins import (
     before_hook,
     compile_plugin_class,
     resolve_active_plugins,
+    stream_hook,
 )
 
 GOOD_PLUGIN = """\
@@ -32,6 +33,7 @@ class PluginBaseTestCase(TestCase):
         self.assertIsNone(p.before_request("r", "t", "b"))
         self.assertIsNone(p.after_response("r", "t", "resp"))
         self.assertIsNone(p.on_error("r", ValueError("boom")))
+        self.assertIsNone(p.on_stream_chunk("chunk"))
 
     def test_blocked_by_plugin_defaults(self):
         e = BlockedByPlugin("nope")
@@ -137,7 +139,7 @@ class ResolvePluginsTestCase(TestCase):
 
 
 class DispatchPluginsTestCase(TestCase):
-    def _make(self, before=None, after=None, on_error=None) -> PluginSnippet:
+    def _make(self, before=None, after=None, on_error=None, on_stream=None) -> PluginSnippet:
         class P(PluginSnippet):
             pass
 
@@ -147,6 +149,8 @@ class DispatchPluginsTestCase(TestCase):
             P.after_response = staticmethod(after)
         if on_error is not None:
             P.on_error = staticmethod(on_error)
+        if on_stream is not None:
+            P.on_stream_chunk = staticmethod(on_stream)
         return P()
 
     def test_before_hook_pipeline(self):
@@ -203,6 +207,35 @@ class DispatchPluginsTestCase(TestCase):
         plugins = [self._make(after=a), self._make(after=b)]
         after_hook(plugins, "req", "tok", "resp")
         self.assertEqual(calls, [("a", "resp"), ("b", "resp")])
+
+    def test_stream_hook_runs_all_and_returns_chunk(self):
+        seen = []
+
+        def tap(chunk):
+            seen.append(chunk)
+
+        plugins = [self._make(on_stream=tap), self._make(on_stream=tap)]
+        result = stream_hook(plugins, {"chunk": 1})
+        self.assertEqual(result, {"chunk": 1})
+        self.assertEqual(seen, [{"chunk": 1}, {"chunk": 1}])
+
+    def test_stream_hook_transform_composes(self):
+        def a(chunk):
+            chunk["a"] = 1
+            return chunk
+
+        def b(chunk):
+            chunk["b"] = 2
+            return chunk
+
+        plugins = [self._make(on_stream=a), self._make(on_stream=b)]
+        result = stream_hook(plugins, {})
+        self.assertEqual(result, {"a": 1, "b": 2})
+
+    def test_stream_hook_records_processing_time(self):
+        p = self._make(on_stream=lambda c: c)
+        stream_hook([p], {"chunk": 1})
+        self.assertIsInstance(p.processing_time_ms, int)
 
     def test_error_hook_receives_exception(self):
         seen = []

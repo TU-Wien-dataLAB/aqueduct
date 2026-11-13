@@ -10,7 +10,7 @@ from gateway.decorators.mcp import (
     mcp_transport_security,
     parse_jsonrpc_message,
 )
-from gateway.decorators.plugins import run_plugins
+from gateway.decorators.plugins import plugin_errors, run_plugins
 from gateway.decorators.response_type import normalize_reasoning_fields, process_file_content
 from gateway.decorators.responses import check_tool_availability, validate_response_id
 
@@ -27,6 +27,7 @@ __all__ = [
     "normalize_reasoning_fields",
     "parse_body",
     "parse_jsonrpc_message",
+    "plugin_errors",
     "process_batch_file",
     "process_file_content",
     "require_files_api_client",

@@ -15,7 +15,9 @@ from gateway.decorators import (
     check_model_availability,
     log_request,
     parse_body,
+    plugin_errors,
     resolve_alias,
+    run_plugins,
     token_authenticated,
     tos_accepted,
 )
@@ -34,7 +36,9 @@ from management.models import Request, Token
 @resolve_alias
 @check_model_availability
 @log_request
+@run_plugins
 @catch_router_exceptions
+@plugin_errors
 async def decisions(
     request: ASGIRequest,
     pydantic_model: dict[str, Any],

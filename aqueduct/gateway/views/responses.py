@@ -15,6 +15,7 @@ from gateway.decorators import (
     check_tool_availability,
     log_request,
     parse_body,
+    plugin_errors,
     resolve_alias,
     run_plugins,
     token_authenticated,
@@ -44,6 +45,7 @@ from management.models import Request, Token
 @log_request
 @run_plugins
 @catch_router_exceptions
+@plugin_errors
 async def create_response(
     request: ASGIRequest,
     pydantic_model: dict[str, Any],

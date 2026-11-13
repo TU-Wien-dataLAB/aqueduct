@@ -23,6 +23,9 @@ class PluginSnippet:
     def on_error(self, request: Any, exc: Exception) -> None:
         pass
 
+    def on_stream_chunk(self, chunk: Any) -> Any:
+        """Called per streaming chunk. Override to tap or transform the stream."""
+
 
 class BlockedByPlugin(Exception):  # noqa: N818
     def __init__(self, reason: str, status: int = 403) -> None:
@@ -60,14 +63,29 @@ def after_hook(plugins: list[PluginSnippet], request: Any, token: Any, response:
         _record_call(plugin, start)
 
 
+def stream_hook(plugins: list[PluginSnippet], chunk: Any) -> Any:
+    for plugin in plugins:
+        call = getattr(plugin, "on_stream_chunk", None)
+        if call is None:
+            continue
+        start = time.monotonic()
+        result = call(chunk)
+        _record_call(plugin, start)
+        if result is not None:
+            chunk = result
+    return chunk
+
+
 def _error_hook(plugins: list[PluginSnippet], request: Any, exc: Exception) -> None:
     for plugin in plugins:
         call = getattr(plugin, "on_error", None)
         if call is None:
             continue
         start = time.monotonic()
-        call(request, exc)
-        _record_call(plugin, start)
+        try:
+            call(request, exc)
+        finally:
+            _record_call(plugin, start)
 
 
 def compile_plugin_class(code: str) -> type[PluginSnippet]:

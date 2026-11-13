@@ -6,6 +6,11 @@ model_list:
   model_info:
     id: gpt-4.1-nano
     aliases: ["main", "coding"]
+    # Optional metadata shown on the Models page. Replace with actual values.
+    # contextWindow: 128000  # Total context window in tokens
+    # maxTokens: 16000       # Maximum output tokens
+    # thinkingLevels: ["low", "high", "max"]
+    # model_card_url: "https://huggingface.co/example/model"
 - model_name: gpt-6-luna
   litellm_params:
     model: openai/gpt-6-luna

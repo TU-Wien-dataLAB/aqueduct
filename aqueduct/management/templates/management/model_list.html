@@ -1,5 +1,5 @@
 {% extends "management/base.html" %}
-{% load static %}
+{% load static humanize %}
 
 {% block title %}Models{% endblock %}
 
@@ -73,6 +73,25 @@
                         {% endwith %}
                     </div>
                 </div>
+
+                {% with info=model.model_info %}
+                {% if info.contextWindow or info.max_tokens or info.maxTokens or info.thinkingLevels or model.model_card_url %}
+                <div class="text-sm space-y-1">
+                    {% if info.contextWindow or info.max_tokens %}
+                    <div><span class="text-base-content/60">Context window:</span> {% if info.contextWindow %}{{ info.contextWindow|intcomma }}{% else %}{{ info.max_tokens|intcomma }}{% endif %} tokens</div>
+                    {% endif %}
+                    {% if info.maxTokens %}
+                    <div><span class="text-base-content/60">Max output tokens:</span> {{ info.maxTokens|intcomma }}</div>
+                    {% endif %}
+                    {% if info.thinkingLevels %}
+                    <div><span class="text-base-content/60">Thinking levels:</span> {{ info.thinkingLevels|join:", " }}</div>
+                    {% endif %}
+                    {% if model.model_card_url %}
+                    <div><a class="link link-primary" href="{{ model.model_card_url }}">Model card</a></div>
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% endwith %}
 
                 <div class="flex items-start justify-between mt-auto pt-4 border-t border-base-300">
                     <details class="bg-base-200 rounded-lg group w-3/4">

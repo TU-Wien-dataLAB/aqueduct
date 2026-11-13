@@ -2,7 +2,7 @@ import asyncio
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
 from fakeredis import FakeServer
 from fakeredis.aioredis import FakeRedis
 
@@ -11,6 +11,39 @@ from gateway.tests.utils.base import GatewayIntegrationTestCase
 from management.models import Token
 
 User = get_user_model()
+
+
+@override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
+class RedisConcurrencyLimiterRecoveryTests(SimpleTestCase):
+    async def test_orphaned_slot_expires_despite_healthy_traffic(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        key = "token:concurrency:orphan-recovery"
+        try:
+            # Simulate a worker crash: this acquisition will never be released.
+            self.assertTrue(await limiter.acquire(key, 2))
+
+            # Healthy requests use and release the remaining slot, more frequently
+            # than the TTL, for longer than the orphan's entire lease lifetime.
+            for _ in range(12):
+                self.assertTrue(await limiter.acquire(key, 2))
+                try:
+                    await asyncio.sleep(0.2)
+                finally:
+                    await limiter.release(key)
+
+            # Both slots must now be available, even though traffic never stopped.
+            acquired = 0
+            try:
+                for _ in range(2):
+                    accepted = await limiter.acquire(key, 2)
+                    acquired += int(accepted)
+                    self.assertTrue(accepted, "Orphaned slot did not recover under traffic")
+            finally:
+                for _ in range(acquired):
+                    await limiter.release(key)
+        finally:
+            await redis.aclose()
 
 
 @override_settings(

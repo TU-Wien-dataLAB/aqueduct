@@ -1,5 +1,6 @@
 import asyncio
 import json
+from http import HTTPStatus
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -9,12 +10,17 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.handlers.asgi import ASGIRequest
 from django.db import connection
+from django.http import HttpResponse, StreamingHttpResponse
 from django.test import SimpleTestCase, override_settings
 from django.test.utils import CaptureQueriesContext
+from fakeredis import FakeServer
+from fakeredis.aioredis import FakeRedis
 from openai.types.chat import ChatCompletion
 
 from gateway.config import get_model_max_parallel_requests
 from gateway.decorators.limits import (
+    RedisConcurrencyLimiter,
+    check_model_concurrency_limits,
     check_token_concurrency_limits,
     model_concurrency_key,
     model_concurrency_limit,
@@ -25,7 +31,7 @@ from gateway.tests.utils import (
     _build_chat_payload,
     _read_streaming_response_lines,
 )
-from gateway.tests.utils.base import ChatCompletionsBase
+from gateway.tests.utils.base import ROUTER_CONFIG_PATH, ChatCompletionsBase
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
 
 User = get_user_model()
@@ -553,7 +559,7 @@ class TokenConcurrentRequestsLimitTest(ChatCompletionsBase):
             await check_token_concurrency_limits(failing_view)(request, token=token)
 
         # The `acquire` bumped the counter to 1; the exception path released it back to 0.
-        self.assertEqual(await self.redis.get(token_concurrency_key(token)), "0")
+        self.assertEqual(await self.redis.zcard(token_concurrency_key(token)), 0)
 
 
 @override_settings(
@@ -685,6 +691,233 @@ class ModelConcurrentRequestsLimitTest(ChatCompletionsBase):
         self.assertIn("Too many concurrent requests for model", blocked.json()["error"]["message"])
 
         await asyncio.gather(*(_read_streaming_response_lines(r) for r in held_streams))
+
+
+@override_settings(
+    AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_ENABLED=True,
+    AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMIT_ENABLED=True,
+    AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT=1,
+    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
+)
+class ConcurrencyDecoratorLifecycleTests(SimpleTestCase):
+    """Exercise request lifetimes without a database or an upstream API."""
+
+    async def test_cancelled_view_restores_capacity(self):
+        for decorator in (check_token_concurrency_limits, check_model_concurrency_limits):
+            with self.subTest(decorator=decorator.__name__):
+                redis = FakeRedis(server=FakeServer(), decode_responses=True)
+                limiter = RedisConcurrencyLimiter(redis)
+                token = Token(id=1, name="cancelled", concurrent_requests_limit=1)
+                request = MagicMock(spec=ASGIRequest)
+                kwargs = {"token": token, "pydantic_model": {"model": "gpt-4.1-nano"}}
+                entered = asyncio.Event()
+                finish = asyncio.Event()
+
+                async def blocked_view(request, *, entered=entered, finish=finish, **kwargs):
+                    entered.set()
+                    await finish.wait()
+                    return HttpResponse()
+
+                async def healthy_view(request, **kwargs):
+                    return HttpResponse()
+
+                with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                    task = asyncio.create_task(decorator(blocked_view)(request, **kwargs))
+                    try:
+                        # Entry into the view proves acquisition has completed.
+                        await asyncio.wait_for(entered.wait(), timeout=1)
+                        rejected = await decorator(healthy_view)(request, **kwargs)
+                        self.assertEqual(rejected.status_code, 429)
+                        task.cancel()
+                        with self.assertRaises(asyncio.CancelledError):
+                            await task
+
+                        replacement = await decorator(healthy_view)(request, **kwargs)
+                        self.assertEqual(replacement.status_code, 200)
+                    finally:
+                        finish.set()
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                        await redis.aclose()
+
+    async def test_stream_completion_error_and_cancellation_restore_capacity(self):
+        for outcome in ("complete", "error", "cancel"):
+            with self.subTest(outcome=outcome):
+                redis = FakeRedis(server=FakeServer(), decode_responses=True)
+                limiter = RedisConcurrencyLimiter(redis)
+                token = Token(id=1, name="stream", concurrent_requests_limit=1)
+                request = MagicMock(spec=ASGIRequest)
+                entered = asyncio.Event()
+                finish = asyncio.Event()
+
+                async def stream(*, outcome=outcome, entered=entered, finish=finish):
+                    yield b"chunk-1"
+                    entered.set()
+                    await finish.wait()
+                    if outcome == "error":
+                        raise ValueError("boom")
+                    yield b"chunk-2"
+
+                @check_token_concurrency_limits
+                async def streaming_view(request, *, stream=stream, **kwargs):
+                    return StreamingHttpResponse(stream())
+
+                @check_token_concurrency_limits
+                async def healthy_view(request, **kwargs):
+                    return HttpResponse()
+
+                async def consume(response):
+                    return [chunk async for chunk in response.streaming_content]
+
+                with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                    response = await streaming_view(request, token=token)
+                    task = asyncio.create_task(consume(response))
+                    try:
+                        await asyncio.wait_for(entered.wait(), timeout=1)
+                        rejected = await healthy_view(request, token=token)
+                        self.assertEqual(rejected.status_code, 429)
+                        if outcome == "cancel":
+                            task.cancel()
+                            with self.assertRaises(asyncio.CancelledError):
+                                await asyncio.wait_for(task, timeout=1)
+                        else:
+                            finish.set()
+                            if outcome == "error":
+                                with self.assertRaisesMessage(ValueError, "boom"):
+                                    await asyncio.wait_for(task, timeout=1)
+                            else:
+                                self.assertEqual(
+                                    await asyncio.wait_for(task, timeout=1),
+                                    [b"chunk-1", b"chunk-2"],
+                                )
+                        replacement = await healthy_view(request, token=token)
+                        self.assertEqual(replacement.status_code, 200)
+                    finally:
+                        finish.set()
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                        await sync_to_async(response.close)()
+                        await redis.aclose()
+
+    @override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
+    async def test_heartbeat_renews_only_its_own_lease(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis, refresh_interval=0.1)
+        token = Token(id=1, name="heartbeat", concurrent_requests_limit=2)
+        key = token_concurrency_key(token)
+        request = MagicMock(spec=ASGIRequest)
+        entered = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def stream():
+            entered.set()
+            await finish.wait()
+            yield b"done"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        async def consume(response):
+            return [chunk async for chunk in response.streaming_content]
+
+        task = None
+        with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+            try:
+                orphan = await limiter.acquire(key, 2)
+                self.assertIsNotNone(orphan)
+                response = await streaming_view(request, token=token)
+                self.assertEqual(response.status_code, 200)
+                task = asyncio.create_task(consume(response))
+                await asyncio.wait_for(entered.wait(), timeout=1)
+                self.assertIsNone(await limiter.acquire(key, 2))
+
+                await asyncio.sleep(2.2)
+                self.assertFalse(task.done())
+                replacement = await limiter.acquire(key, 2)
+                self.assertIsNotNone(replacement, "Healthy heartbeat kept the orphan alive")
+                try:
+                    # A late release from the dead worker cannot remove the new lease.
+                    self.assertFalse(await limiter.release(key, orphan))
+                    self.assertIsNone(await limiter.acquire(key, 2))
+                finally:
+                    await limiter.release(key, replacement)
+            finally:
+                finish.set()
+                if task is not None:
+                    await asyncio.wait_for(task, timeout=1)
+                await redis.aclose()
+
+    async def test_closing_unstarted_stream_restores_capacity(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="closed", concurrent_requests_limit=1)
+        request = MagicMock(spec=ASGIRequest)
+
+        async def stream():
+            yield b"done"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        @check_token_concurrency_limits
+        async def healthy_view(request, **kwargs):
+            return HttpResponse()
+
+        with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+            response = await streaming_view(request, token=token)
+            try:
+                await sync_to_async(response.close)()
+                for _ in range(20):
+                    replacement = await healthy_view(request, token=token)
+                    if replacement.status_code == HTTPStatus.OK:
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertEqual(replacement.status_code, 200)
+            finally:
+                # Also clean up on the pre-fix implementation, where close leaks.
+                _ = [chunk async for chunk in response.streaming_content]
+                await redis.aclose()
+
+    @override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
+    async def test_running_view_retains_capacity_beyond_ttl(self):
+        for decorator in (check_token_concurrency_limits, check_model_concurrency_limits):
+            with self.subTest(decorator=decorator.__name__):
+                redis = FakeRedis(server=FakeServer(), decode_responses=True)
+                limiter = RedisConcurrencyLimiter(redis, refresh_interval=0.1)
+                token = Token(id=1, name="running", concurrent_requests_limit=1)
+                request = MagicMock(spec=ASGIRequest)
+                kwargs = {"token": token, "pydantic_model": {"model": "gpt-4.1-nano"}}
+                entered = asyncio.Event()
+                finish = asyncio.Event()
+
+                async def blocked_view(request, *, entered=entered, finish=finish, **kwargs):
+                    entered.set()
+                    await finish.wait()
+                    return HttpResponse()
+
+                async def healthy_view(request, **kwargs):
+                    return HttpResponse()
+
+                with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                    task = asyncio.create_task(decorator(blocked_view)(request, **kwargs))
+                    try:
+                        await asyncio.wait_for(entered.wait(), timeout=1)
+                        rejected = await decorator(healthy_view)(request, **kwargs)
+                        self.assertEqual(rejected.status_code, 429)
+
+                        # The request is still executing, not yet producing a stream.
+                        # Allow several heartbeat opportunities and exceed the lease TTL.
+                        await asyncio.sleep(2.2)
+                        self.assertFalse(task.done())
+                        rejected = await decorator(healthy_view)(request, **kwargs)
+                        self.assertEqual(rejected.status_code, 429)
+                    finally:
+                        # Complete normally so cancellation cannot mask this regression.
+                        finish.set()
+                        await asyncio.wait_for(task, timeout=1)
+                        await redis.aclose()
 
 
 @override_settings(AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT=7)

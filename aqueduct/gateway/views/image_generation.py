@@ -1,11 +1,14 @@
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.core.handlers.asgi import ASGIRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from litellm import BadRequestError
-from openai.types import ImageGenerateParams, ImagesResponse
+from openai.types.image_generate_params import (
+    ImageGenerateParamsNonStreaming,
+    ImageGenerateParamsStreaming,
+)
 from pydantic import ConfigDict, TypeAdapter
 
 from gateway.config import get_model_supports_response_format
@@ -23,14 +26,28 @@ from gateway.response_type import RawJsonResponse, get_token_usage
 from gateway.views.utils import oai_client_from_body
 from management.models import Request
 
+if TYPE_CHECKING:
+    from openai.types import ImagesResponse
+
 log = logging.getLogger("aqueduct")
+
+
+class ImageGenerateParamsWithSeed(ImageGenerateParamsNonStreaming, total=False):
+    seed: int
+
+
+class ImageGenerateStreamingParamsWithSeed(ImageGenerateParamsStreaming, total=False):
+    seed: int
+
+
+ImageParams = ImageGenerateParamsWithSeed | ImageGenerateStreamingParamsWithSeed
 
 
 @csrf_exempt
 @require_POST
 @token_authenticated(token_auth_only=True)
 @tos_accepted
-@parse_body(model=TypeAdapter(ImageGenerateParams, config=ConfigDict(extra="forbid")))
+@parse_body(model=TypeAdapter(ImageParams, config=ConfigDict(extra="forbid")))
 @check_limits
 @resolve_alias
 @check_model_availability
@@ -38,7 +55,7 @@ log = logging.getLogger("aqueduct")
 @catch_router_exceptions
 async def image_generation(
     request: ASGIRequest,
-    pydantic_model: ImageGenerateParams,
+    pydantic_model: ImageParams,
     request_log: Request,
     *args: Any,
     **kwargs: Any,
@@ -69,8 +86,10 @@ async def image_generation(
         # b64_json, which is the only format we support anyway.
         pydantic_model.pop("response_format", None)
 
+    seed = pydantic_model.pop("seed", None)
+    extra_body = {"seed": seed} if seed is not None else None
     try:
-        resp: ImagesResponse = await client.images.generate(**pydantic_model)
+        resp: ImagesResponse = await client.images.generate(**pydantic_model, extra_body=extra_body)
     except TypeError as err:
         # Sending extra fields in the data makes `AsyncImages.generate()` error out
         log.exception(err)

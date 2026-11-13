@@ -24,9 +24,10 @@ if TYPE_CHECKING:
 log = logging.getLogger("aqueduct")
 
 
-# Each sorted-set member is a request lease, scored by its expiry in Redis time.
-# Key expiry only collects idle sets; admission always prunes individual expired leases.
-# ARGV: limit, TTL (seconds), lease ID.
+# Lua: remove expired leases for the `KEYS[1]` key, then acquire a slot if below limit.
+# ARGV[1] = limit, ARGV[2] = TTL, ARGV[3] = lease ID: each lease expires after this time
+# in case the backend failed to call the release script for whatever reason (i.e. worker failure).
+# Lease expiry uses Redis time, so healthy requests do not keep orphaned slots alive.
 ACQUIRE_LUA = """
 local t = redis.call('TIME')
 local now = tonumber(t[1]) + tonumber(t[2]) / 1000000
@@ -39,11 +40,16 @@ redis.call('EXPIRE', KEYS[1], ARGV[2])
 return 1
 """
 
+
+# Lua: release the lease for the `KEYS[1]` key, making sure other leases are not removed.
+# ARGV[1] = lease ID.
 RELEASE_LUA = """
 return redis.call('ZREM', KEYS[1], ARGV[1])
 """
 
-# Renew only this request's live lease; never resurrect an expired lease.
+
+# Lua: extend the TTL of the lease for the `KEYS[1]` key, only if it has not expired.
+# ARGV[1] = lease ID, ARGV[2] = TTL.
 REFRESH_LUA = """
 local t = redis.call('TIME')
 local now = tonumber(t[1]) + tonumber(t[2]) / 1000000
@@ -110,18 +116,21 @@ class RedisConcurrencyLimiter:
         self.refresh_interval = min(refresh_interval, self.ttl / 2)
 
     async def acquire(self, key: str, limit: int) -> str | None:
-        """Return an owned lease, or None when all slots are occupied."""
+        """Acquire a concurrent requests slot, returning its lease ID or None if over limit."""
         lease = uuid4().hex
         ok = await self.acquire_script(keys=[key], args=[limit, self.ttl, lease])
         return lease if ok else None
 
     async def release(self, key: str, lease: str) -> bool:
-        """Release only the supplied lease, even if it has already expired."""
+        """Release the concurrent requests slot for the given lease ID."""
         ok = await self.release_script(keys=[key], args=[lease])
         return bool(ok)
 
     async def _refresh_ttl_loop(self, key: str, lease: str, stop_event: asyncio.Event) -> None:
-        """Own the lease until stopped, renewing only this request's expiry."""
+        """Periodically check if the event's flag is not set, and extend the TTL of the lease.
+
+        Release the concurrent requests slot when the loop stops.
+        """
         try:
             while True:
                 try:
@@ -142,7 +151,10 @@ class RedisConcurrencyLimiter:
         stop_event: asyncio.Event | None = None,
         watchdog: asyncio.Task[None] | None = None,
     ) -> AsyncGenerator[Any]:
-        """Hold the slot, taking over the view's heartbeat when supplied."""
+        """Hold the slot and prevent lease expiry for the whole stream.
+
+        Continue the view's refresh loop if it has already been started.
+        """
         if stop_event is None:
             stop_event = asyncio.Event()
         if watchdog is None:
@@ -182,6 +194,7 @@ async def _run_with_concurrency_limit(
     try:
         response: ViewResult = await view_func(request, *args, **kwargs)
         if isinstance(response, StreamingHttpResponse):
+            # Keep the slot held for the full stream duration.
             streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
             response.streaming_content = limiter.wrap_stream(
                 streaming_content, key, lease, stop_event, watchdog
@@ -195,7 +208,8 @@ async def _run_with_concurrency_limit(
             handed_off = True
         return response
     finally:
-        # Includes cancellation; streams clean up on iteration or response close.
+        # Make sure we release the concurrent requests slot if there is an error
+        # (including cancellation), or the non-streaming response is fully generated.
         if not handed_off:
             stop_event.set()
             with contextlib.suppress(asyncio.CancelledError):

@@ -1,3 +1,56 @@
+{{- define "aqueduct.migrationName" -}}
+{{- $name := .Release.Name -}}
+{{- if gt (len $name) 40 -}}
+{{- $name = printf "%s-%s" ($name | trunc 32 | trimSuffix "-") ($name | sha256sum | trunc 7) -}}
+{{- end -}}
+{{- printf "%s-migrate-%d" $name .Release.Revision -}}
+{{- end -}}
+
+{{- define "aqueduct.migrationGateName" -}}
+{{- printf "%s-migration-gate" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "aqueduct.scheduling" -}}
+{{- with .nodeSelector }}
+nodeSelector:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .tolerations }}
+tolerations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .affinity }}
+affinity:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .topologySpreadConstraints }}
+topologySpreadConstraints:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{- define "aqueduct.databasePoolEnv" -}}
+- name: POSTGRESQL_POOL_MIN_SIZE
+  value: {{ .minSize | quote }}
+- name: POSTGRESQL_POOL_MAX_SIZE
+  value: {{ .maxSize | quote }}
+{{- end -}}
+
+{{- define "aqueduct.migrationGate" -}}
+- name: wait-for-migrations
+  image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  command: ["python", "/etc/aqueduct/wait_for_migrations.py", {{ include "aqueduct.migrationName" . | quote }}]
+  securityContext:
+    {{- toYaml .Values.migrate.containerSecurityContext | nindent 4 }}
+  resources:
+    {{- toYaml .Values.migrate.resources | nindent 4 }}
+  volumeMounts:
+    - name: migration-gate
+      mountPath: /etc/aqueduct/wait_for_migrations.py
+      subPath: wait_for_migrations.py
+{{- end -}}
+
 {{/*
 Generate environment variables for the Django container.
 Usage:

@@ -190,8 +190,8 @@ web:
   # Initial requests, not measured capacity guarantees. Set limits after staging measurements.
   resources:
     requests:
-      cpu: 250m
-      memory: 3Gi
+      cpu: "1"
+      memory: 4Gi
   containerSecurityContext:
     allowPrivilegeEscalation: false
     capabilities:

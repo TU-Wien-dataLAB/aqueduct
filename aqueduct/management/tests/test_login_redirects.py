@@ -9,10 +9,11 @@ User = get_user_model()
 
 
 @override_settings(
+    OIDC_OP_JWKS_ENDPOINT="https://example.com/application/o/example/jwks/",
     STORAGES={
         "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
         "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
-    }
+    },
 )
 class SSOLoginRedirectTests(TestCase):
     def setUp(self):

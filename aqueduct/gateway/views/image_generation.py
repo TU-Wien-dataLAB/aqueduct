@@ -11,8 +11,10 @@ from pydantic import ConfigDict, TypeAdapter
 from gateway.config import get_model_supports_response_format
 from gateway.decorators import (
     catch_router_exceptions,
-    check_limits,
     check_model_availability,
+    check_model_concurrency_limits,
+    check_rate_limits,
+    check_token_concurrency_limits,
     log_request,
     parse_body,
     resolve_alias,
@@ -31,7 +33,9 @@ log = logging.getLogger("aqueduct")
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(ImageGenerateParams, config=ConfigDict(extra="forbid")))
-@check_limits
+@check_token_concurrency_limits
+@check_model_concurrency_limits
+@check_rate_limits
 @resolve_alias
 @check_model_availability
 @log_request

@@ -12,7 +12,7 @@ from django.conf import settings
 from django.core.handlers.asgi import ASGIRequest
 from django.http.response import StreamingHttpResponse
 
-from gateway.config import get_model_max_parallel_requests, resolve_model_alias
+from gateway.config import get_model_max_parallel_requests, resolve_model
 from gateway.decorators.types import AsyncView, ViewResult
 from gateway.rate_limiting import check_and_reserve
 from gateway.response_error import error_response
@@ -88,15 +88,17 @@ def token_concurrency_limit(token: "Token") -> int:
 
 
 def model_concurrency_key(model_name: str) -> str:
-    return f"model:concurrency:{resolve_model_alias(model_name)}:leases"
+    resolved = resolve_model(model_name)
+    name = (
+        resolved.accounting_name if resolved.accounting_name is not None else resolved.routing_name
+    )
+    return f"model:concurrency:{name}:leases"
 
 
 def model_concurrency_limit(model: str) -> int:
     """Returns the concurrent requests limit for a specific model.
 
-    Looks up an optional per-model override defined in
-    ``AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMITS``,
-    falling back to the default model concurrency limit.
+    Uses the configured model or router limit, falling back to the settings default.
     """
     configured = get_model_max_parallel_requests(model)
     if configured is not None:

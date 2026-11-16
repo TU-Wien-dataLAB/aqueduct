@@ -2,6 +2,7 @@ import json
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.http import HttpResponse
 from django.test import SimpleTestCase, override_settings
 from openai.types.chat import ChatCompletion
 
@@ -10,10 +11,75 @@ from gateway.config import (
     get_model_request_limit_multiplier,
     get_model_supports_response_format,
     get_router_config,
+    resolve_model,
 )
+from gateway.decorators.body import resolve_alias
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from management.models import Org, Request
+from management.models import Org, Request, Token
+
+
+class ModelResolutionTest(SimpleTestCase):
+    def test_accounting_and_routing_identities(self):
+        config = {
+            "model_list": [
+                {"model_name": "other", "model_info": {"id": "alias"}},
+                {"model_name": "public", "model_info": {"id": "backend-1", "aliases": ["alias"]}},
+                {"model_name": "public", "model_info": {"id": "backend-2"}},
+                {"model_name": "numeric", "model_info": {"id": 123}},
+            ]
+        }
+        with patch("gateway.config.get_router_config", return_value=config):
+            for name, accounting, routing in (
+                ("public", "public", "public"),
+                ("alias", "public", "public"),
+                ("backend-1", "public", "backend-1"),
+                ("backend-2", "public", "backend-2"),
+                ("123", "numeric", "123"),
+                ("unknown", None, "unknown"),
+            ):
+                with self.subTest(name=name):
+                    result = resolve_model(name)
+                    self.assertEqual(
+                        (result.accounting_name, result.routing_name), (accounting, routing)
+                    )
+
+    async def test_deployment_id_remains_the_routing_name(self):
+        config = {"model_list": [{"model_name": "public", "model_info": {"id": "backend-1"}}]}
+        seen = []
+
+        @resolve_alias
+        async def view(request, **kwargs):
+            seen.append(kwargs["pydantic_model"]["model"])
+            return HttpResponse()
+
+        with patch("gateway.config.get_router_config", return_value=config):
+            await view(None, pydantic_model={"model": "backend-1"})
+        self.assertEqual(seen, ["backend-1"])
+
+    def test_deployment_id_does_not_change_auth_or_metadata_policy(self):
+        config = {
+            "model_list": [
+                {
+                    "model_name": "public",
+                    "model_info": {
+                        "id": "backend-1",
+                        "aliases": ["alias"],
+                        "request_limit_multiplier": 2,
+                        "supports_response_format": False,
+                    },
+                }
+            ]
+        }
+        with (
+            patch("gateway.config.get_router_config", return_value=config),
+            patch.object(Token, "model_exclusion_list", return_value=["public"]),
+        ):
+            token = Token()
+            self.assertTrue(token.model_excluded("alias"))
+            self.assertFalse(token.model_excluded("backend-1"))
+            self.assertEqual(get_model_request_limit_multiplier("backend-1"), 1.0)
+            self.assertTrue(get_model_supports_response_format("backend-1"))
 
 
 @override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH="router.yaml")

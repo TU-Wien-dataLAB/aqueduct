@@ -702,6 +702,64 @@ class ModelConcurrentRequestsLimitTest(ChatCompletionsBase):
 class ConcurrencyDecoratorLifecycleTests(SimpleTestCase):
     """Exercise request lifetimes without a database or an upstream API."""
 
+    async def test_public_alias_and_deployment_ids_share_capacity(self):
+        config = {
+            "model_list": [
+                {
+                    "model_name": "public",
+                    "model_info": {
+                        "id": "backend-1",
+                        "aliases": ["alias"],
+                        "max_parallel_requests": 2,
+                    },
+                },
+                {"model_name": "public", "model_info": {"id": "backend-2"}},
+            ]
+        }
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        seen = []
+
+        @check_model_concurrency_limits
+        async def view(request, **kwargs):
+            seen.append(kwargs["pydantic_model"]["model"])
+
+            async def stream():
+                yield b"ok"
+
+            return StreamingHttpResponse(stream())
+
+        request = MagicMock(spec=ASGIRequest)
+        token = Token(id=1, name="shared")
+        responses = []
+        try:
+            with (
+                patch("gateway.config.get_router_config", return_value=config),
+                patch("gateway.decorators.limits.get_limiter", return_value=limiter),
+            ):
+
+                async def send(name):
+                    return await view(request, token=token, pydantic_model={"model": name})
+
+                for name in ("backend-1", "alias"):
+                    response = await send(name)
+                    responses.append(response)
+                    self.assertEqual(response.status_code, 200)
+                for name in ("public", "backend-2"):
+                    self.assertEqual((await send(name)).status_code, 429)
+                self.assertEqual(seen, ["backend-1", "alias"])
+                for response in responses:
+                    await _read_streaming_response_lines(response)
+                replacement = await send("backend-2")
+                responses.append(replacement)
+                self.assertEqual(replacement.status_code, 200)
+                self.assertEqual(seen[-1], "backend-2")
+                await _read_streaming_response_lines(replacement)
+        finally:
+            for response in responses:
+                await sync_to_async(response.close)()
+            await redis.aclose()
+
     async def test_cancelled_view_restores_capacity(self):
         for decorator in (check_token_concurrency_limits, check_model_concurrency_limits):
             with self.subTest(decorator=decorator.__name__):
@@ -975,7 +1033,34 @@ class ModelConcurrencyLimitResolutionTest(SimpleTestCase):
             self._decorator_limit(model="coding", per_model=5, default=20, aliases=["coding"]), 5
         )
 
+    def test_deployment_ids_use_public_model_limit_and_fallbacks(self):
+        for model_info, default, expected in (
+            ({"max_parallel_requests": 5}, 20, 5),
+            ({}, 20, 20),
+            ({}, None, 7),
+        ):
+            config = {
+                "model_list": [
+                    {
+                        "model_name": "public",
+                        "model_info": {**model_info, "id": "backend-1", "aliases": ["alias"]},
+                    },
+                    {"model_name": "public", "model_info": {"id": "backend-2"}},
+                ]
+            }
+            if default is not None:
+                config["default_max_parallel_requests"] = default
+            with patch("gateway.config.get_router_config", return_value=config):
+                for name in ("public", "alias", "backend-1", "backend-2"):
+                    with self.subTest(name=name, default=default, model_info=model_info):
+                        self.assertEqual(
+                            model_concurrency_key(name), "model:concurrency:public:leases"
+                        )
+                        self.assertEqual(model_concurrency_limit(name), expected)
+
     def test_model_concurrency_limit_uses_settings_default_for_unknown_model(self):
+        with patch("gateway.config.get_router_config", return_value=self._config(default=20)):
+            self.assertEqual(model_concurrency_key("unknown"), "model:concurrency:unknown:leases")
         self.assertEqual(
             self._decorator_limit(model="does-not-exist", default=20),
             settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT,

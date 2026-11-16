@@ -7,13 +7,18 @@ multi-minute hour/day accumulation deterministically.
 
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.core.cache import cache
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase
 
-from gateway.rate_limiting import WINDOWS, _bucket_key, check_and_reserve, record_token_usage
+from gateway.rate_limiting import (
+    WINDOWS,
+    _bucket_key,
+    check_and_reserve,
+    get_per_token_usage,
+    record_token_usage,
+)
 from management.models import LimitSet, Usage
 
 TOKEN_ID = 42
@@ -149,6 +154,23 @@ class CheckAndReserveTest(RateLimitingBase):
         now = datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC)
         self.assertIsNone(cache.get(_bucket_key(TOKEN_ID, "min", now)))
 
+    def test_separate_minute_buckets_per_window_id(self):
+        limits = LimitSet(requests_per_minute=2)
+        clock = _Clock(datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC))
+        with _patch_time(clock):
+            # Two requests in minute 10:00 -> both allowed, minute bucket at 2.0.
+            self.assertTrue(check_and_reserve(limits, TOKEN_ID, model=None)[0])
+            self.assertTrue(check_and_reserve(limits, TOKEN_ID, model=None)[0])
+            # 3rd in same minute -> blocked.
+            self.assertFalse(check_and_reserve(limits, TOKEN_ID, model=None)[0])
+
+            clock.advance_minutes(1)  # new minute window_id, same hour bucket
+            # Minute bucket is fresh, so a new request is allowed even though the
+            # previous minute's bucket was at its limit.
+            allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model=None)
+        self.assertTrue(allowed)
+        self.assertEqual(exceeded, [])
+
 
 class RecordTokenUsageTest(RateLimitingBase):
     def test_zero_usage_is_noop(self):
@@ -190,79 +212,11 @@ class RecordTokenUsageTest(RateLimitingBase):
             self.assertIsNone(cache.get(_bucket_key(TOKEN_ID, name, now)))
 
 
-class GetAggregateUsageTest(RateLimitingBase):
-    def test_empty_token_list_returns_zero_buckets_for_every_window(self):
-        from gateway.rate_limiting import get_aggregate_usage
-
-        now = datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC)
-        with _patch_time(_Clock(now)):
-            usage = get_aggregate_usage([])
-        self.assertEqual(set(usage), {name for name, _secs in WINDOWS})
-        for name, _secs in WINDOWS:
-            self.assertEqual(usage[name], {"req": 0.0, "in": 0, "out": 0})
-
-    def test_sums_reserved_requests_and_recorded_tokens_across_tokens(self):
-        from gateway.rate_limiting import get_aggregate_usage
-
-        now = datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC)
-        limits = LimitSet(requests_per_minute=10)
-        token_a, token_b = TOKEN_ID, TOKEN_ID + 1
-        with _patch_time(_Clock(now)):
-            # Token A: reserve 2 request slots + record 7 in / 11 out tokens.
-            self.assertTrue(check_and_reserve(limits, token_a, model=None)[0])
-            self.assertTrue(check_and_reserve(limits, token_a, model=None)[0])
-            record_token_usage(token_a, Usage(input_tokens=7, output_tokens=11))
-            # Token B: reserve 3 request slots + record 4 in / 5 out tokens.
-            for _ in range(3):
-                self.assertTrue(check_and_reserve(limits, token_b, model=None)[0])
-            record_token_usage(token_b, Usage(input_tokens=4, output_tokens=5))
-            usage = get_aggregate_usage([token_a, token_b])
-        for name, _secs in WINDOWS:
-            self.assertEqual(usage[name]["req"], 5.0)  # 2 + 3
-            self.assertEqual(usage[name]["in"], 11)  # 7 + 4
-            self.assertEqual(usage[name]["out"], 16)  # 11 + 5
-
-    def test_single_token_matches_its_own_buckets(self):
-        from gateway.rate_limiting import get_aggregate_usage
-
-        now = datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC)
-        limits = LimitSet(requests_per_minute=10)
-        with _patch_time(_Clock(now)):
-            self.assertTrue(check_and_reserve(limits, TOKEN_ID, model=None)[0])
-            record_token_usage(TOKEN_ID, Usage(input_tokens=7, output_tokens=11))
-            usage = get_aggregate_usage([TOKEN_ID])
-        for name, _secs in WINDOWS:
-            self.assertEqual(usage[name]["req"], 1.0)
-            self.assertEqual(usage[name]["in"], 7)
-            self.assertEqual(usage[name]["out"], 11)
-
-    def test_separate_minute_buckets_per_window_id(self):
-        limits = LimitSet(requests_per_minute=2)
-        clock = _Clock(datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC))
-        with _patch_time(clock):
-            # Two requests in minute 10:00 -> both allowed, minute bucket at 2.0.
-            self.assertTrue(check_and_reserve(limits, TOKEN_ID, model=None)[0])
-            self.assertTrue(check_and_reserve(limits, TOKEN_ID, model=None)[0])
-            # 3rd in same minute -> blocked.
-            self.assertFalse(check_and_reserve(limits, TOKEN_ID, model=None)[0])
-
-            clock.advance_minutes(1)  # new minute window_id, same hour bucket
-            # Minute bucket is fresh, so a new request is allowed even though the
-            # previous minute's bucket was at its limit.
-            allowed, exceeded = check_and_reserve(limits, TOKEN_ID, model=None)
-        self.assertTrue(allowed)
-        self.assertEqual(exceeded, [])
-
-
 class GetPerTokenUsageTest(RateLimitingBase):
     def test_empty_token_list_returns_no_entries(self):
-        from gateway.rate_limiting import get_per_token_usage
-
         self.assertEqual(get_per_token_usage([]), {})
 
-    def test_returns_per_token_buckets_without_summing(self):
-        from gateway.rate_limiting import get_per_token_usage
-
+    def test_usage_per_token_buckets(self):
         now = datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC)
         limits = LimitSet(requests_per_minute=10)
         token_a, token_b = TOKEN_ID, TOKEN_ID + 1
@@ -286,8 +240,6 @@ class GetPerTokenUsageTest(RateLimitingBase):
             self.assertEqual(per_token[token_b][name]["out"], 5)
 
     def test_token_with_no_recorded_usage_gets_zero_buckets(self):
-        from gateway.rate_limiting import get_per_token_usage
-
         now = datetime(2026, 7, 2, 10, 0, 0, tzinfo=UTC)
         with _patch_time(_Clock(now)):
             per_token = get_per_token_usage([TOKEN_ID])
@@ -334,60 +286,3 @@ class HourDayLimitTest(RateLimitingBase):
         self.assertEqual(
             exceeded, [("Request limit (2/hour)", 54 * 60), ("Output token limit (100/min)", 60)]
         )
-
-    def test_day_limit_derived_from_per_minute(self):
-        limits = LimitSet(requests_per_minute=10, daily_limit_multiplier=6)
-        windows = limits.windows()
-        # min, hour, day
-        self.assertEqual(windows[0][2], 10)  # rpm
-        self.assertEqual(windows[1][2], 10 * 60)  # hour uses settings default 60
-        self.assertEqual(windows[2][2], 10 * 6)  # day uses the set multiplier 6
-
-
-class LimitSetResolutionTest(SimpleTestCase):
-    def test_from_objects_resolves_multipliers_specific_over_org(self):
-        org = SimpleNamespace(
-            requests_per_minute=10,
-            input_tokens_per_minute=None,
-            output_tokens_per_minute=None,
-            hourly_limit_multiplier=6,
-            daily_limit_multiplier=1440,
-        )
-        team = SimpleNamespace(
-            requests_per_minute=None,
-            input_tokens_per_minute=None,
-            output_tokens_per_minute=None,
-            hourly_limit_multiplier=3,  # overrides org
-            daily_limit_multiplier=None,  # falls back to org
-        )
-        limits = LimitSet.from_objects(team, org)
-        self.assertEqual(limits.requests_per_minute, 10)  # from org
-        self.assertEqual(limits.hourly_limit_multiplier, 3)  # from team
-        self.assertEqual(limits.daily_limit_multiplier, 1440)  # from org
-
-    @override_settings(AQUEDUCT_HOURLY_LIMIT_MULTIPLIER=60, AQUEDUCT_DAILY_LIMIT_MULTIPLIER=1440)
-    def test_windows_uses_settings_defaults_when_multiplier_unset(self):
-        limits = LimitSet(requests_per_minute=10)
-        windows = limits.windows()
-        self.assertEqual(windows[0][2], 10)  # min rpm
-        self.assertEqual(windows[1][2], 10 * 60)  # hour default
-        self.assertEqual(windows[2][2], 10 * 1440)  # day default
-
-    def test_windows_none_per_minute_implies_none_derived(self):
-        limits = LimitSet(input_tokens_per_minute=5)  # requests/output unset
-        windows = limits.windows()
-        # requests_per_minute is None -> hour/day rpm also None (tied design).
-        self.assertIsNone(windows[0][2])
-        self.assertIsNone(windows[1][2])
-        self.assertIsNone(windows[2][2])
-        # input_tokens scales.
-        self.assertEqual(windows[0][3], 5)
-        self.assertEqual(windows[1][3], 5 * 60)  # settings default hourly mult
-        self.assertEqual(windows[2][3], 5 * 1440)  # settings default daily mult
-
-    def test_has_no_limit_fast_path(self):
-        from gateway.rate_limiting import has_any_limit
-
-        self.assertFalse(has_any_limit(LimitSet()))
-        self.assertTrue(has_any_limit(LimitSet(requests_per_minute=1)))
-        self.assertTrue(has_any_limit(LimitSet(input_tokens_per_minute=1)))

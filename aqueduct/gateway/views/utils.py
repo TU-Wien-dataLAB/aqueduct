@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from functools import cache as memoize
 from typing import Any
 
-import httpx
+import httpx2
 import litellm
 import openai
 from django.core.cache import cache
@@ -78,8 +78,8 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
         log.exception("Incompatible model '%s'! Is model id set in router config?", model)
         raise openai.NotFoundError(
             message=f"Incompatible model '{model}'!",
-            response=httpx.Response(
-                request=httpx.Request(method=request.method, url=request.build_absolute_uri()),
+            response=httpx2.Response(
+                request=httpx2.Request(method=request.method, url=request.build_absolute_uri()),
                 status_code=404,
             ),
             body=None,
@@ -92,8 +92,8 @@ def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.Async
         log.error("Model '%s' not found in router deployments", model)
         raise openai.NotFoundError(
             message=f"Model '{model}' not found!",
-            response=httpx.Response(
-                request=httpx.Request(method=request.method, url=request.build_absolute_uri()),
+            response=httpx2.Response(
+                request=httpx2.Request(method=request.method, url=request.build_absolute_uri()),
                 status_code=404,
             ),
             body=None,

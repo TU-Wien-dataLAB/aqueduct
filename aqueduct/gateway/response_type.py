@@ -99,7 +99,6 @@ class RawStreamingResponse(StreamingHttpResponse):
         if not isinstance(streaming_content, AsyncIterator):
             raise TypeError("RawStreamResponse streaming_content has to be async iterable")
 
-        self.streaming_content = streaming_content
         self.request_log = request_log
         self.transforms = transforms or []
         self.mode = mode

@@ -94,6 +94,25 @@ class WebScalingTests(unittest.TestCase):
         render({"env": [{"name": "DATABASE_ENGINE", "valueFrom":
                          {"secretKeyRef": {"name": "db", "key": "engine"}}}]})
 
+    def test_removed_migration_job_options_are_rejected(self):
+        for key, value in (("databasePool", {}), ("scheduling", {}), ("activeDeadlineSeconds", 60)):
+            with self.subTest(key=key):
+                with self.assertRaises(subprocess.CalledProcessError) as error:
+                    render({"migrate": {key: value}})
+                self.assertIn(f"migrate.{key}", error.exception.stderr)
+
+    def test_long_valid_release_names_have_distinct_migration_configs(self):
+        names = []
+        for suffix in ("a", "b"):
+            resources = render(release="a" * 52 + suffix)
+            # Locate the migration ConfigMap by its script rather than its truncated suffix.
+            configs = [name for kind, name in resources if kind == "ConfigMap" and
+                       "migrate.py" in resources[kind, name].get("data", {})]
+            self.assertEqual(len(configs), 1)
+            self.assertLessEqual(len(configs[0]), 63)
+            names.extend(configs)
+        self.assertNotEqual(*names)
+
     def test_database_budget_is_per_role_and_worker_rollouts_are_bounded(self):
         resources = render()
         for kind, name, maximum in [

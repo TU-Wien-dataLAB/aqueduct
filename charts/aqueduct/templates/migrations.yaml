@@ -8,6 +8,11 @@
 {{- end }}
 {{- end }}
 {{- end }}
+{{- range $key := list "databasePool" "scheduling" "activeDeadlineSeconds" }}
+{{- if hasKey $.Values.migrate $key }}
+{{- fail (printf "migrate.%s was removed; migrations use the pod's scheduling, role environment, and bounded init waits" $key) }}
+{{- end }}
+{{- end }}
 {{- if .Values.migrate.extraEnv }}
 {{- fail "migrate.extraEnv must be empty; use env or role-specific extraEnv so migrations match the application" }}
 {{- end }}

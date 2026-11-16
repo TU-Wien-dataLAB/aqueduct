@@ -158,8 +158,9 @@ role scheduling and `migrate.resources` and `migrate.containerSecurityContext`. 
 exactly its application role's environment, including role-specific `extraEnv`; configure database
 and app settings there or in global `env`. `migrate.extraEnv` must be empty to prevent configuration
 mismatch. The migration connection is deliberately unpooled; `migrate.databasePool`,
-`migrate.scheduling` and `migrate.activeDeadlineSeconds` no longer apply. Pin the same immutable
-image identity for init and application containers.
+`migrate.scheduling` and `migrate.activeDeadlineSeconds` have been removed; rendering fails if
+these obsolete keys are still configured, so remove them from existing values files. Pin the same
+immutable image identity for init and application containers.
 
 The Helm chart requires PostgreSQL and an explicit `DATABASE_ENGINE` entry in global `env`
 (which may use `valueFrom`). It rejects an explicit SQLite engine at render time and the

@@ -26,6 +26,12 @@ before promotion.
   identical across replicas; do not combine scaling with a database/broker cutover.
 - Take a recoverable backup and agree on abort thresholds for errors, latency, CPU/memory and
   database connections. Check schema compatibility with both old and new images (expand-contract).
+- Move any `POSTGRESQL_POOL_MIN_SIZE` and `POSTGRESQL_POOL_MAX_SIZE` entries from `env`,
+  `web.extraEnv`, `celery.workerExtraEnv`, `celery.beatExtraEnv`, or `migrate.extraEnv` into
+  the respective `web.databasePool`, `celery.workerDeployment.databasePool`,
+  `celery.beatDatabasePool`, and `migrate.databasePool` `minSize`/`maxSize` values. Apply
+  formerly global values to each role that needs them. The chart rejects the old entries;
+  other pool environment settings remain available.
 - Review effective pool overrides, node capacity for requests plus surge, and the calculated connection budget
   against actual PostgreSQL limits. Include terminating pods and non-Aqueduct clients.
 

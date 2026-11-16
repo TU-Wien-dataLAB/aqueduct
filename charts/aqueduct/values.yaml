@@ -174,9 +174,8 @@ env:
   # - name: AQUEDUCT_MODEL_RPM_LIMITS
   #   value: '{"gpt-4.1-nano": 60}'
 
-# Extra environment variables appended to the web (Django/daphne) container
-# only. Use this to set per-container values such as the PostgreSQL pool size,
-# which should differ between the web server, celery worker, and celery beat.
+# Set per-role PostgreSQL pool sizes using databasePool (beatDatabasePool for Beat).
+# Do not set POSTGRESQL_POOL_MIN_SIZE or POSTGRESQL_POOL_MAX_SIZE in env or extraEnv.
 web:
   replicas: 1
   nodeSelector: {}

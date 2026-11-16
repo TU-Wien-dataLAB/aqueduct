@@ -67,9 +67,10 @@ class WebScalingTests(unittest.TestCase):
                 self.assertEqual(job["spec"]["backoffLimit"], 0)
                 self.assertEqual(job["spec"]["activeDeadlineSeconds"], 600)
                 job_pod = job["spec"]["template"]["spec"]
-                self.assertEqual(job_pod["initContainers"][0]["name"], "wait-for-database")
+                self.assertNotIn("initContainers", job_pod)
                 migration = job_pod["containers"][0]
-                self.assertEqual(migration["command"], ["python", "manage.py", "migrate", "--noinput"])
+                self.assertEqual(migration["command"], ["python", "/etc/aqueduct/migrate.py"])
+                self.assertIn("router-config", [mount["name"] for mount in migration["volumeMounts"]])
                 role = resources["Role", "test-migrate-1"]
                 self.assertEqual(role["metadata"]["annotations"]["helm.sh/resource-policy"], "keep")
                 binding = resources["RoleBinding", "test-migrate-1"]
@@ -111,6 +112,21 @@ class WebScalingTests(unittest.TestCase):
         worker = resources["Deployment", "test-celery-worker"]["spec"]["template"]["spec"]["containers"][0]
         self.assertIn({"name": "POSTGRESQL_POOL_MAX_SIZE", "value": "12"}, web["env"])
         self.assertIn({"name": "POSTGRESQL_POOL_MAX_SIZE", "value": "3"}, worker["env"])
+
+    def test_legacy_pool_env_overrides_are_rejected(self):
+        for values, path in [
+            ({"env": [{"name": "POSTGRESQL_POOL_MIN_SIZE", "value": "1"}]}, "env"),
+            ({"web": {"extraEnv": [{"name": "POSTGRESQL_POOL_MAX_SIZE", "value": "1"}]}}, "web.extraEnv"),
+            ({"celery": {"workerExtraEnv": [{"name": "POSTGRESQL_POOL_MAX_SIZE", "value": "1"}]}}, "celery.workerExtraEnv"),
+            ({"celery": {"beatExtraEnv": [{"name": "POSTGRESQL_POOL_MIN_SIZE", "value": "1"}]}}, "celery.beatExtraEnv"),
+            ({"migrate": {"extraEnv": [{"name": "POSTGRESQL_POOL_MAX_SIZE", "value": "1"}]}}, "migrate.extraEnv"),
+        ]:
+            with self.subTest(path=path), self.assertRaises(subprocess.CalledProcessError) as error:
+                render(values)
+            self.assertIn(path, error.exception.stderr)
+            self.assertIn("databasePool", error.exception.stderr)
+
+        render({"web": {"extraEnv": [{"name": "POSTGRESQL_POOL_TIMEOUT", "value": "30"}]}})
 
     def test_scheduling_and_resources_can_be_set_for_each_role(self):
         scheduling = {

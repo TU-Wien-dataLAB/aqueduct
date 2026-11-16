@@ -274,20 +274,20 @@ def get_model_rpm(model_name: str) -> int | None:
 
 def get_model_max_parallel_requests(model_name: str) -> int | None:
     """
-    Get the max parallel requests (concurrency limit) for a given model from the
-    router config's ``model_info.max_parallel_requests``.
+    Get the max parallel requests (concurrency limit) for a public model, alias,
+    or configured deployment ID from ``model_info.max_parallel_requests``.
 
     Mirrors LiteLLM's ``max_parallel_requests`` setting, and falls back to the
     ``default_max_parallel_requests`` router setting. Returns ``None`` if neither
     is configured.
 
     Args:
-        model_name: The model name (or alias, will be resolved)
+        model_name: A public model name, alias, or configured deployment ID.
 
     Returns:
         The configured max parallel requests, or ``None`` if not set.
     """
-    resolved = resolve_model_alias(model_name)
+    resolved = get_public_model_name(model_name)
     config = get_router_config()
     model_list = config.get("model_list", [])
 

@@ -16,7 +16,6 @@ from gateway.config import (
     get_model_rpm,
     get_public_model_name,
     get_router_config,
-    resolve_model_alias,
 )
 from gateway.decorators.types import AsyncView, ViewResult
 from gateway.model_rate_limiting import check_model_limit
@@ -78,15 +77,14 @@ def token_concurrency_limit(token: "Token") -> int:
 
 
 def model_concurrency_key(model_name: str) -> str:
-    return f"model:concurrency:{resolve_model_alias(model_name)}"
+    return f"model:concurrency:{get_public_model_name(model_name) or model_name}"
 
 
 def model_concurrency_limit(model: str) -> int:
     """Returns the concurrent requests limit for a specific model.
 
-    Looks up an optional per-model override defined in
-    ``AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMITS``,
-    falling back to the default model concurrency limit.
+    Uses the public model's router configuration, falling back to the default
+    model concurrency limit.
     """
     configured = get_model_max_parallel_requests(model)
     if configured is not None:

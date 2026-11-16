@@ -9,12 +9,14 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.handlers.asgi import ASGIRequest
 from django.db import connection
+from django.http import StreamingHttpResponse
 from django.test import SimpleTestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from openai.types.chat import ChatCompletion
 
 from gateway.config import get_model_max_parallel_requests
 from gateway.decorators.limits import (
+    check_model_concurrency_limits,
     check_token_concurrency_limits,
     model_concurrency_key,
     model_concurrency_limit,
@@ -659,6 +661,52 @@ class ModelConcurrentRequestsLimitTest(ChatCompletionsBase):
             await _read_streaming_response_lines(first)
 
     @async_to_sync
+    async def test_public_alias_and_deployment_ids_share_capacity(self):
+        config = {
+            "model_list": [
+                {
+                    "model_name": "public",
+                    "model_info": {
+                        "id": "backend-1",
+                        "aliases": ["alias"],
+                        "max_parallel_requests": 2,
+                    },
+                },
+                {"model_name": "public", "model_info": {"id": "backend-2"}},
+            ]
+        }
+        seen = []
+
+        async def view(request, **kwargs):
+            seen.append(kwargs["pydantic_model"]["model"])
+
+            async def stream():
+                yield b"ok"
+
+            return StreamingHttpResponse(stream())
+
+        wrapped = check_model_concurrency_limits(view)
+        request = MagicMock(spec=ASGIRequest)
+        token = MagicMock()
+        with patch("gateway.config.get_router_config", return_value=config):
+
+            async def send(name):
+                return await wrapped(request, token=token, pydantic_model={"model": name})
+
+            first = await send("backend-1")
+            second = await send("alias")
+            self.assertEqual([first.status_code, second.status_code], [200, 200])
+            for name in ["public", "backend-2"]:
+                self.assertEqual((await send(name)).status_code, 429)
+            self.assertEqual(seen, ["backend-1", "alias"])
+            await _read_streaming_response_lines(first)
+            await _read_streaming_response_lines(second)
+            allowed = await send("backend-2")
+            self.assertEqual(allowed.status_code, 200)
+            self.assertEqual(seen[-1], "backend-2")
+            await _read_streaming_response_lines(allowed)
+
+    @async_to_sync
     async def test_model_concurrency_aliases_share_counter(self):
         """Aliases resolving to the same model share one concurrency counter."""
         limit = settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT
@@ -697,7 +745,7 @@ class ModelConcurrencyLimitResolutionTest(SimpleTestCase):
       3. ``AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT``.
     """
 
-    def _config(self, *, per_model=None, default=None, aliases=None):
+    def _config(self, *, per_model=None, default=None, aliases=None, deployment_ids=None):
         model_info = {}
         if per_model is not None:
             model_info["max_parallel_requests"] = per_model
@@ -707,6 +755,12 @@ class ModelConcurrencyLimitResolutionTest(SimpleTestCase):
         if model_info:
             model["model_info"] = model_info
         config = {"model_list": [model]}
+        if deployment_ids:
+            model["model_info"] = {**model_info, "id": deployment_ids[0]}
+            config["model_list"].extend(
+                {"model_name": "gpt-4o", "model_info": {"id": deployment_id}}
+                for deployment_id in deployment_ids[1:]
+            )
         if default is not None:
             config["default_max_parallel_requests"] = default
         return config
@@ -742,7 +796,29 @@ class ModelConcurrencyLimitResolutionTest(SimpleTestCase):
             self._decorator_limit(model="coding", per_model=5, default=20, aliases=["coding"]), 5
         )
 
+    def test_deployment_ids_resolve_configured_and_default_limits(self):
+        for options, expected in [
+            ({"per_model": 5, "default": 20}, 5),
+            ({"default": 20}, 20),
+            ({}, 7),
+        ]:
+            for name in ["gpt-4o", "coding", "backend-1", "backend-2"]:
+                with self.subTest(options=options, name=name):
+                    self.assertEqual(
+                        self._decorator_limit(
+                            model=name,
+                            aliases=["coding"],
+                            deployment_ids=["backend-1", "backend-2"],
+                            **options,
+                        ),
+                        expected,
+                    )
+
     def test_model_concurrency_limit_uses_settings_default_for_unknown_model(self):
+        with patch("gateway.config.get_router_config", return_value=self._config(default=20)):
+            self.assertEqual(
+                model_concurrency_key("does-not-exist"), "model:concurrency:does-not-exist"
+            )
         self.assertEqual(
             self._decorator_limit(model="does-not-exist", default=20),
             settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT,

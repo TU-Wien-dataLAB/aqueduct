@@ -13,8 +13,9 @@ from gateway.decorators import (
     catch_router_exceptions,
     check_model_availability,
     check_model_concurrency_limits,
-    check_rate_limits,
+    check_model_rate_limits,
     check_token_concurrency_limits,
+    check_token_rate_limits,
     ensure_usage,
     log_request,
     normalize_reasoning_fields,
@@ -35,7 +36,8 @@ from management.models import Request
 @parse_body(model=TypeAdapter(openai.types.chat.CompletionCreateParams))
 @check_token_concurrency_limits
 @check_model_concurrency_limits
-@check_rate_limits
+@check_token_rate_limits
+@check_model_rate_limits
 @process_file_content
 @ensure_usage
 @resolve_alias

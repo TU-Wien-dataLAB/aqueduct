@@ -12,8 +12,9 @@ from gateway.decorators import (
     catch_router_exceptions,
     check_model_availability,
     check_model_concurrency_limits,
-    check_rate_limits,
+    check_model_rate_limits,
     check_token_concurrency_limits,
+    check_token_rate_limits,
     check_tool_availability,
     log_request,
     parse_body,
@@ -40,7 +41,8 @@ from management.models import Request, Token
 @parse_body(model=TypeAdapter(openai.types.responses.ResponseCreateParams))
 @check_token_concurrency_limits
 @check_model_concurrency_limits
-@check_rate_limits
+@check_token_rate_limits
+@check_model_rate_limits
 @resolve_alias
 @check_model_availability
 @check_tool_availability

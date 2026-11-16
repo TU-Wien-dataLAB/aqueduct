@@ -60,6 +60,23 @@ def _build_files_api_client() -> openai.AsyncClient:
 
 
 def _validate_router_config(config: dict[str, Any]) -> None:
+    # RPM belongs to the public model, not to individual SDK deployments.
+    limits: dict[str, int | None] = {}
+    for model in config.get("model_list", []):
+        rpm = model.get("model_info", {}).get("rpm")
+        if rpm is not None and (type(rpm) is not int or rpm <= 0):
+            raise RuntimeError("model_info.rpm must be a positive integer")
+        name = model.get("model_name")
+        if name in limits and limits[name] != rpm:
+            raise RuntimeError(f"Conflicting model_info.rpm values for '{name}'")
+        limits[name] = rpm
+
+    sections = [config, config.get("default_litellm_params") or {}]
+    for model in config.get("model_list", []):
+        sections.extend([model, model.get("litellm_params") or {}])
+    if any(section.get("rpm") is not None for section in sections):
+        raise RuntimeError("Move router/deployment RPM limits to model_info.rpm")
+
     # Validate alias uniqueness
     alias_to_model: dict[str, str] = {}
     model_list = config.get("model_list", [])
@@ -226,6 +243,15 @@ def get_all_model_request_limit_multipliers() -> dict[str, float]:
             multipliers[model_name] = float(multiplier) if multiplier is not None else 1.0
 
     return multipliers
+
+
+def get_model_rpm(model_name: str) -> int | None:
+    """Get the public model's RPM limit from ``model_info.rpm``, if configured."""
+    resolved = resolve_model(model_name).accounting_name
+    for model in get_router_config().get("model_list", []):
+        if resolved is not None and model.get("model_name") == resolved:
+            return cast("int | None", model.get("model_info", {}).get("rpm"))
+    return None
 
 
 def get_model_max_parallel_requests(model_name: str) -> int | None:

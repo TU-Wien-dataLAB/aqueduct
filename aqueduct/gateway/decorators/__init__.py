@@ -5,8 +5,9 @@ from gateway.decorators.errors import catch_router_exceptions
 from gateway.decorators.files import process_batch_file, require_files_api_client
 from gateway.decorators.limits import (
     check_model_concurrency_limits,
-    check_rate_limits,
+    check_model_rate_limits,
     check_token_concurrency_limits,
+    check_token_rate_limits,
 )
 from gateway.decorators.log import log_request
 from gateway.decorators.mcp import (
@@ -23,8 +24,9 @@ __all__ = [
     "check_mcp_server_availability",
     "check_model_availability",
     "check_model_concurrency_limits",
-    "check_rate_limits",
+    "check_model_rate_limits",
     "check_token_concurrency_limits",
+    "check_token_rate_limits",
     "check_tool_availability",
     "ensure_usage",
     "log_request",

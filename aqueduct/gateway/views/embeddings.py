@@ -22,6 +22,7 @@ from gateway.decorators import (
     tos_accepted,
 )
 from gateway.response_type import RawJsonResponse, get_token_usage
+from gateway.views.utils import router_kwargs
 from management.models import Request
 
 if TYPE_CHECKING:
@@ -50,6 +51,8 @@ async def embeddings(
     **kwargs: Any,
 ) -> RawJsonResponse:
     router = get_router()
-    embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
+    embedding: EmbeddingResponse = await router.aembedding(
+        **router_kwargs(pydantic_model, openai.types.EmbeddingCreateParams)
+    )
     request_log.token_usage = get_token_usage(embedding)
     return RawJsonResponse(data=embedding, status=200)

@@ -23,6 +23,7 @@ from gateway.decorators import (
     token_authenticated,
     tos_accepted,
 )
+from gateway.views.utils import router_kwargs
 from management.models import Request
 
 
@@ -49,6 +50,8 @@ async def speech(
 ) -> StreamingHttpResponse:
     router = get_router()
 
-    speech_output: HttpxBinaryResponseContent = await router.aspeech(**pydantic_model)
+    speech_output: HttpxBinaryResponseContent = await router.aspeech(
+        **router_kwargs(pydantic_model, openai.types.audio.SpeechCreateParams)
+    )
     byte_stream = await speech_output.aiter_bytes()
     return StreamingHttpResponse(streaming_content=byte_stream, content_type="text/event-stream")

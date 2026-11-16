@@ -24,6 +24,7 @@ from gateway.decorators import (
     tos_accepted,
 )
 from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
+from gateway.views.utils import router_kwargs
 from management.models import Request
 
 
@@ -51,7 +52,9 @@ async def completions(
     router = get_router()
     completion: (
         TextCompletionResponse | TextCompletionStreamWrapper
-    ) = await router.atext_completion(**pydantic_model)
+    ) = await router.atext_completion(
+        **router_kwargs(pydantic_model, openai.types.CompletionCreateParams)
+    )
     if isinstance(completion, TextCompletionStreamWrapper):
         return RawStreamingResponse(streaming_content=completion, request_log=request_log)
     if isinstance(completion, TextCompletionResponse):

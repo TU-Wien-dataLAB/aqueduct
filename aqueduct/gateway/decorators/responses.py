@@ -8,7 +8,7 @@ from django.core.handlers.asgi import ASGIRequest
 from django.urls import reverse
 from openai.types.responses import ResponseCreateParams, ToolParam
 
-from gateway.config import MCPServerConfig, get_mcp_config
+from gateway.config import get_mcp_config
 from gateway.decorators.response_cache import get_response_from_cache
 from gateway.decorators.types import AsyncView, ViewResult
 from gateway.response_error import error_response
@@ -58,23 +58,21 @@ async def _validate_mcp_tool(
             return error_response(f"MCP server not found - {server_name}", status=404)
         return None
 
-    mcp_config = get_mcp_config()
-    server_config: MCPServerConfig | None = None
-    for config_name, config in mcp_config.items():
+    for config_name, config in get_mcp_config().items():
         expected = request.build_absolute_uri(
             reverse("gateway:mcp_server", kwargs={"name": config_name})
         )
-        if server_url == expected:
-            server_config = config
-            break
-
-    if not server_config:
-        if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
-            log.error("MCP server not found - %s", server_name)
+        if server_url != expected:
+            continue
+        if await sync_to_async(token.mcp_server_excluded)(config_name):
+            log.error("MCP server not found - %s", config_name)
             return error_response(f"MCP server not found - {server_name}", status=404)
+        tool["server_url"] = config["url"]  # type: ignore[typeddict-unknown-key]
         return None
 
-    tool["server_url"] = server_config["url"]  # type: ignore[typeddict-unknown-key]
+    if not settings.RESPONSES_API_ALLOW_EXTERNAL_MCP_SERVERS:
+        log.error("MCP server not found - %s", server_name)
+        return error_response(f"MCP server not found - {server_name}", status=404)
     return None
 
 

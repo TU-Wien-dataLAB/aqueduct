@@ -30,7 +30,7 @@ from gateway.decorators.response_cache import (
 )
 from gateway.response_error import error_response
 from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
-from gateway.views.utils import ResponseRegistrationWrapper, oai_client_from_body
+from gateway.views.utils import ResponseRegistrationWrapper, oai_client_from_body, router_kwargs
 from management.models import Request, Token
 
 
@@ -64,11 +64,22 @@ async def create_response(
     model = pydantic_model.get("model")
     if not isinstance(model, str):
         return error_response("Missing required parameter: model", param="model", status=400)
+
+    previous_response_id = pydantic_model.get("previous_response_id")
+    if previous_response_id is not None:
+        previous = get_response_from_cache(previous_response_id)
+        if not previous or previous["email"] != token.user.email:
+            return error_response(
+                f"Previous response with id '{previous_response_id}' not found.",
+                param="previous_response_id",
+                status=404,
+            )
+
     client, model_relay = oai_client_from_body(model, request)
     pydantic_model["model"] = model_relay
 
     resp: Response | AsyncStream[ResponseStreamEvent] = await client.responses.create(
-        **pydantic_model
+        **router_kwargs(pydantic_model, openai.types.responses.ResponseCreateParams)
     )
 
     if isinstance(resp, AsyncStream):

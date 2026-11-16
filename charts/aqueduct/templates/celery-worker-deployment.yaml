@@ -16,6 +16,7 @@ spec:
   template:
     metadata:
       annotations:
+        checksum/migration: {{ .Files.Get "files/migrate.py" | sha256sum }}
         checksum/config: {{ .Values.routerConfig | toString | sha256sum }}
         checksum/mcp-config: {{ .Values.mcpConfig | toString | sha256sum }}
         checksum/settings: {{ include (print $.Template.BasePath "/configmap-settings.yaml") . | toString | sha256sum }}
@@ -23,9 +24,9 @@ spec:
         app: {{ .Release.Name }}
         component: celery-worker
     spec:
-      serviceAccountName: {{ include "aqueduct.migrationGateName" . }}
+      serviceAccountName: default
       initContainers:
-        {{- include "aqueduct.migrationGate" . | nindent 8 }}
+        {{- include "aqueduct.migrationInit" (dict "root" . "pool" .Values.celery.workerDeployment.databasePool "extraEnv" .Values.celery.workerExtraEnv) | nindent 8 }}
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
       {{- include "aqueduct.scheduling" .Values.celery.workerDeployment | nindent 6 }}
@@ -55,9 +56,9 @@ spec:
               mountPath: /etc/aqueduct/mcp.json
               subPath: mcp.json
       volumes:
-        - name: migration-gate
+        - name: migration-init
           configMap:
-            name: {{ include "aqueduct.migrationGateName" . }}
+            name: {{ include "aqueduct.migrationConfigName" . }}
         - name: settings-py
           configMap:
             name: {{ .Release.Name }}-settings

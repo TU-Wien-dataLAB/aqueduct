@@ -16,6 +16,7 @@ spec:
   template:
     metadata:
       annotations:
+        checksum/migration: {{ .Files.Get "files/migrate.py" | sha256sum }}
         checksum/config: {{ .Values.routerConfig | toString | sha256sum }}
         checksum/mcp-config: {{ .Values.mcpConfig | toString | sha256sum }}
         checksum/settings: {{ include (print $.Template.BasePath "/configmap-settings.yaml") . | toString | sha256sum }}
@@ -23,7 +24,7 @@ spec:
         app: {{ .Release.Name }}
         component: web
     spec:
-      serviceAccountName: {{ include "aqueduct.migrationGateName" . }}
+      serviceAccountName: default
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
       {{- include "aqueduct.scheduling" .Values.web | nindent 6 }}
@@ -69,7 +70,7 @@ spec:
               mountPath: /etc/aqueduct/mcp.json
               subPath: mcp.json
       initContainers:
-        {{- include "aqueduct.migrationGate" . | nindent 8 }}
+        {{- include "aqueduct.migrationInit" (dict "root" . "pool" .Values.web.databasePool "extraEnv" .Values.web.extraEnv) | nindent 8 }}
         - name: collectstatic
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -82,9 +83,9 @@ spec:
             - name: staticfiles
               mountPath: /app/aqueduct/staticfiles
       volumes:
-        - name: migration-gate
+        - name: migration-init
           configMap:
-            name: {{ include "aqueduct.migrationGateName" . }}
+            name: {{ include "aqueduct.migrationConfigName" . }}
         - name: settings-py
           configMap:
             name: {{ .Release.Name }}-settings

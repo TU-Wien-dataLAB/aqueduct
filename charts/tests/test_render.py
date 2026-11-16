@@ -24,16 +24,6 @@ def render(values=None, *, upgrade=False, release="test"):
 
 
 class WebScalingTests(unittest.TestCase):
-    def test_long_release_names_have_distinct_migration_jobs(self):
-        names = []
-        for suffix in ("one", "two"):
-            resources = render(release=f"{'a' * 45}-{suffix}")
-            jobs = [name for kind, name in resources if kind == "Job"]
-            self.assertEqual(len(jobs), 1)
-            self.assertLessEqual(len(jobs[0]), 63)
-            names.extend(jobs)
-        self.assertNotEqual(names[0], names[1])
-
     def test_web_replica_default_and_override(self):
         for values, expected in [({}, 1), ({"web": {"replicas": 2}}, 2)]:
             with self.subTest(replicas=expected):
@@ -51,7 +41,7 @@ class WebScalingTests(unittest.TestCase):
         web = resources["Deployment", "test"]["spec"]["template"]["spec"]
         self.assertEqual(
             [item["name"] for item in web["initContainers"]],
-            ["wait-for-migrations", "collectstatic"],
+            ["migrate", "collectstatic"],
         )
         self.assertEqual([item["name"] for item in web["containers"]], ["django"])
         self.assertIn("beat", beat["template"]["spec"]["containers"][0]["command"])
@@ -60,33 +50,59 @@ class WebScalingTests(unittest.TestCase):
         for upgrade in (False, True):
             with self.subTest(upgrade=upgrade):
                 resources = render(upgrade=upgrade)
-                job = resources["Job", "test-migrate-1"]
-                self.assertNotIn("helm.sh/hook", job["metadata"].get("annotations", {}))
-                self.assertEqual(job["metadata"]["annotations"]["helm.sh/resource-policy"], "keep")
-                self.assertNotIn("ttlSecondsAfterFinished", job["spec"])
-                self.assertEqual(job["spec"]["backoffLimit"], 0)
-                self.assertEqual(job["spec"]["activeDeadlineSeconds"], 600)
-                job_pod = job["spec"]["template"]["spec"]
-                self.assertNotIn("initContainers", job_pod)
-                migration = job_pod["containers"][0]
-                self.assertEqual(migration["command"], ["python", "/etc/aqueduct/migrate.py"])
-                self.assertIn("router-config", [mount["name"] for mount in migration["volumeMounts"]])
-                role = resources["Role", "test-migrate-1"]
-                self.assertEqual(role["metadata"]["annotations"]["helm.sh/resource-policy"], "keep")
-                binding = resources["RoleBinding", "test-migrate-1"]
-                self.assertEqual(binding["metadata"]["annotations"]["helm.sh/resource-policy"], "keep")
-                self.assertEqual(binding["roleRef"]["name"], "test-migrate-1")
-                self.assertEqual(role["rules"], [{
-                    "apiGroups": ["batch"], "resources": ["jobs"],
-                    "resourceNames": ["test-migrate-1"], "verbs": ["get"],
-                }])
+                self.assertFalse(any(kind in ("Job", "Role", "RoleBinding") for kind, _ in resources))
+                self.assertIn(("ConfigMap", "test-migration-init"), resources)
                 for name in ("test", "test-celery-worker", "test-celery-beat"):
                     pod = resources["Deployment", name]["spec"]["template"]["spec"]
-                    self.assertEqual(pod["serviceAccountName"], "test-migration-gate")
-                    gate = pod["initContainers"][0]
-                    self.assertEqual(gate["name"], "wait-for-migrations")
-                    self.assertEqual(gate["command"][-1], "test-migrate-1")
-                    self.assertNotIn("migrate", [item["name"] for item in pod["initContainers"]])
+                    # Explicitly clear both persisted service-account aliases on upgrades.
+                    self.assertEqual(pod["serviceAccountName"], "default")
+                    init = pod["initContainers"][0]
+                    self.assertEqual(init["name"], "migrate")
+                    self.assertEqual(init["image"], pod["containers"][0]["image"])
+                    self.assertEqual(init["command"], ["python", "/etc/aqueduct/migrate.py"])
+                    self.assertEqual({m["name"] for m in init["volumeMounts"]},
+                                     {"settings-py", "router-config", "migration-init"})
+                    self.assertEqual(init["env"], pod["containers"][0]["env"])
+                    self.assertNotIn("sqlite-data", {v["name"] for v in pod["volumes"]})
+
+    def test_role_overrides_match_application_environment_in_order(self):
+        overrides = [
+            [{"name": "POSTGRES_HOST", "value": "web-db"}, {"name": "SILKY_ENABLED", "value": "False"}],
+            [{"name": "POSTGRES_HOST", "valueFrom": {"secretKeyRef": {"name": "worker", "key": "host"}}},
+             {"name": "DATABASE_ENGINE", "value": "django.db.backends.postgresql"}],
+            [{"name": "POSTGRES_DB", "value": "beat-db"}, {"name": "SILKY_ENABLED", "value": "True"}],
+        ]
+        resources = render({"web": {"extraEnv": overrides[0], "databasePool": {"maxSize": 12}},
+                            "celery": {"workerExtraEnv": overrides[1], "beatExtraEnv": overrides[2]}})
+        for name, extra in zip(("test", "test-celery-worker", "test-celery-beat"), overrides):
+            pod = resources["Deployment", name]["spec"]["template"]["spec"]
+            env = pod["containers"][0]["env"]
+            self.assertEqual(env[-len(extra):], extra)
+            self.assertEqual(pod["initContainers"][0]["env"], env)
+
+    def test_rejects_migration_only_overrides(self):
+        for name in ("SILKY_ENABLED", "POSTGRES_HOST"):
+            with self.subTest(name=name), self.assertRaises(subprocess.CalledProcessError):
+                render({"migrate": {"extraEnv": [{"name": name, "value": "other"}]}})
+
+    def test_removed_migration_job_options_are_rejected(self):
+        for key, value in (("databasePool", {}), ("scheduling", {}), ("activeDeadlineSeconds", 60)):
+            with self.subTest(key=key):
+                with self.assertRaises(subprocess.CalledProcessError) as error:
+                    render({"migrate": {key: value}})
+                self.assertIn(f"migrate.{key}", error.exception.stderr)
+
+    def test_long_valid_release_names_have_distinct_migration_configs(self):
+        names = []
+        for suffix in ("a", "b"):
+            resources = render(release="a" * 52 + suffix)
+            # Locate the migration ConfigMap by its script rather than its truncated suffix.
+            configs = [name for kind, name in resources if kind == "ConfigMap" and
+                       "migrate.py" in resources[kind, name].get("data", {})]
+            self.assertEqual(len(configs), 1)
+            self.assertLessEqual(len(configs[0]), 63)
+            names.extend(configs)
+        self.assertNotEqual(*names)
 
     def test_database_budget_is_per_role_and_worker_rollouts_are_bounded(self):
         resources = render()
@@ -94,7 +110,6 @@ class WebScalingTests(unittest.TestCase):
             ("Deployment", "test", "10"),
             ("Deployment", "test-celery-worker", "2"),
             ("Deployment", "test-celery-beat", "2"),
-            ("Job", "test-migrate-1", "2"),
         ]:
             pod = resources[kind, name]["spec"]["template"]["spec"]
             env = {entry["name"]: entry.get("value") for entry in pod["containers"][0]["env"]}
@@ -146,26 +161,29 @@ class WebScalingTests(unittest.TestCase):
                 "workerDeployment": {**scheduling, "resources": limits},
                 "beatScheduling": scheduling, "beatResources": limits,
             },
-            "migrate": {"scheduling": scheduling, "resources": limits},
+            "migrate": {"resources": limits},
         })
         for kind, name in [
             ("Deployment", "test"), ("Deployment", "test-celery-worker"),
-            ("Deployment", "test-celery-beat"), ("Job", "test-migrate-1"),
+            ("Deployment", "test-celery-beat"),
         ]:
             with self.subTest(name=name):
                 pod = resources[kind, name]["spec"]["template"]["spec"]
                 for key, value in scheduling.items():
                     self.assertEqual(pod[key], value)
                 self.assertEqual(pod["containers"][0]["resources"], limits)
+                self.assertEqual(pod["initContainers"][0]["resources"], limits)
                 default_pod = render()[kind, name]["spec"]["template"]["spec"]
                 self.assertNotIn("affinity", default_pod)
 
     def test_public_model_limits_use_application_env_without_router_redis(self):
         limits = {"name": "AQUEDUCT_MODEL_RPM_LIMITS", "value": '{"public":10}'}
-        resources = render({"web": {"replicas": 2}, "env": [limits]})
+        resources = render({"web": {"replicas": 2}, "env": [
+            {"name": "DATABASE_ENGINE", "value": "django.db.backends.postgresql"}, limits,
+        ]})
         for kind, name in [
             ("Deployment", "test"), ("Deployment", "test-celery-worker"),
-            ("Deployment", "test-celery-beat"), ("Job", "test-migrate-1"),
+            ("Deployment", "test-celery-beat"),
         ]:
             container = resources[kind, name]["spec"]["template"]["spec"]["containers"][0]
             self.assertIn(limits, container["env"])

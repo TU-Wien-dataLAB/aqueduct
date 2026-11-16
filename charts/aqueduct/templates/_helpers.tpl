@@ -1,13 +1,5 @@
-{{- define "aqueduct.migrationName" -}}
-{{- $name := .Release.Name -}}
-{{- if gt (len $name) 40 -}}
-{{- $name = printf "%s-%s" ($name | trunc 32 | trimSuffix "-") ($name | sha256sum | trunc 7) -}}
-{{- end -}}
-{{- printf "%s-migrate-%d" $name .Release.Revision -}}
-{{- end -}}
-
-{{- define "aqueduct.migrationGateName" -}}
-{{- printf "%s-migration-gate" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- define "aqueduct.migrationConfigName" -}}
+{{- printf "%s-migration-init" .Release.Name | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "aqueduct.scheduling" -}}
@@ -36,19 +28,32 @@ topologySpreadConstraints:
   value: {{ .maxSize | quote }}
 {{- end -}}
 
-{{- define "aqueduct.migrationGate" -}}
-- name: wait-for-migrations
-  image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-  imagePullPolicy: {{ .Values.image.pullPolicy }}
-  command: ["python", "/etc/aqueduct/wait_for_migrations.py", {{ include "aqueduct.migrationName" . | quote }}]
+{{- define "aqueduct.migrationInit" -}}
+{{- $root := .root -}}
+- name: migrate
+  image: "{{ $root.Values.image.repository }}:{{ $root.Values.image.tag }}"
+  imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+  command: ["python", "/etc/aqueduct/migrate.py"]
   securityContext:
-    {{- toYaml .Values.migrate.containerSecurityContext | nindent 4 }}
+    {{- toYaml $root.Values.migrate.containerSecurityContext | nindent 4 }}
   resources:
-    {{- toYaml .Values.migrate.resources | nindent 4 }}
+    {{- toYaml $root.Values.migrate.resources | nindent 4 }}
+  env:
+    {{- include "aqueduct.env" $root | nindent 4 }}
+    {{- include "aqueduct.databasePoolEnv" .pool | nindent 4 }}
+    {{- with .extraEnv }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   volumeMounts:
-    - name: migration-gate
-      mountPath: /etc/aqueduct/wait_for_migrations.py
-      subPath: wait_for_migrations.py
+    - name: settings-py
+      mountPath: /app/aqueduct/aqueduct/settings.py
+      subPath: settings.py
+    - name: router-config
+      mountPath: /etc/aqueduct/router_config.yaml
+      subPath: router_config.yaml
+    - name: migration-init
+      mountPath: /etc/aqueduct/migrate.py
+      subPath: migrate.py
 {{- end -}}
 
 {{/*
@@ -75,14 +80,6 @@ Usage:
   valueFrom:
   {{ toYaml .Values.djangoSecretKey.valueFrom | nindent 4 }}
   {{- end }}
-{{/* Match Django's default; keep PostgreSQL validation for engines resolved via valueFrom. */}}
-{{- $databaseEngine := "django.db.backends.sqlite3" }}
-{{- range .Values.env }}
-  {{- if eq .name "DATABASE_ENGINE" }}
-    {{- $databaseEngine = .value | default "django.db.backends.postgresql" }}
-  {{- end }}
-{{- end }}
-{{- if ne $databaseEngine "django.db.backends.sqlite3" }}
 # Postgres configuration
 # The connection target is resolved by the `aqueduct.db.*` helpers below:
 # explicit `database.*` values win; otherwise the app auto-derives the CNPG
@@ -98,7 +95,6 @@ Usage:
   value: {{ include "aqueduct.db.host" . | quote }}
 - name: POSTGRES_PORT
   value: {{ include "aqueduct.db.port" . | quote }}
-{{- end }}
 # OIDC configuration
 - name: OIDC_RP_SIGN_ALGO
   value: {{ .Values.oidc.signAlgo | quote }}

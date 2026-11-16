@@ -29,9 +29,11 @@ before promotion.
 - Move any `POSTGRESQL_POOL_MIN_SIZE` and `POSTGRESQL_POOL_MAX_SIZE` entries from `env`,
   `web.extraEnv`, `celery.workerExtraEnv`, `celery.beatExtraEnv`, or `migrate.extraEnv` into
   the respective `web.databasePool`, `celery.workerDeployment.databasePool`,
-  `celery.beatDatabasePool`, and `migrate.databasePool` `minSize`/`maxSize` values. Apply
-  formerly global values to each role that needs them. The chart rejects the old entries;
-  other pool environment settings remain available.
+  and `celery.beatDatabasePool` `minSize`/`maxSize` values. Apply formerly global values to
+  each role that needs them. The chart rejects the old entries; other pool environment settings
+  remain available. Remove all `migrate.extraEnv` entries and put required settings in `env`
+  or the corresponding role's `extraEnv`; migration inherits that role's environment. Remove
+  the obsolete `migrate.databasePool` setting: migration connections are unpooled.
 - Review effective pool overrides, node capacity for requests plus surge, and the calculated connection budget
   against actual PostgreSQL limits. Include terminating pods and non-Aqueduct clients.
 
@@ -49,12 +51,32 @@ helm template "$RELEASE" charts/aqueduct -n "$NS" -f "$VALUES" \
 ```
 
 Inspect both renders: singleton `Recreate` Beat, web/worker fixed surge/unavailability, all role pools,
-resource requests, scheduling overrides, normal revision-named migration Job and scoped RBAC.
-This lifecycle requires actual Helm installs/upgrades; a GitOps renderer that always uses revision 1
-needs separate Job orchestration and is not supported by this ordering mechanism.
-Check web/worker/Beat gates target that exact Job; verify no per-web migration or Beat sidecar remains.
-Confirm actual Deployment names/selectors before using the commands below. Treat rendered files
-and Helm values as sensitive: they may contain credentials.
+resource requests and scheduling. Each pod must have a `migrate` init container using the same
+image as its application, with settings and router configuration mounted. No migration Job,
+Kubernetes API gate or migration RBAC is required. Pin an immutable image identity. Migration
+inits use pod scheduling, not the removed `migrate.scheduling` setting. Budget one unpooled
+migration connection per starting pod, including rollout surge. Confirm actual Deployment names
+and selectors before using the commands below. Treat rendered files and values as sensitive.
+
+### Transition from the Job-based chart
+
+Schedule maintenance for the first transition: stop traffic and producers, drain tasks, stop all
+old web, worker and Beat pods, and wait for any old migration Job to finish or be explicitly
+investigated and stopped before upgrading. Old Jobs do not take the new advisory lock, so they
+must never overlap new migration inits. Before upgrading, deliberately retire all old pods,
+ReplicaSets and rollback targets that depend on the old gate; confirm none can start replacement
+pods. The upgrade removes the old gate ServiceAccount and ConfigMap. Do not rely on transparent
+rollback to those templates. Confirm the target schema is compatible with the chosen image; for
+incompatible changes keep maintenance in place through migration and verification. Have a tested
+backup and restore plan with a matching image for recovery.
+
+Old revision Jobs, Roles and RoleBindings were retained by Helm. Review them with
+`kubectl --context "$KUBE_CONTEXT" -n "$NS" get jobs,roles,rolebindings -l "app=$RELEASE,component=migrate"`.
+Only after deliberately retiring all old workloads and rollback targets that need them, delete
+reviewed, named obsolete resources. They may survive uninstall. If recovery requires an old
+release, use the approved backup/restore procedure and matching image under maintenance; recreate
+and validate its required gate resources as part of that procedure. Never allow old migration Jobs
+to overlap the new inits.
 
 ## 2. Remove legacy Beat sidecars before the first upgrade
 
@@ -81,36 +103,25 @@ operator configuration in `$VALUES`; do not rely on defaults or reuse stale pool
 ```bash
 helm upgrade --install "$RELEASE" charts/aqueduct --kube-context "$KUBE_CONTEXT" \
   -n "$NS" -f "$VALUES" --set image.tag="$IMAGE_TAG" --set web.replicas=1 \
-  --wait --wait-for-jobs --timeout 15m
+  --wait --timeout 30m
 helm history "$RELEASE" --kube-context "$KUBE_CONTEXT" -n "$NS"
 ```
 
-The Helm timeout must exceed the Job's 600-second deadline plus startup time. Avoid `--atomic`
-for this validation: automatic application rollback is not schema recovery. Record the actual Helm
-revision and inspect the Job, gate logs and application start timestamps:
+Allow for a PostgreSQL lock wait of up to 10 minutes, migration and startup when choosing the
+Helm timeout. Connection attempts use a 5-second timeout; network stalls have no hard deadline.
+Kubernetes retries failed init containers. Avoid `--atomic`: application rollback is not schema recovery.
+Inspect each pod's init logs and status:
 
 ```bash
-export REVISION='<revision-from-helm-history>'
-export JOB="$RELEASE-migrate-$REVISION" # use the rendered name if the release name is shortened
-kubectl --context "$KUBE_CONTEXT" -n "$NS" get job "$JOB" -o yaml
-kubectl --context "$KUBE_CONTEXT" -n "$NS" logs job/"$JOB" --all-containers=true
 kubectl --context "$KUBE_CONTEXT" -n "$NS" get pods -l "app=$RELEASE" -o wide
+kubectl --context "$KUBE_CONTEXT" -n "$NS" logs <pod> -c migrate
+kubectl --context "$KUBE_CONTEXT" -n "$NS" describe pod <pod>
 ```
 
-Verify `Complete` precedes all new web/worker/Beat application starts. Test a fresh installation
-with its subchart database as well as an upgrade: `--wait --wait-for-jobs` must finish without a
-hook/bootstrap deadlock. Keep completed Jobs and their revision-specific Roles/RoleBindings while
-any retained ReplicaSet/pod template references them; do not apply generic Job TTL cleanup.
-After those templates are removed, review obsolete resources with:
-
-```bash
-kubectl --context "$KUBE_CONTEXT" -n "$NS" get jobs,roles,rolebindings \
-  -l "app=$RELEASE,component=migrate"
-```
-
-Delete only confirmed obsolete named resources, never all matching resources blindly. These resources
-survive `helm uninstall`; before reusing a release name, confirm no workloads remain and remove the
-obsolete retained resources. Installation refuses a stale revision-1 Job rather than trusting old success.
+Verify each new app container starts only after its migration init succeeds. Test fresh database
+bootstrap and upgrades. Kubernetes retries failing init containers; investigate failures and partial
+nontransactional changes before allowing retries to proceed. The advisory lock requires a direct
+or session-pooled PostgreSQL connection, not transaction pooling.
 
 ## 4. Establish a baseline, then test two replicas
 
@@ -145,9 +156,8 @@ same workload and upstream behavior for both runs; add representative concurrenc
 The existing Locust mix is not a substitute for the login, shared-token limiter or stream checks below.
 
 Upgrade with the command in step 3 changed to `--set web.replicas=2`, then rerun Locust with
-`--csv /tmp/aqueduct-two --html /tmp/aqueduct-two.html`. Record the new revision/Job.
-A Helm values change creates a revision Job; scaling/replacing pods within that revision must
-reuse its completed gate, not run a migration per pod.
+`--csv /tmp/aqueduct-two --html /tmp/aqueduct-two.html`. Record the image and configuration.
+Replacement and scaled pods each run the serialized migration/no-op check before starting.
 
 Collect per-pod request evidence and resource/connection samples before, during and after load
 and rollouts (repeat sampling; one snapshot can miss peaks):
@@ -188,9 +198,9 @@ column. **Every row is currently pending / not run.**
 | Worker dispatch | Enqueue representative background work, observe worker execution/results independently of web count | Pending / not run |
 | Beat rollout | Observe old Beat stop before new Beat starts; periodic dispatch continues after pause, no scheduler-overlap duplicates during web scaling or Beat replacement | Pending / not run |
 | Rolling web update/replacement | Roll a compatible image under load and delete one web pod; remaining/replacement pods serve, tasks continue, connections fit budget; log interrupted requests/streams (allowed) | Pending / not run |
-| Migration install/upgrade ordering | Fresh DB bootstrap and forward upgrade complete; new web/worker/Beat start only after current Job Complete; old compatible pods serve during migration | Pending / not run |
-| Migration failure | Induce a controlled failing migration on a disposable staging DB; new app containers stay blocked, old web stays available, Beat pauses, Helm fails; replace an old web and worker pod and verify their old Job/read grants still allow recovery; retain logs | Pending / not run |
-| Job retention/scaling | Replace/scale pods within a revision: no new migration execution; next Helm revision gets a new Job and retains old Jobs/read grants for retained ReplicaSets; verify stale revision-1 Job prevents reinstall until reviewed cleanup | Pending / not run |
+| Migration install/upgrade ordering | Fresh DB bootstrap and forward upgrade complete; each web/worker/Beat init succeeds before its app starts; old compatible pods serve during later upgrades | Pending / not run |
+| Migration failure | Induce a controlled failing migration on a disposable staging DB; affected app containers stay blocked; inspect retries and partial changes, retain logs | Pending / not run |
+| Contention/scaling | Start multiple pods simultaneously; verify serialized migrations and later no-op checks; replace/scale pods and verify init succeeds | Pending / not run |
 | Budget and resources | Repeated `psql`/`kubectl top` samples including surge/terminating pods; no exhaustion, observed CPU/memory/queue behavior supports chosen requests/limits | Pending / not run |
 
 Do not repeat rollouts arbitrarily to create load: terminating generations can exceed a one-extra-pod
@@ -214,21 +224,16 @@ Remove staging test users/data and disable `LOAD_TESTING` after the exercise; ve
 are unavailable. Review CPU/memory limits from measurements rather than adding arbitrary defaults.
 
 If errors, resource pressure or connections breach agreed thresholds, stop the load and further
-rollouts, capture Job/pod logs and database state, then return to one web replica via reviewed Helm
-values (this creates another revision Job). Do not delete the current completed gate or force-delete
-old serving pods to bypass a failed migration.
+rollouts, capture init/pod logs and database state, then return to one web replica via reviewed Helm
+values. Do not force old serving pods away to bypass a failed migration.
 
 For application rollback, first establish that the current schema is compatible with the target image.
-Prefer a new `helm upgrade` using this chart and reviewed values with the older `image.tag`; that
-creates a fresh revision migration Job. If using `helm rollback` instead, inspect the target's stored
-manifest (`helm get manifest --revision <target>`): Helm reuses the target's original Job/gate name,
-not the new rollback revision number. A surviving completed target Job may be reused without rerunning
-migrations. Never roll back to the legacy Beat-sidecar layout online.
-
-Verify the selected Job, gates and workloads again. Neither approach undoes schema changes,
-including partial changes from a failed Job. If incompatible, stop traffic,
-stop/drain workers and Beat, and perform the approved database recovery/backup restore with a
-matching image before reopening service. Prefer a reviewed forward fix when safe.
+Prefer a new `helm upgrade` using this chart and reviewed values with the older image. Every new pod
+runs its migration init; neither this nor `helm rollback` undoes schema changes. Do not assume
+transparent rollback to the retired Job-based chart; use the maintenance and backup/restore plan
+above. If incompatible, stop traffic, stop/drain workers
+and Beat, and perform approved database recovery/backup restore with a matching image before
+reopening service. Prefer a reviewed forward fix when safe.
 
 If returning to a legacy chart with Beat sidecars, use maintenance: stop the standalone Beat and
 wait until it is fully gone before starting legacy web pods. Never allow both scheduler layouts to

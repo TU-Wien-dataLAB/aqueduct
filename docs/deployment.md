@@ -138,6 +138,42 @@ remove a newer reservation.
 
 ## Upgrading
 
+### Migration init containers
+
+Every web, worker and Beat pod validates the router configuration and runs Django migrations
+before starting. Pods explicitly use the namespace's `default` ServiceAccount so upgrades clear
+both the old `serviceAccountName` and Kubernetes' deprecated `serviceAccount` alias; they no longer
+need migration-specific Kubernetes API permissions. Verify both live fields before removing the
+old gate ServiceAccount. PostgreSQL migrations use a session advisory lock shared by all Aqueduct pods
+on the same database; each later pod runs Django's normal no-op migration check. PostgreSQL
+limits lock acquisition to 10 minutes, and connection attempts use a 5-second libpq timeout.
+The lock timeout is reset before migration; a network stall is not subject to a hard deadline.
+A failed init container is retried by Kubernetes and the application container does not start.
+Inspect `kubectl logs <pod> -c migrate` and resolve the failure before proceeding. A failed
+nontransactional migration may have left partial changes; assess them before retrying.
+
+Use a direct PostgreSQL connection or a session-pooling proxy, not transaction pooling: the lock
+must remain on the migration session; migrations must not close or reopen that connection.
+Budget for one migration connection per starting pod in
+addition to running application pools and surge/terminating pods. Init containers use the pod's
+role scheduling and `migrate.resources` and `migrate.containerSecurityContext`. Each init receives
+exactly its application role's environment, including role-specific `extraEnv`; configure database
+and app settings there or in global `env`. `migrate.extraEnv` must be empty to prevent configuration
+mismatch. The migration connection is deliberately unpooled; `migrate.databasePool`,
+`migrate.scheduling` and `migrate.activeDeadlineSeconds` have been removed; rendering fails if
+these obsolete keys are still configured, so remove them from existing values files. Pin the same
+immutable image identity for init and application containers.
+
+The Helm chart requires PostgreSQL. The init fails if effective Django settings resolve to
+SQLite or another backend, including settings supplied by secrets or `settingsPy.extra`.
+SQLite remains supported for local Django development outside this chart.
+
+Migrations can run while old pods serve. Use expand/contract schema changes compatible with both
+images, or schedule maintenance and stop traffic, producers, workers and Beat for incompatible or
+uncertain changes. A lock serializes migrations, not application access. See the
+[rollout guide](horizontal-scaling-rollout.md) for the transition from Job-based releases, cleanup,
+and rollback precautions.
+
 ### Before upgrading from the Bitnami-backed chart
 
 > **Back up your database before upgrading.** This chart removes the Bitnami

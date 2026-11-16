@@ -24,6 +24,7 @@ spec:
         app: {{ .Release.Name }}
         component: celery-worker
     spec:
+      serviceAccountName: default
       initContainers:
         {{- include "aqueduct.migrationInit" (dict "root" . "pool" .Values.celery.workerDeployment.databasePool "extraEnv" .Values.celery.workerExtraEnv) | nindent 8 }}
       securityContext:

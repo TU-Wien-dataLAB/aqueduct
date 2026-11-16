@@ -54,7 +54,8 @@ class WebScalingTests(unittest.TestCase):
                 self.assertIn(("ConfigMap", "test-migration-init"), resources)
                 for name in ("test", "test-celery-worker", "test-celery-beat"):
                     pod = resources["Deployment", name]["spec"]["template"]["spec"]
-                    self.assertNotIn("serviceAccountName", pod)
+                    # Explicitly clear both persisted service-account aliases on upgrades.
+                    self.assertEqual(pod["serviceAccountName"], "default")
                     init = pod["initContainers"][0]
                     self.assertEqual(init["name"], "migrate")
                     self.assertEqual(init["image"], pod["containers"][0]["image"])

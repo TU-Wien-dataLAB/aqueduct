@@ -24,6 +24,7 @@ spec:
         app: {{ .Release.Name }}
         component: web
     spec:
+      serviceAccountName: default
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
       {{- include "aqueduct.scheduling" .Values.web | nindent 6 }}

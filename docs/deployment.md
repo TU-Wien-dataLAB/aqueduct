@@ -141,7 +141,10 @@ remove a newer reservation.
 ### Migration init containers
 
 Every web, worker and Beat pod validates the router configuration and runs Django migrations
-before starting. PostgreSQL migrations use a session advisory lock shared by all Aqueduct pods
+before starting. Pods explicitly use the namespace's `default` ServiceAccount so upgrades clear
+both the old `serviceAccountName` and Kubernetes' deprecated `serviceAccount` alias; they no longer
+need migration-specific Kubernetes API permissions. Verify both live fields before removing the
+old gate ServiceAccount. PostgreSQL migrations use a session advisory lock shared by all Aqueduct pods
 on the same database; each later pod runs Django's normal no-op migration check. Database and
 lock acquisition each have a 600-second deadline, including a stalled lock query. Individual
 connection attempts use a 5-second libpq timeout. The Linux migration session enables TCP

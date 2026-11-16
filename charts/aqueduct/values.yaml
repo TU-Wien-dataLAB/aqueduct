@@ -24,7 +24,7 @@ collectstatic:
         - ALL
 
 migrate:
-  # Init containers share their pod's scheduling; database and lock waits are each bounded to 600s.
+  # Init containers share their pod's scheduling; PostgreSQL lock acquisition times out after 10 minutes.
   # Migration uses the application role's environment and an unpooled connection.
   extraEnv: [] # Must remain empty; use global or role-specific extraEnv instead.
   resources:

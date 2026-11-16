@@ -107,8 +107,9 @@ helm upgrade --install "$RELEASE" charts/aqueduct --kube-context "$KUBE_CONTEXT"
 helm history "$RELEASE" --kube-context "$KUBE_CONTEXT" -n "$NS"
 ```
 
-Allow for both bounded database and lock waits (up to 600 seconds each), migration and startup
-when choosing the Helm timeout. Avoid `--atomic`: application rollback is not schema recovery.
+Allow for a PostgreSQL lock wait of up to 10 minutes, migration and startup when choosing the
+Helm timeout. Connection attempts use a 5-second timeout; network stalls have no hard deadline.
+Kubernetes retries failed init containers. Avoid `--atomic`: application rollback is not schema recovery.
 Inspect each pod's init logs and status:
 
 ```bash

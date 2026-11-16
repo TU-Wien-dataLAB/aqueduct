@@ -80,20 +80,10 @@ class WebScalingTests(unittest.TestCase):
             self.assertEqual(env[-len(extra):], extra)
             self.assertEqual(pod["initContainers"][0]["env"], env)
 
-    def test_rejects_sqlite_and_migration_only_overrides(self):
-        for values in (
-            {"env": [{"name": "DATABASE_ENGINE", "value": "django.db.backends.sqlite3"}]},
-            {"env": [{"name": "OTHER", "value": "x"}]},
-            {"web": {"extraEnv": [{"name": "DATABASE_ENGINE", "value": "django.db.backends.sqlite3"}]}},
-            {"celery": {"workerExtraEnv": [{"name": "DATABASE_ENGINE", "value": "django.db.backends.sqlite3"}]}},
-            {"celery": {"beatExtraEnv": [{"name": "DATABASE_ENGINE", "value": "django.db.backends.sqlite3"}]}},
-            {"migrate": {"extraEnv": [{"name": "SILKY_ENABLED", "value": "False"}]}},
-            {"migrate": {"extraEnv": [{"name": "POSTGRES_HOST", "value": "other"}]}},
-        ):
-            with self.subTest(values=values), self.assertRaises(subprocess.CalledProcessError):
-                render(values)
-        render({"env": [{"name": "DATABASE_ENGINE", "valueFrom":
-                         {"secretKeyRef": {"name": "db", "key": "engine"}}}]})
+    def test_rejects_migration_only_overrides(self):
+        for name in ("SILKY_ENABLED", "POSTGRES_HOST"):
+            with self.subTest(name=name), self.assertRaises(subprocess.CalledProcessError):
+                render({"migrate": {"extraEnv": [{"name": name, "value": "other"}]}})
 
     def test_removed_migration_job_options_are_rejected(self):
         for key, value in (("databasePool", {}), ("scheduling", {}), ("activeDeadlineSeconds", 60)):

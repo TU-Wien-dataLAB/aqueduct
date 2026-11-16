@@ -274,6 +274,7 @@ TOS_GATEWAY_VALIDATION = os.getenv("TOS_GATEWAY_VALIDATION", "True").lower() == 
 # Celery Settings -------------------------------------------------------
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", REDIS_URL)
 
 CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True

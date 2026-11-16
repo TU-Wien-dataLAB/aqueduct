@@ -7,7 +7,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from gateway.config import resolve_model_alias
+from gateway.config import resolve_model
 from management.models.mixins import (
     LimitMixin,
     LimitSet,
@@ -178,7 +178,7 @@ class Token(LimitMixin, models.Model):
 
     def model_excluded(self, model: str) -> bool:
         # Resolve alias to actual model name before checking exclusion
-        resolved_model = resolve_model_alias(model)
+        resolved_model = resolve_model(model).routing_name
         return resolved_model in self.model_exclusion_list()
 
     @classmethod

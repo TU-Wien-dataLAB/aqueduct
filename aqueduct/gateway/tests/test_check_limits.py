@@ -1,5 +1,6 @@
 import asyncio
 import json
+from http import HTTPStatus
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -9,12 +10,17 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.handlers.asgi import ASGIRequest
 from django.db import connection
+from django.http import HttpResponse, StreamingHttpResponse
 from django.test import SimpleTestCase, override_settings
 from django.test.utils import CaptureQueriesContext
+from fakeredis import FakeServer
+from fakeredis.aioredis import FakeRedis
 from openai.types.chat import ChatCompletion
 
 from gateway.config import get_model_max_parallel_requests
 from gateway.decorators.limits import (
+    RedisConcurrencyLimiter,
+    check_model_concurrency_limits,
     check_token_concurrency_limits,
     model_concurrency_key,
     model_concurrency_limit,
@@ -25,7 +31,7 @@ from gateway.tests.utils import (
     _build_chat_payload,
     _read_streaming_response_lines,
 )
-from gateway.tests.utils.base import ChatCompletionsBase
+from gateway.tests.utils.base import ROUTER_CONFIG_PATH, ChatCompletionsBase
 from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
 
 User = get_user_model()
@@ -553,7 +559,7 @@ class TokenConcurrentRequestsLimitTest(ChatCompletionsBase):
             await check_token_concurrency_limits(failing_view)(request, token=token)
 
         # The `acquire` bumped the counter to 1; the exception path released it back to 0.
-        self.assertEqual(await self.redis.get(token_concurrency_key(token)), "0")
+        self.assertEqual(await self.redis.zcard(token_concurrency_key(token)), 0)
 
 
 @override_settings(
@@ -687,6 +693,394 @@ class ModelConcurrentRequestsLimitTest(ChatCompletionsBase):
         await asyncio.gather(*(_read_streaming_response_lines(r) for r in held_streams))
 
 
+@override_settings(
+    AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_ENABLED=True,
+    AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMIT_ENABLED=True,
+    AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT=1,
+    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
+)
+class ConcurrencyDecoratorLifecycleTests(SimpleTestCase):
+    """Exercise request lifetimes without a database or an upstream API."""
+
+    async def test_public_alias_and_deployment_ids_share_capacity(self):
+        config = {
+            "model_list": [
+                {
+                    "model_name": "public",
+                    "model_info": {
+                        "id": "backend-1",
+                        "aliases": ["alias"],
+                        "max_parallel_requests": 2,
+                    },
+                },
+                {"model_name": "public", "model_info": {"id": "backend-2"}},
+            ]
+        }
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        seen = []
+
+        @check_model_concurrency_limits
+        async def view(request, **kwargs):
+            seen.append(kwargs["pydantic_model"]["model"])
+
+            async def stream():
+                yield b"ok"
+
+            return StreamingHttpResponse(stream())
+
+        request = MagicMock(spec=ASGIRequest)
+        token = Token(id=1, name="shared")
+        responses = []
+        try:
+            with (
+                patch("gateway.config.get_router_config", return_value=config),
+                patch("gateway.decorators.limits.get_limiter", return_value=limiter),
+            ):
+
+                async def send(name):
+                    return await view(request, token=token, pydantic_model={"model": name})
+
+                for name in ("backend-1", "alias"):
+                    response = await send(name)
+                    responses.append(response)
+                    self.assertEqual(response.status_code, 200)
+                for name in ("public", "backend-2"):
+                    self.assertEqual((await send(name)).status_code, 429)
+                self.assertEqual(seen, ["backend-1", "alias"])
+                for response in responses:
+                    await _read_streaming_response_lines(response)
+                replacement = await send("backend-2")
+                responses.append(replacement)
+                self.assertEqual(replacement.status_code, 200)
+                self.assertEqual(seen[-1], "backend-2")
+                await _read_streaming_response_lines(replacement)
+        finally:
+            for response in responses:
+                await sync_to_async(response.close)()
+            await redis.aclose()
+
+    async def test_cancelled_view_restores_capacity(self):
+        for decorator in (check_token_concurrency_limits, check_model_concurrency_limits):
+            with self.subTest(decorator=decorator.__name__):
+                redis = FakeRedis(server=FakeServer(), decode_responses=True)
+                limiter = RedisConcurrencyLimiter(redis)
+                token = Token(id=1, name="cancelled", concurrent_requests_limit=1)
+                request = MagicMock(spec=ASGIRequest)
+                kwargs = {"token": token, "pydantic_model": {"model": "gpt-4.1-nano"}}
+                entered = asyncio.Event()
+                finish = asyncio.Event()
+
+                async def blocked_view(request, *, entered=entered, finish=finish, **kwargs):
+                    entered.set()
+                    await finish.wait()
+                    return HttpResponse()
+
+                async def healthy_view(request, **kwargs):
+                    return HttpResponse()
+
+                with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                    task = asyncio.create_task(decorator(blocked_view)(request, **kwargs))
+                    try:
+                        # Entry into the view proves acquisition has completed.
+                        await asyncio.wait_for(entered.wait(), timeout=1)
+                        rejected = await decorator(healthy_view)(request, **kwargs)
+                        self.assertEqual(rejected.status_code, 429)
+                        task.cancel()
+                        with self.assertRaises(asyncio.CancelledError):
+                            await task
+
+                        replacement = await decorator(healthy_view)(request, **kwargs)
+                        self.assertEqual(replacement.status_code, 200)
+                    finally:
+                        finish.set()
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                        await redis.aclose()
+
+    async def test_stream_completion_error_and_cancellation_restore_capacity(self):
+        for outcome in ("complete", "error", "cancel"):
+            with self.subTest(outcome=outcome):
+                redis = FakeRedis(server=FakeServer(), decode_responses=True)
+                limiter = RedisConcurrencyLimiter(redis)
+                token = Token(id=1, name="stream", concurrent_requests_limit=1)
+                request = MagicMock(spec=ASGIRequest)
+                entered = asyncio.Event()
+                finish = asyncio.Event()
+
+                async def stream(*, outcome=outcome, entered=entered, finish=finish):
+                    yield b"chunk-1"
+                    entered.set()
+                    await finish.wait()
+                    if outcome == "error":
+                        raise ValueError("boom")
+                    yield b"chunk-2"
+
+                @check_token_concurrency_limits
+                async def streaming_view(request, *, stream=stream, **kwargs):
+                    return StreamingHttpResponse(stream())
+
+                @check_token_concurrency_limits
+                async def healthy_view(request, **kwargs):
+                    return HttpResponse()
+
+                async def consume(response):
+                    return [chunk async for chunk in response.streaming_content]
+
+                with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                    response = await streaming_view(request, token=token)
+                    task = asyncio.create_task(consume(response))
+                    try:
+                        await asyncio.wait_for(entered.wait(), timeout=1)
+                        rejected = await healthy_view(request, token=token)
+                        self.assertEqual(rejected.status_code, 429)
+                        if outcome == "cancel":
+                            task.cancel()
+                            with self.assertRaises(asyncio.CancelledError):
+                                await asyncio.wait_for(task, timeout=1)
+                        else:
+                            finish.set()
+                            if outcome == "error":
+                                with self.assertRaisesMessage(ValueError, "boom"):
+                                    await asyncio.wait_for(task, timeout=1)
+                            else:
+                                self.assertEqual(
+                                    await asyncio.wait_for(task, timeout=1),
+                                    [b"chunk-1", b"chunk-2"],
+                                )
+                        replacement = await healthy_view(request, token=token)
+                        self.assertEqual(replacement.status_code, 200)
+                    finally:
+                        finish.set()
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                        await sync_to_async(response.close)()
+                        await redis.aclose()
+
+    @override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
+    async def test_stream_progress_renews_only_its_own_lease(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="progress", concurrent_requests_limit=2)
+        key = token_concurrency_key(token)
+
+        async def stream():
+            for _ in range(25):
+                yield b"chunk"
+                await asyncio.sleep(0.1)
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        async def consume(response):
+            return [chunk async for chunk in response.streaming_content]
+
+        task = None
+        try:
+            with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                orphan = await limiter.acquire(key, 2)
+                self.assertIsNotNone(orphan)
+                response = await streaming_view(MagicMock(spec=ASGIRequest), token=token)
+                task = asyncio.create_task(consume(response))
+                await asyncio.sleep(2.2)
+
+                # Chunk progress renewed the active lease; the orphan still expired.
+                self.assertFalse(task.done())
+                replacement = await limiter.acquire(key, 2)
+                self.assertIsNotNone(replacement, "Chunk renewal kept the orphan alive")
+                await limiter.release(key, replacement)
+                self.assertFalse(await limiter.release(key, orphan))
+
+                await asyncio.wait_for(task, timeout=2)
+                self.assertEqual(await redis.zcard(key), 0)
+        finally:
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await redis.aclose()
+
+    @override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
+    async def test_silent_view_expires_capacity_without_renewal(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="silent", concurrent_requests_limit=1)
+        key = token_concurrency_key(token)
+        request = MagicMock(spec=ASGIRequest)
+        entered = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def blocked_view(request, *, entered=entered, finish=finish, **kwargs):
+            entered.set()
+            await finish.wait()
+            return HttpResponse()
+
+        async def healthy_view(request, **kwargs):
+            return HttpResponse()
+
+        task = None
+        try:
+            with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                task = asyncio.create_task(
+                    check_token_concurrency_limits(blocked_view)(request, token=token)
+                )
+                await asyncio.wait_for(entered.wait(), timeout=1)
+                self.assertEqual(
+                    (
+                        await check_token_concurrency_limits(healthy_view)(request, token=token)
+                    ).status_code,
+                    429,
+                )
+
+                # No stream progress means no renewal; capacity returns at lease expiry.
+                await asyncio.sleep(2.2)
+                replacement = await limiter.acquire(key, 1)
+                self.assertIsNotNone(replacement, "Silent work retained capacity beyond the TTL")
+
+                finish.set()
+                await asyncio.wait_for(task, timeout=1)
+                # Late release of the expired lease must not remove the replacement.
+                self.assertIsNotNone(await redis.zscore(key, replacement))
+                await limiter.release(key, replacement)
+                healthy = await check_token_concurrency_limits(healthy_view)(request, token=token)
+                self.assertEqual(healthy.status_code, 200)
+        finally:
+            finish.set()
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await redis.aclose()
+
+    @override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
+    async def test_expired_stream_cannot_forward_after_late_renewal(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="late", concurrent_requests_limit=1)
+        key = token_concurrency_key(token)
+        finish = asyncio.Event()
+
+        async def stream():
+            yield b"first"
+            await finish.wait()
+            yield b"late"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        try:
+            with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                response = await streaming_view(MagicMock(spec=ASGIRequest), token=token)
+                iterator = response.streaming_content
+                self.assertEqual(await asyncio.wait_for(anext(iterator), timeout=1), b"first")
+
+                await asyncio.sleep(2.2)
+                replacement = await limiter.acquire(key, 1)
+                self.assertIsNotNone(replacement)
+
+                finish.set()
+                with self.assertRaises(StopAsyncIteration):
+                    await asyncio.wait_for(anext(iterator), timeout=1)
+                self.assertEqual(await redis.zcard(key), 1)
+                await limiter.release(key, replacement)
+        finally:
+            finish.set()
+            await redis.aclose()
+
+    async def test_refresh_error_stops_before_forwarding_and_releases(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="refresh-error", concurrent_requests_limit=1)
+
+        async def stream():
+            yield b"must-not-forward"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        try:
+            with (
+                patch("gateway.decorators.limits.get_limiter", return_value=limiter),
+                patch.object(limiter, "refresh", side_effect=RuntimeError("redis down")),
+            ):
+                response = await streaming_view(MagicMock(spec=ASGIRequest), token=token)
+                with self.assertRaisesRegex(RuntimeError, "redis down"):
+                    await asyncio.wait_for(anext(response.streaming_content), timeout=1)
+                self.assertEqual(await redis.zcard(token_concurrency_key(token)), 0)
+        finally:
+            await redis.aclose()
+
+    async def test_release_failures_are_logged_for_awaited_and_close_paths(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="release-error", concurrent_requests_limit=2)
+        request = MagicMock(spec=ASGIRequest)
+
+        async def stream():
+            yield b"chunk"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        @check_token_concurrency_limits
+        async def healthy_view(request, **kwargs):
+            return HttpResponse()
+
+        try:
+            with (
+                patch("gateway.decorators.limits.get_limiter", return_value=limiter),
+                patch.object(limiter, "release", side_effect=RuntimeError("release down")),
+                self.assertLogs("aqueduct", level="ERROR") as caught,
+            ):
+                response = await healthy_view(request, token=token)
+                self.assertEqual(response.status_code, 200)
+                await asyncio.sleep(0)
+
+                response = await streaming_view(request, token=token)
+                await sync_to_async(response.close)()
+                await asyncio.sleep(0.01)
+
+            self.assertGreaterEqual(
+                sum("Error releasing concurrency lease" in line for line in caught.output), 2
+            )
+        finally:
+            await redis.aclose()
+
+    async def test_closing_unstarted_stream_restores_capacity(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="closed", concurrent_requests_limit=1)
+        request = MagicMock(spec=ASGIRequest)
+
+        async def stream():
+            yield b"done"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        @check_token_concurrency_limits
+        async def healthy_view(request, **kwargs):
+            return HttpResponse()
+
+        with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+            response = await streaming_view(request, token=token)
+            try:
+                await sync_to_async(response.close)()
+                for _ in range(20):
+                    replacement = await healthy_view(request, token=token)
+                    if replacement.status_code == HTTPStatus.OK:
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertEqual(replacement.status_code, 200)
+            finally:
+                # Also clean up on the pre-fix implementation, where close leaks.
+                _ = [chunk async for chunk in response.streaming_content]
+                await redis.aclose()
+
+
 @override_settings(AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT=7)
 class ModelConcurrencyLimitResolutionTest(SimpleTestCase):
     """Resolution tests for the per-model concurrency limit.
@@ -742,7 +1136,34 @@ class ModelConcurrencyLimitResolutionTest(SimpleTestCase):
             self._decorator_limit(model="coding", per_model=5, default=20, aliases=["coding"]), 5
         )
 
+    def test_deployment_ids_use_public_model_limit_and_fallbacks(self):
+        for model_info, default, expected in (
+            ({"max_parallel_requests": 5}, 20, 5),
+            ({}, 20, 20),
+            ({}, None, 7),
+        ):
+            config = {
+                "model_list": [
+                    {
+                        "model_name": "public",
+                        "model_info": {**model_info, "id": "backend-1", "aliases": ["alias"]},
+                    },
+                    {"model_name": "public", "model_info": {"id": "backend-2"}},
+                ]
+            }
+            if default is not None:
+                config["default_max_parallel_requests"] = default
+            with patch("gateway.config.get_router_config", return_value=config):
+                for name in ("public", "alias", "backend-1", "backend-2"):
+                    with self.subTest(name=name, default=default, model_info=model_info):
+                        self.assertEqual(
+                            model_concurrency_key(name), "model:concurrency:public:leases"
+                        )
+                        self.assertEqual(model_concurrency_limit(name), expected)
+
     def test_model_concurrency_limit_uses_settings_default_for_unknown_model(self):
+        with patch("gateway.config.get_router_config", return_value=self._config(default=20)):
+            self.assertEqual(model_concurrency_key("unknown"), "model:concurrency:unknown:leases")
         self.assertEqual(
             self._decorator_limit(model="does-not-exist", default=20),
             settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT,

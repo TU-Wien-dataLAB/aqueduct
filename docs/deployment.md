@@ -129,6 +129,42 @@ disabled by default), so there is no persistent data.
    instead. Review retained settings when using `helm upgrade --reuse-values`:
    old `cnpg.enabled: false` or `valkey.enabled: false` values can prevent the
    replacement services from starting.
+   If retaining `cnpg.bootstrapFromExternal.enabled: true`, explicitly set the
+   source host: the old implicit `postgresql` fallback was removed. Preserve
+   the existing source name too; its default changed from `bitnami` to
+   `external`. For a cluster originally cloned from the old default service,
+   merge these settings into your environment values:
+
+   ```yaml
+   cnpg:
+     bootstrapFromExternal:
+       enabled: true
+       name: bitnami
+       connection:
+         host: postgresql
+   ```
+
+   Keep the existing source credentials (`existingSecret` / `secretKeys` or
+   `password`). If your source had a custom hostname or name, use those instead.
+   Check the existing Cluster's `spec.bootstrap` and `spec.externalClusters`
+   before changing retained settings; do not recreate a healthy Cluster to fix
+   a Helm rendering error. Bootstrap only runs at creation, so a successful
+   render does not prove the old source is still available for a new clone.
+
+   For an offline preview using the old default source, apply the
+   [bootstrap compatibility overlay](examples/cnpg-bitnami-bootstrap.yaml)
+   **after** your environment values:
+
+   ```bash
+   helm template aqueduct-staging charts/aqueduct \
+     --namespace aqueduct-staging --kube-version 1.36.2 \
+     --values /path/to/chart-values/aqueduct/staging.yaml \
+     --values docs/examples/cnpg-bitnami-bootstrap.yaml --include-crds
+   ```
+
+   For Argo CD, merge the same correction into its values repository; a local
+   overlay does not change Argo's rendering inputs. Do not disable bootstrap
+   merely to bypass missing-host validation.
 4. Upgrade the chart and verify the application and Celery worker. For upgrades
    from before chart 0.2.0, also follow the Deployment selector steps below.
 

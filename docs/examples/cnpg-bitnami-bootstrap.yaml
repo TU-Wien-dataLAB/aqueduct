@@ -1,0 +1,8 @@
+# Overlay for retained bootstrap settings from the Bitnami-backed chart.
+# Apply after your existing values, which must supply source credentials.
+cnpg:
+  bootstrapFromExternal:
+    enabled: true
+    name: bitnami
+    connection:
+      host: postgresql

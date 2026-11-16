@@ -70,6 +70,9 @@ jobs:
       - name: Render chart
         run: helm template aqueduct charts/aqueduct > /dev/null
 
+      - name: Test CNPG bootstrap rendering
+        run: python3 -m unittest discover -s charts/tests -v
+
   compose:
     runs-on: ubuntu-latest
     steps:

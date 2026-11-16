@@ -21,7 +21,7 @@ spec:
         component: celery-beat
     spec:
       initContainers:
-        {{- include "aqueduct.migrationInit" . | nindent 8 }}
+        {{- include "aqueduct.migrationInit" (dict "root" . "pool" .Values.celery.beatDatabasePool "extraEnv" .Values.celery.beatExtraEnv) | nindent 8 }}
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
       {{- include "aqueduct.scheduling" .Values.celery.beatScheduling | nindent 6 }}
@@ -41,14 +41,10 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           volumeMounts:
-            - name: sqlite-data
-              mountPath: /var/lib/aqueduct
             - name: settings-py
               mountPath: /app/aqueduct/aqueduct/settings.py
               subPath: settings.py
       volumes:
-        - name: sqlite-data
-          emptyDir: {}
         - name: migration-init
           configMap:
             name: {{ include "aqueduct.migrationConfigName" . }}

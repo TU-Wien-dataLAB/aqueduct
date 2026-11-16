@@ -16,12 +16,16 @@ class MigrationEntrypointTests(unittest.TestCase):
     def test_invalid_configuration_prevents_database_access(self):
         config = Mock()
         config.get_router_config.side_effect = RuntimeError("invalid config")
+        connection = Mock(vendor="postgresql", settings_dict={"OPTIONS": {}})
+        connections = MagicMock()
+        connections.__getitem__.return_value = connection
         with (patch.dict(sys.modules, {"gateway": Mock(), "gateway.config": config}),
               patch.object(migration.django, "setup"),
-              patch.object(migration, "connections") as connections,
+              patch.object(migration, "connections", connections),
               self.assertRaisesRegex(RuntimeError, "invalid config")):
             migration.main()
-        connections.__getitem__.assert_not_called()
+        connection.ensure_connection.assert_not_called()
+        connection.close.assert_called_once()
 
     def test_database_wait_is_bounded(self):
         connection = Mock()
@@ -30,11 +34,50 @@ class MigrationEntrypointTests(unittest.TestCase):
               self.assertRaisesRegex(RuntimeError, "Timed out waiting")):
             migration.wait_for_database(connection)
 
-    def test_sqlite_runs_normal_migration(self):
+    def test_sqlite_is_rejected_without_migration_or_database_access(self):
         connection = Mock(vendor="sqlite")
-        with patch.object(migration, "call_command") as command:
+        config = Mock()
+        connections = MagicMock()
+        connections.__getitem__.return_value = connection
+        with (patch.dict(sys.modules, {"gateway": Mock(), "gateway.config": config}),
+              patch.object(migration.django, "setup"),
+              patch.object(migration, "connections", connections),
+              patch.object(migration, "call_command") as command,
+              self.assertRaisesRegex(RuntimeError, "requires PostgreSQL")):
+            migration.main()
+        connection.ensure_connection.assert_not_called()
+        command.assert_not_called()
+        with self.assertRaisesRegex(RuntimeError, "requires PostgreSQL"):
             migration.migrate(connection)
-        command.assert_called_once_with("migrate", interactive=False, database="default")
+
+    def test_main_enforces_unpooled_connection_and_tcp_timeouts(self):
+        connection = Mock(vendor="postgresql", settings_dict={"OPTIONS": {"pool": {"max_size": 10}}})
+        connections = MagicMock()
+        connections.__getitem__.return_value = connection
+        with (patch.dict(sys.modules, {"gateway": Mock(), "gateway.config": Mock()}),
+              patch.object(migration.django, "setup", side_effect=lambda: self.assertNotIn(
+                  "pool", connection.settings_dict["OPTIONS"])),
+              patch.object(migration, "connections", connections),
+              patch.object(migration, "wait_for_database"),
+              patch.object(migration, "migrate")):
+            migration.main()
+        options = connection.settings_dict["OPTIONS"]
+        self.assertNotIn("pool", options)
+        self.assertEqual(options["connect_timeout"], 5)
+        self.assertEqual(options["tcp_user_timeout"], 30000)
+        self.assertEqual((options["keepalives_idle"], options["keepalives_interval"],
+                          options["keepalives_count"]), (10, 5, 3))
+        connection.close.assert_called_once()
+
+    def test_stalled_lock_query_is_interrupted(self):
+        connection = MagicMock(vendor="postgresql")
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.execute.side_effect = lambda *args: migration.time.sleep(5)
+        with (patch.object(migration, "WAIT_SECONDS", 0.05),
+              patch.object(migration, "call_command") as command,
+              self.assertRaisesRegex(RuntimeError, "Timed out waiting.*lock")):
+            migration.migrate(connection)
+        command.assert_not_called()
 
     def test_session_loss_never_reconnects(self):
         connection = MagicMock(vendor="postgresql")

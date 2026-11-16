@@ -1,8 +1,10 @@
 """Run Django migrations under a PostgreSQL session advisory lock."""
 
 import os
+import signal
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import django
@@ -15,35 +17,54 @@ WAIT_SECONDS = 600
 RETRY_SECONDS = 2
 
 
+@contextmanager
+def wait_deadline(message):
+    # The init runs on Linux in the main thread. Interrupt even a stalled
+    # synchronous libpq query, not only the sleeps between attempts.
+    def timed_out(signum, frame):
+        raise RuntimeError(message)
+
+    previous = signal.signal(signal.SIGALRM, timed_out)
+    signal.setitimer(signal.ITIMER_REAL, WAIT_SECONDS)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
 def wait_for_database(connection):
-    deadline = time.monotonic() + WAIT_SECONDS
-    while True:
-        try:
-            connection.ensure_connection()
-            return
-        except OperationalError as error:
-            if time.monotonic() >= deadline:
-                raise RuntimeError("Timed out waiting for the migration database") from error
-            print(f"Waiting for migration database: {error}", flush=True)
-            time.sleep(min(RETRY_SECONDS, max(0, deadline - time.monotonic())))
+    message = "Timed out waiting for the migration database"
+    with wait_deadline(message):
+        deadline = time.monotonic() + WAIT_SECONDS
+        while True:
+            try:
+                connection.ensure_connection()
+                return
+            except OperationalError as error:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(message) from error
+                print(f"Waiting for migration database: {error}", flush=True)
+                time.sleep(min(RETRY_SECONDS, max(0, deadline - time.monotonic())))
 
 
 def migrate(connection):
     if connection.vendor != "postgresql":
-        call_command("migrate", interactive=False, database="default")
-        return
+        raise RuntimeError("The Aqueduct Helm chart requires PostgreSQL; SQLite is not supported")
 
-    deadline = time.monotonic() + WAIT_SECONDS
-    while True:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_try_advisory_lock(%s)", [LOCK_KEY])
-            acquired = cursor.fetchone()[0]
-        if acquired:
-            break
-        if time.monotonic() >= deadline:
-            raise RuntimeError("Timed out waiting for the PostgreSQL migration lock")
-        print("Waiting for PostgreSQL migration lock", flush=True)
-        time.sleep(min(RETRY_SECONDS, max(0, deadline - time.monotonic())))
+    message = "Timed out waiting for the PostgreSQL migration lock"
+    with wait_deadline(message):
+        deadline = time.monotonic() + WAIT_SECONDS
+        while True:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_try_advisory_lock(%s)", [LOCK_KEY])
+                acquired = cursor.fetchone()[0]
+            if acquired:
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError(message)
+            print("Waiting for PostgreSQL migration lock", flush=True)
+            time.sleep(min(RETRY_SECONDS, max(0, deadline - time.monotonic())))
 
     session = connection.connection
     original_ensure = connection.ensure_connection
@@ -80,18 +101,21 @@ def migrate(connection):
 def main():
     sys.path.insert(0, str(Path.cwd()))
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "aqueduct.settings")
-    django.setup()
-
-    from gateway.config import get_router_config
-
-    get_router_config()
+    # Configure the backend before app initialization can open a connection.
     connection = connections["default"]
-    if connection.vendor == "postgresql":
-        # Use a dedicated physical session, not a pooled connection. Bound each
-        # connection attempt independently of the overall retry deadline.
-        connection.settings_dict["OPTIONS"].pop("pool", None)
-        connection.settings_dict["OPTIONS"]["connect_timeout"] = 5
+    if connection.vendor != "postgresql":
+        raise RuntimeError("The Aqueduct Helm chart requires PostgreSQL; SQLite is not supported")
+    # Dedicated physical session; Linux TCP timers limit detection of half-open
+    # connections, including during migrations (without a statement timeout).
+    options = connection.settings_dict.setdefault("OPTIONS", {})
+    options.pop("pool", None)
+    options.update(connect_timeout=5, keepalives=1, keepalives_idle=10,
+                   keepalives_interval=5, keepalives_count=3, tcp_user_timeout=30000)
     try:
+        django.setup()
+        from gateway.config import get_router_config
+
+        get_router_config()
         wait_for_database(connection)
         migrate(connection)
     finally:

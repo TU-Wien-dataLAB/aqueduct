@@ -3,7 +3,20 @@
 {{- if has .name (list "POSTGRESQL_POOL_MIN_SIZE" "POSTGRESQL_POOL_MAX_SIZE") }}
 {{- fail (printf "%s contains %s; configure per-role databasePool minSize/maxSize values instead" $path .name) }}
 {{- end }}
+{{- if and (eq .name "DATABASE_ENGINE") (eq (.value | default "") "django.db.backends.sqlite3") }}
+{{- fail (printf "%s: this Helm chart requires PostgreSQL; SQLite is supported only outside the chart" $path) }}
 {{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.migrate.extraEnv }}
+{{- fail "migrate.extraEnv must be empty; use env or role-specific extraEnv so migrations match the application" }}
+{{- end }}
+{{- $hasEngine := false }}
+{{- range .Values.env }}
+{{- if eq .name "DATABASE_ENGINE" }}{{- $hasEngine = true }}{{- end }}
+{{- end }}
+{{- if not $hasEngine }}
+{{- fail "env must specify DATABASE_ENGINE; this Helm chart requires PostgreSQL" }}
 {{- end }}
 apiVersion: v1
 kind: ConfigMap

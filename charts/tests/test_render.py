@@ -60,10 +60,39 @@ class WebScalingTests(unittest.TestCase):
                     self.assertEqual(init["image"], pod["containers"][0]["image"])
                     self.assertEqual(init["command"], ["python", "/etc/aqueduct/migrate.py"])
                     self.assertEqual({m["name"] for m in init["volumeMounts"]},
-                                     {"settings-py", "router-config", "migration-init", "sqlite-data"})
-                    self.assertIn("sqlite-data", {m["name"] for m in pod["containers"][0]["volumeMounts"]})
-                    env = {e["name"]: e.get("value") for e in init["env"]}
-                    self.assertEqual(env["POSTGRESQL_POOL_MAX_SIZE"], "2")
+                                     {"settings-py", "router-config", "migration-init"})
+                    self.assertEqual(init["env"], pod["containers"][0]["env"])
+                    self.assertNotIn("sqlite-data", {v["name"] for v in pod["volumes"]})
+
+    def test_role_overrides_match_application_environment_in_order(self):
+        overrides = [
+            [{"name": "POSTGRES_HOST", "value": "web-db"}, {"name": "SILKY_ENABLED", "value": "False"}],
+            [{"name": "POSTGRES_HOST", "valueFrom": {"secretKeyRef": {"name": "worker", "key": "host"}}},
+             {"name": "DATABASE_ENGINE", "value": "django.db.backends.postgresql"}],
+            [{"name": "POSTGRES_DB", "value": "beat-db"}, {"name": "SILKY_ENABLED", "value": "True"}],
+        ]
+        resources = render({"web": {"extraEnv": overrides[0], "databasePool": {"maxSize": 12}},
+                            "celery": {"workerExtraEnv": overrides[1], "beatExtraEnv": overrides[2]}})
+        for name, extra in zip(("test", "test-celery-worker", "test-celery-beat"), overrides):
+            pod = resources["Deployment", name]["spec"]["template"]["spec"]
+            env = pod["containers"][0]["env"]
+            self.assertEqual(env[-len(extra):], extra)
+            self.assertEqual(pod["initContainers"][0]["env"], env)
+
+    def test_rejects_sqlite_and_migration_only_overrides(self):
+        for values in (
+            {"env": [{"name": "DATABASE_ENGINE", "value": "django.db.backends.sqlite3"}]},
+            {"env": [{"name": "OTHER", "value": "x"}]},
+            {"web": {"extraEnv": [{"name": "DATABASE_ENGINE", "value": "django.db.backends.sqlite3"}]}},
+            {"celery": {"workerExtraEnv": [{"name": "DATABASE_ENGINE", "value": "django.db.backends.sqlite3"}]}},
+            {"celery": {"beatExtraEnv": [{"name": "DATABASE_ENGINE", "value": "django.db.backends.sqlite3"}]}},
+            {"migrate": {"extraEnv": [{"name": "SILKY_ENABLED", "value": "False"}]}},
+            {"migrate": {"extraEnv": [{"name": "POSTGRES_HOST", "value": "other"}]}},
+        ):
+            with self.subTest(values=values), self.assertRaises(subprocess.CalledProcessError):
+                render(values)
+        render({"env": [{"name": "DATABASE_ENGINE", "valueFrom":
+                         {"secretKeyRef": {"name": "db", "key": "engine"}}}]})
 
     def test_database_budget_is_per_role_and_worker_rollouts_are_bounded(self):
         resources = render()
@@ -139,7 +168,9 @@ class WebScalingTests(unittest.TestCase):
 
     def test_public_model_limits_use_application_env_without_router_redis(self):
         limits = {"name": "AQUEDUCT_MODEL_RPM_LIMITS", "value": '{"public":10}'}
-        resources = render({"web": {"replicas": 2}, "env": [limits]})
+        resources = render({"web": {"replicas": 2}, "env": [
+            {"name": "DATABASE_ENGINE", "value": "django.db.backends.postgresql"}, limits,
+        ]})
         for kind, name in [
             ("Deployment", "test"), ("Deployment", "test-celery-worker"),
             ("Deployment", "test-celery-beat"),

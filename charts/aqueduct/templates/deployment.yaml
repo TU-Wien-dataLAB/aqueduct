@@ -57,8 +57,6 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           volumeMounts:
-            - name: sqlite-data
-              mountPath: /var/lib/aqueduct
             - name: settings-py
               mountPath: /app/aqueduct/aqueduct/settings.py
               subPath: settings.py
@@ -71,7 +69,7 @@ spec:
               mountPath: /etc/aqueduct/mcp.json
               subPath: mcp.json
       initContainers:
-        {{- include "aqueduct.migrationInit" . | nindent 8 }}
+        {{- include "aqueduct.migrationInit" (dict "root" . "pool" .Values.web.databasePool "extraEnv" .Values.web.extraEnv) | nindent 8 }}
         - name: collectstatic
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -84,8 +82,6 @@ spec:
             - name: staticfiles
               mountPath: /app/aqueduct/staticfiles
       volumes:
-        - name: sqlite-data
-          emptyDir: {}
         - name: migration-init
           configMap:
             name: {{ include "aqueduct.migrationConfigName" . }}

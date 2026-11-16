@@ -143,21 +143,29 @@ remove a newer reservation.
 Every web, worker and Beat pod validates the router configuration and runs Django migrations
 before starting. PostgreSQL migrations use a session advisory lock shared by all Aqueduct pods
 on the same database; each later pod runs Django's normal no-op migration check. Database and
-lock acquisition each retry for up to 600 seconds (connection attempts have a 5-second timeout).
-A failing init container is retried by Kubernetes and the application container does not start.
+lock acquisition each have a 600-second deadline, including a stalled lock query. Individual
+connection attempts use a 5-second libpq timeout. The Linux migration session enables TCP
+keepalives (10-second idle, 5-second interval, 3 probes) and a 30-second TCP user timeout for
+half-open connections; detection depends on the network and OS. No short statement timeout is
+applied to the migration itself. A failing init container is retried by Kubernetes and the application container does not start.
 Inspect `kubectl logs <pod> -c migrate` and resolve the failure before proceeding. A failed
 nontransactional migration may have left partial changes; assess them before retrying.
 
 Use a direct PostgreSQL connection or a session-pooling proxy, not transaction pooling: the lock
 must remain on the migration session. Budget for one migration connection per starting pod in
 addition to running application pools and surge/terminating pods. Init containers use the pod's
-role scheduling and `migrate.resources`, `migrate.containerSecurityContext` and `migrate.extraEnv`;
-`migrate.scheduling` and `migrate.activeDeadlineSeconds` no longer apply. The migration connection
-is deliberately unpooled. Pin the same immutable image identity for init and application containers.
-SQLite has no distributed lock. By default the chart stores SQLite at
-`/var/lib/aqueduct/db.sqlite3` on a pod-local `emptyDir` shared with its init container; it is
-lost when the pod is removed and is not shared across pods. Use PostgreSQL for multi-pod or
-persistent deployments. Review any `settingsPy.extra` database path overrides before upgrading.
+role scheduling and `migrate.resources` and `migrate.containerSecurityContext`. Each init receives
+exactly its application role's environment, including role-specific `extraEnv`; configure database
+and app settings there or in global `env`. `migrate.extraEnv` must be empty to prevent configuration
+mismatch. The migration connection is deliberately unpooled; `migrate.databasePool`,
+`migrate.scheduling` and `migrate.activeDeadlineSeconds` no longer apply. Pin the same immutable
+image identity for init and application containers.
+
+The Helm chart requires PostgreSQL and an explicit `DATABASE_ENGINE` entry in global `env`
+(which may use `valueFrom`). It rejects an explicit SQLite engine at render time and the
+init fails closed if effective Django settings resolve to SQLite or another backend at runtime,
+including settings supplied by secrets or `settingsPy.extra`. SQLite remains supported for local
+Django development outside this chart.
 
 Migrations can run while old pods serve. Use expand/contract schema changes compatible with both
 images, or schedule maintenance and stop traffic, producers, workers and Beat for incompatible or

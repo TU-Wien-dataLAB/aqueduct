@@ -29,23 +29,22 @@ topologySpreadConstraints:
 {{- end -}}
 
 {{- define "aqueduct.migrationInit" -}}
+{{- $root := .root -}}
 - name: migrate
-  image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  image: "{{ $root.Values.image.repository }}:{{ $root.Values.image.tag }}"
+  imagePullPolicy: {{ $root.Values.image.pullPolicy }}
   command: ["python", "/etc/aqueduct/migrate.py"]
   securityContext:
-    {{- toYaml .Values.migrate.containerSecurityContext | nindent 4 }}
+    {{- toYaml $root.Values.migrate.containerSecurityContext | nindent 4 }}
   resources:
-    {{- toYaml .Values.migrate.resources | nindent 4 }}
+    {{- toYaml $root.Values.migrate.resources | nindent 4 }}
   env:
-    {{- include "aqueduct.env" . | nindent 4 }}
-    {{- include "aqueduct.databasePoolEnv" .Values.migrate.databasePool | nindent 4 }}
-    {{- with .Values.migrate.extraEnv }}
+    {{- include "aqueduct.env" $root | nindent 4 }}
+    {{- include "aqueduct.databasePoolEnv" .pool | nindent 4 }}
+    {{- with .extraEnv }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
   volumeMounts:
-    - name: sqlite-data
-      mountPath: /var/lib/aqueduct
     - name: settings-py
       mountPath: /app/aqueduct/aqueduct/settings.py
       subPath: settings.py
@@ -81,14 +80,6 @@ Usage:
   valueFrom:
   {{ toYaml .Values.djangoSecretKey.valueFrom | nindent 4 }}
   {{- end }}
-{{/* Match Django's default; keep PostgreSQL validation for engines resolved via valueFrom. */}}
-{{- $databaseEngine := "django.db.backends.sqlite3" }}
-{{- range .Values.env }}
-  {{- if eq .name "DATABASE_ENGINE" }}
-    {{- $databaseEngine = .value | default "django.db.backends.postgresql" }}
-  {{- end }}
-{{- end }}
-{{- if ne $databaseEngine "django.db.backends.sqlite3" }}
 # Postgres configuration
 # The connection target is resolved by the `aqueduct.db.*` helpers below:
 # explicit `database.*` values win; otherwise the app auto-derives the CNPG
@@ -104,7 +95,6 @@ Usage:
   value: {{ include "aqueduct.db.host" . | quote }}
 - name: POSTGRES_PORT
   value: {{ include "aqueduct.db.port" . | quote }}
-{{- end }}
 # OIDC configuration
 - name: OIDC_RP_SIGN_ALGO
   value: {{ .Values.oidc.signAlgo | quote }}

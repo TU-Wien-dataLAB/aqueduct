@@ -25,7 +25,7 @@ spec:
         component: celery-worker
     spec:
       initContainers:
-        {{- include "aqueduct.migrationInit" . | nindent 8 }}
+        {{- include "aqueduct.migrationInit" (dict "root" . "pool" .Values.celery.workerDeployment.databasePool "extraEnv" .Values.celery.workerExtraEnv) | nindent 8 }}
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
       {{- include "aqueduct.scheduling" .Values.celery.workerDeployment | nindent 6 }}
@@ -45,8 +45,6 @@ spec:
           resources:
             {{- toYaml .Values.celery.workerDeployment.resources | nindent 12 }}
           volumeMounts:
-            - name: sqlite-data
-              mountPath: /var/lib/aqueduct
             - name: settings-py
               mountPath: /app/aqueduct/aqueduct/settings.py
               subPath: settings.py
@@ -57,8 +55,6 @@ spec:
               mountPath: /etc/aqueduct/mcp.json
               subPath: mcp.json
       volumes:
-        - name: sqlite-data
-          emptyDir: {}
         - name: migration-init
           configMap:
             name: {{ include "aqueduct.migrationConfigName" . }}

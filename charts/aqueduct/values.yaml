@@ -25,10 +25,8 @@ collectstatic:
 
 migrate:
   # Init containers share their pod's scheduling; database and lock waits are each bounded to 600s.
-  extraEnv: []
-  databasePool:
-    minSize: 0
-    maxSize: 2
+  # Migration uses the application role's environment and an unpooled connection.
+  extraEnv: [] # Must remain empty; use global or role-specific extraEnv instead.
   resources:
     requests:
       cpu: 100m
@@ -141,8 +139,6 @@ database:
 env:
   - name: DATABASE_ENGINE
     value: "django.db.backends.postgresql"
-  # - name: DATABASE_ENGINE
-  #   value: "django.db.backends.sqlite3"
 
 # Set per-role PostgreSQL pool sizes using databasePool (beatDatabasePool for Beat).
 # Do not set POSTGRESQL_POOL_MIN_SIZE or POSTGRESQL_POOL_MAX_SIZE in env or extraEnv.

@@ -5,11 +5,16 @@ The database is modified by Django's contenttypes migrations; never use producti
 
 import importlib.util
 import io
+import time
+from contextlib import nullcontext
 import multiprocessing
 import os
 import queue
+import select
+import socket
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from urllib.parse import urlparse
@@ -25,6 +30,33 @@ def contender(url, events, release, behavior):
     from django.db import connections
 
     target = urlparse(url)
+    host, port = target.hostname, target.port
+    stop_proxy = threading.Event()
+    blackhole = threading.Event()
+    if behavior == "blackhole":
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        host, port = listener.getsockname()
+
+        def proxy():
+            client, _ = listener.accept()
+            upstream = socket.create_connection((target.hostname, target.port))
+            try:
+                while not stop_proxy.is_set():
+                    readable, _, _ = select.select([client, upstream], [], [], 0.1)
+                    for source in readable:
+                        data = source.recv(65536)
+                        if not data:
+                            return
+                        if not blackhole.is_set():
+                            (upstream if source is client else client).sendall(data)
+            finally:
+                client.close()
+                upstream.close()
+
+        proxy_thread = threading.Thread(target=proxy, daemon=True)
+        proxy_thread.start()
     apps = ["django.contrib.contenttypes"]
     temporary = tempfile.TemporaryDirectory()
     if behavior == "fail":
@@ -46,7 +78,7 @@ def contender(url, events, release, behavior):
         SECRET_KEY="test", INSTALLED_APPS=apps,
         DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": target.path[1:],
                                "USER": target.username, "PASSWORD": target.password,
-                               "HOST": target.hostname, "PORT": target.port}},
+                               "HOST": host, "PORT": port}},
         USE_TZ=True,
     )
     django.setup()
@@ -72,18 +104,36 @@ def contender(url, events, release, behavior):
             except Exception:
                 connection.close()
             connection.ensure_connection()
+        if behavior == "slow-migration":
+            time.sleep(1.2)
         output = io.StringIO()
         call_command(*args, stdout=output, **kwargs)
         events.put(("output", behavior, output.getvalue()))
 
+    def stall_lock_query(execute, sql, params, many, context):
+        if "pg_try_advisory_lock" in sql:
+            if behavior == "blackhole":
+                blackhole.set()
+                return execute(sql, params, many, context)
+            return execute("SELECT pg_sleep(10)", None, many, context)
+        return execute(sql, params, many, context)
+
     module.call_command = run
+    if behavior in ("slow-query", "slow-migration", "blackhole"):
+        module.WAIT_SECONDS = 1
+    wrapper = connection.execute_wrapper(stall_lock_query) if behavior in ("slow-query", "blackhole") else nullcontext()
     try:
-        module.migrate(connection)
+        with wrapper:
+            module.migrate(connection)
         events.put(("done", behavior, ""))
     except Exception as error:
         events.put(("error", behavior, str(error)))
     finally:
         connection.close()
+        if behavior == "blackhole":
+            stop_proxy.set()
+            listener.close()
+            proxy_thread.join(2)
         temporary.cleanup()
 
 
@@ -126,6 +176,20 @@ class PostgreSQLMigrationTests(unittest.TestCase):
         self.assertLess(pairs.index(("output", "hold")), pairs.index(("locked", "second")))
         output = next(event[2] for event in results if event[:2] == ("output", "second"))
         self.assertIn("No migrations to apply", output)
+
+    def test_lock_query_deadline_does_not_limit_migration(self):
+        self.start("slow-query")
+        event = self.event()
+        self.assertEqual(event[:2], ("error", "slow-query"))
+        self.assertIn("Timed out waiting", event[2])
+        self.start("blackhole")
+        event = self.event()
+        self.assertEqual(event[:2], ("error", "blackhole"))
+        self.assertIn("Timed out waiting", event[2])
+        self.start("slow-migration")
+        self.assertEqual(self.event()[:2], ("locked", "slow-migration"))
+        self.assertEqual(self.event()[:2], ("output", "slow-migration"))
+        self.assertEqual(self.event()[:2], ("done", "slow-migration"))
 
     def test_failure_and_terminated_session_release_lock(self):
         import psycopg

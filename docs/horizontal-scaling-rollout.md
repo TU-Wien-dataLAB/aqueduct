@@ -29,9 +29,11 @@ before promotion.
 - Move any `POSTGRESQL_POOL_MIN_SIZE` and `POSTGRESQL_POOL_MAX_SIZE` entries from `env`,
   `web.extraEnv`, `celery.workerExtraEnv`, `celery.beatExtraEnv`, or `migrate.extraEnv` into
   the respective `web.databasePool`, `celery.workerDeployment.databasePool`,
-  `celery.beatDatabasePool`, and `migrate.databasePool` `minSize`/`maxSize` values. Apply
-  formerly global values to each role that needs them. The chart rejects the old entries;
-  other pool environment settings remain available.
+  and `celery.beatDatabasePool` `minSize`/`maxSize` values. Apply formerly global values to
+  each role that needs them. The chart rejects the old entries; other pool environment settings
+  remain available. Remove all `migrate.extraEnv` entries and put required settings in `env`
+  or the corresponding role's `extraEnv`; migration inherits that role's environment. Remove
+  the obsolete `migrate.databasePool` setting: migration connections are unpooled.
 - Review effective pool overrides, node capacity for requests plus surge, and the calculated connection budget
   against actual PostgreSQL limits. Include terminating pods and non-Aqueduct clients.
 
@@ -61,18 +63,20 @@ and selectors before using the commands below. Treat rendered files and values a
 Schedule maintenance for the first transition: stop traffic and producers, drain tasks, stop all
 old web, worker and Beat pods, and wait for any old migration Job to finish or be explicitly
 investigated and stopped before upgrading. Old Jobs do not take the new advisory lock, so they
-must never overlap new migration inits. This chart removes the old gate ServiceAccount and
-ConfigMap; retained old ReplicaSets cannot reliably start replacement pods after the upgrade.
-Do not rely on them for recovery. Confirm the target schema is compatible with the chosen image;
-for incompatible changes keep maintenance in place through migration and verification.
+must never overlap new migration inits. Before upgrading, deliberately retire all old pods,
+ReplicaSets and rollback targets that depend on the old gate; confirm none can start replacement
+pods. The upgrade removes the old gate ServiceAccount and ConfigMap. Do not rely on transparent
+rollback to those templates. Confirm the target schema is compatible with the chosen image; for
+incompatible changes keep maintenance in place through migration and verification. Have a tested
+backup and restore plan with a matching image for recovery.
 
 Old revision Jobs, Roles and RoleBindings were retained by Helm. Review them with
 `kubectl --context "$KUBE_CONTEXT" -n "$NS" get jobs,roles,rolebindings -l "app=$RELEASE,component=migrate"`.
-Do not delete resources still needed by running or retained old pod templates, including rollback
-targets. Once those workloads and rollback targets are deliberately retired, delete only reviewed,
-named obsolete resources. They may survive uninstall. Before rollback to the old chart, restore
-its gate ServiceAccount, ConfigMap, completed Job and matching grants as needed, and verify its
-schema compatibility; never allow an old migration Job to overlap the new inits.
+Only after deliberately retiring all old workloads and rollback targets that need them, delete
+reviewed, named obsolete resources. They may survive uninstall. If recovery requires an old
+release, use the approved backup/restore procedure and matching image under maintenance; recreate
+and validate its required gate resources as part of that procedure. Never allow old migration Jobs
+to overlap the new inits.
 
 ## 2. Remove legacy Beat sidecars before the first upgrade
 
@@ -224,9 +228,9 @@ values. Do not force old serving pods away to bypass a failed migration.
 
 For application rollback, first establish that the current schema is compatible with the target image.
 Prefer a new `helm upgrade` using this chart and reviewed values with the older image. Every new pod
-runs its migration init; neither this nor `helm rollback` undoes schema changes. A rollback to the
-old Job-based chart additionally requires its retained gate resources (see transition above) and
-must not overlap old Jobs with new migration inits. If incompatible, stop traffic, stop/drain workers
+runs its migration init; neither this nor `helm rollback` undoes schema changes. Do not assume
+transparent rollback to the retired Job-based chart; use the maintenance and backup/restore plan
+above. If incompatible, stop traffic, stop/drain workers
 and Beat, and perform approved database recovery/backup restore with a matching image before
 reopening service. Prefer a reviewed forward fix when safe.
 

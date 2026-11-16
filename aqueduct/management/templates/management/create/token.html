@@ -55,14 +55,17 @@
                     <label class="label" for="{{ form.expires_at.id_for_label }}">
                         <span class="label-text">{{ form.expires_at.label }}</span>
                     </label>
-                    <input type="datetime-local"
-                           name="{{ form.expires_at.name }}"
-                           id="{{ form.expires_at.id_for_label }}"
-                           data-min-expiration="{{ now_iso }}"
-                           {% if max_expiration_iso %}data-max-expiration="{{ max_expiration_iso }}"{% endif %}
-                           class="input input-bordered w-full {% if form.expires_at.errors %}input-error{% endif %}"
-                           value="{{ form.expires_at.value|default:'' }}"
-                           placeholder="Select expiration date and time (optional)">
+                    <div class="flex items-center gap-2">
+                        <input type="datetime-local"
+                               name="{{ form.expires_at.name }}"
+                               id="{{ form.expires_at.id_for_label }}"
+                               data-min-expiration="{{ now_iso }}"
+                               {% if max_expiration_iso %}data-max-expiration="{{ max_expiration_iso }}"{% endif %}
+                               class="input input-bordered w-full {% if form.expires_at.errors %}input-error{% endif %}"
+                               value="{{ form.expires_at.value|default:'' }}"
+                               placeholder="Select expiration date and time (optional)">
+                        <span class="text-xs text-base-content/50">UTC</span>
+                    </div>
                     {% if form.expires_at.errors %}
                         <label class="label">
                             <span class="label-text-alt text-error">{{ form.expires_at.errors|striptags }}</span>

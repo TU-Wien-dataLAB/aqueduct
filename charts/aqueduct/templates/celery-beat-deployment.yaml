@@ -14,13 +14,14 @@ spec:
     metadata:
       annotations:
         checksum/settings: {{ include (print $.Template.BasePath "/configmap-settings.yaml") . | toString | sha256sum }}
+        checksum/migration: {{ .Files.Get "files/migrate.py" | sha256sum }}
+        checksum/config: {{ .Values.routerConfig | toString | sha256sum }}
       labels:
         app: {{ .Release.Name }}
         component: celery-beat
     spec:
-      serviceAccountName: {{ include "aqueduct.migrationGateName" . }}
       initContainers:
-        {{- include "aqueduct.migrationGate" . | nindent 8 }}
+        {{- include "aqueduct.migrationInit" . | nindent 8 }}
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
       {{- include "aqueduct.scheduling" .Values.celery.beatScheduling | nindent 6 }}
@@ -40,13 +41,20 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           volumeMounts:
+            - name: sqlite-data
+              mountPath: /var/lib/aqueduct
             - name: settings-py
               mountPath: /app/aqueduct/aqueduct/settings.py
               subPath: settings.py
       volumes:
-        - name: migration-gate
+        - name: sqlite-data
+          emptyDir: {}
+        - name: migration-init
           configMap:
-            name: {{ include "aqueduct.migrationGateName" . }}
+            name: {{ include "aqueduct.migrationConfigName" . }}
+        - name: router-config
+          configMap:
+            name: {{ .Release.Name }}-router-config
         - name: settings-py
           configMap:
             name: {{ .Release.Name }}-settings

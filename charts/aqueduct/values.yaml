@@ -24,12 +24,7 @@ collectstatic:
         - ALL
 
 migrate:
-  scheduling:
-    nodeSelector: {}
-    tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
-  activeDeadlineSeconds: 600
+  # Init containers share their pod's scheduling; database and lock waits are each bounded to 600s.
   extraEnv: []
   databasePool:
     minSize: 0

@@ -138,6 +138,33 @@ remove a newer reservation.
 
 ## Upgrading
 
+### Migration init containers
+
+Every web, worker and Beat pod validates the router configuration and runs Django migrations
+before starting. PostgreSQL migrations use a session advisory lock shared by all Aqueduct pods
+on the same database; each later pod runs Django's normal no-op migration check. Database and
+lock acquisition each retry for up to 600 seconds (connection attempts have a 5-second timeout).
+A failing init container is retried by Kubernetes and the application container does not start.
+Inspect `kubectl logs <pod> -c migrate` and resolve the failure before proceeding. A failed
+nontransactional migration may have left partial changes; assess them before retrying.
+
+Use a direct PostgreSQL connection or a session-pooling proxy, not transaction pooling: the lock
+must remain on the migration session. Budget for one migration connection per starting pod in
+addition to running application pools and surge/terminating pods. Init containers use the pod's
+role scheduling and `migrate.resources`, `migrate.containerSecurityContext` and `migrate.extraEnv`;
+`migrate.scheduling` and `migrate.activeDeadlineSeconds` no longer apply. The migration connection
+is deliberately unpooled. Pin the same immutable image identity for init and application containers.
+SQLite has no distributed lock. By default the chart stores SQLite at
+`/var/lib/aqueduct/db.sqlite3` on a pod-local `emptyDir` shared with its init container; it is
+lost when the pod is removed and is not shared across pods. Use PostgreSQL for multi-pod or
+persistent deployments. Review any `settingsPy.extra` database path overrides before upgrading.
+
+Migrations can run while old pods serve. Use expand/contract schema changes compatible with both
+images, or schedule maintenance and stop traffic, producers, workers and Beat for incompatible or
+uncertain changes. A lock serializes migrations, not application access. See the
+[rollout guide](horizontal-scaling-rollout.md) for the transition from Job-based releases, cleanup,
+and rollback precautions.
+
 ### Before upgrading from the Bitnami-backed chart
 
 > **Back up your database before upgrading.** This chart removes the Bitnami

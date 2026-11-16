@@ -6,6 +6,9 @@ data:
   settings.py: |
     {{ .Files.Get "files/settings.py" | nindent 4 }}
     LITELLM_ROUTER_CONFIG_FILE_PATH = "/etc/aqueduct/router_config.yaml"
+    # Share the pod-local SQLite database between init and application containers.
+    if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3":
+        DATABASES["default"]["NAME"] = "/var/lib/aqueduct/db.sqlite3"
     {{ .Values.settingsPy.extra | nindent 4 }}
     {{- if .Values.ingress.enabled }}
     SESSION_COOKIE_DOMAIN = "{{ .Values.ingress.host }}"

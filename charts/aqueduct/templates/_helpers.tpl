@@ -1,13 +1,5 @@
-{{- define "aqueduct.migrationName" -}}
-{{- $name := .Release.Name -}}
-{{- if gt (len $name) 40 -}}
-{{- $name = printf "%s-%s" ($name | trunc 32 | trimSuffix "-") ($name | sha256sum | trunc 7) -}}
-{{- end -}}
-{{- printf "%s-migrate-%d" $name .Release.Revision -}}
-{{- end -}}
-
-{{- define "aqueduct.migrationGateName" -}}
-{{- printf "%s-migration-gate" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- define "aqueduct.migrationConfigName" -}}
+{{- printf "%s-migration-init" .Release.Name | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "aqueduct.scheduling" -}}
@@ -36,19 +28,33 @@ topologySpreadConstraints:
   value: {{ .maxSize | quote }}
 {{- end -}}
 
-{{- define "aqueduct.migrationGate" -}}
-- name: wait-for-migrations
+{{- define "aqueduct.migrationInit" -}}
+- name: migrate
   image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
   imagePullPolicy: {{ .Values.image.pullPolicy }}
-  command: ["python", "/etc/aqueduct/wait_for_migrations.py", {{ include "aqueduct.migrationName" . | quote }}]
+  command: ["python", "/etc/aqueduct/migrate.py"]
   securityContext:
     {{- toYaml .Values.migrate.containerSecurityContext | nindent 4 }}
   resources:
     {{- toYaml .Values.migrate.resources | nindent 4 }}
+  env:
+    {{- include "aqueduct.env" . | nindent 4 }}
+    {{- include "aqueduct.databasePoolEnv" .Values.migrate.databasePool | nindent 4 }}
+    {{- with .Values.migrate.extraEnv }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   volumeMounts:
-    - name: migration-gate
-      mountPath: /etc/aqueduct/wait_for_migrations.py
-      subPath: wait_for_migrations.py
+    - name: sqlite-data
+      mountPath: /var/lib/aqueduct
+    - name: settings-py
+      mountPath: /app/aqueduct/aqueduct/settings.py
+      subPath: settings.py
+    - name: router-config
+      mountPath: /etc/aqueduct/router_config.yaml
+      subPath: router_config.yaml
+    - name: migration-init
+      mountPath: /etc/aqueduct/migrate.py
+      subPath: migrate.py
 {{- end -}}
 
 {{/*

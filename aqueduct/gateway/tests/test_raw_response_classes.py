@@ -79,7 +79,7 @@ class TestRawStreamingResponse(SimpleTestCase):
                     message["reasoning"] = "Deep chain of thought..."
             return chunk
 
-        mock_request_log = AsyncMock(token_usage=None, response_time_ms=None)
+        mock_request_log = AsyncMock(token_usage=None, response_time_ms=None, token_id=42)
         mock_request_log.asave = AsyncMock()
 
         response = RawStreamingResponse(

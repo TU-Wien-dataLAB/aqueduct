@@ -38,7 +38,7 @@ class UserTokensView(BaseAqueductView, TemplateView):
         can_add_token = tokens.count() < max_tokens
 
         # Effective limits for user-owned tokens (UserProfile + Org fallback)
-        user_limits: LimitSet = LimitSet.from_objects(profile, profile.org)
+        user_limits: LimitSet = LimitSet.from_objects(profile, [profile.org])
 
         # Attach each token's current rate-limit usage (per minute/hour/day bucket)
         # to the token object so templates can render it. All tokens are fetched in a
@@ -52,7 +52,7 @@ class UserTokensView(BaseAqueductView, TemplateView):
         # per-SA DB query that sa.token.get_limit() would trigger.
         per_sa_token_usage = get_per_token_usage([sa.token.id for sa in service_accounts])
         for sa in service_accounts:
-            sa.effective_limits = LimitSet.from_objects(sa.team, sa.team.org)  # type: ignore[attr-defined]
+            sa.effective_limits = LimitSet.from_objects(sa.team, [sa.team.org])  # type: ignore[attr-defined]
             sa.usage = per_sa_token_usage[sa.token.id]  # type: ignore[attr-defined]
 
         context.update(

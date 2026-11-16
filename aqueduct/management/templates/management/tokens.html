@@ -45,7 +45,7 @@
                                             {% endif %}
                                         </span>
                                     </div>
-                                    {# Effective limits (UserProfile + Org fallback) #}
+                                    {# Effective limits per Token (UserProfile + Org fallbacks) #}
                                     <div class="mt-1">
                                         {% include 'management/_limits_compact.html' with limit_object=user_limits %}
                                     </div>
@@ -98,7 +98,7 @@
                                             Key: {{ sa.token.key_preview }}
                                         </span>
                                     </div>
-                                    {# Per-SA effective limits (Team + Org fallback) #}
+                                    {# Per-SA effective limits per Token (Team + Org fallbacks) #}
                                     <div class="mt-1">
                                         {% include 'management/_limits_compact.html' with limit_object=sa.effective_limits %}
                                     </div>

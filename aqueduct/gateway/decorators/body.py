@@ -11,7 +11,7 @@ from django.core.handlers.asgi import ASGIRequest
 from openai.types.chat import ChatCompletionStreamOptionsParam
 from pydantic import TypeAdapter, ValidationError
 
-from gateway.config import resolve_model_alias
+from gateway.config import resolve_model
 from gateway.decorators.types import AsyncView, Decorator, ViewResult
 from gateway.response_error import error_response
 
@@ -187,7 +187,7 @@ def resolve_alias(view_func: AsyncView) -> AsyncView:
 
         model_or_alias: str | None = pydantic_model.get("model", None)
         if model_or_alias:
-            resolved_model = resolve_model_alias(model_or_alias)
+            resolved_model = resolve_model(model_or_alias).routing_name
             pydantic_model["model"] = resolved_model
             log.debug("Resolved model %r to %r", model_or_alias, resolved_model)
 

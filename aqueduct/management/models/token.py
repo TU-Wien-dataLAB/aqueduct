@@ -1,7 +1,7 @@
 import hashlib
 import secrets
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Optional, TypeVar
 
 from django.conf import settings
@@ -64,12 +64,18 @@ class Token(models.Model):
             )
         update_fields = kwargs.get("update_fields")
         if update_fields is None or "expires_at" in update_fields:
-            days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
-            if days != -1:
-                deadline = timezone.now() + timedelta(days=days)
-                if self.expires_at is None or self.expires_at > deadline:
-                    self.expires_at = deadline
+            deadline = self.max_expiration()
+            if deadline is not None and (self.expires_at is None or self.expires_at > deadline):
+                self.expires_at = deadline
         super().save(*args, **kwargs)
+
+    @classmethod
+    def max_expiration(cls) -> datetime | None:
+        """Return the latest allowed expiration, or ``None`` when unlimited."""
+        days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
+        if days == -1:
+            return None
+        return timezone.now() + timedelta(days=days)
 
     @property
     def is_expired(self) -> bool:

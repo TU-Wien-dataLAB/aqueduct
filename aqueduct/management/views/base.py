@@ -8,9 +8,22 @@ from django.http import (
 )
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views import View
 
-from management.models import Org, ServiceAccount, Team, UserProfile
+from management.models import Org, ServiceAccount, Team, Token, UserProfile
+
+
+class AccessKeyExpirationContextMixin:
+    """Expose the latest permitted key expiration to expiration form templates."""
+
+    def get_context_data(self, **kwargs) -> dict[str, object]:
+        context = super().get_context_data(**kwargs)
+        context["now_iso"] = timezone.now().isoformat(timespec="seconds")
+        deadline = Token.max_expiration()
+        if deadline is not None:
+            context["max_expiration_iso"] = deadline.isoformat(timespec="seconds")
+        return context
 
 
 class BaseAqueductView(LoginRequiredMixin, View):

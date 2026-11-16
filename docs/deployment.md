@@ -18,9 +18,11 @@ nav_order: 4
 ## Access key expiration
 
 Set `MAX_ACCESS_KEY_EXPIRATION_DAYS` to a positive integer to limit the expiration
-of user and service-account keys. The default, `-1`, imposes no maximum. New or
-edited keys with no expiration or a later expiration are capped at the current
-time plus the configured number of days; earlier expirations are preserved.
+of user and service-account keys. The default, `-1`, imposes no maximum. The key
+forms show the maximum expiration and reject an explicit date later than the
+current time plus the configured number of days. Leaving the expiration empty uses
+the maximum. Programmatic saves with no expiration or a later expiration are still
+capped at the maximum; earlier expirations are preserved.
 
 Run `python manage.py migrate` with the new setting whenever enabling or reducing
 the limit. This shortens existing keys with no expiration or an expiration beyond

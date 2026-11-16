@@ -11,7 +11,15 @@ from management.models import Org, ServiceAccount, Team, Token, UserGroup, UserP
 
 User = get_user_model()
 
+_RENDER_HTML = override_settings(
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+)
 
+
+@_RENDER_HTML
 class AccessKeyExpirationViewTests(TestCase):
     def setUp(self):
         org = Org.objects.create(name="expiry-org")
@@ -21,7 +29,7 @@ class AccessKeyExpirationViewTests(TestCase):
         self.client.force_login(self.user)
 
     @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
-    def test_user_key_create_and_edit_cap_missing_or_late_expiration(self):
+    def test_user_key_create_without_expiration_uses_maximum(self):
         before = timezone.now()
         response = self.client.post(reverse("token_create"), {"name": "key", "expires_at": ""})
         self.assertEqual(response.status_code, 302)
@@ -29,14 +37,57 @@ class AccessKeyExpirationViewTests(TestCase):
         self.assertGreaterEqual(token.expires_at, before + timedelta(days=7))
         self.assertLessEqual(token.expires_at, timezone.now() + timedelta(days=7))
 
+    @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
+    def test_user_key_create_rejects_expiration_beyond_maximum(self):
+        far_future = (timezone.now() + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M")
+        response = self.client.post(
+            reverse("token_create"), {"name": "late", "expires_at": far_future}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Expiration date cannot be later than")
+        self.assertContains(response, "the maximum of 7 days from now")
+        self.assertFalse(Token.objects.filter(user=self.user, name="late").exists())
+
+    @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
+    def test_user_key_edit_rejects_expiration_beyond_maximum(self):
+        token = Token(name="key", user=self.user)
+        token._set_new_key()
+        token.save()
+        original_expiration = token.expires_at
+
         far_future = (timezone.now() + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M")
         response = self.client.post(
             reverse("token_edit", kwargs={"id": token.id}),
             {"name": "key", "expires_at": far_future},
         )
-        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Expiration date cannot be later than")
         token.refresh_from_db()
-        self.assertLessEqual(token.expires_at, timezone.now() + timedelta(days=7))
+        self.assertEqual(token.expires_at, original_expiration)
+
+    @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
+    def test_user_key_accepts_expiration_within_maximum(self):
+        expiration = (timezone.now() + timedelta(days=2)).replace(second=0, microsecond=0)
+        response = self.client.post(
+            reverse("token_create"),
+            {"name": "key", "expires_at": expiration.strftime("%Y-%m-%dT%H:%M")},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Token.objects.get(user=self.user).expires_at, expiration)
+
+    @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
+    def test_token_create_form_shows_maximum_expiration(self):
+        response = self.client.get(reverse("token_create"))
+        self.assertContains(response, "Maximum expiration:")
+        self.assertContains(response, "(7 days from now)")
+        self.assertContains(response, "Leave blank to use the maximum")
+        self.assertContains(response, "data-max-expiration=")
+
+    @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=-1)
+    def test_token_create_form_omits_maximum_expiration_when_unlimited(self):
+        response = self.client.get(reverse("token_create"))
+        self.assertNotContains(response, "Maximum expiration:")
+        self.assertNotContains(response, "data-max-expiration")
 
     @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
     def test_service_account_create_and_edit_cap_expiration(self):
@@ -57,6 +108,24 @@ class AccessKeyExpirationViewTests(TestCase):
         token.refresh_from_db()
         self.assertIsNotNone(token.expires_at)
         self.assertLessEqual(token.expires_at, timezone.now() + timedelta(days=7))
+
+    @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
+    def test_service_account_create_rejects_expiration_beyond_maximum(self):
+        far_future = (timezone.now() + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M")
+        response = self.client.post(
+            reverse("service_account_create", kwargs={"id": self.team.id}),
+            {"name": "late-service", "description": "", "token_expires_at": far_future},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Expiration date cannot be later than")
+        self.assertFalse(ServiceAccount.objects.filter(name="late-service").exists())
+
+    @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
+    def test_service_account_form_shows_maximum_expiration(self):
+        response = self.client.get(reverse("service_account_create", kwargs={"id": self.team.id}))
+        self.assertContains(response, "Maximum expiration:")
+        self.assertContains(response, "(7 days from now)")
+        self.assertContains(response, "data-max-expiration=")
 
     @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=-1)
     def test_unlimited_user_key_can_have_no_expiration(self):

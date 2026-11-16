@@ -1,0 +1,76 @@
+{% comment %}
+Client-side help for a datetime-local expiration input.
+
+The input must expose ISO 8601 timestamps in ``data-min-expiration`` and, when the
+configured maximum applies, ``data-max-expiration``. Changed values are converted to
+UTC on submit because the server parses ``datetime-local`` values in the project
+time zone. Unchanged server-rendered values are sent as-is.
+{% endcomment %}
+<script>
+  (() => {
+    const input = document.getElementById('{{ field.id_for_label }}');
+    if (!input) {
+      return;
+    }
+
+    const form = input.closest('form');
+    const initialValue = input.value;
+    const pad = (value) => value.toString().padStart(2, '0');
+    const toLocalInputValue = (date) =>
+      `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+
+    const minValue = input.dataset.minExpiration;
+    if (minValue) {
+      input.min = toLocalInputValue(new Date(minValue));
+    }
+
+    const maxValue = input.dataset.maxExpiration;
+    const maxDate = maxValue ? new Date(maxValue) : null;
+    if (maxDate) {
+      input.max = toLocalInputValue(maxDate);
+    }
+
+    const errorLabel = document.createElement('label');
+    errorLabel.className = 'label hidden';
+    errorLabel.innerHTML = '<span class="label-text-alt text-error"></span>';
+    input.insertAdjacentElement('afterend', errorLabel);
+    const errorText = errorLabel.querySelector('span');
+
+    const clearError = () => {
+      errorLabel.classList.add('hidden');
+      input.classList.remove('input-error');
+    };
+
+    const validateExpiration = () => {
+      if (!input.value || !maxDate || input.value === initialValue) {
+        clearError();
+        return true;
+      }
+      if (new Date(input.value) > maxDate) {
+        const localMaximum = toLocalInputValue(maxDate).replace('T', ' ');
+        errorText.textContent = `Expiration date cannot be later than ${localMaximum} (your local time).`;
+        errorLabel.classList.remove('hidden');
+        input.classList.add('input-error');
+        return false;
+      }
+      clearError();
+      return true;
+    };
+
+    input.addEventListener('change', validateExpiration);
+    input.addEventListener('input', validateExpiration);
+
+    if (form) {
+      form.addEventListener('submit', (event) => {
+        if (!validateExpiration()) {
+          event.preventDefault();
+          input.focus();
+          return;
+        }
+        if (input.value && input.value !== initialValue) {
+          input.value = new Date(input.value).toISOString().slice(0, 16);
+        }
+      });
+    }
+  })();
+</script>

@@ -58,6 +58,8 @@
                     <input type="datetime-local"
                            name="{{ form.expires_at.name }}"
                            id="{{ form.expires_at.id_for_label }}"
+                           data-min-expiration="{{ now_iso }}"
+                           {% if max_expiration_iso %}data-max-expiration="{{ max_expiration_iso }}"{% endif %}
                            class="input input-bordered w-full {% if form.expires_at.errors %}input-error{% endif %}"
                            value="{{ form.expires_at.value|default:'' }}"
                            placeholder="Select expiration date and time (optional)">
@@ -84,21 +86,6 @@
         </form>
     </div>
 
-    <script>
-      // Helper to zero-pad numbers for date/time formatting
-      const pad = (num) => num.toString().padStart(2, '0');
-
-      document.addEventListener('DOMContentLoaded', function () {
-        const input = document.getElementById('{{ form.expires_at.id_for_label }}');
-        const serverNowUtc = new Date("{{ now }}Z"); // {{ now }} should be like "YYYY-MM-DDTHH:MM:SS"
-        input.min = `${serverNowUtc.getFullYear()}-${pad(serverNowUtc.getMonth() + 1)}-${pad(serverNowUtc.getDate())}T${pad(serverNowUtc.getHours())}:${pad(serverNowUtc.getMinutes())}`;
-      });
-
-      document.getElementById('token-create-form').addEventListener('submit', function (e) {
-        const input = document.getElementById('{{ form.expires_at.id_for_label }}');
-        const localDate = new Date(input.value); // input.value is "YYYY-MM-DDTHH:MM" (local)
-        input.value = localDate.toISOString().slice(0, 16);
-      });
-    </script>
+    {% include 'management/_expiration_input_script.html' with field=form.expires_at %}
 
 {% endblock %} 

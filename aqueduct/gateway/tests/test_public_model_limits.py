@@ -189,7 +189,9 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
                     self.assertEqual(
                         self.client.get(response_url, headers=self.headers).status_code, 200
                     )
-                    self.assertEqual(create("second-backend").status_code, 429)
+                    for name in ("gpt-4.1-nano", "main", "second-backend"):
+                        with self.subTest(model=name):
+                            self.assertEqual(create(name).status_code, 429)
                     select.assert_not_called()
 
     async def test_speech_and_streaming_chat_have_independent_model_budgets(self):

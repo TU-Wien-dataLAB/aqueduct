@@ -7,7 +7,7 @@ from typing import Any
 import litellm
 from django.core.handlers.asgi import ASGIRequest
 
-from gateway.config import get_files_api_client, get_router, resolve_model_alias
+from gateway.config import get_files_api_client, get_router, resolve_model
 from gateway.decorators.types import AsyncView, ViewResult
 from gateway.response_error import error_response
 
@@ -44,7 +44,7 @@ def _lookup_relay_model_name(requested_model: str) -> str | None:
     if not router:
         return requested_model
 
-    requested_model = resolve_model_alias(requested_model)
+    requested_model = resolve_model(requested_model).routing_name
     deployment: litellm.Deployment | None = router.get_deployment(model_id=requested_model)
     if not deployment:
         return None

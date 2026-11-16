@@ -1,6 +1,7 @@
 from gateway.views.batches import batch, batch_cancel, batches
 from gateway.views.chat_completions import chat_completions
 from gateway.views.completions import completions
+from gateway.views.decisions import decisions
 from gateway.views.embeddings import embeddings
 from gateway.views.files import file, file_content, files
 from gateway.views.image_generation import image_generation
@@ -28,6 +29,7 @@ __all__ = [
     "chat_completions",
     "completions",
     "create_response",
+    "decisions",
     "embeddings",
     "file",
     "file_content",

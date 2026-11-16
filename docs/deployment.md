@@ -105,6 +105,29 @@ service). Set `celery.brokerUrl` explicitly to point at an external broker.
 The broker holds only transient Celery task messages (`valkey.dataStorage` is
 disabled by default), so there is no persistent data.
 
+## Concurrency lease renewal
+
+Token and model concurrency slots are Redis leases with a fixed lifetime,
+configured by `AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS` (default
+`600` seconds). The lease is reserved while the request view runs and is not
+renewed on a timer.
+
+For streaming responses, each non-empty chunk renews the lease only if the same
+lease still exists and has not expired. Normal completion, errors, cancellation,
+and closing the response release the reservation. Empty chunks do not renew it.
+
+If a request produces no stream progress, its lease expires after the TTL and
+frees accounting capacity. This applies to stalled views, stalled streams,
+never-consumed streams, and crashed workers. Expiry does not cancel or close the
+local view or upstream request: Aqueduct does not enforce a maximum request
+lifetime, and silent or backpressured upstream work may continue after its
+capacity has been released. If that work later produces a chunk, the expired
+lease cannot be renewed; the gateway stops forwarding that stream.
+
+A Redis refresh error also stops forwarding. Release is best effort, as with
+other cleanup paths. A reservation released after its lease expired cannot
+remove a newer reservation.
+
 ## Upgrading
 
 ### Before upgrading from the Bitnami-backed chart

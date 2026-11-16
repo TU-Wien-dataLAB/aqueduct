@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from functools import lru_cache, wraps
@@ -107,21 +106,23 @@ def model_concurrency_limit(model: str) -> int:
 
 
 class RedisConcurrencyLimiter:
-    def __init__(self, redis_client: aioredis.Redis, refresh_interval: float = 30):
+    def __init__(self, redis_client: aioredis.Redis):
         self.redis = redis_client
         self.acquire_script = redis_client.register_script(ACQUIRE_LUA)
         self.release_script = redis_client.register_script(RELEASE_LUA)
         self.refresh_script = redis_client.register_script(REFRESH_LUA)
         self.ttl = settings.AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS
-        # Refresh interval has to be safely smaller than ttl; otherwise slots of long-running
-        # stream requests may expire before the streaming is over!
-        self.refresh_interval = min(refresh_interval, self.ttl / 2)
 
     async def acquire(self, key: str, limit: int) -> str | None:
         """Acquire a concurrent requests slot, returning its lease ID or None if over limit."""
         lease = uuid4().hex
         ok = await self.acquire_script(keys=[key], args=[limit, self.ttl, lease])
         return lease if ok else None
+
+    async def refresh(self, key: str, lease: str) -> bool:
+        """Renew only the owned, unexpired lease after stream progress."""
+        ok = await self.refresh_script(keys=[key], args=[lease, self.ttl])
+        return bool(ok)
 
     async def release(self, key: str, lease: str) -> bool:
         """Release the concurrent requests slot for the given lease ID."""
@@ -130,67 +131,75 @@ class RedisConcurrencyLimiter:
 
 
 class _LeaseLifetime:
-    """Hold the slot and prevent lease expiry for the whole request."""
+    """Hold a reservation until completion or until stream progress stops."""
 
     def __init__(self, limiter: RedisConcurrencyLimiter, key: str, lease: str):
         self._limiter = limiter
         self._key = key
         self._lease = lease
         self._loop = asyncio.get_running_loop()
-        self._stop_event = asyncio.Event()
-        self._watchdog = asyncio.create_task(self._refresh_ttl_loop())
+        self._release_task: asyncio.Task[bool] | None = None
         self._streaming = False
 
     async def __aenter__(self) -> "_LeaseLifetime":
         return self
 
     async def __aexit__(self, exc_type: type[BaseException] | None, *_: object) -> None:
-        # Make sure we release the concurrent requests slot if there is an error
-        # (including cancellation), or the non-streaming response is fully generated.
+        # Release on errors/cancellation and after non-streaming responses.
         if exc_type is not None or not self._streaming:
-            await self._aclose()
+            await self.aclose()
 
-    async def _refresh_ttl_loop(self) -> None:
-        """Periodically check if the event's flag is not set, and extend the TTL of the lease.
+    @staticmethod
+    def _observe_release(task: asyncio.Task[bool]) -> None:
+        if task.cancelled():
+            return
+        if task.exception() is not None:
+            log.error("Error releasing concurrency lease", exc_info=task.exception())
 
-        Release the concurrent requests slot when the loop stops.
-        """
-        try:
-            while True:
-                try:
-                    await asyncio.wait_for(
-                        self._stop_event.wait(), timeout=self._limiter.refresh_interval
-                    )
-                except TimeoutError:
-                    if not await self._limiter.refresh_script(
-                        keys=[self._key], args=[self._lease, self._limiter.ttl]
-                    ):
-                        return
-                else:
-                    return
-        finally:
-            await self._limiter.release(self._key, self._lease)
+    def _start_release(self) -> asyncio.Task[bool]:
+        if self._release_task is None:
+            self._release_task = asyncio.create_task(self._limiter.release(self._key, self._lease))
+            self._release_task.add_done_callback(self._observe_release)
+        return self._release_task
 
-    async def _aclose(self) -> None:
-        self._stop_event.set()
-        with contextlib.suppress(asyncio.CancelledError):
-            await self._watchdog
+    async def aclose(self) -> None:
+        """Release once without masking an upstream error or skipping cancellation."""
+        task = self._start_release()
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                if task.cancelled():
+                    raise
+                cancelled = True
+            except Exception:
+                # The release callback logs the failure; cleanup is best effort.
+                break
+        if task.cancelled():
+            raise asyncio.CancelledError
+        if cancelled:
+            raise asyncio.CancelledError
 
     def _close(self) -> None:
         # Django may close a response without ever starting its async iterator.
-        # close() can run in a worker thread, so signal the owning event loop.
-        self._loop.call_soon_threadsafe(self._stop_event.set)
+        # close() can run in a worker thread, so start release on the owning loop.
+        self._loop.call_soon_threadsafe(self._start_release)
 
     async def _wrap_stream(self, stream: AsyncIterator[bytes]) -> AsyncGenerator[bytes]:
-        """Hold the slot and prevent lease expiry for the whole stream."""
+        """Renew before forwarding non-empty chunks; stop if renewal fails."""
         try:
             async for chunk in stream:
+                if chunk:
+                    renewed = await self._limiter.refresh(self._key, self._lease)
+                    if not renewed:
+                        return
                 yield chunk
         finally:
-            await self._aclose()
+            await self.aclose()
 
     def wrap_response(self, response: StreamingHttpResponse) -> None:
-        # Keep the slot held for the full stream duration.
+        # Keep the reservation until stream completion, failure, or close.
         streaming_content = cast("AsyncIterator[bytes]", response.streaming_content)
         response.streaming_content = self._wrap_stream(streaming_content)
         response._resource_closers.append(self._close)  # type: ignore[attr-defined]

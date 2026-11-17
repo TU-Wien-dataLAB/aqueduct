@@ -36,6 +36,9 @@ urlpatterns = [
     # Image generation endpoint
     path("images/generations", views.image_generation, name="image_generation"),
     path("v1/images/generations", views.image_generation, name="v1_image_generation"),
+    # Image edit endpoint
+    path("images/edits", views.image_edit, name="image_edit"),
+    path("v1/images/edits", views.image_edit, name="v1_image_edit"),
     # Files endpoints
     path("files", views.files, name="files"),
     path("v1/files", views.files, name="v1_files"),

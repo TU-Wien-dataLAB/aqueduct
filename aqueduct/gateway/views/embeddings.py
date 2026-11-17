@@ -9,8 +9,11 @@ from pydantic import TypeAdapter
 from gateway.config import get_router
 from gateway.decorators import (
     catch_router_exceptions,
-    check_limits,
     check_model_availability,
+    check_model_concurrency_limits,
+    check_model_rate_limits,
+    check_token_concurrency_limits,
+    check_token_rate_limits,
     ensure_usage,
     log_request,
     parse_body,
@@ -19,6 +22,7 @@ from gateway.decorators import (
     tos_accepted,
 )
 from gateway.response_type import RawJsonResponse, get_token_usage
+from gateway.views.utils import router_kwargs
 from management.models import Request
 
 if TYPE_CHECKING:
@@ -30,7 +34,10 @@ if TYPE_CHECKING:
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
-@check_limits
+@check_token_concurrency_limits
+@check_model_concurrency_limits
+@check_token_rate_limits
+@check_model_rate_limits
 @ensure_usage
 @resolve_alias
 @check_model_availability
@@ -44,6 +51,8 @@ async def embeddings(
     **kwargs: Any,
 ) -> RawJsonResponse:
     router = get_router()
-    embedding: EmbeddingResponse = await router.aembedding(**pydantic_model)
+    embedding: EmbeddingResponse = await router.aembedding(
+        **router_kwargs(pydantic_model, openai.types.EmbeddingCreateParams)
+    )
     request_log.token_usage = get_token_usage(embedding)
     return RawJsonResponse(data=embedding, status=200)

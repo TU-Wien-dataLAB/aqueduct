@@ -58,17 +58,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
-      - name: Set up Helm
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+      - name: Install Helm
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4  # v4.3.1
         with:
           version: v3.18.6
-
-      - name: Lint chart
-        run: helm lint charts/aqueduct
-
-      - name: Render chart
-        run: helm template aqueduct charts/aqueduct > /dev/null
+      - name: Lint and test chart
+        run: |
+          helm lint charts/aqueduct
+          uv run --frozen python -m unittest discover -s charts/tests
+          helm template aqueduct charts/aqueduct > /dev/null
 
   compose:
     runs-on: ubuntu-latest

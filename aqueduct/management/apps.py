@@ -1,12 +1,15 @@
 import logging
+from datetime import timedelta
 
 from django.apps import AppConfig, apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import caches
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models.signals import post_save
+from django.db.models import Q
+from django.db.models.signals import post_migrate, post_save
 from django.dispatch import receiver
+from django.utils import timezone
 
 log = logging.getLogger("aqueduct")
 
@@ -16,6 +19,17 @@ class AqueductManagementConfig(AppConfig):
     name = "management"
 
     def ready(self):
+        @receiver(post_migrate, sender=self, dispatch_uid="limit_access_key_expiration", weak=False)
+        def limit_access_key_expiration(using, **kwargs):
+            days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
+            if days == -1:
+                return
+            Token = apps.get_model("management", "Token")
+            deadline = timezone.now() + timedelta(days=days)
+            Token.objects.using(using).filter(
+                Q(expires_at__isnull=True) | Q(expires_at__gt=deadline)
+            ).update(expires_at=deadline)
+
         if settings.TOS_ENABLED:
             log.info("Setting up TOS dispatch functions...")
             cache = caches[getattr(settings, "TOS_CACHE_NAME", "default")]

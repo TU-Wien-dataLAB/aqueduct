@@ -1,3 +1,61 @@
+{{- define "aqueduct.migrationConfigName" -}}
+{{- printf "%s-migration-init" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "aqueduct.scheduling" -}}
+{{- with .nodeSelector }}
+nodeSelector:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .tolerations }}
+tolerations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .affinity }}
+affinity:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .topologySpreadConstraints }}
+topologySpreadConstraints:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{- define "aqueduct.databasePoolEnv" -}}
+- name: POSTGRESQL_POOL_MIN_SIZE
+  value: {{ .minSize | quote }}
+- name: POSTGRESQL_POOL_MAX_SIZE
+  value: {{ .maxSize | quote }}
+{{- end -}}
+
+{{- define "aqueduct.migrationInit" -}}
+{{- $root := .root -}}
+- name: migrate
+  image: "{{ $root.Values.image.repository }}:{{ $root.Values.image.tag }}"
+  imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+  command: ["python", "/etc/aqueduct/migrate.py"]
+  securityContext:
+    {{- toYaml $root.Values.migrate.containerSecurityContext | nindent 4 }}
+  resources:
+    {{- toYaml $root.Values.migrate.resources | nindent 4 }}
+  env:
+    {{- include "aqueduct.env" $root | nindent 4 }}
+    {{- include "aqueduct.databasePoolEnv" .pool | nindent 4 }}
+    {{- with .extraEnv }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  volumeMounts:
+    - name: settings-py
+      mountPath: /app/aqueduct/aqueduct/settings.py
+      subPath: settings.py
+    - name: router-config
+      mountPath: /etc/aqueduct/router_config.yaml
+      subPath: router_config.yaml
+    - name: migration-init
+      mountPath: /etc/aqueduct/migrate.py
+      subPath: migrate.py
+{{- end -}}
+
 {{/*
 Generate environment variables for the Django container.
 Usage:
@@ -22,14 +80,6 @@ Usage:
   valueFrom:
   {{ toYaml .Values.djangoSecretKey.valueFrom | nindent 4 }}
   {{- end }}
-{{/* Match Django's default; keep PostgreSQL validation for engines resolved via valueFrom. */}}
-{{- $databaseEngine := "django.db.backends.sqlite3" }}
-{{- range .Values.env }}
-  {{- if eq .name "DATABASE_ENGINE" }}
-    {{- $databaseEngine = .value | default "django.db.backends.postgresql" }}
-  {{- end }}
-{{- end }}
-{{- if ne $databaseEngine "django.db.backends.sqlite3" }}
 # Postgres configuration
 # The connection target is resolved by the `aqueduct.db.*` helpers below:
 # explicit `database.*` values win; otherwise the app auto-derives the CNPG
@@ -45,7 +95,6 @@ Usage:
   value: {{ include "aqueduct.db.host" . | quote }}
 - name: POSTGRES_PORT
   value: {{ include "aqueduct.db.port" . | quote }}
-{{- end }}
 # OIDC configuration
 - name: OIDC_RP_SIGN_ALGO
   value: {{ .Values.oidc.signAlgo | quote }}
@@ -74,7 +123,7 @@ Usage:
 - name: OIDC_RP_CLIENT_SECRET
   value: {{ .Values.oidc.clientSecret | quote }}
 {{- end }}
-- name: CELERY_BROKER_URL
+- name: REDIS_URL
   value: {{ include "aqueduct.celery.brokerUrl" . | quote }}
 - name: CELERY_WORKER_CONCURRENCY
   value: {{ .Values.celery.workerConcurrency | quote }}

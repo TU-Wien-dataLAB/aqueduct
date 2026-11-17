@@ -12,7 +12,7 @@ from gateway.decorators.response_cache import register_response_in_cache
 from gateway.response_type import RawJsonResponse
 from gateway.tests.utils import _build_chat_headers, _read_streaming_response_lines
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from management.models import Request, Token
+from management.models import Org, Request, Token
 from mock_api.mock_configs import MockStreamingConfig, default_post_stream_configs
 
 User = get_user_model()
@@ -387,6 +387,61 @@ class ResponsesIntegrationTest(GatewayIntegrationTestCase):
             delete_response_me.status_code, 200, "User1 should be able to delete their own response"
         )
 
+    def _create(self, payload):
+        return self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            headers=self.headers,
+            content_type="application/json",
+        )
+
+    def _last_upstream_input(self):
+        return (self.mock_server.get_last_request("responses") or {}).get("input")
+
+    def test_extra_body_cannot_override_the_checked_model(self):
+        org = Org.objects.get(name="E060")
+        org.add_excluded_model("dall-e-2")
+        org.save()
+
+        response = self._create(
+            {"model": self.model, "input": "Hi", "extra_body": {"model": "dall-e-2", "top_k": 5}}
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        upstream_body = self.mock_server.get_last_request("responses")
+        self.assertEqual(upstream_body["model"], self.model)
+        self.assertEqual(upstream_body["top_k"], 5)
+
+    def test_previous_response_id_of_another_user_is_rejected(self):
+        register_response_in_cache("resp_of_someone", model=self.model, email="someone@example.com")
+
+        response = self._create(
+            {"model": self.model, "input": "other user", "previous_response_id": "resp_of_someone"}
+        )
+
+        self.assertEqual(response.status_code, 404, response.content)
+        self.assertEqual(response.json()["error"]["param"], "previous_response_id")
+        self.assertNotEqual(self._last_upstream_input(), "other user")
+
+    def test_unknown_previous_response_id_is_rejected(self):
+        response = self._create(
+            {"model": self.model, "input": "unknown id", "previous_response_id": "resp_unknown"}
+        )
+
+        self.assertEqual(response.status_code, 404, response.content)
+        self.assertNotEqual(self._last_upstream_input(), "unknown id")
+
+    def test_own_previous_response_id_is_forwarded(self):
+        register_response_in_cache("resp_mine", model=self.model, email="me@example.com")
+
+        response = self._create(
+            {"model": self.model, "input": "Hi", "previous_response_id": "resp_mine"}
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        upstream_body = self.mock_server.get_last_request("responses")
+        self.assertEqual(upstream_body["previous_response_id"], "resp_mine")
+
 
 class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
     """Tests for the check_tool_availability decorator."""
@@ -605,6 +660,32 @@ class CheckToolAvailabilityTest(GatewayIntegrationTestCase):
         self.assertEqual(tool["server_url"], "http://mcp-server:8080")
         mock_view_func.assert_called_once_with(request, response_id, **kwargs)
         self.assertEqual(result.status_code, 200)
+
+    @patch("gateway.decorators.responses.get_mcp_config")
+    async def test_check_tool_availability_excluded_server_url_with_other_label(
+        self, mock_get_mcp_config
+    ):
+        """An excluded MCP server stays excluded when the tool names it only by URL."""
+        mock_view_func = AsyncMock()
+        mock_get_mcp_config.return_value = {"internal": {"url": "http://mcp-internal:8080"}}
+
+        request = AsyncMock()
+        request.build_absolute_uri = MagicMock(side_effect=lambda path: f"http://testserver{path}")
+
+        token = MagicMock()
+        token.mcp_server_excluded = MagicMock(side_effect=lambda name: name == "internal")
+        tool = {
+            "type": "mcp",
+            "server_label": "anything",
+            "server_url": "http://testserver/mcp-servers/internal/mcp",
+        }
+        kwargs = {"token": token, "pydantic_model": {"tools": [tool]}}
+
+        result = await check_tool_availability(mock_view_func)(request, "resp_id", **kwargs)
+
+        mock_view_func.assert_not_called()
+        self.assertEqual(result.status_code, 404)
+        self.assertEqual(tool["server_url"], "http://testserver/mcp-servers/internal/mcp")
 
     @override_settings(RESPONSES_API_ALLOWED_NATIVE_TOOLS=["allowed_tool"])
     async def test_check_tool_availability_invalid_tool_type(self):

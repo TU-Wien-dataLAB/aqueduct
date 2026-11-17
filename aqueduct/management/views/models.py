@@ -1,6 +1,8 @@
 from copy import deepcopy
 
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
 from django.views.generic import TemplateView
 
 from gateway.config import get_router_config
@@ -24,6 +26,14 @@ class ModelListView(LoginRequiredMixin, TemplateView):
                 litellm_params: dict = model.get("litellm_params", {})
                 if not litellm_params.get("api_key", "").startswith("os.environ/"):
                     litellm_params["api_key"] = "*********"
+                card_url = (model.get("model_info") or {}).get("model_card_url")
+                if card_url:
+                    try:
+                        URLValidator(schemes=["http", "https"])(card_url)
+                    except ValidationError:
+                        pass
+                    else:
+                        model["model_card_url"] = card_url
 
         context["model_list"] = model_list
         context["site_host"] = f"{self.request.scheme}://{self.request.get_host()}"

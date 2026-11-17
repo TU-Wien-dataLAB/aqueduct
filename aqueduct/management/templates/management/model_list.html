@@ -76,18 +76,33 @@
 
                 {% with info=model.model_info %}
                 {% if info.contextWindow or info.max_tokens or info.maxTokens or info.thinkingLevels or model.model_card_url %}
-                <div class="text-sm space-y-1">
-                    {% if info.contextWindow or info.max_tokens %}
-                    <div><span class="text-base-content/60">Context window:</span> {% if info.contextWindow %}{{ info.contextWindow|intcomma }}{% else %}{{ info.max_tokens|intcomma }}{% endif %} tokens</div>
-                    {% endif %}
-                    {% if info.maxTokens %}
-                    <div><span class="text-base-content/60">Max output tokens:</span> {{ info.maxTokens|intcomma }}</div>
-                    {% endif %}
-                    {% if info.thinkingLevels %}
-                    <div><span class="text-base-content/60">Thinking levels:</span> {{ info.thinkingLevels|join:", " }}</div>
-                    {% endif %}
+                <div class="rounded-lg bg-base-200/60 px-4 py-3 text-sm">
+                    <dl class="space-y-2">
+                        {% if info.contextWindow or info.max_tokens %}
+                        <div class="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                            <dt class="text-base-content/60">Context window</dt>
+                            <dd class="font-medium tabular-nums">{% if info.contextWindow %}{{ info.contextWindow|intcomma }}{% else %}{{ info.max_tokens|intcomma }}{% endif %} tokens</dd>
+                        </div>
+                        {% endif %}
+                        {% if info.maxTokens %}
+                        <div class="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                            <dt class="text-base-content/60">Max output tokens</dt>
+                            <dd class="font-medium tabular-nums">{{ info.maxTokens|intcomma }} tokens</dd>
+                        </div>
+                        {% endif %}
+                        {% if info.thinkingLevels %}
+                        <div class="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                            <dt class="text-base-content/60">Thinking levels</dt>
+                            <dd class="flex flex-wrap justify-end gap-1">
+                                {% for level in info.thinkingLevels %}
+                                <span class="badge badge-soft badge-sm">{{ level }}</span>
+                                {% endfor %}
+                            </dd>
+                        </div>
+                        {% endif %}
+                    </dl>
                     {% if model.model_card_url %}
-                    <div><a class="link link-primary" href="{{ model.model_card_url }}">Model card</a></div>
+                    <a class="link link-primary inline-flex items-center gap-1 mt-2" href="{{ model.model_card_url }}">Model card <span aria-hidden="true">↗</span></a>
                     {% endif %}
                 </div>
                 {% endif %}

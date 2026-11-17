@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict, cast
@@ -59,6 +60,23 @@ def _build_files_api_client() -> openai.AsyncClient:
 
 
 def _validate_router_config(config: dict[str, Any]) -> None:
+    # RPM belongs to the public model, not to individual SDK deployments.
+    limits: dict[str, int | None] = {}
+    for model in config.get("model_list", []):
+        rpm = model.get("model_info", {}).get("rpm")
+        if rpm is not None and (type(rpm) is not int or rpm <= 0):
+            raise RuntimeError("model_info.rpm must be a positive integer")
+        name = model.get("model_name")
+        if name in limits and limits[name] != rpm:
+            raise RuntimeError(f"Conflicting model_info.rpm values for '{name}'")
+        limits[name] = rpm
+
+    sections = [config, config.get("default_litellm_params") or {}]
+    for model in config.get("model_list", []):
+        sections.extend([model, model.get("litellm_params") or {}])
+    if any(section.get("rpm") is not None for section in sections):
+        raise RuntimeError("Move router/deployment RPM limits to model_info.rpm")
+
     # Validate alias uniqueness
     alias_to_model: dict[str, str] = {}
     model_list = config.get("model_list", [])
@@ -155,32 +173,30 @@ class MCPServerConfig(TypedDict):
     icon_url: NotRequired[str]
 
 
-def resolve_model_alias(model_or_alias: str) -> str:
-    """
-    Resolve a model alias to its actual model name.
-    If the input is already a model name (not an alias), return it unchanged.
+@dataclass(frozen=True)
+class ResolvedModel:
+    accounting_name: str | None
+    routing_name: str
 
-    Args:
-        model_or_alias: Either a model alias or a model name
 
-    Returns:
-        The actual model name
-    """
-    config = get_router_config()
-    model_list = config.get("model_list", [])
+def resolve_model(name: str) -> ResolvedModel:
+    """Resolve accounting identity without changing deployment-specific routing."""
+    model_list = get_router_config().get("model_list", [])
 
-    # Build alias - model mapping
+    # Public names and aliases take precedence over explicit deployment IDs.
     for model in model_list:
-        model_name = cast("str", model.get("model_name"))
-        if model_name == model_or_alias:
-            return model_name
+        model_name = model.get("model_name")
+        aliases = model.get("model_info", {}).get("aliases", [])
+        if isinstance(model_name, str) and (model_name == name or name in aliases):
+            return ResolvedModel(model_name, model_name)
 
-        aliases = cast("list[str]", model.get("model_info", {}).get("aliases", []))
-        if model_or_alias in aliases:
-            return model_name
+    for model in model_list:
+        model_name = model.get("model_name")
+        deployment_id = model.get("model_info", {}).get("id")
+        if isinstance(model_name, str) and deployment_id is not None and str(deployment_id) == name:
+            return ResolvedModel(model_name, name)
 
-    # Not an alias or a model; still return as-is to return standard error down the line
-    return model_or_alias
+    return ResolvedModel(None, name)
 
 
 def get_model_request_limit_multiplier(model_name: str) -> float:
@@ -194,7 +210,7 @@ def get_model_request_limit_multiplier(model_name: str) -> float:
     Returns:
         The request limit multiplier (defaults to 1.0)
     """
-    resolved = resolve_model_alias(model_name)
+    resolved = resolve_model(model_name).routing_name
     config = get_router_config()
     model_list = config.get("model_list", [])
 
@@ -229,6 +245,46 @@ def get_all_model_request_limit_multipliers() -> dict[str, float]:
     return multipliers
 
 
+def get_model_rpm(model_name: str) -> int | None:
+    """Get the public model's RPM limit from ``model_info.rpm``, if configured."""
+    resolved = resolve_model(model_name).accounting_name
+    for model in get_router_config().get("model_list", []):
+        if resolved is not None and model.get("model_name") == resolved:
+            return cast("int | None", model.get("model_info", {}).get("rpm"))
+    return None
+
+
+def get_model_max_parallel_requests(model_name: str) -> int | None:
+    """
+    Get the max parallel requests (concurrency limit) for a given model from the
+    router config's ``model_info.max_parallel_requests``.
+
+    Mirrors LiteLLM's ``max_parallel_requests`` setting, and falls back to the
+    ``default_max_parallel_requests`` router setting. Returns ``None`` if neither
+    is configured.
+
+    Args:
+        model_name: A public model name, alias, or configured deployment ID.
+
+    Returns:
+        The configured max parallel requests, or ``None`` if not set.
+    """
+    resolved = resolve_model(model_name).accounting_name
+    config = get_router_config()
+    model_list = config.get("model_list", [])
+
+    for model in model_list:
+        if resolved is not None and model.get("model_name") == resolved:
+            max_parallel_requests = model.get("model_info", {}).get("max_parallel_requests")
+            if max_parallel_requests is not None:
+                return int(max_parallel_requests)
+            if (default := config.get("default_max_parallel_requests")) is not None:
+                return int(default)
+            break
+
+    return None
+
+
 def get_model_supports_response_format(model_name: str) -> bool:
     """
     Whether the model's upstream API accepts the `response_format` request parameter.
@@ -243,7 +299,7 @@ def get_model_supports_response_format(model_name: str) -> bool:
     Returns:
         Whether response_format may be sent to the model
     """
-    resolved = resolve_model_alias(model_name)
+    resolved = resolve_model(model_name).routing_name
     config = get_router_config()
     model_list = config.get("model_list", [])
 

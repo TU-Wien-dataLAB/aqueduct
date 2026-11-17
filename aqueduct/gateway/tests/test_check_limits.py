@@ -1,0 +1,1170 @@
+import asyncio
+import json
+from http import HTTPStatus
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+from asgiref.sync import async_to_sync, sync_to_async
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.core.handlers.asgi import ASGIRequest
+from django.db import connection
+from django.http import HttpResponse, StreamingHttpResponse
+from django.test import SimpleTestCase, override_settings
+from django.test.utils import CaptureQueriesContext
+from fakeredis import FakeServer
+from fakeredis.aioredis import FakeRedis
+from openai.types.chat import ChatCompletion
+
+from gateway.config import get_model_max_parallel_requests
+from gateway.decorators.limits import (
+    RedisConcurrencyLimiter,
+    check_model_concurrency_limits,
+    check_token_concurrency_limits,
+    model_concurrency_key,
+    model_concurrency_limit,
+    token_concurrency_key,
+)
+from gateway.tests.utils import (
+    _build_chat_headers,
+    _build_chat_payload,
+    _read_streaming_response_lines,
+)
+from gateway.tests.utils.base import ROUTER_CONFIG_PATH, ChatCompletionsBase
+from management.models import Org, Request, ServiceAccount, Team, Token, UserProfile
+
+User = get_user_model()
+
+
+class TokenRateLimitTest(ChatCompletionsBase):
+    def setUp(self):
+        super().setUp()
+        # Rate-limit counts now live in the cache (LocMemCache under test), which
+        # is shared in-process across tests within the same window. Clear it so
+        # bucket counts from a previous test in the same minute/hour/day don't
+        # bleed into this one (DB transaction rollback no longer resets them).
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
+    def _setup_limits(self, kind: str, field: str, value: int):
+        """
+        Set a rate limit for the given kind ('org', 'team', 'user', 'token') and field.
+        Returns the object whose limit was set.
+
+        For 'team', also ensure the service account is associated with the test token.
+        """
+        if kind == "org":
+            org = Org.objects.get(name="E060")
+            setattr(org, field, value)
+            org.save(update_fields=[field])
+            return org
+        if kind == "team":
+            team = Team.objects.get(name="Whale")
+            setattr(team, field, value)
+            team.save(update_fields=[field])
+            # Ensure a service account exists for the team and associate it with the token
+            # Only associate the SA with the token if it does not already have a service account
+
+            service_account = ServiceAccount.objects.create(team=team, name="Whale Service")
+
+            token = Token.objects.filter(
+                key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN)
+            ).first()
+            if not token:
+                raise RuntimeError("Could not find Token associated with AQUEDUCT_ACCESS_TOKEN.")
+
+            # Only set the service_account if it is not already set
+            if getattr(token, "service_account_id", None) is None:
+                token.service_account = service_account
+                token.save(update_fields=["service_account"])
+            elif token.service_account_id != service_account.id:
+                # If the token is already associated with a different SA, raise an error
+                raise RuntimeError(
+                    f"Token is already associated with a different service account "
+                    f"(id={token.service_account_id})."
+                )
+            # Otherwise, already associated with the correct service account, do nothing
+            return team
+        if kind == "user":
+            user = User.objects.get(username="Me")
+            profile = (
+                user.profile if hasattr(user, "profile") else UserProfile.objects.get(user=user)
+            )
+            setattr(profile, field, value)
+            profile.save(update_fields=[field])
+            return profile
+        if kind == "token":
+            token = Token.objects.get(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
+            setattr(token, field, value)
+            token.save(update_fields=[field])
+            return token
+
+        raise ValueError(f"Unknown kind: {kind}")
+
+    def _rate_limit_test_template(
+        self, kind: str, field: str, value: int, messages, max_completion_tokens, limit_desc
+    ):
+        """
+        Generic template for rate limit tests for org, team, or user.
+        Uses the Django test client to POST to the chat completion endpoint.
+        """
+        # Set the limit
+        self._setup_limits(kind, field, value)
+
+        response1 = self._send_chat_completion(
+            messages, max_completion_tokens=max_completion_tokens
+        )
+        self.assertEqual(
+            response1.status_code,
+            200,
+            f"Expected 200 OK, got {response1.status_code}: {response1.content}",
+        )
+        response_json = response1.json()
+        chat_completion = ChatCompletion.model_validate(response_json)
+        self.assertIsNotNone(chat_completion)
+        self.assertTrue(chat_completion.choices)
+        self.assertGreater(len(chat_completion.choices), 0)
+
+        # Check that the database contains one request and endpoint matches
+        requests = list(Request.objects.all())
+        self.assertEqual(
+            len(requests),
+            1,
+            f"There should be exactly one request after first chat completion ({limit_desc}).",
+        )
+        req = requests[0]
+        self.assertIn(self.url, req.path, "Request endpoint should be for chat completion.")
+        self.assertIsNotNone(req.input_tokens)
+        self.assertIsNotNone(req.output_tokens)
+        self.assertGreater(req.input_tokens, 0, "input_tokens should be > 0")
+        self.assertGreater(req.output_tokens, 0, "output_tokens should be > 0")
+
+        # Second request should fail with 429
+        response2 = self._send_chat_completion(
+            messages, max_completion_tokens=max_completion_tokens
+        )
+        self.assertEqual(
+            response2.status_code,
+            429,
+            f"Expected 429 Too Many Requests, got {response2.status_code}: {response2.content}",
+        )
+        # The exceeded minute bucket ends within a minute
+        retry_after = int(response2.headers["Retry-After"])
+        self.assertGreaterEqual(retry_after, 1)
+        self.assertLessEqual(retry_after, 60)
+        # Optionally, check error message
+        try:
+            error_json = response2.json()
+        except Exception:
+            # If not JSON, just check content
+            self.assertTrue(
+                "rate limit" in response2.content.decode().lower()
+                or "429" in response2.content.decode(),
+                f"Expected rate limit error message, got: {response2.content}",
+            )
+        else:
+            self.assertTrue(
+                "rate limit" in str(error_json).lower() or "429" in str(error_json),
+                f"Expected rate limit error message, got: {error_json}",
+            )
+
+    def test_org_rate_limit_requests_per_minute(self):
+        """
+        Edits the requests_per_minute of Org 'E060' to 1, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="org",
+            field="requests_per_minute",
+            value=1,
+            messages=self.MESSAGES,
+            max_completion_tokens=5,
+            limit_desc="org requests_per_minute",
+        )
+
+    def test_team_rate_limit_requests_per_minute(self):
+        """
+        Edits the requests_per_minute of Team 'Whale' to 1, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="team",
+            field="requests_per_minute",
+            value=1,
+            messages=self.MESSAGES,
+            max_completion_tokens=5,
+            limit_desc="team requests_per_minute",
+        )
+
+    def test_user_rate_limit_requests_per_minute(self):
+        """
+        Edits the requests_per_minute of UserProfile for user 'Me' to 1, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="user",
+            field="requests_per_minute",
+            value=1,
+            messages=self.MESSAGES,
+            max_completion_tokens=5,
+            limit_desc="user requests_per_minute",
+        )
+
+    def test_token_rate_limit_requests_per_minute(self):
+        """
+        Edits the requests_per_minute of Token for user 'Me' to 1, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="token",
+            field="requests_per_minute",
+            value=1,
+            messages=self.MESSAGES,
+            max_completion_tokens=5,
+            limit_desc="token requests_per_minute",
+        )
+
+    def test_org_rate_limit_input_tokens_per_minute(self):
+        """
+        Edits the input_tokens_per_minute of Org 'E060' to 5, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="org",
+            field="input_tokens_per_minute",
+            value=5,
+            messages=self.MESSAGES,
+            max_completion_tokens=1,
+            limit_desc="org input_tokens_per_minute",
+        )
+
+    def test_team_rate_limit_input_tokens_per_minute(self):
+        """
+        Edits the input_tokens_per_minute of Team 'Whale' to 5, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="team",
+            field="input_tokens_per_minute",
+            value=5,
+            messages=self.MESSAGES,
+            max_completion_tokens=1,
+            limit_desc="team input_tokens_per_minute",
+        )
+
+    def test_user_rate_limit_input_tokens_per_minute(self):
+        """
+        Edits input_tokens_per_minute of UserProfile for user 'Me' to 5,
+        then makes two requests. The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="user",
+            field="input_tokens_per_minute",
+            value=5,
+            messages=self.MESSAGES,
+            max_completion_tokens=1,
+            limit_desc="user input_tokens_per_minute",
+        )
+
+    def test_token_rate_limit_input_tokens_per_minute(self):
+        """
+        Edits input_tokens_per_minute of Token for user 'Me' to 5,
+        then makes two requests. The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="token",
+            field="input_tokens_per_minute",
+            value=5,
+            messages=self.MESSAGES,
+            max_completion_tokens=1,
+            limit_desc="token input_tokens_per_minute",
+        )
+
+    def test_org_rate_limit_output_tokens_per_minute(self):
+        """
+        Edits the output_tokens_per_minute of Org 'E060' to 5, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="org",
+            field="output_tokens_per_minute",
+            value=5,
+            messages=self.MESSAGES,
+            max_completion_tokens=10,
+            limit_desc="org output_tokens_per_minute",
+        )
+
+    def test_team_rate_limit_output_tokens_per_minute(self):
+        """
+        Edits the output_tokens_per_minute of Team 'Whale' to 5, then makes two requests.
+        The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="team",
+            field="output_tokens_per_minute",
+            value=5,
+            messages=self.MESSAGES,
+            max_completion_tokens=10,
+            limit_desc="team output_tokens_per_minute",
+        )
+
+    def test_user_rate_limit_output_tokens_per_minute(self):
+        """
+        Edits output_tokens_per_minute of UserProfile for user 'Me' to 5,
+        then makes two requests. The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="user",
+            field="output_tokens_per_minute",
+            value=5,
+            messages=self.MESSAGES,
+            max_completion_tokens=10,
+            limit_desc="user output_tokens_per_minute",
+        )
+
+    def test_token_rate_limit_output_tokens_per_minute(self):
+        """
+        Edits output_tokens_per_minute of Token for user 'Me' to 5,
+        then makes two requests. The second request should raise a 429 HTTP error.
+        """
+        self._rate_limit_test_template(
+            kind="token",
+            field="output_tokens_per_minute",
+            value=5,
+            messages=self.MESSAGES,
+            max_completion_tokens=10,
+            limit_desc="token output_tokens_per_minute",
+        )
+
+    def test_token_rate_limits_override_other_limits(self):
+        """Rate limits set on the token should override those from the related objects."""
+        self._setup_limits("token", "requests_per_minute", 1)
+        self._setup_limits("token", "input_tokens_per_minute", 1)
+        self._setup_limits("token", "output_tokens_per_minute", 1)
+        # The org, team, and user profile have higher limits, but these will not apply.
+        self._setup_limits("org", "requests_per_minute", 5)
+        self._setup_limits("team", "input_tokens_per_minute", 5)
+        self._setup_limits("user", "output_tokens_per_minute", 5)
+
+        first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(first.status_code, 200)
+
+        blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        retry_after = blocked.headers["Retry-After"]
+        self.assertEqual(
+            blocked.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (1/min) (Retry after {retry_after}s), "
+            f"Input token limit (1/min) (Retry after {retry_after}s), "
+            f"Output token limit (1/min) (Retry after {retry_after}s).",
+        )
+
+    def test_rate_limit_message_lists_each_exceeded_limit(self):
+        self._setup_limits("org", "requests_per_minute", 1)
+        self._setup_limits("org", "output_tokens_per_minute", 1)
+        first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(first.status_code, 200)
+
+        blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        retry_after = blocked.headers["Retry-After"]
+        self.assertEqual(
+            blocked.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (1/min) (Retry after {retry_after}s), "
+            f"Output token limit (1/min) (Retry after {retry_after}s).",
+        )
+
+    @patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=2.0)
+    def test_per_model_request_limit_multiplier_budget(self, mock_multipliers):
+        """
+        Tests that per-model multipliers act as a budget cost.
+        With multiplier 2.0 ("2x Limits") and limit 3:
+        Each request costs 1/2.0 = 0.5 budget.
+        - Requests 1-6: weighted cost 0, 0.5, 1.0, 1.5, 2.0, 2.5 all < 3, allowed
+        - 7th request: weighted = 3.0 >= 3, blocked
+        """
+        # Set request limit to 3
+        self._setup_limits("org", "requests_per_minute", 3)
+
+        # Requests 1-6 should succeed (weighted cost up to 2.5 < 3)
+        for i in range(6):
+            response = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Expected 200 OK for request {i + 1}, got {response.status_code}",
+            )
+
+        # 7th request should fail (weighted cost = 3.0 >= 3)
+        response7 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(
+            response7.status_code,
+            429,
+            f"Expected 429 Too Many Requests, got {response7.status_code}: {response7.content}",
+        )
+        retry_after = response7.headers["Retry-After"]
+        self.assertEqual(
+            response7.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (6/min) (Retry after {retry_after}s).",
+        )
+
+    @patch("gateway.rate_limiting.get_model_request_limit_multiplier", return_value=0.5)
+    def test_per_model_expensive_multiplier_limits_requests(self, mock_multipliers):
+        """
+        Tests that a model with multiplier < 1 costs more budget per request.
+        With multiplier 0.5 and limit 3:
+        Each request costs 1/0.5 = 2.0 budget.
+        - 1st request: weighted = 0 < 3, allowed
+        - 2nd request: weighted = 2.0 < 3, allowed
+        - 3rd request: weighted = 4.0 >= 3, blocked
+        """
+        # Set request limit to 3
+        self._setup_limits("org", "requests_per_minute", 3)
+
+        # First request: weighted = 0 < 3
+        response1 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(response1.status_code, 200)
+
+        # Second request: weighted = 2.0 < 3
+        response2 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(response2.status_code, 200)
+
+        # Third request: weighted = 4.0 >= 3
+        response3 = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(response3.status_code, 429)
+        retry_after = response3.headers["Retry-After"]
+        self.assertEqual(
+            response3.json()["error"]["message"],
+            f"Rate limit exceeded. Request limit (1.5/min) (Retry after {retry_after}s).",
+        )
+
+    def test_check_rate_limits_uses_no_request_table_sql(self):
+        """A rate-limited (429) request issues no SQL against ``management_request``.
+
+        ``check_rate_limits`` now reads from the cache, not the ``Request`` table.
+        A blocked request returns 429 before ``log_request`` runs, so it must not
+        touch ``management_request`` at all (no aggregate SELECT, no INSERT).
+        """
+        self._setup_limits("org", "requests_per_minute", 1)
+        # First request consumes the minute bucket (and creates its Request row).
+        first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(first.status_code, 200)
+
+        # Capture SQL during the second (blocked) request.
+        with CaptureQueriesContext(connection) as ctx:
+            blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        request_table_queries = [
+            q["sql"] for q in ctx.captured_queries if "management_request" in q["sql"]
+        ]
+        self.assertEqual(
+            request_table_queries,
+            [],
+            "check_rate_limits must not query the Request table; found: "
+            + " | ".join(request_table_queries),
+        )
+
+
+@override_settings(
+    AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMIT_ENABLED=False,
+    AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT=3,
+    AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_ENABLED=True,
+    AQUEDUCT_RATE_LIMIT_ENABLED=False,
+)
+class TokenConcurrentRequestsLimitTest(ChatCompletionsBase):
+    """Integration tests for the per-token concurrency limit decorator."""
+
+    @async_to_sync
+    async def test_concurrent_requests_limit_per_token(self):
+        limit = settings.AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT
+
+        # 1. Open `limit` streaming requests concurrently, but DO NOT consume
+        #    their bodies yet -> slots stay held while the streams are open.
+        responses_ok = await asyncio.gather(
+            *(
+                self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+                for _ in range(limit)
+            )
+        )
+        for resp in responses_ok:
+            self.assertEqual(resp.status_code, 200)
+
+        # 2. Streaming or not, the next request is over the limit -> 429.
+        blocked = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("sent too many concurrent requests", blocked.json()["error"]["message"])
+
+        # 3. Only now consume the open streams. This should release every held spot.
+        await asyncio.gather(*(_read_streaming_response_lines(resp) for resp in responses_ok))
+
+        resp = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(resp.status_code, 200)
+
+    @async_to_sync
+    async def test_concurrent_requests_from_different_tokens_same_user(self):
+        """Concurrent streaming requests are counted per token, not per user."""
+        token = await Token.objects.select_related("user").afirst()
+        user = token.user
+        # Create a new token for the same user
+        new_token = Token(name="TestToken", user=user)
+        token_value_2 = new_token._set_new_key()
+        await new_token.asave()
+
+        limit = settings.AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT
+
+        # 1. Open `limit` streaming requests authorised by the same token concurrently
+        # (slots stay held while the streams are open).
+        responses_ok = await asyncio.gather(
+            *(
+                self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+                for _ in range(limit)
+            )
+        )
+        for resp in responses_ok:
+            self.assertEqual(resp.status_code, 200)
+
+        # 2. The next request authorised by the same token is over the limit -> 429.
+        blocked = await sync_to_async(self._send_chat_completion)(
+            self.MESSAGES, max_completion_tokens=5
+        )
+
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("too many concurrent requests", blocked.json()["error"]["message"])
+
+        # 3. The user sends a request with the other token; it should pass.
+        req_2 = self._build_chat_completion_request(self.MESSAGES, stream=False)
+        req_2["headers"] = _build_chat_headers(token_value_2)
+        resp_2 = await self.async_client.post(**req_2, content_type="application/json")
+        self.assertEqual(resp_2.status_code, 200)
+
+    @async_to_sync
+    async def test_token_concurrent_requests_limit_slot_released_if_exc_in_view(self):
+        """If the view function fails, the slot for the request is released,
+        and the original exception propagates."""
+        token = await Token.objects.afirst()
+        assert token is not None
+
+        async def failing_view(request: ASGIRequest, **kwargs: Any):
+            raise ValueError("view goes boom")
+
+        request = MagicMock(spec=ASGIRequest)
+
+        # When the view raises, the slot is released.
+        with self.assertRaises(ValueError):
+            await check_token_concurrency_limits(failing_view)(request, token=token)
+
+        # The `acquire` bumped the counter to 1; the exception path released it back to 0.
+        self.assertEqual(await self.redis.zcard(token_concurrency_key(token)), 0)
+
+
+@override_settings(
+    AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMIT_ENABLED=True,
+    AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT=2,
+    AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_ENABLED=False,
+    AQUEDUCT_RATE_LIMIT_ENABLED=False,
+)
+class ModelConcurrentRequestsLimitTest(ChatCompletionsBase):
+    """Integration tests for the per-model concurrency limit decorator."""
+
+    @async_to_sync
+    async def test_concurrent_requests_limit_per_model_enforced(self):
+        """Open ``limit`` streams to the same model, then a further one -> 429."""
+        limit = settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT
+
+        # 1. Open `limit` streaming requests to the same model but do not consume
+        #    them yet -> the model slots stay held.
+        responses_ok = await asyncio.gather(
+            *(
+                self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+                for _ in range(limit)
+            )
+        )
+        for resp in responses_ok:
+            self.assertEqual(resp.status_code, 200)
+
+        # 2. The next request to the same model is over the per-model limit -> 429.
+        blocked = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn(
+            f"Too many concurrent requests for model {self.model}",
+            blocked.json()["error"]["message"],
+        )
+
+        # 3. Consuming the open streams releases every held slot.
+        await asyncio.gather(*(_read_streaming_response_lines(resp) for resp in responses_ok))
+
+        resp = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(resp.status_code, 200)
+
+    @async_to_sync
+    async def test_model_concurrency_is_global_across_tokens(self):
+        """Concurrent streaming requests are counted per model, not per token or user."""
+        # No limits are set in the router config; use the default from the settings.
+        limit = settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT
+
+        token = await Token.objects.select_related("user").afirst()
+        user = token.user
+        # Create a new token for the same user
+        new_token = Token(name="TestToken", user=user)
+        token_value_2 = new_token._set_new_key()
+        await new_token.asave()
+
+        # 1. Fill every model slot using the same token (streams held open).
+        responses_ok = await asyncio.gather(
+            *(
+                self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+                for _ in range(limit)
+            )
+        )
+        for resp in responses_ok:
+            self.assertEqual(resp.status_code, 200)
+
+        # 2. The same model under a different token is still over the model limit.
+        req_2 = self._build_chat_completion_request(self.MESSAGES, stream=False)
+        req_2["headers"] = _build_chat_headers(token_value_2)
+        blocked = await self.async_client.post(**req_2, content_type="application/json")
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("Too many concurrent requests for model", blocked.json()["error"]["message"])
+
+        # 3. Requests to a different model are not blocked.
+        req_3 = self._build_chat_completion_request(self.MESSAGES, stream=True)
+        req_3["data"] = json.dumps(
+            _build_chat_payload("text-embedding-ada-002", self.MESSAGES, stream=False)
+        )
+        resp_ok = await self.async_client.post(**req_3, content_type="application/json")
+        self.assertEqual(resp_ok.status_code, 200)
+
+        # 4. Free the model slots before the test ends.
+        await asyncio.gather(*(_read_streaming_response_lines(resp) for resp in responses_ok))
+
+    @async_to_sync
+    async def test_model_concurrency_limit_read_from_config(self):
+        """Model's ``max_parallel_requests`` from config overrides the default from settings."""
+        with patch("gateway.decorators.limits.get_model_max_parallel_requests", return_value=1):
+            # 1st stream holds the single allowed request.
+            first = await self._send_chat_completion_streaming(
+                self.MESSAGES, max_completion_tokens=5
+            )
+            self.assertEqual(first.status_code, 200)
+
+            # 2nd request to the same model is over the configured limit -> 429.
+            blocked = await self._send_chat_completion_streaming(
+                self.MESSAGES, max_completion_tokens=5
+            )
+            self.assertEqual(blocked.status_code, 429)
+            self.assertIn(
+                "Too many concurrent requests for model", blocked.json()["error"]["message"]
+            )
+
+            # Release the held stream.
+            await _read_streaming_response_lines(first)
+
+    @async_to_sync
+    async def test_model_concurrency_aliases_share_counter(self):
+        """Aliases resolving to the same model share one concurrency counter."""
+        limit = settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT
+        # "main" and "coding" both resolve to gpt-4.1-nano in the router config.
+        self.assertEqual(model_concurrency_key("main"), model_concurrency_key("coding"))
+
+        held_streams = []
+        for _ in range(limit):
+            req = self._build_chat_completion_request(self.MESSAGES, stream=True)
+            req["data"] = json.dumps(
+                _build_chat_payload("main", self.MESSAGES, stream=True, max_completion_tokens=5)
+            )
+            resp = await self.async_client.post(**req, content_type="application/json")
+            held_streams.append(resp)
+            self.assertEqual(resp.status_code, 200)
+
+        # A request via the *other* alias of the same model is over the limit -> 429.
+        req = self._build_chat_completion_request(self.MESSAGES, stream=True)
+        req["data"] = json.dumps(
+            _build_chat_payload("coding", self.MESSAGES, stream=True, max_completion_tokens=5)
+        )
+        blocked = await self.async_client.post(**req, content_type="application/json")
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("Too many concurrent requests for model", blocked.json()["error"]["message"])
+
+        await asyncio.gather(*(_read_streaming_response_lines(r) for r in held_streams))
+
+
+@override_settings(
+    AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_ENABLED=True,
+    AQUEDUCT_MODEL_CONCURRENT_REQUESTS_LIMIT_ENABLED=True,
+    AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT=1,
+    LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH,
+)
+class ConcurrencyDecoratorLifecycleTests(SimpleTestCase):
+    """Exercise request lifetimes without a database or an upstream API."""
+
+    async def test_public_alias_and_deployment_ids_share_capacity(self):
+        config = {
+            "model_list": [
+                {
+                    "model_name": "public",
+                    "model_info": {
+                        "id": "backend-1",
+                        "aliases": ["alias"],
+                        "max_parallel_requests": 2,
+                    },
+                },
+                {"model_name": "public", "model_info": {"id": "backend-2"}},
+            ]
+        }
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        seen = []
+
+        @check_model_concurrency_limits
+        async def view(request, **kwargs):
+            seen.append(kwargs["pydantic_model"]["model"])
+
+            async def stream():
+                yield b"ok"
+
+            return StreamingHttpResponse(stream())
+
+        request = MagicMock(spec=ASGIRequest)
+        token = Token(id=1, name="shared")
+        responses = []
+        try:
+            with (
+                patch("gateway.config.get_router_config", return_value=config),
+                patch("gateway.decorators.limits.get_limiter", return_value=limiter),
+            ):
+
+                async def send(name):
+                    return await view(request, token=token, pydantic_model={"model": name})
+
+                for name in ("backend-1", "alias"):
+                    response = await send(name)
+                    responses.append(response)
+                    self.assertEqual(response.status_code, 200)
+                for name in ("public", "backend-2"):
+                    self.assertEqual((await send(name)).status_code, 429)
+                self.assertEqual(seen, ["backend-1", "alias"])
+                for response in responses:
+                    await _read_streaming_response_lines(response)
+                replacement = await send("backend-2")
+                responses.append(replacement)
+                self.assertEqual(replacement.status_code, 200)
+                self.assertEqual(seen[-1], "backend-2")
+                await _read_streaming_response_lines(replacement)
+        finally:
+            for response in responses:
+                await sync_to_async(response.close)()
+            await redis.aclose()
+
+    async def test_cancelled_view_restores_capacity(self):
+        for decorator in (check_token_concurrency_limits, check_model_concurrency_limits):
+            with self.subTest(decorator=decorator.__name__):
+                redis = FakeRedis(server=FakeServer(), decode_responses=True)
+                limiter = RedisConcurrencyLimiter(redis)
+                token = Token(id=1, name="cancelled", concurrent_requests_limit=1)
+                request = MagicMock(spec=ASGIRequest)
+                kwargs = {"token": token, "pydantic_model": {"model": "gpt-4.1-nano"}}
+                entered = asyncio.Event()
+                finish = asyncio.Event()
+
+                async def blocked_view(request, *, entered=entered, finish=finish, **kwargs):
+                    entered.set()
+                    await finish.wait()
+                    return HttpResponse()
+
+                async def healthy_view(request, **kwargs):
+                    return HttpResponse()
+
+                with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                    task = asyncio.create_task(decorator(blocked_view)(request, **kwargs))
+                    try:
+                        # Entry into the view proves acquisition has completed.
+                        await asyncio.wait_for(entered.wait(), timeout=1)
+                        rejected = await decorator(healthy_view)(request, **kwargs)
+                        self.assertEqual(rejected.status_code, 429)
+                        task.cancel()
+                        with self.assertRaises(asyncio.CancelledError):
+                            await task
+
+                        replacement = await decorator(healthy_view)(request, **kwargs)
+                        self.assertEqual(replacement.status_code, 200)
+                    finally:
+                        finish.set()
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                        await redis.aclose()
+
+    async def test_stream_completion_error_and_cancellation_restore_capacity(self):
+        for outcome in ("complete", "error", "cancel"):
+            with self.subTest(outcome=outcome):
+                redis = FakeRedis(server=FakeServer(), decode_responses=True)
+                limiter = RedisConcurrencyLimiter(redis)
+                token = Token(id=1, name="stream", concurrent_requests_limit=1)
+                request = MagicMock(spec=ASGIRequest)
+                entered = asyncio.Event()
+                finish = asyncio.Event()
+
+                async def stream(*, outcome=outcome, entered=entered, finish=finish):
+                    yield b"chunk-1"
+                    entered.set()
+                    await finish.wait()
+                    if outcome == "error":
+                        raise ValueError("boom")
+                    yield b"chunk-2"
+
+                @check_token_concurrency_limits
+                async def streaming_view(request, *, stream=stream, **kwargs):
+                    return StreamingHttpResponse(stream())
+
+                @check_token_concurrency_limits
+                async def healthy_view(request, **kwargs):
+                    return HttpResponse()
+
+                async def consume(response):
+                    return [chunk async for chunk in response.streaming_content]
+
+                with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                    response = await streaming_view(request, token=token)
+                    task = asyncio.create_task(consume(response))
+                    try:
+                        await asyncio.wait_for(entered.wait(), timeout=1)
+                        rejected = await healthy_view(request, token=token)
+                        self.assertEqual(rejected.status_code, 429)
+                        if outcome == "cancel":
+                            task.cancel()
+                            with self.assertRaises(asyncio.CancelledError):
+                                await asyncio.wait_for(task, timeout=1)
+                        else:
+                            finish.set()
+                            if outcome == "error":
+                                with self.assertRaisesMessage(ValueError, "boom"):
+                                    await asyncio.wait_for(task, timeout=1)
+                            else:
+                                self.assertEqual(
+                                    await asyncio.wait_for(task, timeout=1),
+                                    [b"chunk-1", b"chunk-2"],
+                                )
+                        replacement = await healthy_view(request, token=token)
+                        self.assertEqual(replacement.status_code, 200)
+                    finally:
+                        finish.set()
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                        await sync_to_async(response.close)()
+                        await redis.aclose()
+
+    @override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
+    async def test_stream_progress_renews_only_its_own_lease(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="progress", concurrent_requests_limit=2)
+        key = token_concurrency_key(token)
+
+        async def stream():
+            for _ in range(25):
+                yield b"chunk"
+                await asyncio.sleep(0.1)
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        async def consume(response):
+            return [chunk async for chunk in response.streaming_content]
+
+        task = None
+        try:
+            with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                orphan = await limiter.acquire(key, 2)
+                self.assertIsNotNone(orphan)
+                response = await streaming_view(MagicMock(spec=ASGIRequest), token=token)
+                task = asyncio.create_task(consume(response))
+                await asyncio.sleep(2.2)
+
+                # Chunk progress renewed the active lease; the orphan still expired.
+                self.assertFalse(task.done())
+                replacement = await limiter.acquire(key, 2)
+                self.assertIsNotNone(replacement, "Chunk renewal kept the orphan alive")
+                await limiter.release(key, replacement)
+                self.assertFalse(await limiter.release(key, orphan))
+
+                await asyncio.wait_for(task, timeout=2)
+                self.assertEqual(await redis.zcard(key), 0)
+        finally:
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await redis.aclose()
+
+    @override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
+    async def test_silent_view_expires_capacity_without_renewal(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="silent", concurrent_requests_limit=1)
+        key = token_concurrency_key(token)
+        request = MagicMock(spec=ASGIRequest)
+        entered = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def blocked_view(request, *, entered=entered, finish=finish, **kwargs):
+            entered.set()
+            await finish.wait()
+            return HttpResponse()
+
+        async def healthy_view(request, **kwargs):
+            return HttpResponse()
+
+        task = None
+        try:
+            with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                task = asyncio.create_task(
+                    check_token_concurrency_limits(blocked_view)(request, token=token)
+                )
+                await asyncio.wait_for(entered.wait(), timeout=1)
+                self.assertEqual(
+                    (
+                        await check_token_concurrency_limits(healthy_view)(request, token=token)
+                    ).status_code,
+                    429,
+                )
+
+                # No stream progress means no renewal; capacity returns at lease expiry.
+                await asyncio.sleep(2.2)
+                replacement = await limiter.acquire(key, 1)
+                self.assertIsNotNone(replacement, "Silent work retained capacity beyond the TTL")
+
+                finish.set()
+                await asyncio.wait_for(task, timeout=1)
+                # Late release of the expired lease must not remove the replacement.
+                self.assertIsNotNone(await redis.zscore(key, replacement))
+                await limiter.release(key, replacement)
+                healthy = await check_token_concurrency_limits(healthy_view)(request, token=token)
+                self.assertEqual(healthy.status_code, 200)
+        finally:
+            finish.set()
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await redis.aclose()
+
+    @override_settings(AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS=2)
+    async def test_expired_stream_cannot_forward_after_late_renewal(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="late", concurrent_requests_limit=1)
+        key = token_concurrency_key(token)
+        finish = asyncio.Event()
+
+        async def stream():
+            yield b"first"
+            await finish.wait()
+            yield b"late"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        try:
+            with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+                response = await streaming_view(MagicMock(spec=ASGIRequest), token=token)
+                iterator = response.streaming_content
+                self.assertEqual(await asyncio.wait_for(anext(iterator), timeout=1), b"first")
+
+                await asyncio.sleep(2.2)
+                replacement = await limiter.acquire(key, 1)
+                self.assertIsNotNone(replacement)
+
+                finish.set()
+                with self.assertRaises(StopAsyncIteration):
+                    await asyncio.wait_for(anext(iterator), timeout=1)
+                self.assertEqual(await redis.zcard(key), 1)
+                await limiter.release(key, replacement)
+        finally:
+            finish.set()
+            await redis.aclose()
+
+    async def test_refresh_error_stops_before_forwarding_and_releases(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="refresh-error", concurrent_requests_limit=1)
+
+        async def stream():
+            yield b"must-not-forward"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        try:
+            with (
+                patch("gateway.decorators.limits.get_limiter", return_value=limiter),
+                patch.object(limiter, "refresh", side_effect=RuntimeError("redis down")),
+            ):
+                response = await streaming_view(MagicMock(spec=ASGIRequest), token=token)
+                with self.assertRaisesRegex(RuntimeError, "redis down"):
+                    await asyncio.wait_for(anext(response.streaming_content), timeout=1)
+                self.assertEqual(await redis.zcard(token_concurrency_key(token)), 0)
+        finally:
+            await redis.aclose()
+
+    async def test_release_failures_are_logged_for_awaited_and_close_paths(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="release-error", concurrent_requests_limit=2)
+        request = MagicMock(spec=ASGIRequest)
+
+        async def stream():
+            yield b"chunk"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        @check_token_concurrency_limits
+        async def healthy_view(request, **kwargs):
+            return HttpResponse()
+
+        try:
+            with (
+                patch("gateway.decorators.limits.get_limiter", return_value=limiter),
+                patch.object(limiter, "release", side_effect=RuntimeError("release down")),
+                self.assertLogs("aqueduct", level="ERROR") as caught,
+            ):
+                response = await healthy_view(request, token=token)
+                self.assertEqual(response.status_code, 200)
+                await asyncio.sleep(0)
+
+                response = await streaming_view(request, token=token)
+                await sync_to_async(response.close)()
+                await asyncio.sleep(0.01)
+
+            self.assertGreaterEqual(
+                sum("Error releasing concurrency lease" in line for line in caught.output), 2
+            )
+        finally:
+            await redis.aclose()
+
+    async def test_closing_unstarted_stream_restores_capacity(self):
+        redis = FakeRedis(server=FakeServer(), decode_responses=True)
+        limiter = RedisConcurrencyLimiter(redis)
+        token = Token(id=1, name="closed", concurrent_requests_limit=1)
+        request = MagicMock(spec=ASGIRequest)
+
+        async def stream():
+            yield b"done"
+
+        @check_token_concurrency_limits
+        async def streaming_view(request, **kwargs):
+            return StreamingHttpResponse(stream())
+
+        @check_token_concurrency_limits
+        async def healthy_view(request, **kwargs):
+            return HttpResponse()
+
+        with patch("gateway.decorators.limits.get_limiter", return_value=limiter):
+            response = await streaming_view(request, token=token)
+            try:
+                await sync_to_async(response.close)()
+                for _ in range(20):
+                    replacement = await healthy_view(request, token=token)
+                    if replacement.status_code == HTTPStatus.OK:
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertEqual(replacement.status_code, 200)
+            finally:
+                # Also clean up on the pre-fix implementation, where close leaks.
+                _ = [chunk async for chunk in response.streaming_content]
+                await redis.aclose()
+
+
+@override_settings(AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT=7)
+class ModelConcurrencyLimitResolutionTest(SimpleTestCase):
+    """Resolution tests for the per-model concurrency limit.
+
+    The limit comes from the router config, then falls back to the settings default:
+      1. the model's own ``model_info.max_parallel_requests``,
+      2. the router-wide ``default_max_parallel_requests``,
+      3. ``AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT``.
+    """
+
+    def _config(self, *, per_model=None, default=None, aliases=None):
+        model_info = {}
+        if per_model is not None:
+            model_info["max_parallel_requests"] = per_model
+        if aliases is not None:
+            model_info["aliases"] = aliases
+        model = {"model_name": "gpt-4o", "litellm_params": {}}
+        if model_info:
+            model["model_info"] = model_info
+        config = {"model_list": [model]}
+        if default is not None:
+            config["default_max_parallel_requests"] = default
+        return config
+
+    def _resolve(self, model="gpt-4o", **config_kwargs):
+        with patch("gateway.config.get_router_config", return_value=self._config(**config_kwargs)):
+            return get_model_max_parallel_requests(model)
+
+    def _decorator_limit(self, model="gpt-4o", **config_kwargs):
+        with patch("gateway.config.get_router_config", return_value=self._config(**config_kwargs)):
+            return model_concurrency_limit(model)
+
+    # ---- get_model_max_parallel_requests: config priority ----
+
+    def test_model_max_parallel_requests_takes_priority(self):
+        self.assertEqual(self._resolve(per_model=5, default=20), 5)
+
+    def test_router_default_max_parallel_requests_used(self):
+        self.assertEqual(self._resolve(default=20), 20)
+
+    def test_none_when_nothing_configured(self):
+        self.assertIsNone(self._resolve())
+
+    # ---- model_concurrency_limit: full resolution ----
+
+    def test_model_concurrency_limit_falls_back_to_settings_default(self):
+        self.assertEqual(
+            self._decorator_limit(), settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT
+        )
+
+    def test_model_concurrency_limit_resolves_aliases(self):
+        self.assertEqual(
+            self._decorator_limit(model="coding", per_model=5, default=20, aliases=["coding"]), 5
+        )
+
+    def test_deployment_ids_use_public_model_limit_and_fallbacks(self):
+        for model_info, default, expected in (
+            ({"max_parallel_requests": 5}, 20, 5),
+            ({}, 20, 20),
+            ({}, None, 7),
+        ):
+            config = {
+                "model_list": [
+                    {
+                        "model_name": "public",
+                        "model_info": {**model_info, "id": "backend-1", "aliases": ["alias"]},
+                    },
+                    {"model_name": "public", "model_info": {"id": "backend-2"}},
+                ]
+            }
+            if default is not None:
+                config["default_max_parallel_requests"] = default
+            with patch("gateway.config.get_router_config", return_value=config):
+                for name in ("public", "alias", "backend-1", "backend-2"):
+                    with self.subTest(name=name, default=default, model_info=model_info):
+                        self.assertEqual(
+                            model_concurrency_key(name), "model:concurrency:public:leases"
+                        )
+                        self.assertEqual(model_concurrency_limit(name), expected)
+
+    def test_model_concurrency_limit_uses_settings_default_for_unknown_model(self):
+        with patch("gateway.config.get_router_config", return_value=self._config(default=20)):
+            self.assertEqual(model_concurrency_key("unknown"), "model:concurrency:unknown:leases")
+        self.assertEqual(
+            self._decorator_limit(model="does-not-exist", default=20),
+            settings.AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT,
+        )

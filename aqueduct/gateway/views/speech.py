@@ -11,8 +11,11 @@ from pydantic import TypeAdapter
 from gateway.config import get_router
 from gateway.decorators import (
     catch_router_exceptions,
-    check_limits,
     check_model_availability,
+    check_model_concurrency_limits,
+    check_model_rate_limits,
+    check_token_concurrency_limits,
+    check_token_rate_limits,
     ensure_usage,
     log_request,
     parse_body,
@@ -20,6 +23,7 @@ from gateway.decorators import (
     token_authenticated,
     tos_accepted,
 )
+from gateway.views.utils import router_kwargs
 from management.models import Request
 
 
@@ -28,7 +32,10 @@ from management.models import Request
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(openai.types.audio.SpeechCreateParams))
-@check_limits
+@check_token_concurrency_limits
+@check_model_concurrency_limits
+@check_token_rate_limits
+@check_model_rate_limits
 @resolve_alias
 @ensure_usage
 @check_model_availability
@@ -43,6 +50,8 @@ async def speech(
 ) -> StreamingHttpResponse:
     router = get_router()
 
-    speech_output: HttpxBinaryResponseContent = await router.aspeech(**pydantic_model)
+    speech_output: HttpxBinaryResponseContent = await router.aspeech(
+        **router_kwargs(pydantic_model, openai.types.audio.SpeechCreateParams)
+    )
     byte_stream = await speech_output.aiter_bytes()
     return StreamingHttpResponse(streaming_content=byte_stream, content_type="text/event-stream")

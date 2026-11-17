@@ -5,13 +5,15 @@ nav_order: 8
 ---
 
 # Admin
+
 {: .no_toc }
 
 ## Table of contents
+
 {: .no_toc .text-delta }
 
 1. TOC
-{:toc}
+   {:toc}
 
 ---
 
@@ -55,12 +57,12 @@ class MyConfig(ConfigSnippet):
 
 The four methods, signatures, and failure behavior:
 
-| Method | Signature | Failure behavior |
-|--------|-----------|------------------|
-| `org_name` | `(claims) -> str \| None` | fail closed (`None` ⇒ no login) |
-| `team_names` | `(claims) -> list[str]` | fail open (`[]`) |
-| `display_team_names` | `(team_names) -> list[(str, str)]` | identity mapping (names unchanged) |
-| `user_group` | `(claims) -> "admin" \| "org-admin" \| "user"` | fail open (`"user"`) |
+| Method               | Signature                                      | Failure behavior                   |
+|----------------------|------------------------------------------------|------------------------------------|
+| `org_name`           | `(claims) -> str \| None`                      | fail closed (`None` ⇒ no login)    |
+| `team_names`         | `(claims) -> list[str]`                        | fail open (`[]`)                   |
+| `display_team_names` | `(team_names) -> list[(str, str)]`             | identity mapping (names unchanged) |
+| `user_group`         | `(claims) -> "admin" \| "org-admin" \| "user"` | fail open (`"user"`)               |
 
 At most one `config` snippet may be active at a time. Without one, the defaults
 apply: org `"default"`, no teams, and the `user` role. A snippet must be valid
@@ -121,11 +123,11 @@ OAuth groups, and teams can be created automatically.
 
 ### Configuration
 
-| Setting | Purpose |
-|---------|---------|
-| `ENABLE_OAUTH_GROUP_MANAGEMENT` | Master switch - when `False`, no team sync happens on login |
-| `ENABLE_OAUTH_GROUP_CREATION` | When `True`, teams are auto-created from OAuth groups; when `False`, users only join existing teams |
-| `ENABLE_OAUTH_GROUP_REMOVAL` | Controls removal from **non-OAuth** teams only. When `True` (default), users are removed from all teams not in their OAuth groups. When `False`, users stay in manually created teams but are **always** removed from OAuth-managed teams when they lose the corresponding OAuth group |
+| Setting                         | Purpose                                                                                                                                                                                                                                                                                |
+|---------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `ENABLE_OAUTH_GROUP_MANAGEMENT` | Master switch - when `False`, no team sync happens on login                                                                                                                                                                                                                            |
+| `ENABLE_OAUTH_GROUP_CREATION`   | When `True`, teams are auto-created from OAuth groups; when `False`, users only join existing teams                                                                                                                                                                                    |
+| `ENABLE_OAUTH_GROUP_REMOVAL`    | Controls removal from **non-OAuth** teams only. When `True` (default), users are removed from all teams not in their OAuth groups. When `False`, users stay in manually created teams but are **always** removed from OAuth-managed teams when they lose the corresponding OAuth group |
 
 The team-name mapping logic is provided by the active **config snippet's**
 `team_names` / `display_team_names` methods (see
@@ -137,9 +139,12 @@ The Teams admin view shows OAuth management status:
 
 - **"OAuth Managed" column** - Shows "Yes" for OAuth-managed teams
 - **Filter** - Filter by `oauth_group_name` to show only OAuth-managed teams
-- **Read-only fields** - Team name, organization, and OAuth group name are read-only for OAuth-managed teams
-- **Member management** - Inline member editing is disabled for OAuth-managed teams (sync happens at login)
-- **Help text** - OAuth-managed teams display a notice explaining how to update team names via the sync command
+- **Read-only fields** - Team name, organization, and OAuth group name are read-only for
+  OAuth-managed teams
+- **Member management** - Inline member editing is disabled for OAuth-managed teams (sync happens at
+  login)
+- **Help text** - OAuth-managed teams display a notice explaining how to update team names via the
+  sync command
 
 Rate limits, descriptions, and exclusions remain editable for OAuth-managed
 teams.
@@ -155,6 +160,7 @@ you can update existing team names using the admin action:
 4. Click **Go**
 
 The action will:
+
 1. Read the stored `oauth_group_name` for each selected OAuth-managed team
 2. Re-apply the current `display_team_names` mapping from the active config snippet
 3. Update team names based on the mapping result
@@ -162,7 +168,9 @@ The action will:
 5. Never affect manually created teams (those with empty `oauth_group_name`)
 6. Show a warning if any teams would be deleted (deletion requires using the command-line)
 
-> **Note:** Team deletion is not performed via the admin action for safety. If the mapping returns nothing for a team (indicating it should be deleted), you'll see a warning message. To delete teams, use the command-line or delete them manually in the admin.
+> **Note:** Team deletion is not performed via the admin action for safety. If the mapping returns
+> nothing for a team (indicating it should be deleted), you'll see a warning message. To delete teams,
+> use the command-line or delete them manually in the admin.
 
 ## Managing Organizations
 
@@ -179,9 +187,48 @@ profile.
 
 ## Managing User Limits
 
-You can also change the request usage limits for individual users within the
-UserProfile inline model. This functionality is currently not available in the
-main UI and must be performed through the Django Admin interface.
+You can set request usage limits for individual users or for their API tokens
+in the Django Admin. The Token, UserProfile, Team, and Org models each expose the
+same limit fields: requests per minute, input and output tokens per minute, and the
+maximum number of parallel (concurrent) requests. Hourly and daily rate limits are
+then derived from the per-minute values using the configured multipliers.
+
+Limits are resolved from the most specific level down: a token's own limits take
+precedence, fall back to its Team (for service-account tokens) or UserProfile (for
+user tokens), then to the Org, and finally to the global defaults. Leave a field
+blank to fall back to the next level. These settings are not available in the
+main UI and must be configured through the Django Admin interface.
+
+## Managing Per-Model Limits
+
+There are certain limits configured per-model. These settings live in the router
+config file (the YAML referenced by `LITELLM_ROUTER_CONFIG_FILE_PATH`), under each
+model's `model_info`:
+
+- **`request_limit_multiplier`** — how expensive a request to this model is against
+  the token's request limit. The default is `1.0`, so each request uses one unit of
+  the per-minute budget. A value above `1` (e.g. `2`) lets the model consume **more**
+  budget — each request only uses `1/multiplier` of it — while a value below `1`
+  makes it cost **more** budget per request. Blocked requests show the effective
+  limit scaled by this factor (e.g. "Request limit (6/min)" for a limit of 3 and a
+  multiplier of 2).
+
+- **`rpm`** — a positive integer limiting requests per UTC minute for this public
+  model, shared across aliases, configured deployment IDs, tokens and gateway
+  replicas. Omitted means no model RPM ceiling. Deployments with the same public
+  name must configure the same value. Each admitted request counts once, including
+  upstream failures and interrupted streams; SDK retries do not count separately.
+  Exhausted budgets return 429 with `Retry-After`; shared-cache errors return 500.
+  The Django cache must use shared Redis/Valkey with atomic increments. Legacy
+  router/deployment `rpm` fields are rejected; use `model_info.rpm` instead.
+  This is independent of token rate limits and concurrent in-flight requests.
+
+- **`max_parallel_requests`** — the maximum number of requests that can run at the
+  same time for this model. Anything beyond it gets a 429. If a model doesn't set
+  this, the router's global `default_max_parallel_requests` applies; if that's also unset,
+  the gateway uses `AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT` (default `10`).
+  This limit is shared by all requests to the same model, including across aliases
+  and tokens.
 
 ## Excluding Models
 
@@ -219,11 +266,13 @@ Organizations, Teams, or UserProfiles through the admin interface. This prevents
 users from accessing certain MCP servers while allowing access to others.
 
 To exclude MCP servers:
+
 1. Navigate to the Org, Team, or UserProfile detail view in the Django Admin
 2. In the "Excluded MCP Servers" section, select the servers you want to exclude
 3. Save the changes
 
 When an MCP server is excluded:
+
 - Requests to that server return a 404 error
 - The server is effectively unavailable to users in that scope
 
@@ -236,7 +285,9 @@ MCP server exclusions follow the same hierarchical pattern as model exclusions:
 
 The `merge_mcp_server_exclusion_lists` field works identically to
 `merge_exclusion_lists`:
-- When enabled (default), the exclusion list includes servers from the current level plus all higher levels
+
+- When enabled (default), the exclusion list includes servers from the current level plus all higher
+  levels
 - When disabled, only the current level's exclusions apply, stopping the upward merge
 
 **Example:**  
@@ -262,6 +313,7 @@ includes:
 - **tags**: Categories for organization
 
 **Example configuration**:
+
 ```json
 {
   "mcpServers": {
@@ -269,7 +321,10 @@ includes:
       "type": "streamable-http",
       "url": "http://localhost:3001/mcp",
       "description": "For Streamable HTTP connections",
-      "tags": ["development", "testing"]
+      "tags": [
+        "development",
+        "testing"
+      ]
     }
   }
 }

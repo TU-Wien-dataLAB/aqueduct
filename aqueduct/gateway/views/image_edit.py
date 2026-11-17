@@ -4,14 +4,17 @@ from django.core.handlers.asgi import ASGIRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from litellm import BadRequestError
-from openai.types import ImageEditParams
+from openai.types.image_edit_params import ImageEditParamsNonStreaming, ImageEditParamsStreaming
 from pydantic import ConfigDict, RootModel, TypeAdapter
 
 from gateway.config import get_model_supports_response_format
 from gateway.decorators import (
     catch_router_exceptions,
-    check_limits,
     check_model_availability,
+    check_model_concurrency_limits,
+    check_model_rate_limits,
+    check_token_concurrency_limits,
+    check_token_rate_limits,
     log_request,
     parse_body,
     resolve_alias,
@@ -21,6 +24,17 @@ from gateway.decorators import (
 from gateway.response_type import RawJsonResponse, get_token_usage
 from gateway.views.utils import oai_client_from_body
 from management.models import Request
+
+
+class ImageEditParamsWithSeed(ImageEditParamsNonStreaming, total=False):
+    seed: int
+
+
+class ImageEditStreamingParamsWithSeed(ImageEditParamsStreaming, total=False):
+    seed: int
+
+
+ImageEditParams = ImageEditParamsWithSeed | ImageEditStreamingParamsWithSeed
 
 
 class ImageEditBody(RootModel):  # type: ignore[type-arg]
@@ -33,7 +47,10 @@ class ImageEditBody(RootModel):  # type: ignore[type-arg]
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(ImageEditBody), image_edit=True)
-@check_limits
+@check_token_concurrency_limits
+@check_model_concurrency_limits
+@check_token_rate_limits
+@check_model_rate_limits
 @resolve_alias
 @check_model_availability
 @log_request
@@ -62,8 +79,10 @@ async def image_edit(
         pydantic_model.pop("response_format", None)
     client, model_relay = oai_client_from_body(model_name, request)
     pydantic_model["model"] = model_relay
+    seed = pydantic_model.pop("seed", None)
+    extra_body = {"seed": seed} if seed is not None else None
     try:
-        response = await client.images.edit(**pydantic_model)
+        response = await client.images.edit(**pydantic_model, extra_body=extra_body)
     except TypeError as err:
         raise BadRequestError(
             "Unexpected argument in request body", model_name, llm_provider=None

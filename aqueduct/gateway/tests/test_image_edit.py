@@ -26,6 +26,25 @@ class ImageEditEndpointTest(GatewayIntegrationTestCase):
             sent["image"], [{"filename": "image.png", "content": b"image bytes".hex()}]
         )
         self.assertEqual(sent["response_format"], ["b64_json"])
+        self.assertNotIn("seed", sent)
+
+    def test_edit_image_forwards_seed(self):
+        for seed in (0, 12345):
+            with self.subTest(seed=seed):
+                response = self.client.post(
+                    "/images/edits",
+                    {
+                        "model": "dall-e-2",
+                        "prompt": "Edit",
+                        "image": SimpleUploadedFile("a.png", b"a"),
+                        "seed": seed,
+                    },
+                    headers={"Authorization": f"Bearer {self.AQUEDUCT_ACCESS_TOKEN}"},
+                )
+                self.assertEqual(response.status_code, HTTPStatus.OK, response.content)
+                self.assertEqual(
+                    self.mock_server.get_last_request("images/edits")["seed"], [str(seed)]
+                )
 
     def test_multiple_images_and_mask(self):
         response = self.client.post(

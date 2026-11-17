@@ -10,6 +10,7 @@ from gateway.config import (
     get_all_model_request_limit_multipliers,
     get_model_request_limit_multiplier,
     get_model_supports_response_format,
+    get_router,
     get_router_config,
     resolve_model,
 )
@@ -531,6 +532,12 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
     def setUp(self):
         super().setUp()
         get_router_config.cache_clear()
+        get_router.cache_clear()
+
+    def tearDown(self):
+        get_router_config.cache_clear()
+        get_router.cache_clear()
+        super().tearDown()
 
     def test_chat_completion_with_alias(self):
         """
@@ -849,6 +856,17 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                 "alias": "embedding",
                 "resolved_model": "text-embedding-ada-002",
                 "payload": {"model": "embedding", "input": ["Test input"]},
+            },
+            {
+                "name": "rerank",
+                "path": "/rerank",
+                "alias": "reranker",
+                "resolved_model": "bge-reranker-v2-m3",
+                "payload": {
+                    "model": "reranker",
+                    "query": "Test query",
+                    "documents": ["Test document"],
+                },
             },
             {
                 "name": "speech",

@@ -7,6 +7,7 @@ from gateway.views.files import file, file_content, files
 from gateway.views.image_edit import image_edit
 from gateway.views.image_generation import image_generation
 from gateway.views.models import model_group_info, models
+from gateway.views.rerank import rerank
 from gateway.views.responses import create_response, get_response_input_items, response
 from gateway.views.speech import speech
 from gateway.views.transcriptions import transcriptions
@@ -40,6 +41,7 @@ __all__ = [
     "image_generation",
     "model_group_info",
     "models",
+    "rerank",
     "response",
     "speech",
     "transcriptions",

@@ -54,6 +54,8 @@ class CorsMiddlewareIsEnabledTest(SimpleTestCase):
             "/v1/chat/completions",
             "/embeddings",
             "/v1/embeddings",
+            "/rerank",
+            "/v1/rerank",
             "/models",
             "/v1/models",
             "/audio/speech",

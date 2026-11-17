@@ -11,8 +11,11 @@ from pydantic import TypeAdapter
 from gateway.config import get_router
 from gateway.decorators import (
     catch_router_exceptions,
-    check_limits,
     check_model_availability,
+    check_model_concurrency_limits,
+    check_model_rate_limits,
+    check_token_concurrency_limits,
+    check_token_rate_limits,
     ensure_usage,
     log_request,
     parse_body,
@@ -21,6 +24,7 @@ from gateway.decorators import (
     tos_accepted,
 )
 from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
+from gateway.views.utils import router_kwargs
 from management.models import Request
 
 
@@ -29,7 +33,10 @@ from management.models import Request
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(openai.types.CompletionCreateParams))
-@check_limits
+@check_token_concurrency_limits
+@check_model_concurrency_limits
+@check_token_rate_limits
+@check_model_rate_limits
 @ensure_usage
 @resolve_alias
 @check_model_availability
@@ -45,7 +52,9 @@ async def completions(
     router = get_router()
     completion: (
         TextCompletionResponse | TextCompletionStreamWrapper
-    ) = await router.atext_completion(**pydantic_model)
+    ) = await router.atext_completion(
+        **router_kwargs(pydantic_model, openai.types.CompletionCreateParams)
+    )
     if isinstance(completion, TextCompletionStreamWrapper):
         return RawStreamingResponse(streaming_content=completion, request_log=request_log)
     if isinstance(completion, TextCompletionResponse):

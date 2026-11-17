@@ -10,8 +10,11 @@ from pydantic import TypeAdapter
 
 from gateway.decorators import (
     catch_router_exceptions,
-    check_limits,
     check_model_availability,
+    check_model_concurrency_limits,
+    check_model_rate_limits,
+    check_token_concurrency_limits,
+    check_token_rate_limits,
     check_tool_availability,
     log_request,
     parse_body,
@@ -27,7 +30,7 @@ from gateway.decorators.response_cache import (
 )
 from gateway.response_error import error_response
 from gateway.response_type import RawJsonResponse, RawStreamingResponse, get_token_usage
-from gateway.views.utils import ResponseRegistrationWrapper, oai_client_from_body
+from gateway.views.utils import ResponseRegistrationWrapper, oai_client_from_body, router_kwargs
 from management.models import Request, Token
 
 
@@ -36,7 +39,10 @@ from management.models import Request, Token
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(openai.types.responses.ResponseCreateParams))
-@check_limits
+@check_token_concurrency_limits
+@check_model_concurrency_limits
+@check_token_rate_limits
+@check_model_rate_limits
 @resolve_alias
 @check_model_availability
 @check_tool_availability
@@ -58,11 +64,22 @@ async def create_response(
     model = pydantic_model.get("model")
     if not isinstance(model, str):
         return error_response("Missing required parameter: model", param="model", status=400)
+
+    previous_response_id = pydantic_model.get("previous_response_id")
+    if previous_response_id is not None:
+        previous = get_response_from_cache(previous_response_id)
+        if not previous or previous["email"] != token.user.email:
+            return error_response(
+                f"Previous response with id '{previous_response_id}' not found.",
+                param="previous_response_id",
+                status=404,
+            )
+
     client, model_relay = oai_client_from_body(model, request)
     pydantic_model["model"] = model_relay
 
     resp: Response | AsyncStream[ResponseStreamEvent] = await client.responses.create(
-        **pydantic_model
+        **router_kwargs(pydantic_model, openai.types.responses.ResponseCreateParams)
     )
 
     if isinstance(resp, AsyncStream):

@@ -8,8 +8,12 @@ from pydantic import TypeAdapter
 
 from gateway.decorators import (
     catch_router_exceptions,
-    check_limits,
     check_model_availability,
+    check_model_concurrency_limits,
+    check_model_rate_limits,
+    check_token_concurrency_limits,
+    check_token_rate_limits,
+    ensure_usage,
     log_request,
     parse_body,
     resolve_alias,
@@ -45,7 +49,11 @@ class RerankRequestParams(TypedDict):
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(RerankRequestParams))
-@check_limits
+@check_token_concurrency_limits
+@check_model_concurrency_limits
+@check_token_rate_limits
+@check_model_rate_limits
+@ensure_usage
 @resolve_alias
 @check_model_availability
 @log_request

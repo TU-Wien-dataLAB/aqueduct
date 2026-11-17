@@ -3,7 +3,12 @@ kind: Deployment
 metadata:
   name: {{ .Release.Name }}-celery-worker
 spec:
-  replicas: {{ .Values.celery.workerDeployment.replicas | default 1 }}
+  replicas: {{ .Values.celery.workerDeployment.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: {{ .Release.Name }}
@@ -11,6 +16,7 @@ spec:
   template:
     metadata:
       annotations:
+        checksum/migration: {{ .Files.Get "files/migrate.py" | sha256sum }}
         checksum/config: {{ .Values.routerConfig | toString | sha256sum }}
         checksum/mcp-config: {{ .Values.mcpConfig | toString | sha256sum }}
         checksum/settings: {{ include (print $.Template.BasePath "/configmap-settings.yaml") . | toString | sha256sum }}
@@ -18,18 +24,12 @@ spec:
         app: {{ .Release.Name }}
         component: celery-worker
     spec:
+      serviceAccountName: default
+      initContainers:
+        {{- include "aqueduct.migrationInit" (dict "root" . "pool" .Values.celery.workerDeployment.databasePool "extraEnv" .Values.celery.workerExtraEnv) | nindent 8 }}
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
-      affinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - {{ .Release.Name }}
-              topologyKey: kubernetes.io/hostname
+      {{- include "aqueduct.scheduling" .Values.celery.workerDeployment | nindent 6 }}
       containers:
         - name: celery-worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -39,6 +39,7 @@ spec:
           command: [ "python", "-m", "celery", "-A", "aqueduct", "worker", "--loglevel=info" ]
           env:
             {{- include "aqueduct.env" . | nindent 12 }}
+            {{- include "aqueduct.databasePoolEnv" .Values.celery.workerDeployment.databasePool | nindent 12 }}
             {{- with .Values.celery.workerExtraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -55,6 +56,9 @@ spec:
               mountPath: /etc/aqueduct/mcp.json
               subPath: mcp.json
       volumes:
+        - name: migration-init
+          configMap:
+            name: {{ include "aqueduct.migrationConfigName" . }}
         - name: settings-py
           configMap:
             name: {{ .Release.Name }}-settings

@@ -13,7 +13,10 @@ securityContext:
     type: RuntimeDefault
 
 collectstatic:
-  resources: { }
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
   containerSecurityContext:
     allowPrivilegeEscalation: false
     capabilities:
@@ -21,7 +24,13 @@ collectstatic:
         - ALL
 
 migrate:
-  resources: { }
+  # Init containers share their pod's scheduling; PostgreSQL lock acquisition times out after 10 minutes.
+  # Migration uses the application role's environment and an unpooled connection.
+  extraEnv: [] # Must remain empty; use global or role-specific extraEnv instead.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
   containerSecurityContext:
     allowPrivilegeEscalation: false
     capabilities:
@@ -52,9 +61,20 @@ oidc:
 celery:
   # Extra environment variables appended to the celery worker container only.
   workerExtraEnv: []
-  # Extra environment variables appended to the celery beat sidecar container only.
+  # Extra environment variables appended to the standalone celery beat container only.
   beatExtraEnv: []
-  beatResources: { }
+  beatScheduling:
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    topologySpreadConstraints: []
+  beatDatabasePool:
+    minSize: 0
+    maxSize: 2
+  beatResources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
   beatContainerSecurityContext:
     allowPrivilegeEscalation: false
     capabilities:
@@ -69,7 +89,17 @@ celery:
   schedule: "0 4 * * *"
   workerDeployment:
     replicas: 1
-    resources: { }
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    topologySpreadConstraints: []
+    databasePool:
+      minSize: 0
+      maxSize: 2
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
     containerSecurityContext:
       allowPrivilegeEscalation: false
       capabilities:
@@ -109,15 +139,25 @@ database:
 env:
   - name: DATABASE_ENGINE
     value: "django.db.backends.postgresql"
-  # - name: DATABASE_ENGINE
-  #   value: "django.db.backends.sqlite3"
 
-# Extra environment variables appended to the web (Django/daphne) container
-# only. Use this to set per-container values such as the PostgreSQL pool size,
-# which should differ between the web server, celery worker, and celery beat.
+# Set per-role PostgreSQL pool sizes using databasePool (beatDatabasePool for Beat).
+# Do not set POSTGRESQL_POOL_MIN_SIZE or POSTGRESQL_POOL_MAX_SIZE in env or extraEnv.
 web:
+  replicas: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Set selectors to app: <release>, component: web to spread only this release.
+  topologySpreadConstraints: []
   extraEnv: []
-  resources: { }
+  databasePool:
+    minSize: 0
+    maxSize: 10
+  # Initial requests, not measured capacity guarantees. Set limits after staging measurements.
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
   containerSecurityContext:
     allowPrivilegeEscalation: false
     capabilities:

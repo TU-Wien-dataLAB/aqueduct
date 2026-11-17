@@ -410,6 +410,18 @@ default_post_configs = {
         ).model_dump()
     ),
     "files": MockConfig(response_data=file_detail_response),
+    "images/edits": MockConfig(
+        response_data=ImagesResponse(
+            created=1713833628,
+            data=[Image(b64_json="aW1hZ2U=")],
+            usage=ImageUsage(
+                total_tokens=100,
+                input_tokens=50,
+                output_tokens=50,
+                input_tokens_details=UsageInputTokensDetails(text_tokens=10, image_tokens=40),
+            ),
+        ).model_dump()
+    ),
     "images/generations": MockConfig(
         response_data=ImagesResponse(
             created=1713833628,

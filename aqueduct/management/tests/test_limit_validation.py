@@ -10,10 +10,12 @@ Covers:
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from management.admin import OrgAdminForm, TeamAdminForm, UserProfileAdminForm
 from management.models import LimitSet, Org, Team, UserProfile
@@ -21,42 +23,95 @@ from management.models import LimitSet, Org, Team, UserProfile
 User = get_user_model()
 
 
-class LimitSetResolutionTest(TestCase):
-    def test_from_objects_resolves_new_fields(self):
-        org = Org.objects.create(name="TestOrg")
-        org.hourly_limit_multiplier = 6
-        org.daily_limit_multiplier = 1440
-        org.save(update_fields=["hourly_limit_multiplier", "daily_limit_multiplier"])
-
-        team = Team.objects.create(name="TestTeam", org=org)
-        team.hourly_limit_multiplier = 3  # overrides org
-        team.daily_limit_multiplier = None  # falls back to org
-        team.save(update_fields=["hourly_limit_multiplier", "daily_limit_multiplier"])
-
-        limits = LimitSet.from_objects(team, org)
-        self.assertEqual(limits.hourly_limit_multiplier, 3)  # team
-        self.assertEqual(limits.daily_limit_multiplier, 1440)  # org fallback
+class LimitSetResolutionTest(SimpleTestCase):
+    def test_from_objects_resolves_limits_from_hierarchy(self):
+        org = SimpleNamespace(
+            requests_per_minute=10,
+            input_tokens_per_minute=None,
+            output_tokens_per_minute=200,
+            hourly_limit_multiplier=6,
+            daily_limit_multiplier=1440,
+            concurrent_requests_limit=None,
+        )
+        team = SimpleNamespace(
+            requests_per_minute=None,
+            input_tokens_per_minute=None,
+            output_tokens_per_minute=300,  # overrides org
+            hourly_limit_multiplier=3,  # overrides org
+            daily_limit_multiplier=None,  # falls back to org
+            concurrent_requests_limit=None,
+        )
+        token = SimpleNamespace(
+            requests_per_minute=None,
+            input_tokens_per_minute=None,
+            output_tokens_per_minute=100,  # overrides team and org
+            hourly_limit_multiplier=None,  # falls back to team
+            daily_limit_multiplier=None,  # falls back to org
+            concurrent_requests_limit=None,
+        )
+        limits = LimitSet.from_objects(token, [team, org])
+        self.assertEqual(limits.requests_per_minute, 10)  # from org
+        self.assertEqual(limits.input_tokens_per_minute, None)  # default
+        self.assertEqual(limits.output_tokens_per_minute, 100)  # from token
+        self.assertEqual(limits.hourly_limit_multiplier, 3)  # from team
+        self.assertEqual(limits.daily_limit_multiplier, 1440)  # from org
+        self.assertEqual(
+            limits.concurrent_requests_limit,
+            settings.AQUEDUCT_DEFAULT_TOKEN_CONCURRENT_REQUESTS_LIMIT,
+        )  # default
 
     @override_settings(AQUEDUCT_HOURLY_LIMIT_MULTIPLIER=60, AQUEDUCT_DAILY_LIMIT_MULTIPLIER=1440)
-    def test_windows_applies_settings_defaults_and_scales(self):
-        org = Org.objects.create(name="TestOrg2", requests_per_minute=10)
-        limits = LimitSet.from_objects(org, None)
+    def test_windows_uses_settings_defaults_when_multipliers_unset(self):
+        org = SimpleNamespace(
+            requests_per_minute=10,
+            input_tokens_per_minute=None,
+            output_tokens_per_minute=None,
+            hourly_limit_multiplier=None,
+            daily_limit_multiplier=None,
+        )
+        limits = LimitSet.from_objects(org)
         windows = limits.windows()
         self.assertEqual(windows[0], ("min", 60, 10, None, None))
         self.assertEqual(windows[1], ("hour", 3600, 600, None, None))  # 10 x 60
         self.assertEqual(windows[2], ("day", 86400, 14400, None, None))  # 10 x 1440
 
-    def test_windows_uses_object_multiplier_over_settings(self):
-        org = Org.objects.create(
-            name="TestOrg3",
+    def test_windows_uses_object_limits_over_settings(self):
+        org = SimpleNamespace(
             requests_per_minute=10,
+            input_tokens_per_minute=None,
+            output_tokens_per_minute=None,
             hourly_limit_multiplier=6,
             daily_limit_multiplier=120,
         )
-        limits = LimitSet.from_objects(org, None)
+        limits = LimitSet.from_objects(org)
         windows = limits.windows()
         self.assertEqual(windows[1][2], 60)  # 10 x 6 (object value, not settings default)
         self.assertEqual(windows[2][2], 1200)  # 10 x 120
+
+    def test_windows_none_per_minute_implies_none_derived(self):
+        limits = LimitSet(input_tokens_per_minute=5)  # requests/output unset
+        windows = limits.windows()
+        # requests_per_minute is None -> hour/day rpm also None (tied design).
+        self.assertIsNone(windows[0][2])
+        self.assertIsNone(windows[1][2])
+        self.assertIsNone(windows[2][2])
+        # input_tokens scales.
+        self.assertEqual(windows[0][3], 5)
+        self.assertEqual(windows[1][3], 5 * 60)  # settings default hourly mult
+        self.assertEqual(windows[2][3], 5 * 1440)  # settings default daily mult
+
+    def test_windows_day_limit_derived_from_per_minute(self):
+        limits = LimitSet(requests_per_minute=10, daily_limit_multiplier=6)
+        windows = limits.windows()
+        # min, hour, day
+        self.assertEqual(windows[0][2], 10)  # rpm
+        self.assertEqual(windows[1][2], 10 * 60)  # hour uses settings default 60
+        self.assertEqual(windows[2][2], 10 * 6)  # day uses the set multiplier 6
+
+    def test_has_no_limit_fast_path(self):
+        self.assertFalse(LimitSet().has_any_rate_limit())
+        self.assertTrue(LimitSet(requests_per_minute=1).has_any_rate_limit())
+        self.assertTrue(LimitSet(input_tokens_per_minute=1).has_any_rate_limit())
 
 
 class LimitValidationTest(TestCase):

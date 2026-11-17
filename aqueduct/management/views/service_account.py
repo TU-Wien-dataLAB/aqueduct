@@ -15,7 +15,12 @@ from management.models import ServiceAccount, Token, UserProfile  # Added UserPr
 
 # Import base views/mixins and models/forms
 # Assuming base.py is in the same directory level
-from management.views.base import BaseServiceAccountView, BaseTeamView, TeamAdminRequiredMixin
+from management.views.base import (
+    AccessKeyExpirationContextMixin,
+    BaseServiceAccountView,
+    BaseTeamView,
+    TeamAdminRequiredMixin,
+)
 
 User = get_user_model()
 
@@ -23,7 +28,9 @@ User = get_user_model()
 # --- Create View ---
 # Uses TeamAdminRequiredMixin to ensure the user has admin rights on that team.
 # Uses BaseTeamView to get the team context for creation.
-class ServiceAccountCreateView(BaseTeamView, TeamAdminRequiredMixin, CreateView):
+class ServiceAccountCreateView(
+    AccessKeyExpirationContextMixin, BaseTeamView, TeamAdminRequiredMixin, CreateView
+):
     """
     Handles creation of Service Accounts within a specific Team.
     Requires Team Admin privileges for that team.
@@ -145,7 +152,7 @@ class ServiceAccountDeleteView(BaseServiceAccountView, DeleteView):
 
 # --- Update View ---
 # Uses BaseServiceAccountView to fetch SA and handle permissions via TeamAdminRequiredMixin
-class ServiceAccountUpdateView(BaseServiceAccountView, UpdateView):
+class ServiceAccountUpdateView(AccessKeyExpirationContextMixin, BaseServiceAccountView, UpdateView):
     """
     Handles editing an existing Service Account (name, description).
     Requires Team Admin privileges for the SA's team.

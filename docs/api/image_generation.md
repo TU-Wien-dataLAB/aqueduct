@@ -21,7 +21,7 @@ Content-Type: application/json
 
 ## Request Body
 
-The request body should be a JSON object compatible with the OpenAI [ImageGenerateParams](https://platform.openai.com/docs/api-reference/images/create) schema.
+The request body should be a JSON object compatible with the OpenAI [ImageGenerateParams](https://platform.openai.com/docs/api-reference/images/create) schema, with the additional `seed` parameter below.
 
 | Parameter         | Type   | Description                                                                   |
 |-------------------|--------|-------------------------------------------------------------------------------|
@@ -29,6 +29,7 @@ The request body should be a JSON object compatible with the OpenAI [ImageGenera
 | `prompt`          | string | The text description of the desired image(s).                                 |
 | `n`               | int    | (Optional) The number of images to generate. Default: `1`.                    |
 | `size`            | string | (Optional) The size of the generated images.                                  |
+| `seed`            | int    | (Optional) Seed forwarded to providers that support reproducible generation. |
 | `quality`         | string | (Optional) The quality of the generated images.                               |
 | `style`           | string | (Optional) The style of the generated images.                                 |
 | `response_format` | string | (Optional) The format to return the generated images in (`url`or `b64_json`). |

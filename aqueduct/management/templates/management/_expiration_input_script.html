@@ -1,0 +1,62 @@
+{% comment %}
+Client-side help for a datetime-local expiration input.
+
+The input exposes UTC timestamps in ``data-min-expiration`` and, when the
+configured maximum applies, ``data-max-expiration``. Both the form and the server
+treat the value as UTC; no timezone conversion is performed.
+{% endcomment %}
+<script>
+  (() => {
+    const input = document.getElementById('{{ field.id_for_label }}');
+    if (!input) {
+      return;
+    }
+
+    const form = input.closest('form');
+
+    const minValue = input.dataset.minExpiration;
+    if (minValue) {
+      input.min = minValue.slice(0, 16);
+    }
+
+    const maxValue = input.dataset.maxExpiration;
+    if (maxValue) {
+      input.max = maxValue.slice(0, 16);
+    }
+
+    const errorLabel = document.createElement('label');
+    errorLabel.className = 'label mt-2 hidden w-full whitespace-normal';
+    errorLabel.innerHTML =
+      '<span class="label-text-alt whitespace-normal break-words text-left text-error"></span>';
+    input.insertAdjacentElement('afterend', errorLabel);
+    const errorText = errorLabel.querySelector('span');
+
+    const clearError = () => {
+      errorLabel.classList.add('hidden');
+      input.classList.remove('input-error');
+    };
+
+    const validateExpiration = () => {
+      if (!input.value || !input.max || input.value <= input.max) {
+        clearError();
+        return true;
+      }
+      errorText.textContent = `Expiration date cannot be later than ${input.max.replace('T', ' ')} UTC.`;
+      errorLabel.classList.remove('hidden');
+      input.classList.add('input-error');
+      return false;
+    };
+
+    input.addEventListener('change', validateExpiration);
+    input.addEventListener('input', validateExpiration);
+
+    if (form) {
+      form.addEventListener('submit', (event) => {
+        if (!validateExpiration()) {
+          event.preventDefault();
+          input.focus();
+        }
+      });
+    }
+  })();
+</script>

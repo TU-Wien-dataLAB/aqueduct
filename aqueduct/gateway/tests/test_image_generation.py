@@ -117,6 +117,23 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         self.assertEqual(sent["model"], "gpt-image-1")
         self.assertNotIn("response_format", sent)
 
+    def test_image_generation_forwards_seed(self):
+        if INTEGRATION_TEST_BACKEND == "vllm":
+            self.skipTest("Requires the mock API server")
+
+        for seed in (0, 12345):
+            with self.subTest(seed=seed):
+                response = self.client.post(
+                    self.url,
+                    data=json.dumps({"model": self.model, "prompt": "A test image", "seed": seed}),
+                    headers=self.headers,
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, HTTPStatus.OK, response.content)
+                sent = self.mock_server.get_last_request("images/generations")
+                self.assertIsNotNone(sent)
+                self.assertEqual(sent["seed"], seed)
+
     def test_image_generation_sends_response_format_for_unflagged_model(self):
         """dall-e-2 has no flag, so response_format=b64_json is sent as before."""
         if INTEGRATION_TEST_BACKEND == "vllm":
@@ -134,6 +151,7 @@ class ImageGenerationEndpointTest(GatewayIntegrationTestCase):
         sent = self.mock_server.get_last_request("images/generations")
         self.assertIsNotNone(sent)
         self.assertEqual(sent["response_format"], "b64_json")
+        self.assertNotIn("seed", sent)
 
     def test_image_generation_endpoint_missing_required_fields(self):
         """Test image generation endpoint with missing required fields."""

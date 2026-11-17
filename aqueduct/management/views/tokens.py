@@ -8,7 +8,6 @@ from django.db.models import QuerySet
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
-from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.http import require_POST
@@ -17,7 +16,7 @@ from django.views.generic import CreateView, DeleteView, TemplateView, UpdateVie
 from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
 from management.models import LimitSet, ServiceAccount, Token
-from management.views.base import BaseAqueductView
+from management.views.base import AccessKeyExpirationContextMixin, BaseAqueductView
 
 
 class UserTokensView(BaseAqueductView, TemplateView):
@@ -38,7 +37,7 @@ class UserTokensView(BaseAqueductView, TemplateView):
         can_add_token = tokens.count() < max_tokens
 
         # Effective limits for user-owned tokens (UserProfile + Org fallback)
-        user_limits: LimitSet = LimitSet.from_objects(profile, profile.org)
+        user_limits: LimitSet = LimitSet.from_objects(profile, [profile.org])
 
         # Attach each token's current rate-limit usage (per minute/hour/day bucket)
         # to the token object so templates can render it. All tokens are fetched in a
@@ -52,7 +51,7 @@ class UserTokensView(BaseAqueductView, TemplateView):
         # per-SA DB query that sa.token.get_limit() would trigger.
         per_sa_token_usage = get_per_token_usage([sa.token.id for sa in service_accounts])
         for sa in service_accounts:
-            sa.effective_limits = LimitSet.from_objects(sa.team, sa.team.org)  # type: ignore[attr-defined]
+            sa.effective_limits = LimitSet.from_objects(sa.team, [sa.team.org])  # type: ignore[attr-defined]
             sa.usage = per_sa_token_usage[sa.token.id]  # type: ignore[attr-defined]
 
         context.update(
@@ -67,7 +66,7 @@ class UserTokensView(BaseAqueductView, TemplateView):
         return context
 
 
-class TokenCreateView(BaseAqueductView, CreateView):
+class TokenCreateView(AccessKeyExpirationContextMixin, BaseAqueductView, CreateView):
     model = Token
     form_class = TokenCreateForm
     template_name = "management/create/token.html"
@@ -105,14 +104,11 @@ class TokenCreateView(BaseAqueductView, CreateView):
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["view_title"] = "Create New API Key"
-
-        now = timezone.now().replace(second=0, microsecond=0)
-        context["now"] = now.strftime("%Y-%m-%dT%H:%M")
         context["tz"] = settings.TIME_ZONE
         return context
 
 
-class TokenEditView(BaseAqueductView, UpdateView):
+class TokenEditView(AccessKeyExpirationContextMixin, BaseAqueductView, UpdateView):
     model = Token
     form_class = TokenCreateForm
     template_name = "management/edit/token.html"

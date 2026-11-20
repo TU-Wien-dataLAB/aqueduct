@@ -21,6 +21,13 @@ from django.urls import include, path
 
 from management import views
 
+terms_of_service = path(
+    "terms-of-service/",
+    include(
+        [path("confirm/", views.check_tos, name="tos_check_tos"), path("", include("tos.urls"))]
+    ),
+)
+
 urlpatterns = [
     # SSO view from management app
     path(r"login/", views.SSOTemplateView.as_view(), name="sso"),
@@ -37,4 +44,4 @@ if getattr(settings, "SILKY_ENABLED", False):
     urlpatterns.insert(len(urlpatterns) - 1, path("silk/", include("silk.urls", namespace="silk")))
 
 if getattr(settings, "TOS_ENABLED", False):
-    urlpatterns.insert(len(urlpatterns) - 1, path("terms-of-service/", include("tos.urls")))
+    urlpatterns.insert(len(urlpatterns) - 1, terms_of_service)

@@ -5,8 +5,17 @@ from django import forms
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.utils.translation import gettext, ngettext
+from django.utils.translation import gettext_lazy as _
 
+from .expiry_presets import ExpiryForm
 from .models import ServiceAccount, Team, Token
+
+NAME_INPUT = "input w-full max-w-md"
+DESCRIPTION_INPUT = "textarea w-full max-w-2xl"
+EXPIRY_INPUT = "input w-full max-w-xs"
+NUMBER_INPUT = "input w-full max-w-xs"
+CHECKBOX = "checkbox checkbox-sm"
 
 
 def _format_expiration_deadline(deadline: dt.datetime) -> str:
@@ -24,10 +33,11 @@ class AccessKeyExpirationFormMixin:
         if deadline is None:
             return
         days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
-        self.fields[self.expiration_field].help_text = (
-            f"Maximum expiration: {_format_expiration_deadline(deadline)} "
-            f"({days} days from now). Leave blank to use the maximum; later dates are rejected."
-        )
+        field = self.fields[self.expiration_field]
+        field.widget.attrs["max"] = f"{timezone.localtime(deadline):%Y-%m-%dT%H:%M}"
+        field.help_text = ngettext(
+            "A key can last at most %(count)s day.", "A key can last at most %(count)s days.", days
+        ) % {"count": days}
 
     def _validate_expiration_limit(self, expires_at: dt.datetime | None) -> None:
         if expires_at is None:
@@ -166,22 +176,21 @@ class TeamCreateForm(forms.ModelForm):
         return cleaned_data
 
 
-class TokenCreateForm(AccessKeyExpirationFormMixin, forms.ModelForm):
+class TokenCreateForm(AccessKeyExpirationFormMixin, ExpiryForm):
     expiration_field = "expires_at"
 
     class Meta:
         model = Token
         fields: ClassVar[list] = ["name", "expires_at"]
         widgets: ClassVar[dict] = {
-            "name": forms.TextInput(attrs={"placeholder": "Enter API key name"}),
+            "name": forms.TextInput(
+                attrs={"placeholder": _("For example thesis-eval"), "class": NAME_INPUT}
+            ),
             "expires_at": forms.DateTimeInput(
-                attrs={"type": "datetime-local", "class": "input"}, format="%Y-%m-%dT%H:%M"
+                attrs={"type": "datetime-local", "class": EXPIRY_INPUT}, format="%Y-%m-%dT%H:%M"
             ),
         }
-        labels: ClassVar[dict] = {
-            "name": "API Key Name",
-            "expires_at": "Expiration Date (optional)",
-        }
+        labels: ClassVar[dict] = {"name": _("Name"), "expires_at": _("Date and time (UTC)")}
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user", None)
@@ -189,6 +198,7 @@ class TokenCreateForm(AccessKeyExpirationFormMixin, forms.ModelForm):
         if not self.user:
             raise ValueError("User must be provided to TokenCreateForm.")
         self.fields["expires_at"].input_formats = ["%Y-%m-%dT%H:%M"]
+        self.fields["expires_at"].widget.attrs["min"] = f"{timezone.now():%Y-%m-%dT%H:%M}"
         self._describe_expiration_limit()
 
     def clean(self) -> dict:
@@ -199,11 +209,18 @@ class TokenCreateForm(AccessKeyExpirationFormMixin, forms.ModelForm):
         if self.instance.pk:
             token_count = token_count.exclude(pk=self.instance.pk)
         if token_count.count() >= max_tokens:
-            raise ValidationError(f"You can only have {max_tokens} API keys.")
+            raise ValidationError(
+                ngettext(
+                    "You can only have %(count)s API key.",
+                    "You can only have %(count)s API keys.",
+                    max_tokens,
+                )
+                % {"count": max_tokens}
+            )
 
         expires_at = cleaned_data.get("expires_at")
         if expires_at and expires_at <= timezone.now():
-            self.add_error("expires_at", "Expiration date must be in the future.")
+            self.add_error("expires_at", gettext("Expiration date must be in the future."))
         self._validate_expiration_limit(expires_at)
 
         return cleaned_data

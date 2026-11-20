@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from django import template
 from django.forms import BoundField
@@ -10,10 +10,14 @@ from django.utils import dateformat, timezone
 from django.utils.html import conditional_escape, format_html, format_html_join
 from django.utils.http import urlencode
 from django.utils.safestring import SafeString, mark_safe
-from django.utils.translation import gettext, ngettext_lazy
+from django.utils.translation import gettext, ngettext, ngettext_lazy
 
+from management.activity import Activity
+from management.deletion import deletion
 from management.formatting import MISSING, grouped
 from management.icons import Icon
+from management.keys import Expiry
+from management.models import FileObject, ServiceAccount, Team, Token
 
 register = template.Library()
 
@@ -200,6 +204,55 @@ def confirm(
     return attrs
 
 
+RECENT_USE = timedelta(hours=24)
+
+
+def _use_line(activity: Activity, now: datetime) -> str:
+    last = (
+        gettext("Last used %(time)s") % {"time": ago(activity.last_used, now)}
+        if activity.last_used
+        else gettext("Never used")
+    )
+    requests = ngettext(
+        "%(count)s request in the last 7 days",
+        "%(count)s requests in the last 7 days",
+        activity.requests,
+    ) % {"count": grouped(activity.requests)}
+    return f"{last} · {requests}."
+
+
+@register.simple_tag
+def use_line(activity: Activity) -> str:
+    """What a key's use was, for the delete page that has no dialog to put it in."""
+    return _use_line(activity, timezone.now())
+
+
+@register.simple_tag
+def confirm_rotate(title: str, activity: Activity) -> SafeString:
+    """The rotate dialog, which says what the key's use means for whatever depends on it."""
+    now = timezone.now()
+    detail = gettext("The current key stops working immediately.")
+    if activity.last_used and now - activity.last_used < RECENT_USE:
+        detail += " " + gettext("Whatever uses it fails until it gets the new key.")
+    return confirm(title, detail, gettext("Rotate"), use=_use_line(activity, now))
+
+
+@register.simple_tag
+def confirm_delete(
+    obj: Token | ServiceAccount | Team | FileObject, activity: Activity | None = None
+) -> SafeString:
+    question = deletion(obj)
+    use = _use_line(activity, timezone.now()) if activity is not None else ""
+    return confirm(question.title, question.detail, question.action, use=use)
+
+
+
+
+@register.filter
+def expiry(value: Expiry, wording: str = "label") -> SafeString:
+    text = value.sentence if wording == "sentence" else value.label
+    label = _time(value.at, text) if value.at else text
+    return format_html('<span class="{}">{}</span>', value.tone, label)
 
 
 def _time(value: date, short: str) -> SafeString:

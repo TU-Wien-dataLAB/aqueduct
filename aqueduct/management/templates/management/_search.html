@@ -1,0 +1,8 @@
+{% load i18n ui %}<form method="get" role="search" class="max-sm:w-full{% if form_class %} {{ form_class }}{% endif %}">
+    {% if keep is None %}{% hidden_params name reset %}{% else %}{% hidden_params name reset keep=keep %}{% endif %}
+    <label class="input input-sm {{ width|default:'w-full sm:w-64' }}">
+        {% icon "search" small=True %}
+        <input type="search" name="{{ name }}" value="{{ value }}"{% if maxlength %} maxlength="{{ maxlength }}"{% endif %} placeholder="{{ placeholder }}" aria-label="{{ label|default:placeholder }}"{% if autofocus %} autofocus{% endif %}>
+        {% if clear_url %}<a class="btn btn-ghost btn-xs btn-square -me-2" href="{{ clear_url }}" aria-label="{% translate 'Clear' %}" title="{% translate 'Clear' %}">{% icon "close" small=True %}</a>{% endif %}
+    </label>
+</form>

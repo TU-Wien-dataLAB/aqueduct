@@ -1,15 +1,20 @@
+import re
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import timedelta
 from pathlib import Path
 
 import yaml
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.urls import reverse
+from django.utils import timezone
 
 from gateway.tests.utils.base import ROUTER_CONFIG_PATH
 from management.models import (
     Org,
+    Request,
     ServiceAccount,
     Snippet,
     SnippetType,
@@ -22,6 +27,7 @@ from management.models import (
 
 User = get_user_model()
 CHAT = "gpt-4.1-nano"
+KEY_NAMES = ("solo-laptop", "member-laptop", "pipeline", "foreign-laptop")
 
 
 @contextmanager
@@ -83,6 +89,104 @@ class RoleWorld(TestCase):
     def as_user(self, user):
         self.client.force_login(user)
         return self.client
+
+
+class UsagePageTestBase(RoleWorld):
+    def setUp(self):
+        super().setUp()
+        hour = timedelta(hours=1)
+        self.log(
+            self.solo_key, hour, 200, input_tokens=1000, cached_input_tokens=250, output_tokens=500
+        )
+        self.log(self.member_key, hour, 429, input_tokens=2000)
+        self.log(self.pipeline_key, hour, 500, input_tokens=3000, output_tokens=1000)
+        self.log(self.foreign_key, hour, 200, input_tokens=7000)
+
+    def log(
+        self, token: Token, ago: timedelta, status: int, model: str = CHAT, **fields
+    ) -> Request:
+        return Request.objects.create(
+            token=token,
+            timestamp=timezone.now() - ago,
+            status_code=status,
+            model=model,
+            response_time_ms=100,
+            **fields,
+        )
+
+    def page(self, user, **params):
+        self.client.force_login(user)
+        return self.client.get(reverse("usage"), params)
+
+    def kpi(self, response, label: str) -> str:
+        match = re.search(
+            rf'{label}</span>\s*<span class="text-2xl font-semibold">([^<]*)</span>',
+            response.content.decode(),
+        )
+        self.assertIsNotNone(match, f"no {label} figure on the page")
+        return match.group(1)
+
+    def status_count(self, response, label: str) -> str:
+        match = re.search(
+            rf'<span class="font-medium">{label}</span>.*?'
+            r'<span class="ml-auto tabular-nums">([^<]*)</span>',
+            response.content.decode(),
+            re.S,
+        )
+        self.assertIsNotNone(match, f"no {label} row on the page")
+        return match.group(1)
+
+    def assert_keys(self, response, *visible: str) -> None:
+        self.assertEqual(response.status_code, 200)
+        for name in KEY_NAMES:
+            if name in visible:
+                self.assertContains(response, name)
+            else:
+                self.assertNotContains(response, name)
+
+
+def _text(markup: str) -> str:
+    return " ".join(re.sub(r"<[^>]+>", " ", markup).split())
+
+
+def _first(pattern: str, markup: str) -> str:
+    found = re.search(pattern, markup, re.S)
+    return _text(found[1]) if found else ""
+
+
+def limit_grid(response) -> dict[str, list[dict[str, str]]]:
+    """The limits panel of a key page: each metric's cells as text, meter class and percent."""
+    markup = response.content.decode()
+    resets = [
+        _text(found)
+        for found in re.findall(
+            r'<th class="font-normal">.*?<div class="muted text-xs"[^>]*>(.*?)</div>', markup, re.S
+        )
+    ]
+    grid = {}
+    rows = re.findall(
+        r'<th scope="row" class="whitespace-nowrap[^"]*">([^<]*)(.*?)</tr>', markup, re.S
+    )
+    for label, rest in rows:
+        cells = [
+            {
+                "used": _first(r"<span [^>]*data-used>(.*?)</span>", cell),
+                "limit": _first(r"<span [^>]*data-limit>(.*?)</span>", cell),
+                "meter": _first(r'class="progress mt-1 block h-1 w-full (progress-[a-z]+)"', cell),
+                "percent": _first(r'class="progress[^>]*value="(\d+)"', cell),
+                "resets": resets[n] if n < len(resets) else "",
+            }
+            for n, cell in enumerate(
+                re.findall(r'<td class="align-top[^"]*">(.*?)</td>', rest, re.S)
+            )
+        ]
+        grid[label] = cells or [{"text": _text(rest)}]
+    return grid
+
+
+def secret_on(response) -> str | None:
+    match = re.search(r'data-copy="(sk-[^"]+)"', response.content.decode())
+    return match.group(1) if match else None
 
 
 def seed_active_config(code: str, name: str = "test-config") -> Snippet:

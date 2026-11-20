@@ -1,0 +1,1 @@
+{% load l10n %}<div class="spark mt-3">{% for bar in bars %}<span class="aq-tip-host" role="img" aria-label="{{ bar.tip }}"><i style="height: {{ bar.height|unlocalize }}%"></i>{% include "management/_tip.html" with tip=bar.tip %}</span>{% endfor %}</div>

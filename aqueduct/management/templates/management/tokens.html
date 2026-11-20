@@ -1,117 +1,82 @@
-{% extends 'management/base.html' %}
-{% load static %}
+{% extends "management/base.html" %}
+{% load i18n l10n ui %}
 
-{% block content %}
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold">API Keys</h1>
+{% block heading %}{% translate "API keys" %}{% endblock %}
+{% block actions %}
+    {% if not first_key %}
         {% if can_add_token %}
-            <a href="{% url 'token_create' %}" class="btn btn-primary btn-sm">Create New API Key</a>
+            <a class="btn btn-primary" href="{% url 'token_create' %}">{% icon "plus" small=True %}{% translate "Create API key" %}<span class="text-xs font-normal opacity-80">{{ keys.personal_count }}/{{ max_tokens }}</span></a>
         {% else %}
-            <div class="tooltip tooltip-left" data-tip="You have reached the maximum of {{ max_tokens }} API keys. Delete an existing API key to create a new one.">
-                <button class="btn btn-primary btn-sm" disabled>Create New API Key</button>
-            </div>
+            <button type="button" class="btn btn-primary" disabled>{% blocktranslate count n=max_tokens %}{{ n }} of {{ n }} key used{% plural %}{{ n }} of {{ n }} keys used{% endblocktranslate %}</button>
         {% endif %}
-    </div>
+    {% endif %}
+{% endblock %}
+{% block body %}
+{% if first_key %}{% include "management/_first_key.html" %}{% endif %}
+{% if keys.rows or not first_key %}
+<div class="flex flex-wrap items-center gap-3">
+    {% include "management/_search.html" with name="q" value=query placeholder=_("Search keys") %}
+    {% if keys.has_service_accounts %}
+        {% include "management/_segmented.html" with label=_("Key type") param="kind" tabs=kinds current=kind all_label=_("All") %}
+    {% endif %}
+</div>
 
-    <div class="mb-8">
-        <h2 class="text-xl font-semibold mb-2">Your API Keys ({{ tokens.count }}/{{ max_tokens }})</h2>
-        {% if tokens %}
-            <ul class="list bg-base-100 rounded-box shadow-md">
-                {% for token in tokens %}
-                    <li class="list-row flex flex-col gap-2">
-                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                            <div class="flex items-start flex-grow mr-4 overflow-hidden min-w-0">
-                                <img src="{% static 'icons/key.svg' %}" alt="API Key" class="w-5 mr-2 mt-0.5 flex-shrink-0 [[data-theme=dark]_&]:invert">
-                                <div class="min-w-0">
-                                    <div class="flex flex-wrap items-baseline gap-x-2">
-                                        <span class="font-medium truncate">{{ token.name }}</span>
-                                        <span class="text-sm opacity-50 flex-shrink-0">
-                                            Created: {{ token.created_at|date:"Y-m-d" }}
-                                        </span>
-                                        <span class="text-sm opacity-50 flex-shrink-0">
-                                            Key: <span class="font-mono text-xs">{{ token.key_preview }}</span>
-                                        </span>
-                                        <span class="text-sm opacity-50 flex-shrink-0">
-                                            {% if token.expires_at %}
-                                                Expires:
-                                                <span {% if token.expires_at <= now %}class="text-error font-semibold"{% endif %}>
-                                                    {{ token.expires_at|date:"Y-m-d H:i" }} {{ tz |default:'UTC' }}
-                                                    {% if token.is_expired %}
-                                                        (Expired)
-                                                    {% endif %}
-                                                </span>
-                                            {% else %}
-                                                Expires: Never
-                                            {% endif %}
-                                        </span>
-                                    </div>
-                                    {# Effective limits per Token (UserProfile + Org fallbacks) #}
-                                    <div class="mt-1">
-                                        {% include 'management/_limits_compact.html' with limit_object=user_limits %}
-                                    </div>
+<section class="card bg-base-200">
+    <div class="card-body table-card">
+        <div class="md:overflow-x-auto">
+            <table class="table table-fixed md:min-w-[736px] xl:min-w-[864px]">
+                <colgroup>
+                    <col><col class="hidden w-32 de:w-40 md:table-column"><col class="hidden w-32 md:table-column"><col class="hidden w-32 xl:table-column"><col class="hidden w-40 md:table-column"><col class="hidden w-28 de:w-36 md:table-column"><col class="w-16 md:w-32">
+                </colgroup>
+                <thead class="max-md:hidden">
+                    <tr>
+                        <th>{% translate "Key" %}</th>
+                        <th>{% translate "Last used" %}</th>
+                        <th class="text-right">{% translate "Tokens, 7 days" %}</th>
+                        <th class="text-right max-xl:hidden">{% translate "Requests, 7 days" %}</th>
+                        <th>{% translate "Nearest limit" %}</th>
+                        <th>{% translate "Expires" %}</th>
+                        <th><span class="sr-only">{% translate "Actions" %}</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in keys.rows %}
+                        <tr>
+                            <td>
+                                <a class="link-plain row-link block truncate font-mono" href="{{ row.href }}" title="{{ row.token.name }}">{{ row.token.name }}</a>
+                                {% translate "Service account" as service_account_label %}{% translate "Personal" as personal_label %}
+                                <div class="muted text-xs">
+                                    {% if row.team %}{{ service_account_label }} · <a class="link-plain relative z-10" href="{% url 'team' row.token.service_account.team_id %}">{{ row.team }}</a>{% else %}{{ personal_label }}{% endif %}
+                                    · <span class="whitespace-nowrap font-mono">{{ row.token.key_preview }}</span>
+                                    <span class="md:hidden">· {% blocktranslate with tokens=row.activity.tokens_short count n=row.activity.tokens %}{{ tokens }} token{% plural %}{{ tokens }} tokens{% endblocktranslate %}</span>
                                 </div>
-                            </div>
-                            <div class="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
-                                <form action="{% url 'token_regenerate' token.id %}" method="post" class="inline">
-                                    {% csrf_token %}
-                                    <button type="submit"
-                                            class="btn btn-sm btn-square btn-warning"
-                                            title="Regenerate API Key {{ token.name }}"
-                                            onclick="return confirm('Are you sure you want to regenerate the API key {{ token.name|escapejs }}? This will invalidate the current API key immediately.');">
-                                        <img src="{% static 'icons/update.svg' %}" alt="Regenerate" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                                    </button>
-                                </form>
-                                <a href="{% url 'token_edit' token.id %}" class="btn btn-info btn-sm btn-square" title="Edit {{ token.name }}">
-                                    <img src="{% static 'icons/edit.svg' %}" alt="Edit" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                                </a>
-                                <a href="{% url 'token_delete' token.id %}" class="btn btn-error btn-sm btn-square" title="Delete {{ token.name }}">
-                                    <img src="{% static 'icons/delete.svg' %}" alt="Delete" class="w-4 h-4 [[data-theme=dark]_&]:invert">
-                                </a>
-                            </div>
-                        </div>
-                        {# Per-window (min/hour/day) request usage for this token #}
-                        {% include 'management/_rate_usage.html' with usage=token.usage limits=user_limits %}
-                    </li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p class="text-gray-500 italic">No API keys available.</p>
-        {% endif %}
-    </div>
-
-    <div class="mb-8">
-        <h2 class="text-xl font-semibold mb-2">Service Accounts</h2>
-        {% if service_accounts %}
-            <ul class="list bg-base-100 rounded-box shadow-md">
-                {% for sa in service_accounts %}
-                    <li class="list-row flex flex-col gap-2">
-                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                            <div class="flex items-start flex-grow mr-4 overflow-hidden min-w-0">
-                                <img src="{% static 'icons/key.svg' %}" alt="Service Account" class="w-5 mr-2 mt-0.5 flex-shrink-0 [[data-theme=dark]_&]:invert">
-                                <div class="min-w-0">
-                                    <div class="flex flex-wrap items-baseline gap-x-2">
-                                        <span class="font-medium truncate">{{ sa.name }}</span>
-                                        <span class="text-sm opacity-50 flex-shrink-0">
-                                            Team: {{ sa.team.name }}
-                                        </span>
-                                        <span class="text-sm opacity-50 flex-shrink-0">
-                                            Key: {{ sa.token.key_preview }}
-                                        </span>
+                            </td>
+                            <td class="muted hidden whitespace-nowrap text-sm md:table-cell">{% if row.activity.last_used %}{{ row.activity.last_used|when:"relative" }}{% else %}{% translate "Never" %}{% endif %}</td>
+                            <td class="hidden text-right tabular-nums md:table-cell">{{ row.activity.tokens_short }}</td>
+                            <td class="hidden text-right xl:table-cell">{{ row.activity.requests|grouped }}</td>
+                            <td class="hidden md:table-cell">{% include "management/_limit_meter.html" with panel=row.limits %}</td>
+                            <td class="muted hidden whitespace-nowrap text-sm md:table-cell">{% if row.expiry.at %}{{ row.expiry|expiry }}{% endif %}</td>
+                            <td>
+                                {% if row.manageable %}
+                                    <div class="relative z-10 hidden justify-end gap-1 md:flex">
+                                        {% include "management/_key_actions.html" with button="btn btn-ghost btn-sm btn-square" %}
                                     </div>
-                                    {# Per-SA effective limits per Token (Team + Org fallbacks) #}
-                                    <div class="mt-1">
-                                        {% include 'management/_limits_compact.html' with limit_object=sa.effective_limits %}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        {# Per-window (min/hour/day) request usage for this service account #}
-                        {% include 'management/_rate_usage.html' with usage=sa.usage limits=sa.effective_limits %}
-                    </li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p class="text-gray-500 italic">No service accounts available.</p>
-        {% endif %}
+                                    <details class="dropdown dropdown-end relative z-10 open:z-20 flex justify-end md:hidden">
+                                        <summary class="btn btn-ghost btn-sm btn-square" aria-label="{% blocktranslate with name=row.token.name %}Actions for {{ name }}{% endblocktranslate %}">⋯</summary>
+                                        <div class="dropdown-content z-20 mt-1 flex w-40 flex-col rounded-box border border-base-300 bg-base-100 p-1 shadow">
+                                            {% include "management/_key_actions.html" with button="btn btn-ghost btn-sm justify-start" labelled=True %}
+                                        </div>
+                                    </details>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="7" class="muted">{% translate "No key matches." %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
+</section>
+{% endif %}
 {% endblock %}

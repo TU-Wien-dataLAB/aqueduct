@@ -1,0 +1,7 @@
+{% load i18n %}{% with cell=panel.closest %}{% if cell.percent %}
+<div class="flex items-baseline justify-between gap-2 text-xs">
+    <span class="muted whitespace-nowrap" title="{{ cell.exact }}">{{ cell.label }}</span>
+    <span class="tabular-nums {{ cell.tone.figure }}">{{ cell.percent_text }}</span>
+</div>
+<progress class="progress h-1.5 w-full {{ cell.tone.meter }}" value="{{ cell.percent }}" max="100" aria-label="{% blocktranslate with percent=cell.percent_text %}{{ percent }} used{% endblocktranslate %}"></progress>
+{% elif cell %}<span class="muted text-xs" title="{% translate 'Under 1% of every limit' %}">—</span>{% elif panel %}<span class="muted text-xs">{% translate "No rate limit" %}</span>{% endif %}{% endwith %}

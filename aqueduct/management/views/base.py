@@ -1,7 +1,10 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.messages import get_messages
+from django.contrib.messages.storage.base import Message
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import QuerySet
+from django.http import HttpRequest
 from django.http import (
     Http404,  # Removed HttpResponseForbidden as redirect is used
     HttpResponse,
@@ -14,6 +17,27 @@ from django.views import View
 from management.access import Viewer, WholeOrg
 from management.models import Org, ServiceAccount, Team, Token, UserProfile
 from management.org_choice import viewer_of
+
+
+NEW_KEY_TAG = "token-regenerated-key"
+
+
+def is_new_key(message: Message) -> bool:
+    return (message.extra_tags or "").split(" ")[0] == NEW_KEY_TAG
+
+
+def show_new_key(request: HttpRequest, key_id: int, secret: str) -> None:
+    """Hand `secret` to the page of the key it belongs to, which shows it once."""
+    messages.info(request, secret, extra_tags=f"{NEW_KEY_TAG} {key_id}")
+
+
+def take_new_key(request: HttpRequest, key_id: int) -> str | None:
+    """The secret `show_new_key` left for this key, read once; any page that renders drops it."""
+    wanted = f"{NEW_KEY_TAG} {key_id}"
+    return next(
+        (str(message.message) for message in get_messages(request) if message.extra_tags == wanted),
+        None,
+    )
 
 
 class AccessKeyExpirationContextMixin:

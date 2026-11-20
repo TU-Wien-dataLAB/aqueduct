@@ -8,15 +8,34 @@ from django.db.models import QuerySet
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
+from django.utils.cache import patch_cache_control
 from django.utils.decorators import method_decorator
+from django.utils.translation import gettext
 from django.views import View
 from django.views.decorators.http import require_POST
-from django.views.generic import CreateView, DeleteView, TemplateView, UpdateView
+from django.views.generic import CreateView, DeleteView, DetailView, TemplateView, UpdateView
 
-from gateway.rate_limiting import get_per_token_usage
+from gateway.config import model_names
+from management.access import KeyAct
+from management.availability import Reach, configured_mcp_servers
+from management.deletion import Crumb, deletion
 from management.forms import TokenCreateForm
-from management.models import LimitSet, ServiceAccount, Token
-from management.views.base import AccessKeyExpirationContextMixin, BaseAqueductView
+from management.keys import (
+    FIRST_KEY_NAME,
+    Expiry,
+    FirstKey,
+    KeyKind,
+    NewKey,
+    first_key,
+    key_list,
+    key_report,
+)
+from management.limits import panels
+from management.models import Token
+from management.nav import gateway_url
+from management.ownership import RELATED, team_of
+from management.views.base import BaseAqueductView, show_new_key, take_new_key
 
 
 class UserTokensView(BaseAqueductView, TemplateView):
@@ -24,53 +43,70 @@ class UserTokensView(BaseAqueductView, TemplateView):
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        profile = self.profile  # Provided by BaseAqueductView
-        user = profile.user
-
-        tokens = Token.objects.filter(user=user, service_account__isnull=True)
-        teams = profile.teams.all()
-        service_accounts = ServiceAccount.objects.filter(team__in=teams).select_related(
-            "team__org", "token"
-        )
-
+        kind = KeyKind.parse(self.request.GET.get("kind", ""))
+        query = self.request.GET.get("q", "").strip()
         max_tokens = getattr(settings, "MAX_USER_TOKENS", 3)
-        can_add_token = tokens.count() < max_tokens
-
-        # Effective limits for user-owned tokens (UserProfile + Org fallback)
-        user_limits: LimitSet = LimitSet.from_objects(profile, [profile.org])
-
-        # Attach each token's current rate-limit usage (per minute/hour/day bucket)
-        # to the token object so templates can render it. All tokens are fetched in a
-        # single ``cache.get_many`` call to avoid one cache lookup per token.
-        per_token_usage = get_per_token_usage([token.id for token in tokens])
-        for token in tokens:
-            token.usage = per_token_usage[token.id]  # type: ignore[attr-defined]
-
-        # Effective limits per service account (Team + Org fallback).
-        # Computed inline from already-select_related data to avoid the
-        # per-SA DB query that sa.token.get_limit() would trigger.
-        per_sa_token_usage = get_per_token_usage([sa.token.id for sa in service_accounts])
-        for sa in service_accounts:
-            sa.effective_limits = LimitSet.from_objects(sa.team, [sa.team.org])  # type: ignore[attr-defined]
-            sa.usage = per_sa_token_usage[sa.token.id]  # type: ignore[attr-defined]
-
+        keys = key_list(self.viewer, kind, query, timezone.now())
+        first: FirstKey | None = None
+        if keys.personal_count == 0 and not (kind or query):
+            form = TokenCreateForm(user=self.request.user, initial={"name": FIRST_KEY_NAME})
+            first = first_key(self.viewer, form, gateway_url(self.request))
         context.update(
-            {
-                "tokens": tokens,
-                "service_accounts": service_accounts,
-                "can_add_token": can_add_token,
-                "max_tokens": max_tokens,
-                "user_limits": user_limits,
-            }
+            keys=keys,
+            kinds=tuple(KeyKind),
+            kind=kind,
+            query=query,
+            max_tokens=max_tokens,
+            can_add_token=keys.personal_count < max_tokens,
+            first_key=first,
         )
         return context
 
 
-class TokenCreateView(AccessKeyExpirationContextMixin, BaseAqueductView, CreateView):
+class TokenDetailView(BaseAqueductView, DetailView):
+    model = Token
+    template_name = "management/token_detail.html"
+    pk_url_kwarg = "id"
+    context_object_name = "token"
+
+    def get_queryset(self) -> QuerySet:
+        return self.viewer.keys(KeyAct.OPEN).select_related(*RELATED)
+
+    def get_context_data(self, **kwargs) -> dict[str, object]:
+        context = super().get_context_data(**kwargs)
+        viewer, token = self.viewer, self.object
+        now = timezone.now()
+        report = key_report(token, now)
+        secret = take_new_key(self.request, token.id)
+        can_manage = viewer.may_key(KeyAct.MANAGE, token)
+        context.update(
+            new_key=NewKey.of(token, secret, gateway_url(self.request))
+            if secret and can_manage
+            else None,
+            report=report,
+            charts=tuple((shown, report.chart(shown)) for shown in ("tokens", "requests")),
+            expiry=Expiry.of(token.expires_at, now),
+            panel=panels([token], now)[token.id],
+            models=Reach.of(model_names(), token.model_exclusion_list()),
+            mcp_servers=Reach.of(configured_mcp_servers(), token.mcp_server_exclusion_list()),
+            team=team_of(token),
+            own=viewer.may_key(KeyAct.OWN, token),
+            can_manage=can_manage,
+        )
+        return context
+
+    def render_to_response(self, context, **response_kwargs) -> HttpResponse:
+        response = super().render_to_response(context, **response_kwargs)
+        if context["new_key"]:
+            # Back must not bring the secret up again from the browser's cache.
+            patch_cache_control(response, no_store=True, private=True)
+        return response
+
+
+class TokenCreateView(BaseAqueductView, CreateView):
     model = Token
     form_class = TokenCreateForm
     template_name = "management/create/token.html"
-    success_url = reverse_lazy("tokens")  # Redirect to tokens list
 
     def get_form_kwargs(self) -> dict:
         kwargs = super().get_form_kwargs()
@@ -95,37 +131,42 @@ class TokenCreateView(AccessKeyExpirationContextMixin, BaseAqueductView, CreateV
         # This will trigger clean() with the user assigned
         self.object.save()
 
-        # Use the returned secret_key in the success message
-        messages.success(self.request, f"API key '{self.object.name}' created successfully.")
-        messages.info(self.request, f"{secret_key}", extra_tags="token-regenerated-key")
+        show_new_key(self.request, self.object.id, secret_key)
 
-        return redirect(self.get_success_url())
+        return redirect("token_detail", id=self.object.id)
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        context["view_title"] = "Create New API Key"
-        context["tz"] = settings.TIME_ZONE
+        context["view_title"] = gettext("New API key")
         return context
 
 
-class TokenEditView(AccessKeyExpirationContextMixin, BaseAqueductView, UpdateView):
+class TokenEditView(BaseAqueductView, UpdateView):
     model = Token
     form_class = TokenCreateForm
     template_name = "management/edit/token.html"
     pk_url_kwarg = "id"
-    success_url = reverse_lazy("tokens")
 
     def get_queryset(self) -> QuerySet:
-        return Token.objects.filter(user=self.request.user, service_account__isnull=True)
+        return self.viewer.keys(KeyAct.OWN)
 
     def get_form_kwargs(self) -> dict:
         kwargs = super().get_form_kwargs()
         kwargs["user"] = self.request.user
         return kwargs
 
+    def get_success_url(self) -> str:
+        return reverse("token_detail", kwargs={"id": self.object.id})
+
+    def form_valid(self, form) -> HttpResponse:
+        response = super().form_valid(form)
+        messages.success(
+            self.request, gettext("API key %(name)s saved.") % {"name": self.object.name}
+        )
+        return response
+
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        context["view_title"] = "Edit API Key"
         context["cancel_url"] = self.get_success_url()
         return context
 
@@ -137,97 +178,33 @@ class TokenDeleteView(BaseAqueductView, DeleteView):
     success_url = reverse_lazy("tokens")
 
     def get_queryset(self) -> QuerySet:
-        # Only allow deleting tokens owned by the user and not associated with a service account
-        return Token.objects.filter(user=self.request.user, service_account__isnull=True)
+        return self.viewer.keys(KeyAct.OWN)
 
     def form_valid(self, form) -> HttpResponse:
         token_name = self.object.name
         response = super().form_valid(form)
-        messages.success(self.request, f"API key '{token_name}' deleted successfully.")
+        messages.success(self.request, gettext("API key %(name)s deleted.") % {"name": token_name})
         return response
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
-        context = super().get_context_data(**kwargs)
-        context["object_type_name"] = "API Key"
-        context["object_name"] = str(self.object)
-        context["cancel_url"] = self.get_success_url()
-        return context
+        detail_url = reverse("token_detail", kwargs={"id": self.object.id})
+        return super().get_context_data(
+            confirmation=deletion(self.object),
+            activity=key_report(self.object, timezone.now()).totals,
+            cancel_url=detail_url,
+            trail=[
+                Crumb(gettext("API keys"), reverse("tokens")),
+                Crumb(self.object.name, detail_url, mono=True),
+            ],
+            **kwargs,
+        )
 
 
 @method_decorator(require_POST, name="dispatch")
 class TokenRegenerateView(BaseAqueductView, View):
-    """
-    Handles regeneration of a token key (both user and service account tokens).
-    Requires POST request.
-    Permissions are checked based on token type.
-    """
-
     http_method_names: ClassVar[list] = ["post"]
 
     def post(self, request, *args, **kwargs) -> HttpResponse:
-        token_id = kwargs.get("id")
-        profile = self.profile
-        user = request.user
-
-        try:
-            token = get_object_or_404(
-                Token.objects.select_related("service_account__team", "user"), pk=token_id
-            )
-            token_name = token.name
-            is_service_account_token = token.service_account is not None
-
-            # --- Permission Check --- #
-            can_regenerate = False
-            redirect_url = reverse_lazy("tokens")  # Default redirect
-
-            if is_service_account_token:
-                # Check if user is admin of the SA's team
-                team = token.service_account.team
-                redirect_url = reverse("team", kwargs={"id": team.id})
-                if profile.is_team_admin(team):
-                    can_regenerate = True
-                else:
-                    messages.error(
-                        request,
-                        f"You do not have permission to regenerate the token for service account "
-                        f"'{token.service_account.name}'.",
-                    )
-            # Check if user owns the token
-            elif token.user == user:
-                can_regenerate = True
-            else:
-                # This case shouldn't happen with correct view/URL setup, but good to have
-                messages.error(request, "You do not have permission to regenerate this token.")
-
-            # --- Regeneration --- #
-            if can_regenerate:
-                new_key = token.regenerate_key()  # Assumes regenerate_key() saves the token
-                messages.success(
-                    request,
-                    f"API key '{token_name}' has been regenerated. The new key is displayed below. "
-                    f"Please update any clients using the old key.",
-                )
-                messages.info(
-                    request,
-                    f"{new_key}",  # Only include the key itself in the message
-                    extra_tags="token-regenerated-key",  # Use a specific tag
-                )
-            # Else: error message already added during permission check
-
-        except Token.DoesNotExist:
-            messages.error(request, "The specified token could not be found.")
-            # Redirect to a default page if token not found
-            redirect_url = reverse_lazy("tokens")
-        except Exception as e:
-            messages.error(
-                request, f"An unexpected error occurred while regenerating the token: {e}"
-            )
-            # Try to determine redirect URL based on what we know, default if necessary
-            try:
-                # Attempt to get redirect URL again if token was fetched
-                if is_service_account_token and team:
-                    redirect_url = reverse("team", kwargs={"id": team.id})
-            except NameError:  # If token fetch failed earlier
-                redirect_url = reverse_lazy("tokens")
-
-        return redirect(redirect_url)
+        token = get_object_or_404(self.viewer.keys(KeyAct.MANAGE), pk=kwargs.get("id"))
+        show_new_key(request, token.id, token.regenerate_key())
+        return redirect("token_detail", id=token.id)

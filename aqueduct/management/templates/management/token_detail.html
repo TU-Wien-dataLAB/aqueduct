@@ -1,0 +1,83 @@
+{% extends "management/base.html" %}
+{% load i18n l10n ui %}
+{% block title %}{{ token.name }} · {{ block.super }}{% endblock %}
+
+{% block breadcrumbs %}{% if team %}<li><a href="{% url 'org' %}">{% translate "Teams" %}</a></li><li><a href="{% url 'team' team.id %}">{{ team.name }}</a></li>{% elif own %}<li><a href="{% url 'tokens' %}">{% translate "API keys" %}</a></li>{% endif %}<li class="font-mono">{{ token.name }}</li>{% endblock %}
+{% block heading %}<span class="block break-all font-mono">{{ token.name }}</span>{% endblock %}
+{% block subheading %}
+    <div class="muted flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+        <span>{% if team %}{% translate "Service account" %} · <a class="link-plain" href="{% url 'team' team.id %}">{{ team.name }}</a>{% elif own %}{% translate "Personal" %}{% else %}{% translate "Personal" %} · {{ token.user.email }}{% endif %}</span>
+        <span class="font-mono">{{ token.key_preview }}</span>
+        <span>{% blocktranslate with date=token.created_at|when:"date" %}Created {{ date }}{% endblocktranslate %}</span>
+        {% if expiry.at %}<span>{{ expiry|expiry:"sentence" }}</span>{% endif %}
+        <span>{% if report.totals.last_used %}{% blocktranslate with time=report.totals.last_used|when:"relative" %}Last used: {{ time }}{% endblocktranslate %}{% else %}{% translate "Last used: never" %}{% endif %}</span>
+        {% if not models.every %}<span>{% blocktranslate count n=models.usable %}Can call {{ n }} model{% plural %}Can call {{ n }} models{% endblocktranslate %}</span>{% endif %}
+        {% if mcp_servers.configured and not mcp_servers.every %}<span>{% blocktranslate count n=mcp_servers.usable %}Can call {{ n }} MCP server{% plural %}Can call {{ n }} MCP servers{% endblocktranslate %}</span>{% endif %}
+    </div>
+{% endblock %}
+{% block actions %}
+    {% if can_manage %}
+        <div class="flex flex-wrap gap-2">
+            {% blocktranslate with name=token.name asvar rotate_question %}Rotate {{ name }}?{% endblocktranslate %}
+            <form action="{% url 'token_regenerate' token.id %}" method="post">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline btn-primary"
+                        {% confirm_rotate rotate_question report.totals %}>{% icon "rotate" small=True %}{% translate "Rotate" %}</button>
+            </form>
+            {% if team %}
+                <a class="btn btn-outline btn-primary" href="{% url 'service_account_edit' token.service_account.id %}">{% icon "admin" small=True %}{% translate "Edit" %}</a>
+                <a class="btn btn-outline btn-error" href="{% url 'service_account_delete' token.service_account.id %}" {% confirm_delete token.service_account report.totals %}>{% icon "delete" small=True %}{% translate "Delete" %}</a>
+            {% else %}
+                <a class="btn btn-outline btn-primary" href="{% url 'token_edit' token.id %}">{% icon "admin" small=True %}{% translate "Edit" %}</a>
+                <a class="btn btn-outline btn-error" href="{% url 'token_delete' token.id %}" {% confirm_delete token report.totals %}>{% icon "delete" small=True %}{% translate "Delete" %}</a>
+            {% endif %}
+        </div>
+    {% endif %}
+{% endblock %}
+{% block body %}
+{% if new_key %}{% include "management/_new_key.html" %}{% endif %}
+<section class="card bg-base-200" aria-labelledby="limits-title">
+    <div class="card-body gap-3">
+        <h2 id="limits-title" class="card-title">{% translate "Limits" %}</h2>
+        {% include "management/_limits_panel.html" %}
+    </div>
+</section>
+
+<section aria-labelledby="totals-title" class="flex flex-col gap-3">
+    <h2 id="totals-title" class="muted text-sm font-medium">{% translate "Last 7 days" %}</h2>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {% for stat in report.stats %}
+            {% include "management/_stat_card.html" with label=stat.label value=stat.value note=stat.note spark=stat.spark %}
+        {% endfor %}
+    </div>
+</section>
+
+<section class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+    {% include "management/_metric_chart.html" with tokens_title=_("Tokens per day") requests_title=_("Requests per day") chart_class="grid h-64 grid-cols-7 gap-1 sm:gap-3" axis_class="gap-1 sm:gap-3" %}
+
+    <div class="card bg-base-200">
+        <div class="card-body gap-4">
+            <h2 class="card-title">{% translate "Models" %}</h2>
+            <div class="-mx-2 flex flex-col gap-1">
+                {% for model in report.models %}
+                    <div class="hover-row flex flex-col gap-1.5 rounded-lg px-2 py-1">
+                        <div class="flex items-baseline justify-between gap-3 text-sm">
+                            <a class="link-plain break-all font-mono" href="{% url_with 'models' model=model.name %}">{{ model.name }}</a>
+                            <span class="font-mono">{{ model.value }}</span>
+                        </div>
+                        <div class="onebar" style="width: {{ model.width|unlocalize }}%"></div>
+                    </div>
+                {% empty %}
+                    <p class="muted text-sm">{% translate "No requests in the last 7 days." %}</p>
+                {% endfor %}
+            </div>
+            {% if report.clients %}
+                <div class="mt-auto flex flex-col gap-1 border-t border-base-300 pt-4 text-sm">
+                    <span class="muted">{% translate "Clients" %}</span><span>{{ report.clients }}</span>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}

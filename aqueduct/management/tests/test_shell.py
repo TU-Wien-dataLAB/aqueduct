@@ -173,6 +173,13 @@ class ShellTest(TestCase):
         self.assertContains(page, f'href="{admin_url}"')
         self.assertContains(page, ">Admin</li>")
 
+    def test_current_page_is_marked_and_titled(self):
+        self.sign_in("user")
+        html = self.client.get(reverse("token_create")).content.decode()
+        current = re.findall(r'<a href="([^"]*)"[^>]*aria-current="page"', html)
+        self.assertEqual(current, [reverse("tokens")])
+        self.assertIn("<title>New API key · API keys · Aqueduct AI Gateway</title>", html)
+
     def test_signed_out_page_has_no_sidebar(self):
         page = self.client.get(reverse("sso"))
         self.assertNotContains(page, "drawer-side")

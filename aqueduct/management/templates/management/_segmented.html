@@ -1,0 +1,6 @@
+{% load ui %}<nav class="join" aria-label="{{ label }}">
+    {% if all_label %}<a class="btn btn-sm join-item{% if not current %} btn-primary{% endif %}" href="{% query_with param None reset %}"{% if not current %} aria-current="page"{% endif %}>{{ all_label }}</a>{% endif %}
+    {% for tab in tabs %}
+        <a class="btn btn-sm join-item{% if tab == current %} btn-primary{% endif %}" href="{% query_with param tab.value reset %}"{% if tab == current %} aria-current="page"{% endif %}>{{ tab.label }}</a>
+    {% endfor %}
+</nav>

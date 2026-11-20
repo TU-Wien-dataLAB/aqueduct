@@ -1,0 +1,40 @@
+{% load i18n %}
+{% if panel.limited %}
+<div class="-mx-4">
+    <table class="table table-sm table-tight max-md:block">
+        <thead class="max-md:hidden">
+            <tr>
+                <th class="w-36"><span class="sr-only">{% translate "Limit" %}</span></th>
+                {% for column in panel.columns %}<th class="font-normal"><div class="font-medium">{{ column.window.used_label }}</div><div class="muted text-xs" title="{% blocktranslate with time=column.resets_at|time:"H:i" %}{{ time }} UTC{% endblocktranslate %}">{{ column.resets_text }}</div></th>{% endfor %}
+            </tr>
+        </thead>
+        <tbody class="max-md:block">
+            {% for row in panel.rows %}
+                <tr class="max-md:block max-md:pb-2">
+                    <th scope="row" class="whitespace-nowrap align-top text-sm font-medium max-md:block max-md:pb-0">{{ row.label }}{% if not row.limited %}<div class="muted text-xs font-normal">{% translate "No limit" %}</div>{% endif %}</th>
+                    {% for cell in row.cells %}
+                        <td class="align-top max-md:block max-md:py-1">
+                            <div class="muted text-xs md:hidden">{{ cell.window.used_label }} · {{ cell.resets_text }}</div>
+                            <div class="whitespace-nowrap text-sm tabular-nums" title="{{ cell.exact }}"><span class="{{ cell.tone.figure }}" data-used>{{ cell.used_text }}</span>{% if cell.limit is not None %} <span class="muted" data-limit>{% blocktranslate with limit=cell.limit_text %}of {{ limit }}{% endblocktranslate %}</span>{% endif %}</div>
+                            {% if cell.limit is not None %}
+                                <progress class="progress mt-1 block h-1 w-full {{ cell.tone.meter }}" value="{{ cell.percent }}" max="100" aria-label="{% blocktranslate with percent=cell.percent_text %}{{ percent }} used{% endblocktranslate %}"></progress>
+                            {% endif %}
+                        </td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+            {% if panel.concurrent is not None %}
+                <tr class="max-md:block">
+                    <th scope="row" class="whitespace-nowrap text-sm font-medium max-md:block max-md:pb-0">{% translate "Concurrent requests" %}</th>
+                    <td colspan="3" class="text-sm max-md:block max-md:py-1">{% blocktranslate with limit=panel.concurrent %}At most <span class="tabular-nums">{{ limit }}</span> at once{% endblocktranslate %}</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+<p class="muted text-sm">{{ panel.source }} {% translate "Over a limit the gateway answers 429 until the reset." %}</p>
+{% elif panel.concurrent is not None %}
+<p class="muted text-sm">{% blocktranslate count n=panel.concurrent %}At most {{ n }} request at once. No other limit applies to this key.{% plural %}At most {{ n }} requests at once. No other limit applies to this key.{% endblocktranslate %}</p>
+{% else %}
+<p class="muted text-sm">{% translate "No limits apply to this key." %}</p>
+{% endif %}

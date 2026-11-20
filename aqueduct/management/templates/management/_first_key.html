@@ -1,0 +1,29 @@
+{% load i18n ui %}
+<section class="card bg-base-200" aria-labelledby="first-key-title">
+    <div class="card-body gap-6 lg:flex-row lg:gap-10">
+        <div class="flex min-w-0 flex-1 flex-col gap-4">
+            <span class="section-label">{% translate "Step 1 of 2" %}</span>
+            <h2 id="first-key-title" class="text-2xl font-semibold">{% translate "Create your first API key" %}</h2>
+            <p class="max-w-prose grow-0">{% translate "Your code calls the models with a key. Name it after the project or notebook that will use it." %}</p>
+            <form method="post" action="{% url 'token_create' %}" class="flex max-w-md flex-col gap-4">
+                {% csrf_token %}
+                {% include "management/_form_fields.html" with form=first_key.form %}
+                <div><button type="submit" class="btn btn-primary">{% translate "Create key" %}</button></div>
+            </form>
+        </div>
+        <div class="flex min-w-0 flex-1 flex-col gap-3 lg:border-l lg:border-base-300 lg:pl-10">
+            <span class="section-label">{% translate "Step 2 of 2" %}</span>
+            <h2 class="text-xl font-semibold">{% translate "Make a call" %}</h2>
+            {% if first_key.model %}
+                <p class="muted grow-0">{% if first_key.alias != first_key.model.name %}{% blocktranslate with alias=first_key.alias model=first_key.model.name %}Put your key in place of <span class="font-mono">sk-...</span> and run it. It calls <span class="font-mono">{{ alias }}</span>, the alias for <span class="font-mono">{{ model }}</span>.{% endblocktranslate %}{% else %}{% blocktranslate with model=first_key.model.name %}Put your key in place of <span class="font-mono">sk-...</span> and run it. It calls <span class="font-mono">{{ model }}</span>.{% endblocktranslate %}{% endif %}</p>
+            {% else %}
+                <p class="muted grow-0">{% translate "Put your key in place of sk-... and run it. No chat model is available to you yet. Models lists what you can call." %}</p>
+            {% endif %}
+            <div class="rounded-box bg-base-100">
+                <div class="flex justify-end px-2 pt-2">{% copy_button first_key.example _("Copy example") size="sm" %}</div>
+                <pre class="overflow-x-auto px-4 pb-4 font-mono text-xs leading-relaxed">{{ first_key.example }}</pre>
+            </div>
+            <p class="muted grow-0 text-sm">{% translate "Your call then appears under Requests." %}</p>
+        </div>
+    </div>
+</section>

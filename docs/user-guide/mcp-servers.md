@@ -39,7 +39,7 @@ Each MCP server card displays:
 
 To use an MCP server:
 
-1. **Copy Server URL**: Click the copy button <span class="size-4 inline-block"><img src="https://raw.githubusercontent.com/TU-Wien-dataLAB/aqueduct/refs/heads/main/aqueduct/management/static/icons/copy.svg" alt="Copy" style="height: 1rem; vertical-align: text-bottom;"></span> on any server card to copy the complete endpoint URL to your clipboard
+1. **Copy Server URL**: Click the copy button on any server card to copy the complete endpoint URL to your clipboard
 
 2. **Use in API**: Make requests to the copied URL using your Aqueduct token
 

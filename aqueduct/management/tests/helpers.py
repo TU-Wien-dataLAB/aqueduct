@@ -194,6 +194,11 @@ def listed(response) -> list[str]:
     return [row.request.path for row in response.context["log"].rows]
 
 
+def figure(response, label: str) -> str | None:
+    found = re.search(rf"{label}</dt><dd><span[^>]*>([^<]*)</span>", response.content.decode())
+    return found and found.group(1)
+
+
 def _text(markup: str) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", markup).split())
 

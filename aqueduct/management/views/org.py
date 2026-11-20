@@ -2,32 +2,39 @@ from urllib.parse import urlsplit
 
 from django.contrib import messages
 from django.http import Http404, HttpResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import redirect
 from django.urls import Resolver404, resolve, reverse
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext
 from django.views.generic import TemplateView, View
 
-from management.access import WholeOrg
-from management.models import Org
+from management.access import EveryOrg, TeamAct, WholeOrg
 from management.org_choice import switch, without_org_params
+from management.team_overview import team_rows
 from management.views.base import BaseAqueductView
 
 
-class OrgView(BaseAqueductView, TemplateView):
-    """Displays the organization dashboard showing accessible teams."""
 
-    template_name = "management/org.html"  # Adjust path if needed
+class OrgView(BaseAqueductView, TemplateView):
+    template_name = "management/org.html"
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        # Pass org admin status and list of teams to the template
-        context["is_org_admin"] = self.is_org_admin()
-        context["teams"] = self.get_teams_for_user()
-        context["org_object"] = self.org
-        # Add all orgs for admin users
-        if self.profile.group == "admin":
-            context["all_orgs"] = Org.objects.all()
+        query = self.request.GET.get("q", "").strip()
+        viewer = self.viewer
+        is_org_admin = viewer.administers(viewer.org)
+        teams = viewer.teams(TeamAct.SEE)
+        context.update(
+            is_org_admin=is_org_admin,
+            all_orgs=isinstance(viewer.chosen, EveryOrg),
+            in_no_team=not is_org_admin and not teams.exists(),
+            query=query,
+            teams=team_rows(
+                teams, viewer.admin_of, query, self.request.GET.get("page", 1), timezone.now()
+            ),
+            org_object=viewer.chosen.org if isinstance(viewer.chosen, WholeOrg) else viewer.org,
+        )
         return context
 
 

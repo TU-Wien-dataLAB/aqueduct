@@ -118,6 +118,12 @@ class AccessKeyExpirationViewTests(TestCase):
         self.assertContains(response, "Expiration date cannot be later than")
         self.assertFalse(ServiceAccount.objects.filter(name="late-service").exists())
 
+    @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
+    def test_service_account_form_shows_maximum_expiration(self):
+        response = self.client.get(reverse("service_account_create", kwargs={"id": self.team.id}))
+        self.assertContains(response, "A key can last at most 7 days.")
+        self.assertContains(response, ' max="')
+
     @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=-1)
     def test_unlimited_user_key_can_have_no_expiration(self):
         response = self.client.post(reverse("token_create"), {"name": "key", "expires_at": ""})

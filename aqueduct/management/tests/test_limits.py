@@ -254,6 +254,15 @@ class ClosestLimitTest(LimitsTestBase):
         self.assertContains(response, 'title="Under 1% of every limit"')
         self.assertContains(response, "No rate limit")
 
+    def test_the_team_page_names_the_limit_of_each_service_account(self):
+        self.set_limits(self.pipeline_key, requests_per_minute=4)
+        with mock.patch(CLOCK, return_value=FROZEN):
+            self.use(self.pipeline_key, requests=2)
+            response = self.as_user(self.team_admin).get(reverse("team", args=[self.team.id]))
+        self.assertContains(response, "Nearest limit")
+        self.assertContains(response, "Requests, minute")
+        self.assertContains(response, "50%")
+
 
 class ListPagesTest(LimitsTestBase):
     def read_usage_of(self, user, url: str) -> list[set[int]]:
@@ -269,6 +278,12 @@ class ListPagesTest(LimitsTestBase):
     def test_all_keys_reads_the_counters_once_for_the_keys_on_the_page(self):
         calls = self.read_usage_of(self.org_admin, reverse("usage_keys"))
         self.assertEqual(calls, [{self.solo_key.id, self.member_key.id, self.pipeline_key.id}])
+
+    def test_the_team_page_reads_the_counters_once_for_its_service_accounts(self):
+        other = ServiceAccount.objects.create(name="second-pipeline", team=self.team)
+        second = make_token(self.team_admin, "second-pipeline", service_account=other)
+        calls = self.read_usage_of(self.team_admin, reverse("team", args=[self.team.id]))
+        self.assertEqual(calls, [{self.pipeline_key.id, second.id}])
 
     def test_a_page_without_keys_reads_nothing(self):
         stranger = self.user("stranger")
@@ -333,3 +348,10 @@ class WhoSeesWhatTest(LimitsTestBase):
         self.assertEqual(
             self.key_page(self.org_admin, self.foreign_key).status_code, HTTPStatus.NOT_FOUND
         )
+
+    def test_a_team_member_sees_the_meter_of_a_team_key_they_can_open(self):
+        self.set_limits(self.pipeline_key, requests_per_minute=4)
+        self.use(self.pipeline_key, requests=2)
+        response = self.as_user(self.member).get(reverse("team", args=[self.team.id]))
+        self.assertContains(response, "Requests, minute")
+        self.assertEqual(self.key_page(self.member, self.pipeline_key).status_code, HTTPStatus.OK)

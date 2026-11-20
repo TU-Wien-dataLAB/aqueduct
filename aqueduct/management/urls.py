@@ -17,6 +17,11 @@ urlpatterns = [
     path("team/create/", views.TeamCreateView.as_view(), name="team_create"),
     path("team/<int:id>/delete/", views.TeamDeleteView.as_view(), name="team_delete"),
     path("team/<int:id>/edit/", views.TeamUpdateView.as_view(), name="team_edit"),
+    path(
+        "team/<int:id>/availability/",
+        views.TeamAvailabilityEditView.as_view(),
+        name="team_availability",
+    ),
     path("team/<int:id>", views.TeamDetailView.as_view(), name="team"),
     path(
         "team/<int:id>/service-accounts/add/",
@@ -38,9 +43,7 @@ urlpatterns = [
         views.ServiceAccountTransferOwnershipView.as_view(),
         name="service_account_transfer",
     ),
-    path(
-        "team/<int:id>/admins/", views.TeamAdminManagementView.as_view(), name="team_admins_manage"
-    ),
+    path("team/<int:id>/members/", views.TeamMembersView.as_view(), name="team_members"),
     # New URL for Model/Endpoint list
     path("models/", views.ModelListView.as_view(), name="models"),
     path("usage/", views.UsageDashboardView.as_view(), name="usage"),

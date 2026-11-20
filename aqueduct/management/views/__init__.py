@@ -12,10 +12,11 @@ from .service_account import (
     ServiceAccountUpdateView,
 )
 from .team import (
-    TeamAdminManagementView,
+    TeamAvailabilityEditView,
     TeamCreateView,
     TeamDeleteView,
     TeamDetailView,
+    TeamMembersView,
     TeamUpdateView,
 )
 from .tokens import (

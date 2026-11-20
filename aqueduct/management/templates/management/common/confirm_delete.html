@@ -1,24 +1,20 @@
-{% extends 'management/base.html' %}
+{% extends "management/base.html" %}
+{% load i18n ui %}
 
-{% block content %}
-    <div class="max-w-lg mx-auto mt-8">
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title text-xl font-bold mb-4">Confirm Deletion</h2>
+{% block title %}{{ confirmation.title }} · {{ block.super }}{% endblock %}
 
-                <p>Are you sure you want to delete the {{ object_type_name|default:"item" }}:
-                    <strong>{{ object_name|default:object }}</strong>?
-                </p>
-                <p class="text-sm text-error mt-2">This action cannot be undone.</p>
-
-                <form method="post" action="">
-                    {% csrf_token %}
-                    <div class="card-actions justify-end mt-6">
-                        <a href="{{ cancel_url|default:'javascript:history.back()' }}" class="btn btn-ghost">Cancel</a>
-                        <button type="submit" class="btn btn-error">Confirm Delete</button>
-                    </div>
-                </form>
-            </div>
+{% block breadcrumbs %}{% for crumb in trail %}<li{% if crumb.mono and not crumb.url %} class="font-mono max-sm:hidden"{% endif %}>{% if crumb.url %}<a{% if crumb.mono %} class="font-mono"{% endif %} href="{{ crumb.url }}">{{ crumb.label }}</a>{% else %}{{ crumb.label }}{% endif %}</li>{% endfor %}<li>{% translate "Delete" %}</li>{% endblock %}
+{% block heading %}{{ confirmation.title }}{% endblock %}
+{% block body %}
+<form method="post" class="card max-w-2xl bg-base-200">
+    {% csrf_token %}
+    <div class="card-body gap-6">
+        {% if activity %}<p class="font-medium">{% use_line activity %}</p>{% endif %}
+        {% if confirmation.detail %}<p>{{ confirmation.detail }}</p>{% endif %}
+        <div class="flex flex-wrap gap-3 border-t border-base-300 pt-5">
+            <button type="submit" class="btn btn-error">{{ confirmation.action }}</button>
+            <a class="btn btn-ghost" href="{{ cancel_url }}">{% translate "Cancel" %}</a>
         </div>
     </div>
+</form>
 {% endblock %}

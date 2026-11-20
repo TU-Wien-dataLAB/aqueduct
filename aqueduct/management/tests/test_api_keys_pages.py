@@ -418,6 +418,27 @@ class SevenDaysTest(ApiKeysPagesTestBase):
 
 
 class SecretShownOnceTest(ApiKeysPagesTestBase):
+    def test_created_key_secret_appears_once_on_the_keys_own_page(self):
+        self.client.force_login(self.solo)
+        response = self.client.post(
+            reverse("token_create"), {"name": "fresh", "expires_at": ""}, follow=True
+        )
+        key = Token.objects.get(name="fresh")
+        detail = reverse("token_detail", args=[key.id])
+        self.assertEqual(response.redirect_chain, [(detail, 302)])
+        self.assertContains(response, 'class="break-all font-mono">fresh</span> is ready')
+        self.assertContains(response, "Copy it now. You won't see it again.")
+        self.assertNotContains(response, "created.")
+        self.assertNotContains(response, 'class="alert ')
+        secret = secret_on(response)
+        self.assertEqual(Token.find_by_key(secret), key)
+        self.assertEqual(response.content.decode().count(secret), 4)
+
+        again = self.client.get(detail)
+        self.assertEqual(again.status_code, 200)
+        self.assertNotContains(again, "is ready")
+        self.assertNotContains(again, secret)
+        self.assertNotContains(self.client.get(reverse("tokens")), secret)
 
     def test_the_secret_shows_only_on_its_own_keys_page_and_is_not_cached(self):
         other = make_token(self.solo, "older")
@@ -470,6 +491,24 @@ class SecretShownOnceTest(ApiKeysPagesTestBase):
         )
         self.assertNotContains(response, "chat/completions")
 
+    def test_rotated_key_secret_replaces_the_old_one(self):
+        self.client.force_login(self.solo)
+        old_hash = self.solo_key.key_hash
+        response = self.client.post(
+            reverse("token_regenerate", args=[self.solo_key.id]), follow=True
+        )
+        secret = secret_on(response)
+        self.solo_key.refresh_from_db()
+        self.assertNotEqual(self.solo_key.key_hash, old_hash)
+        self.assertEqual(Token.find_by_key(secret), self.solo_key)
+        self.assertEqual(
+            response.redirect_chain, [(reverse("token_detail", args=[self.solo_key.id]), 302)]
+        )
+        self.assertContains(response, 'class="break-all font-mono">solo-laptop</span> is ready')
+        self.assertNotContains(response, "rotated")
+        self.assertNotContains(response, 'class="alert ')
+        self.assertNotContains(self.client.get(response.redirect_chain[0][0]), secret)
+
     def test_create_at_the_limit_rerenders_the_form_with_an_error(self):
         make_token(self.solo, "two")
         make_token(self.solo, "three")
@@ -515,6 +554,34 @@ class DialogUseTest(ApiKeysPagesTestBase):
             ),
         )
 
+    def test_rotating_a_key_used_today_says_what_will_fail(self):
+        self.use_pipeline(timedelta(hours=2))
+        for page, rotate, delete in self.pages():
+            with self.subTest(page=page.request["PATH_INFO"]):
+                use = "Last used 2\xa0hours ago · 3 requests in the last 7 days."
+                self.assertEqual(dialog(page, rotate)["use"], use)
+                self.assertEqual(dialog(page, rotate)["detail"], f"{self.ROTATE} {self.FAILS}")
+                self.assertEqual(dialog(page, delete)["use"], use)
+                self.assertIn("Its key stops working", dialog(page, delete)["detail"])
+
+    def test_a_key_not_used_for_days_gets_the_numbers_without_the_warning(self):
+        self.use_pipeline(timedelta(days=3), times=1)
+        for page, rotate, _delete in self.pages():
+            with self.subTest(page=page.request["PATH_INFO"]):
+                shown = dialog(page, rotate)
+                self.assertEqual(
+                    shown["use"], "Last used 3\xa0days ago · 1 request in the last 7 days."
+                )
+                self.assertEqual(shown["detail"], self.ROTATE)
+
+    def test_a_key_that_was_never_used_says_so(self):
+        for page, rotate, delete in self.pages():
+            with self.subTest(page=page.request["PATH_INFO"]):
+                use = "Never used · 0 requests in the last 7 days."
+                self.assertEqual(dialog(page, rotate)["use"], use)
+                self.assertEqual(dialog(page, rotate)["detail"], self.ROTATE)
+                self.assertEqual(dialog(page, delete)["use"], use)
+
     def test_use_older_than_a_week_still_names_when_it_was_last_used(self):
         self.request_log(self.pipeline_key, timedelta(days=20))
         page = self.get(self.team_admin, "tokens")
@@ -530,6 +597,25 @@ class DialogUseTest(ApiKeysPagesTestBase):
         self.assertEqual(shown["use"], "Last used 5\xa0minutes ago · 1 request in the last 7 days.")
         self.assertIn(
             "its requests, files, batches, and vector stores are deleted", shown["detail"]
+        )
+
+    def test_the_delete_page_without_javascript_names_the_use_like_the_dialog(self):
+        self.request_log(self.solo_key, timedelta(minutes=5))
+        page = self.get(self.solo, "token_delete", self.solo_key.id)
+        self.assertContains(
+            page,
+            '<p class="font-medium">Last used 5\xa0minutes ago · 1 request in the last 7 days.</p>',
+            html=True,
+        )
+        self.use_pipeline(timedelta(hours=2))
+        page = self.get(self.team_admin, "service_account_delete", self.pipeline.id)
+        self.assertContains(
+            page,
+            '<p class="font-medium">Last used 2\xa0hours ago · 3 requests in the last 7 days.</p>',
+            html=True,
+        )
+        self.assertNotContains(
+            self.get(self.org_admin, "team_delete", self.team.id), "requests in the last 7 days"
         )
 
     def test_the_numbers_come_without_a_query_per_row(self):
@@ -571,6 +657,12 @@ class RotateReturnTest(ApiKeysPagesTestBase):
 
 
 class KeyEditAndDeleteReturnTest(ApiKeysPagesTestBase):
+    def test_edit_and_delete_cancel_return_to_the_key(self):
+        detail = reverse("token_detail", args=[self.solo_key.id])
+        for page in ("token_edit", "token_delete"):
+            with self.subTest(page=page):
+                response = self.get(self.solo, page, self.solo_key.id)
+                self.assertContains(response, f'href="{detail}">Cancel</a>')
 
     def test_delete_returns_to_the_list_with_a_message(self):
         self.client.force_login(self.solo)

@@ -18,6 +18,7 @@ from management.formatting import MISSING, grouped
 from management.icons import Icon
 from management.keys import Expiry
 from management.models import FileObject, ServiceAccount, Team, Token
+from management.views.base import is_new_key
 
 register = template.Library()
 
@@ -246,6 +247,7 @@ def confirm_delete(
     return confirm(question.title, question.detail, question.action, use=use)
 
 
+register.filter(is_new_key)
 
 
 @register.filter

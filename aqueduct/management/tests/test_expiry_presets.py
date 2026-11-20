@@ -158,6 +158,14 @@ class MaximumLifetimeTest(RoleWorld):
             options(response), [("30 days", False), ("60 days", False), ("Pick a date", True)]
         )
 
+    def test_the_service_account_form_offers_the_same(self):
+        self.client.force_login(self.team_admin)
+        page = self.client.get(reverse("service_account_create", args=[self.team.id]))
+        self.assertEqual(
+            [label for label, _ in options(page)], ["30 days", "60 days", "Pick a date"]
+        )
+        self.assertContains(page, "A key can last at most 60 days.")
+
 
 class ServiceAccountExpiryTest(RoleWorld):
     def create(self, **data):
@@ -169,9 +177,22 @@ class ServiceAccountExpiryTest(RoleWorld):
             )
         return ServiceAccount.objects.get(name="rag").token
 
+    def test_presets_set_the_expiry_of_the_accounts_key(self):
+        self.assertEqual(self.create(expiry_preset="1y").expires_at, NOW + timedelta(days=365))
+
     def test_a_plain_date_still_works(self):
         key = self.create(token_expires_at="2031-05-05T10:00")
         self.assertEqual(key.expires_at, datetime(2031, 5, 5, 10, 0, tzinfo=UTC))
+
+    def test_the_form_has_the_presets_and_the_edit_form_picks_the_existing_date(self):
+        self.client.force_login(self.team_admin)
+        page = self.client.get(reverse("service_account_create", args=[self.team.id]))
+        self.assertEqual([label for label, _ in options(page)][:2], ["30 days", "90 days"])
+        self.assertContains(page, 'name="token_expires_at"')
+        self.pipeline_key.expires_at = NOW + timedelta(days=400)
+        self.pipeline_key.save()
+        edit = self.client.get(reverse("service_account_edit", args=[self.pipeline.id]))
+        self.assertEqual(options(edit)[-1], ("Pick a date", True))
 
     def test_editing_to_never_clears_the_expiry(self):
         self.pipeline_key.expires_at = NOW + timedelta(days=400)

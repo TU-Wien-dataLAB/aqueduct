@@ -1,23 +1,19 @@
+from functools import cached_property
+from typing import Any
+
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.messages import get_messages
 from django.contrib.messages.storage.base import Message
-from django.core.exceptions import ImproperlyConfigured
 from django.db.models import QuerySet
 from django.http import HttpRequest
-from django.http import (
-    Http404,  # Removed HttpResponseForbidden as redirect is used
-    HttpResponse,
-)
-from django.shortcuts import get_object_or_404, redirect
-from django.urls import reverse, reverse_lazy
-from django.utils import timezone
+from django.shortcuts import get_object_or_404
+from django.urls import reverse_lazy
 from django.views import View
 
-from management.access import Viewer, WholeOrg
-from management.models import Org, ServiceAccount, Team, Token, UserProfile
+from management.access import TeamAct, Viewer, WholeOrg
+from management.models import Org, ServiceAccount, Team, UserProfile
 from management.org_choice import viewer_of
-
 
 NEW_KEY_TAG = "token-regenerated-key"
 
@@ -38,18 +34,6 @@ def take_new_key(request: HttpRequest, key_id: int) -> str | None:
         (str(message.message) for message in get_messages(request) if message.extra_tags == wanted),
         None,
     )
-
-
-class AccessKeyExpirationContextMixin:
-    """Expose the latest permitted key expiration to expiration form templates."""
-
-    def get_context_data(self, **kwargs) -> dict[str, object]:
-        context = super().get_context_data(**kwargs)
-        context["now_iso"] = timezone.now().isoformat(timespec="seconds")
-        deadline = Token.max_expiration()
-        if deadline is not None:
-            context["max_expiration_iso"] = deadline.isoformat(timespec="seconds")
-        return context
 
 
 class BaseAqueductView(LoginRequiredMixin, View):
@@ -116,211 +100,40 @@ class BaseAqueductView(LoginRequiredMixin, View):
         return self.profile.teams.all()
 
 
-# --- Mixins for Permission Checks ---
-
-
-class OrgAdminRequiredMixin:
-    """
-    Mixin requiring the user to be an administrator of their own organization.
-    Must be used *after* LoginRequiredMixin and typically with BaseAqueductView
-    or a view providing an `is_org_admin` method.
-    """
-
-    def dispatch(self, request, *args, **kwargs) -> HttpResponse:
-        # We rely on the inheriting view (like BaseAqueductView) providing is_org_admin.
-        # This check ensures the method exists before calling it, making the mixin
-        # slightly more robust if used outside the intended pattern, although
-        # it's primarily designed to work with BaseAqueductView context.
-        if not hasattr(self, "is_org_admin") or not self.is_org_admin():
-            messages.error(
-                request,
-                "You do not have permission to perform this action (Organization Admin required).",
-            )
-            # Redirect to a sensible default page, like an org overview or dashboard.
-            # Ensure 'org_dashboard' or similar exists in your URLs.
-            # Using 'org' from the original code as a placeholder.
-            return redirect(reverse_lazy("org"))
-        return super().dispatch(request, *args, **kwargs)
-
-
-class TeamAdminRequiredMixin:
-    """
-    Mixin requiring the user to be an admin of a *specific* team.
-    Requires the view using this mixin to:
-    1. Inherit from BaseAqueductView (or provide `self.profile`).
-    2. Implement `get_team_object()` returning the relevant Team instance.
-    """
-
-    team_object: Team | None = None  # Cache the team object for the request duration
-
-    def get_team_object(self) -> Team:
-        """
-        Placeholder method: Views using this mixin MUST override this method.
-        It should fetch the specific Team instance based on URL kwargs (e.g., pk, slug)
-        and raise Http404 if not found.
-        Example implementation in a view:
-            def get_team_object(self):
-                team_id = self.kwargs.get('team_id') # Or other URL parameter
-                return get_object_or_404(Team, pk=team_id, org=self.org)
-        """
-        raise NotImplementedError(f"{self.__class__.__name__} must implement get_team_object()")
-
-    def dispatch(self, request, *args, **kwargs) -> HttpResponse:
-        # Assumes LoginRequiredMixin ran first, so request.user is authenticated.
-        # Assumes BaseAqueductView context provides self.profile.
-
-        try:
-            # Fetch the specific team this view operates on.
-            # Relies on the inheriting view's implementation of get_team_object.
-            self.team_object = self.get_team_object()
-            # Note: get_object_or_404 in get_team_object should handle not found cases.
-            # A direct None check here is belt-and-suspenders.
-            if not self.team_object:
-                raise Http404("Team object could not be determined by get_team_object().")
-
-        except Http404:
-            messages.error(request, "The requested team was not found.")
-            # Redirect to a safe fallback, like the organization dashboard.
-            return redirect(reverse_lazy("org"))  # TODO: Update 'org' if needed
-
-        # Check if the user has admin rights for *this specific* team.
-        # Relies on the is_team_admin method in UserProfile model.
-        # Assumes self.profile is available from BaseAqueductView.
-        if not self.profile.is_team_admin(self.team_object):
-            messages.error(
-                request, f"You do not have permission to manage the team '{self.team_object.name}'."
-            )
-            # Attempt to redirect back to the team's detail view if possible.
-            # Fallback to the org dashboard if the team view URL fails.
-            try:
-                # Ensure 'team_detail' or similar exists and accepts the team's ID/PK.
-                team_url = reverse(
-                    "team", kwargs={"id": self.team_object.id}
-                )  # TODO: Update 'team' to your team detail URL name
-                return redirect(team_url)
-            except Exception:  # Catch potential NoReverseMatch or other errors
-                return redirect(reverse_lazy("org"))  # TODO: Update 'org' if needed
-
-        # Permission granted, proceed with the original view's dispatch.
-        return super().dispatch(request, *args, **kwargs)
-
-
 class BaseTeamView(BaseAqueductView):
-    """
-    Base view providing context for a specific Team instance fetched via URL kwarg.
+    """A view about the team in the URL; a team outside `viewer.teams(team_act)` is a 404."""
 
-    Inheriting views must:
-    - Set `pk_url_kwarg` to the name of the URL keyword argument containing the
-      Team's primary key (defaults to 'id').
-    - Ensure the corresponding URL pattern captures this keyword argument.
-    """
+    pk_url_kwarg: str = "id"
+    team_act: TeamAct = TeamAct.OPEN
 
-    pk_url_kwarg: str = "id"  # Default URL kwarg name for the team's primary key
-    _team: Team | None = None  # Cache the team object for the request
-
-    def get_team_object(self) -> Team:
-        """
-        Fetches and caches the Team instance based on pk_url_kwarg.
-        Raises Http404 if not found or if the URL kwarg is missing.
-        Permissions should be checked by mixins or subclass implementations.
-        """
-        if self._team is None:
-            team_pk = self.kwargs.get(self.pk_url_kwarg)
-            if team_pk is None:
-                raise Http404(
-                    f"URL keyword argument '{self.pk_url_kwarg}' not found in URLconf "
-                    f"for {self.__class__.__name__}."
-                )
-            # Fetch the team. Permission mixins (like TeamAdminRequiredMixin)
-            # or view logic should handle authorization.
-            # We don't filter by self.org here by default, allowing org admins
-            # to potentially access teams outside their direct membership if permitted.
-            # Subclasses or mixins can override or add checks if needed.
-            # Consider adding select_related('org') if org is frequently accessed.
-            self._team = get_object_or_404(Team.objects.select_related("org"), pk=team_pk)
-        return self._team
-
-    @property
+    @cached_property
     def team(self) -> Team:
-        """Returns the cached Team instance, fetching it if necessary."""
-        return self.get_team_object()
+        return get_object_or_404(
+            self.viewer.teams(self.team_act).select_related("org"),
+            pk=self.kwargs[self.pk_url_kwarg],
+        )
 
-    @property
-    def team_org(self) -> Org:
-        """Returns the Organization associated with the fetched team."""
-        # Assumes get_team_object() was successful and team is loaded.
-        # The select_related in get_team_object helps avoid an extra query here.
-        return self.team.org
-
-    # --- Convenience for TeamAdminRequiredMixin ---
-    # If a view inherits from BaseTeamView AND TeamAdminRequiredMixin,
-    # the mixin's requirement for get_team_object() is automatically satisfied.
-
-    # --- Convenience for Generic Views ---
-    # Override get_object common in DetailView/UpdateView/DeleteView
-    # to return the team object by default if not overridden.
-    def get_object(self, queryset=None) -> Team | ServiceAccount:
-        """
-        Default implementation for generic views to return the fetched Team object.
-        """
-        # Note: This might conflict if a generic view *also* sets model = Team
-        # and expects default get_object behavior based on pk/slug in URL.
-        # However, since we fetch based on pk_url_kwarg, this aligns.
+    def get_object(self, queryset: QuerySet[Any] | None = None) -> Team | ServiceAccount:
         return self.team
 
 
-class BaseServiceAccountView(TeamAdminRequiredMixin, BaseAqueductView):
-    """
-    Base view for operations on a specific ServiceAccount instance.
+class BaseServiceAccountView(BaseAqueductView):
+    """A view about the service account in the URL; acting on it is managing its team."""
 
-    Requires TeamAdmin privileges for the SA's team.
-    Automatically fetches the ServiceAccount and its Team.
+    pk_url_kwarg = "service_account_id"
 
-    Views inheriting from this must:
-    - Set `pk_url_kwarg` to the name of the URL keyword argument
-      containing the ServiceAccount's primary key.
-    - Optionally set the `model` attribute to ServiceAccount (often handled by Generic Views).
-    - Inherit from a relevant generic view (e.g., View, DetailView, DeleteView)
-      or implement appropriate methods (get, post, etc.).
-    """
+    @cached_property
+    def service_account(self) -> ServiceAccount:
+        return get_object_or_404(
+            ServiceAccount.objects.filter(
+                team__in=self.viewer.teams(TeamAct.MANAGE)
+            ).select_related("team__org"),
+            pk=self.kwargs[self.pk_url_kwarg],
+        )
 
-    model = ServiceAccount
-    pk_url_kwarg: str | None = None  # Must be set by inheriting views (e.g., 'service_account_id')
-    service_account_object: ServiceAccount | None = None  # Cache the fetched SA
+    @property
+    def team(self) -> Team:
+        return self.service_account.team
 
-    def get_service_account_object(self) -> ServiceAccount:
-        """
-        Fetches and caches the ServiceAccount instance based on pk_url_kwarg.
-        Raises Http404 if not found.
-        Called internally by get_team_object during dispatch.
-        """
-        if self.service_account_object is None:
-            if not self.pk_url_kwarg:
-                raise ImproperlyConfigured(f"{self.__class__.__name__} must define 'pk_url_kwarg'.")
-            sa_id = self.kwargs.get(self.pk_url_kwarg)
-            if sa_id is None:
-                raise Http404(f"URL keyword argument '{self.pk_url_kwarg}' not found in URLconf.")
-            # Fetch the SA. Team permission check happens later in the mixin's dispatch.
-            self.service_account_object = get_object_or_404(self.model, pk=sa_id)
-        return self.service_account_object
-
-    # --- Implementation for TeamAdminRequiredMixin ---
-    def get_team_object(self) -> Team:
-        """
-        Implementation for TeamAdminRequiredMixin.
-        Fetches the team associated with the Service Account identified by pk_url_kwarg.
-        """
-        # Fetch the SA first. get_object_or_404 handles not found.
-        sa = self.get_service_account_object()
-        # ServiceAccount.team is a non-nullable ForeignKey, so sa.team will exist.
-        return sa.team
-
-    # --- Convenience for inheriting views ---
-    def get_object(self, queryset=None) -> ServiceAccount:
-        """
-        Default implementation for generic views (like DetailView, DeleteView)
-        to return the fetched Service Account object after permissions are checked.
-        """
-        # The SA is fetched and the team permission checked during dispatch.
-        # We just return the cached object.
-        return self.get_service_account_object()
+    def get_object(self, queryset: QuerySet[Any] | None = None) -> ServiceAccount:
+        return self.service_account

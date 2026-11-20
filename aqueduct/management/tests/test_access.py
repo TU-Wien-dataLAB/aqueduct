@@ -201,6 +201,25 @@ class CrossOrgRuleTest(Matrix):
             return {key.name for key in response.context["keys"]}
         return {row.token.name for row in response.context["keys"].rows}
 
+    def test_a_stale_membership_opens_nothing_and_lists_nothing(self):
+        bot = self.south_bot
+        for user in (self.stale_admin, self.stale_member):
+            self.client.force_login(user)
+            with self.subTest(user=user.username):
+                for page in ("requests", "usage_keys", "tokens"):
+                    self.assertNotIn(bot.name, self.listed(page))
+                for url in (
+                    reverse("token_detail", args=[bot.id]),
+                    reverse("team", args=[self.south_a.id]),
+                    f"{reverse('requests')}?key={bot.id}",
+                    f"{reverse('usage')}?key={bot.id}",
+                ):
+                    self.assertEqual(self.client.get(url).status_code, 404, url)
+                before = Token.objects.values().get(id=bot.id)
+                response = self.client.post(reverse("token_regenerate", args=[bot.id]))
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(Token.objects.values().get(id=bot.id), before)
+
     def test_the_key_page_and_the_log_agree_for_every_viewer(self):
         for user in (
             self.org_admin,

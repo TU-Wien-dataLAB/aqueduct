@@ -23,6 +23,23 @@ class OrgSwitchTest(OrgSwitchTestBase):
         chosen = self.client.get(reverse(url_name), params).context["filters"].viewer.chosen
         return chosen.org if isinstance(chosen, WholeOrg) else None
 
+    def test_all_organizations_lists_every_team_with_its_org(self):
+        self.as_user(self.far_admin)
+        self.switch("all")
+        for url_name in ORG_SCOPED:
+            with self.subTest(page=url_name):
+                self.assertIsNone(self.viewed(url_name))
+        teams = self.client.get(reverse("org"))
+        self.assertContains(teams, "<th>Organization</th>", html=True)
+        for team in ("Foreign", "NLP Lab", "Robotics"):
+            row = teams.content.decode().split(f">{team}</a>", 1)[1].split("</tr>", 1)[0]
+            with self.subTest(team=team):
+                org = "other-org" if team == "Foreign" else "lab-org"
+                self.assertIn(f'<td class="truncate max-lg:hidden">{org}</td>', row)
+        self.assertContains(
+            teams, '<span class="muted text-sm">All organizations</span>', html=True
+        )
+
     def test_org_parameter_applies_and_stays_for_later_pages(self):
         self.as_user(self.far_admin)
         self.switch("all")
@@ -97,8 +114,32 @@ class TeamCreateOrgTest(OrgSwitchTestBase):
     def create(self, org_id: object):
         return self.client.post(reverse("team_create"), {"name": "Vision", "org": org_id})
 
+    def test_admin_on_all_organizations_sees_the_own_org_as_target(self):
+        self.as_user(self.far_admin)
+        self.switch("all")
+        page = self.client.get(reverse("team_create"))
+        self.assertContains(page, "The team is created in other-org.")
+        self.assertContains(page, f'name="org" value="{self.other_org.id}"')
+
+    def test_team_goes_to_the_org_the_form_was_opened_for(self):
+        self.as_user(self.far_admin)
+        self.switch(self.org.id)
+        self.assertContains(self.client.get(reverse("team_create")), "created in lab-org.")
+        self.switch(self.other_org.id)
+        self.assertRedirects(
+            self.create(self.org.id), reverse("org"), fetch_redirect_response=False
+        )
+        self.assertEqual(Team.objects.get(name="Vision").org, self.org)
+
     def test_a_create_without_an_org_field_lands_in_the_viewed_org(self):
         self.as_user(self.org_admin)
         response = self.client.post(reverse("team_create"), {"name": "Vision"})
         self.assertRedirects(response, reverse("org"), fetch_redirect_response=False)
         self.assertEqual(Team.objects.get(name="Vision").org, self.org)
+
+    def test_org_admin_cannot_create_in_another_org(self):
+        self.as_user(self.org_admin)
+        for org_id in (self.other_org.id, "", "999999"):
+            with self.subTest(org=org_id):
+                self.assertEqual(self.create(org_id).status_code, 404)
+        self.assertFalse(Team.objects.filter(name="Vision").exists())

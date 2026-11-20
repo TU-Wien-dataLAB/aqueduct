@@ -190,6 +190,19 @@ def _text(markup: str) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", markup).split())
 
 
+def configured_limits(response) -> dict[str, list[str]]:
+    """The configured-limits table of a page: each row's label and its cells' text."""
+    rows = re.findall(
+        r'<tr>\s*<td[^>]*class="whitespace-nowrap text-sm">([^<]*)</td>(.*?)</tr>',
+        response.content.decode(),
+        re.S,
+    )
+    return {
+        label: [_text(cell) for cell in re.findall(r"<td[^>]*>(.*?)</td>", rest, re.S)]
+        for label, rest in rows
+    }
+
+
 def _first(pattern: str, markup: str) -> str:
     found = re.search(pattern, markup, re.S)
     return _text(found[1]) if found else ""

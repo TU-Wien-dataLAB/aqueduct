@@ -11,8 +11,8 @@ from django.urls import reverse
 from gateway.config import get_mcp_config, model_names
 from gateway.tests.utils.base import ROUTER_CONFIG_PATH
 from management.admin import OrgAdminForm, TeamAdminForm, UserProfileAdminForm
-from management.models import Org, Team
-from management.tests.helpers import make_token, make_user, router_config
+from management.models import Org, Team, Token, UserGroup
+from management.tests.helpers import RoleWorld, make_token, make_user, router_config
 
 User = get_user_model()
 MCP_SERVERS = ("aqueduct", "docs")
@@ -204,3 +204,54 @@ class ViewOnlyAdminTest(AvailabilityTestCase):
         self.assertContains(response, ", ".join(shown))
         self.assertNotContains(response, "whisper-1")
         self.assertContains(response, ">aqueduct<")
+
+
+class TeamAvailabilityPageTest(RoleWorld):
+    def url(self, team: Team | None = None) -> str:
+        return reverse("team_availability", args=[(team or self.team).id])
+
+    def unavailable_dall_e(self) -> dict:
+        return {
+            "available_models": [m for m in list(model_names()) if m != "dall-e-2"],
+            "available_models-shown": list(model_names()),
+        }
+
+    def stored(self) -> list[str]:
+        return Team.objects.get(pk=self.team.pk).excluded_models
+
+    def test_members_team_admins_and_other_orgs_get_404_and_change_nothing(self):
+        for user in (self.member, self.team_admin, self.solo, self.other_org_admin):
+            with self.subTest(user=user.username):
+                client = self.as_user(user)
+                self.assertEqual(client.get(self.url()).status_code, HTTPStatus.NOT_FOUND)
+                response = client.post(self.url(), self.unavailable_dall_e())
+                self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
+        self.assertEqual(self.stored(), [])
+
+    def test_org_admin_and_admin_make_a_model_unavailable_to_service_accounts(self):
+        admin = self.user("far-admin", UserGroup.ADMIN, self.other_org)
+        for user in (self.org_admin, admin):
+            with self.subTest(user=user.username):
+                response = self.as_user(user).post(self.url(), self.unavailable_dall_e())
+                self.assertRedirects(
+                    response, reverse("team", args=[self.team.id]), fetch_redirect_response=False
+                )
+        self.assertEqual(self.stored(), ["dall-e-2"])
+        key = Token.objects.get(pk=self.pipeline_key.pk)
+        self.assertTrue(key.model_excluded("dall-e-2"))
+        personal = Token.objects.get(pk=make_token(self.member, "laptop").pk)
+        self.assertFalse(personal.model_excluded("dall-e-2"))
+
+    def test_saving_unchanged_keeps_what_is_stored(self):
+        self.team.excluded_models = ["retired-model", "whisper-1"]
+        self.team.save()
+        form = self.as_user(self.org_admin).get(self.url()).context["form"]
+        self.assertContains(self.as_user(self.org_admin).get(self.url()), "Select none")
+        self.as_user(self.org_admin).post(self.url(), posted(form))
+        self.assertEqual(self.stored(), ["retired-model", "whisper-1"])
+
+    def test_team_page_links_the_form_for_org_admins_only(self):
+        page = reverse("team", args=[self.team.id])
+        self.assertContains(self.as_user(self.org_admin).get(page), f'href="{self.url()}"')
+        for user in (self.member, self.team_admin):
+            self.assertNotContains(self.as_user(user).get(page), f'href="{self.url()}"')

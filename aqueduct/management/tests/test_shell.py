@@ -17,7 +17,7 @@ from tos.models import TermsOfService
 
 from aqueduct.urls import urlpatterns as aqueduct_urlpatterns
 from gateway.tests.utils.base import ROUTER_CONFIG_PATH
-from management.models import TeamMembership
+from management.models import Team, TeamMembership
 from management.nav import HELP, NAV, NAV_BOTTOM, Shell, build_shell
 from management.tests.helpers import RoleWorld
 
@@ -152,6 +152,14 @@ class ShellTest(TestCase):
         self.sign_in("org-admin")
         viewer = self.shell_on(reverse("tokens")).viewer
         self.assertEqual((viewer.email, viewer.role), ("someone@example.com", "Org Admin"))
+
+    def test_role_line_names_a_team_admin_as_such(self):
+        self.sign_in("user")
+        self.assertEqual(self.shell_on(reverse("tokens")).viewer.role, "User")
+        profile = User.objects.get(pk=FIXTURE_USER_PK_BY_ROLE["user"]).profile
+        team = Team.objects.create(name="Role line", org=profile.org)
+        TeamMembership.objects.create(user_profile=profile, team=team, is_admin=True)
+        self.assertEqual(self.shell_on(reverse("tokens")).viewer.role, "Team admin")
 
     def test_user_without_profile_still_gets_the_frame(self):
         self.client.force_login(User.objects.create_user("no-profile", "np@example.com"))
@@ -291,6 +299,20 @@ class ErrorPagesTest(TestCase):
                     self.assertIn(f"<p>{body}</p>", html)
                     self.assertIn(f'href="{reverse("tokens")}">API keys</a>', html)
                     self.assertEqual("drawer-side" in html, role != "anonymous")
+
+
+@override_settings(ROOT_URLCONF=__name__)
+class MessagesTest(TestCase):
+    def test_success_leaves_by_itself_errors_stay_and_the_new_key_is_left_to_the_key_page(self):
+        html = self.client.get("/with-messages/").content.decode()
+        page, toasts = html.split('<div class="fixed bottom-4')
+        alerts = {m[1]: m[0] for m in re.finditer(r'<div class="alert alert-(\w+)[^>]*>', toasts)}
+        self.assertEqual(set(alerts), {"success", "error"})
+        self.assertIn("data-autodismiss", alerts["success"])
+        self.assertNotIn("data-autodismiss", alerts["error"])
+        self.assertEqual(toasts.count('aria-label="Dismiss"'), 2)
+        self.assertNotIn("sk-secret", toasts)
+        self.assertNotIn("sk-secret", page)
 
 
 class NavByRoleTest(RoleWorld):

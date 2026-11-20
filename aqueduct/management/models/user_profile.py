@@ -1,11 +1,17 @@
+import logging
+from typing import Any
+
 from django.conf import settings
 from django.contrib.auth.models import Group
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.db import models
+from django.db import models, transaction
 
 from management.models.mixins import LimitMixin, MCPServerExclusionMixin, ModelExclusionMixin
 from management.models.org import Org
+from management.models.service_account import ServiceAccount
 from management.models.team import Team
+
+log = logging.getLogger("aqueduct")
 
 
 class UserGroup(models.TextChoices):
@@ -39,6 +45,45 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
 
     def __str__(self) -> str:
         return f"{self.user.email} (Profile - {self.org.name})"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """An org move ends the memberships in teams of the old org."""
+        update_fields = kwargs.get("update_fields")
+        writes_org = update_fields is None or not {"org", "org_id"}.isdisjoint(update_fields)
+        if self._state.adding or not writes_org:
+            super().save(*args, **kwargs)
+            return
+        with transaction.atomic():
+            # Compare with the stored row, not the loaded one: a deferred, stale or retried
+            # instance would otherwise report a move that never happened, or miss one.
+            stored = UserProfile.objects.filter(pk=self.pk).values_list("org_id", flat=True).first()
+            super().save(*args, **kwargs)
+            if stored is not None and stored != self.org_id:
+                self._leave_other_orgs()
+
+    def _leave_other_orgs(self) -> None:
+        dropped = self.teammembership_set.exclude(team__org_id=self.org_id)
+        email = self.user.email
+        for team_id, team, is_admin in dropped.values_list("team_id", "team__name", "is_admin"):
+            log.info(
+                "Org move of %s ends their membership in team %s (%s), admin: %s.",
+                email,
+                team_id,
+                team,
+                is_admin,
+            )
+        owned = ServiceAccount.objects.filter(
+            team__in=dropped.values("team_id"), token__user_id=self.user_id
+        )
+        for account in owned:
+            log.warning(
+                "%s left team %s but owns its service account %s (%s); transfer it.",
+                email,
+                account.team_id,
+                account.pk,
+                account.name,
+            )
+        dropped.delete()
 
     @property
     def group(self) -> UserGroup:

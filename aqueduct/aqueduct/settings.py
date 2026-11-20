@@ -318,6 +318,7 @@ if SILKY_ENABLED:
     # only superusers should have access to the /silk/ UI
     SILKY_AUTHENTICATION = True
     SILKY_AUTHORISATION = True
+    SILKY_PERMISSIONS = lambda user: user.is_active and user.is_superuser
     # use meta profiling to measure performance overhead
     SILKY_META = True
     # do not log request body (regardless of size)

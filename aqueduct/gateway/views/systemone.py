@@ -60,9 +60,9 @@ Question = Annotated[
 
 class Asset(BaseModel):
     type: Literal["image"]
-    format: Literal["png", "jpg", "jpeg"]
-    data_base64: str
-    part: str
+    format: Literal["png", "jpg", "jpeg"] | None = None
+    data_base64: str | None = None
+    part: str | None = None
 
 
 class SystemOneRequest(BaseModel):

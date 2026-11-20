@@ -201,7 +201,7 @@ def responses_detail_response(ids: PathIds) -> dict[str, Any]:
 
 def systemone_detail_response(ids: PathIds) -> dict[str, Any]:
     return {
-        "model": "gpt-6-luna",
+        "model": "LiquidAI/d1-3B",
         "answers": {"visible_damage": {"type": "noul", "noul": 0.92}},
         "usage": {"input_tokens": 15, "output_tokens": 9, "total_tokens": 24},
     }
@@ -480,7 +480,7 @@ default_post_configs = {
                     name="visible_damage", probability=0.92, type="predicate"
                 )
             ],
-            model="gpt-6-luna",
+            model="LiquidAI/d1-3B",
             usage=DecisionUsage(
                 input_tokens=15,
                 input_tokens_details=DecisionUsageInputTokensDetails(

@@ -13,7 +13,7 @@ _SAMPLE_IMAGE_B64 = (
 
 
 class SystemOneIntegrationTest(GatewayIntegrationTestCase):
-    model = "gpt-6-luna"
+    model = "LiquidAI/d1-3B"
 
     @classmethod
     def setUpClass(cls):
@@ -125,7 +125,7 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
-            "model": "systemone",
+            "model": "decision",
             "state": {"input": "Which department handles refunds?"},
             "questions": {
                 "department": {
@@ -147,7 +147,7 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
         self.assertIn("answers", response.json())
 
         req = await Request.objects.aget()
-        self.assertEqual(req.model, "gpt-6-luna")
+        self.assertEqual(req.model, "LiquidAI/d1-3B")
 
     async def test_systemone_missing_model(self):
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)

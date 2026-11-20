@@ -166,11 +166,7 @@ class LimitValidationTest(TestCase):
         / "example_router_config.yaml"
     )
     def test_full_clean_surfaces_multiplier_error_via_admin_form(self):
-        """The admin ModelForm runs full_clean(), surfacing the clean() bounds.
-
-        The form supplies the JSON exclusion fields, so full_clean() reaches
-        clean() (a bare model.full_clean() would trip on the blank default []).
-        """
+        """The admin ModelForm runs full_clean(), surfacing the clean() bounds."""
         form = OrgAdminForm(
             data={
                 "name": "OrgViaForm",
@@ -179,9 +175,7 @@ class LimitValidationTest(TestCase):
                 "output_tokens_per_minute": "",
                 "hourly_limit_multiplier": "61",  # out of range
                 "daily_limit_multiplier": "",
-                "excluded_models": "[]",
                 "merge_exclusion_lists": "on",
-                "excluded_mcp_servers": "[]",
                 "merge_mcp_server_exclusion_lists": "on",
             }
         )

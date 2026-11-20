@@ -4,12 +4,21 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
+from django.contrib.auth import get_user_model
 from django.test import override_settings
 
 from management.models import (
+    Org,
     Snippet,
     SnippetType,
+    Team,
+    TeamMembership,
+    Token,
+    UserGroup,
+    UserProfile,
 )
+
+User = get_user_model()
 
 
 @contextmanager
@@ -19,6 +28,23 @@ def router_config(entries: list[dict]) -> Iterator[None]:
         path.write_text(yaml.safe_dump({"model_list": entries}))
         with override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=str(path)):
             yield
+
+
+def make_user(name: str, org: Org, group: UserGroup = UserGroup.USER):
+    user = User.objects.create_user(username=name, email=f"{name}@example.com")
+    UserProfile.objects.create(user=user, org=org).group = group
+    return user
+
+
+def make_token(user, name: str, **kwargs) -> Token:
+    token = Token(name=name, user=user, **kwargs)
+    token._set_new_key()
+    token.save()
+    return token
+
+
+def join(user, team: Team, is_admin: bool = False) -> None:
+    TeamMembership.objects.create(user_profile=user.profile, team=team, is_admin=is_admin)
 
 
 def seed_active_config(code: str, name: str = "test-config") -> Snippet:

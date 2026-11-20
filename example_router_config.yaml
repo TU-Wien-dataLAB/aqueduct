@@ -11,13 +11,13 @@ model_list:
     # maxTokens: 16000       # Maximum output tokens
     # thinkingLevels: ["low", "high", "max"]
     # model_card_url: "https://huggingface.co/example/model"
-- model_name: gpt-6-luna
+- model_name: LiquidAI/d1-3B
   litellm_params:
-    model: openai/gpt-6-luna
+    model: openai/LiquidAI/d1-3B
     api_key: "os.environ/OPENAI_API_KEY"
   model_info:
-    id: gpt-6-luna
-    aliases: ["decision"]
+    id: LiquidAI/d1-3B
+    aliases: ["decision", "d1-3b"]
 - model_name: text-embedding-ada-002
   litellm_params:
     model: openai/text-embedding-ada-002

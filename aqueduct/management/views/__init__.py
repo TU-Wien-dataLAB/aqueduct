@@ -1,4 +1,4 @@
-from .auth import SSOTemplateView
+from .auth import SSOTemplateView, check_tos
 from .batches import UserBatchesView
 from .files import UserFilesView
 from .mcp_servers import MCPServersView

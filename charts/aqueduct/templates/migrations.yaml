@@ -1,0 +1,22 @@
+{{- range $path, $entries := dict "env" .Values.env "web.extraEnv" .Values.web.extraEnv "celery.workerExtraEnv" .Values.celery.workerExtraEnv "celery.beatExtraEnv" .Values.celery.beatExtraEnv "migrate.extraEnv" .Values.migrate.extraEnv }}
+{{- range $entries }}
+{{- if has .name (list "POSTGRESQL_POOL_MIN_SIZE" "POSTGRESQL_POOL_MAX_SIZE") }}
+{{- fail (printf "%s contains %s; configure per-role databasePool minSize/maxSize values instead" $path .name) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range $key := list "databasePool" "scheduling" "activeDeadlineSeconds" }}
+{{- if hasKey $.Values.migrate $key }}
+{{- fail (printf "migrate.%s was removed; migrations use the pod's scheduling and role environment" $key) }}
+{{- end }}
+{{- end }}
+{{- if .Values.migrate.extraEnv }}
+{{- fail "migrate.extraEnv must be empty; use env or role-specific extraEnv so migrations match the application" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aqueduct.migrationConfigName" . }}
+data:
+  migrate.py: |
+    {{- .Files.Get "files/migrate.py" | nindent 4 }}

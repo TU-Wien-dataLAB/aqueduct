@@ -1,20 +1,27 @@
 import hashlib
 import secrets
-from collections.abc import Callable
-from typing import Any, Optional, TypeVar
+import typing
+from datetime import datetime, timedelta
+from typing import Any, Optional
 
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from gateway.config import resolve_model_alias
-from management.models.mixins import LimitSet, MCPServerExclusionMixin, ModelExclusionMixin
+from gateway.config import resolve_model
+from management.models.mixins import (
+    LimitMixin,
+    LimitSet,
+    MCPServerExclusionMixin,
+    ModelExclusionMixin,
+)
 from management.models.service_account import ServiceAccount
 
-_T = TypeVar("_T")
+if typing.TYPE_CHECKING:
+    from management.models import Org, Team, UserProfile
 
 
-class Token(models.Model):
+class Token(LimitMixin, models.Model):
     """
     Represents an authentication token (e.g., API Key), associated with a User
     and optionally a Service Account.
@@ -23,7 +30,7 @@ class Token(models.Model):
     name = models.CharField(verbose_name="Token name", max_length=255, null=False)
     # Link to the standard Django User model
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,  # Use settings.AUTH_USER_MODEL
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="custom_auth_tokens",  # Changed related_name to avoid potential clashes
     )
@@ -61,7 +68,20 @@ class Token(models.Model):
                 "Token cannot be saved without key_hash and key_preview. "
                 "Call _set_new_key() before saving."
             )
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None or "expires_at" in update_fields:
+            deadline = self.max_expiration()
+            if deadline is not None and (self.expires_at is None or self.expires_at > deadline):
+                self.expires_at = deadline
         super().save(*args, **kwargs)
+
+    @classmethod
+    def max_expiration(cls) -> datetime | None:
+        """Return the latest allowed expiration, or ``None`` when unlimited."""
+        days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
+        if days == -1:
+            return None
+        return timezone.now() + timedelta(days=days)
 
     @property
     def is_expired(self) -> bool:
@@ -112,7 +132,7 @@ class Token(models.Model):
         """
         super().clean()
 
-    def _get_from_hierarchy(self, retrieval_function: Callable[..., _T]) -> _T:
+    def _get_obj_hierarchy(self) -> "tuple[UserProfile | Team, Org]":
         token_instance = Token.objects.select_related(
             "user__profile__org", "service_account__team__org"
         ).get(pk=self.pk)
@@ -120,21 +140,25 @@ class Token(models.Model):
         if token_instance.service_account:
             team = token_instance.service_account.team
             org = team.org
-            return retrieval_function(team, org)
+            return team, org
         profile = token_instance.user.profile
         org = profile.org
-        return retrieval_function(profile, org)
+        return profile, org
 
-    def get_limit(self) -> "LimitSet":
+    def get_limits(self) -> "LimitSet":
         """
-        Determines the effective rate limits for this token, returning a LimitSet dataclass.
+        Determines the effective limits (rate and concurrency) for this token.
+
         Assumes database integrity for related objects.
 
         Hierarchy Rules:
+        Limits set on the token itself override any limits from its related objects.
+        If no limits are set, the following fallbacks are considered:
         - Service Account Token: Uses Team limits, falls back to Org limits.
         - User Token: Uses UserProfile limits, falls back to Org limits.
         """
-        return self._get_from_hierarchy(LimitSet.from_objects)
+        hierarchy = self._get_obj_hierarchy()
+        return LimitSet.from_objects(self, hierarchy)
 
     @classmethod
     def _exclusion_list_from_objects(
@@ -163,11 +187,12 @@ class Token(models.Model):
         - Service Account Token: Uses the Team exclusion list, falls back to the Org exclusion list.
         - User Token: Uses the UserProfile exclusion list, falls back to the Org exclusion list.
         """
-        return self._get_from_hierarchy(Token._exclusion_list_from_objects)
+        hierarchy = self._get_obj_hierarchy()
+        return Token._exclusion_list_from_objects(*hierarchy)
 
     def model_excluded(self, model: str) -> bool:
         # Resolve alias to actual model name before checking exclusion
-        resolved_model = resolve_model_alias(model)
+        resolved_model = resolve_model(model).routing_name
         return resolved_model in self.model_exclusion_list()
 
     @classmethod
@@ -202,7 +227,8 @@ class Token(models.Model):
         - Service Account Token: Uses the Team exclusion list, falls back to the Org exclusion list.
         - User Token: Uses the UserProfile exclusion list, falls back to the Org exclusion list.
         """
-        return self._get_from_hierarchy(Token._mcp_server_exclusion_list_from_objects)
+        hierarchy = self._get_obj_hierarchy()
+        return Token._mcp_server_exclusion_list_from_objects(*hierarchy)
 
     def mcp_server_excluded(self, server_name: str) -> bool:
         return server_name in self.mcp_server_exclusion_list()

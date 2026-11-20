@@ -29,6 +29,10 @@ from openai.types import (
 )
 from openai.types.audio import Transcription
 from openai.types.audio.transcription import UsageDuration
+from openai.types.decision import AnswerAnswerResourcePredicate, Decision
+from openai.types.decision import Usage as DecisionUsage
+from openai.types.decision import UsageInputTokensDetails as DecisionUsageInputTokensDetails
+from openai.types.decision import UsageOutputTokensDetails as DecisionUsageOutputTokensDetails
 from openai.types.images_response import Usage as ImageUsage
 from openai.types.images_response import UsageInputTokensDetails
 from openai.types.responses import (
@@ -187,7 +191,7 @@ def responses_detail_response(ids: PathIds) -> dict[str, Any]:
         status="completed",
         usage=ResponseUsage(
             input_tokens=13,
-            input_tokens_details=InputTokensDetails(cached_tokens=0),
+            input_tokens_details=InputTokensDetails(cache_write_tokens=0, cached_tokens=0),
             output_tokens=21,
             output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
             total_tokens=34,
@@ -414,6 +418,18 @@ default_post_configs = {
         ).model_dump()
     ),
     "files": MockConfig(response_data=file_detail_response),
+    "images/edits": MockConfig(
+        response_data=ImagesResponse(
+            created=1713833628,
+            data=[Image(b64_json="aW1hZ2U=")],
+            usage=ImageUsage(
+                total_tokens=100,
+                input_tokens=50,
+                output_tokens=50,
+                input_tokens_details=UsageInputTokensDetails(text_tokens=10, image_tokens=40),
+            ),
+        ).model_dump()
+    ),
     "images/generations": MockConfig(
         response_data=ImagesResponse(
             created=1713833628,
@@ -432,6 +448,50 @@ default_post_configs = {
     ),
     "responses": MockConfig(response_data=responses_detail_response),
     "systemone": MockConfig(response_data=systemone_detail_response),
+    "rerank": MockConfig(
+        # Jina-style wire format, returned as-is by the upstream. The gateway
+        # reads usage.prompt_tokens for token accounting (get_token_usage).
+        response_data={
+            "id": "rerank-mock-1",
+            "results": [
+                {
+                    "index": 2,
+                    "relevance_score": 0.97,
+                    "document": {"text": "Aqueduct is an AI gateway developed by TU Wien."},
+                },
+                {
+                    "index": 0,
+                    "relevance_score": 0.84,
+                    "document": {"text": "Aqueduct supports multiple AI model providers."},
+                },
+                {
+                    "index": 1,
+                    "relevance_score": 0.12,
+                    "document": {"text": "Vienna is the capital of Austria."},
+                },
+            ],
+            "usage": {"prompt_tokens": 42, "total_tokens": 42},
+        }
+    ),
+    "decisions": MockConfig(
+        response_data=Decision(
+            answers=[
+                AnswerAnswerResourcePredicate(
+                    name="visible_damage", probability=0.92, type="predicate"
+                )
+            ],
+            model="gpt-6-luna",
+            usage=DecisionUsage(
+                input_tokens=15,
+                input_tokens_details=DecisionUsageInputTokensDetails(
+                    cache_write_tokens=0, cached_tokens=0
+                ),
+                output_tokens=9,
+                output_tokens_details=DecisionUsageOutputTokensDetails(reasoning_tokens=0),
+                total_tokens=24,
+            ),
+        ).model_dump()
+    ),
     "vector_stores": MockConfig(response_data=vector_store_detail_response),
     "vector_stores/id": MockConfig(response_data=vector_store_update_response),
     "vector_stores/id/file_batches": MockConfig(
@@ -637,7 +697,7 @@ _responses_stream_data: list[BaseModel] = [
             status="completed",
             usage=ResponseUsage(
                 input_tokens=13,
-                input_tokens_details=InputTokensDetails(cached_tokens=0),
+                input_tokens_details=InputTokensDetails(cache_write_tokens=0, cached_tokens=0),
                 output_tokens=7,
                 output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
                 total_tokens=17,

@@ -1,3 +1,4 @@
+import datetime as dt
 from typing import ClassVar
 
 from django import forms
@@ -8,7 +9,43 @@ from django.utils import timezone
 from .models import ServiceAccount, Team, Token
 
 
-class ServiceAccountForm(forms.ModelForm):
+def _format_expiration_deadline(deadline: dt.datetime) -> str:
+    local_deadline = timezone.localtime(deadline)
+    return f"{local_deadline:%Y-%m-%d %H:%M} {settings.TIME_ZONE}"
+
+
+class AccessKeyExpirationFormMixin:
+    """Shared help text and maximum-expiration validation for API key forms."""
+
+    expiration_field: str
+
+    def _describe_expiration_limit(self) -> None:
+        deadline = Token.max_expiration()
+        if deadline is None:
+            return
+        days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
+        self.fields[self.expiration_field].help_text = (
+            f"Maximum expiration: {_format_expiration_deadline(deadline)} "
+            f"({days} days from now). Leave blank to use the maximum; later dates are rejected."
+        )
+
+    def _validate_expiration_limit(self, expires_at: dt.datetime | None) -> None:
+        if expires_at is None:
+            return
+        deadline = Token.max_expiration()
+        if deadline is None or expires_at <= deadline:
+            return
+        days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
+        self.add_error(
+            self.expiration_field,
+            f"Expiration date cannot be later than {_format_expiration_deadline(deadline)} "
+            f"(the maximum of {days} days from now).",
+        )
+
+
+class ServiceAccountForm(AccessKeyExpirationFormMixin, forms.ModelForm):
+    expiration_field = "token_expires_at"
+
     token_expires_at = forms.DateTimeField(
         required=False,
         widget=forms.DateTimeInput(
@@ -37,6 +74,7 @@ class ServiceAccountForm(forms.ModelForm):
         if not self.team:
             # This indicates a programming error in the view setup
             raise ValueError("Team instance must be provided to the ServiceAccountForm.")
+        self._describe_expiration_limit()
 
     def clean(self) -> dict:
         cleaned_data = super().clean()
@@ -79,7 +117,8 @@ class ServiceAccountForm(forms.ModelForm):
                 )
         expires_at = cleaned_data.get("token_expires_at")
         if expires_at and expires_at <= timezone.now():
-            self.add_error("expires_at", "Expiration date must be in the future.")
+            self.add_error("token_expires_at", "Expiration date must be in the future.")
+        self._validate_expiration_limit(expires_at)
         return cleaned_data
 
 
@@ -127,7 +166,9 @@ class TeamCreateForm(forms.ModelForm):
         return cleaned_data
 
 
-class TokenCreateForm(forms.ModelForm):
+class TokenCreateForm(AccessKeyExpirationFormMixin, forms.ModelForm):
+    expiration_field = "expires_at"
+
     class Meta:
         model = Token
         fields: ClassVar[list] = ["name", "expires_at"]
@@ -148,10 +189,10 @@ class TokenCreateForm(forms.ModelForm):
         if not self.user:
             raise ValueError("User must be provided to TokenCreateForm.")
         self.fields["expires_at"].input_formats = ["%Y-%m-%dT%H:%M"]
+        self._describe_expiration_limit()
 
     def clean(self) -> dict:
         cleaned_data = super().clean()
-        from django.conf import settings
 
         max_tokens = getattr(settings, "MAX_USER_TOKENS", 3)
         token_count = Token.objects.filter(user=self.user, service_account__isnull=True)
@@ -163,5 +204,6 @@ class TokenCreateForm(forms.ModelForm):
         expires_at = cleaned_data.get("expires_at")
         if expires_at and expires_at <= timezone.now():
             self.add_error("expires_at", "Expiration date must be in the future.")
+        self._validate_expiration_limit(expires_at)
 
         return cleaned_data

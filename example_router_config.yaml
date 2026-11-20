@@ -6,13 +6,18 @@ model_list:
   model_info:
     id: gpt-4.1-nano
     aliases: ["main", "coding"]
+    # Optional metadata shown on the Models page. Replace with actual values.
+    # contextWindow: 128000  # Total context window in tokens
+    # maxTokens: 16000       # Maximum output tokens
+    # thinkingLevels: ["low", "high", "max"]
+    # model_card_url: "https://huggingface.co/example/model"
 - model_name: gpt-6-luna
   litellm_params:
     model: openai/gpt-6-luna
     api_key: "os.environ/OPENAI_API_KEY"
   model_info:
     id: gpt-6-luna
-    aliases: ["systemone"]
+    aliases: ["decision", "systemone"]
 - model_name: text-embedding-ada-002
   litellm_params:
     model: openai/text-embedding-ada-002
@@ -21,6 +26,14 @@ model_list:
     mode: embedding
     aliases: ["embedding", "embed"]
     request_limit_multiplier: 2.0
+- model_name: bge-reranker-v2-m3
+  litellm_params:
+    model: openai/bge-reranker-v2-m3
+    api_key: "os.environ/OPENAI_API_KEY"
+  model_info:
+    id: bge-reranker-v2-m3
+    mode: rerank
+    aliases: ["reranker"]
 - model_name: gpt-4o-mini-tts
   litellm_params:
     model: openai/gpt-4o-mini-tts

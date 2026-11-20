@@ -99,7 +99,6 @@ class RawStreamingResponse(StreamingHttpResponse):
         if not isinstance(streaming_content, AsyncIterator):
             raise TypeError("RawStreamResponse streaming_content has to be async iterable")
 
-        self.streaming_content = streaming_content
         self.request_log = request_log
         self.transforms = transforms or []
         self.mode = mode
@@ -213,6 +212,20 @@ def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:
                 cached_input_tokens=cached_input_tokens,
                 reasoning_tokens=reasoning_tokens,
             )
+        # Cohere-style responses (e.g. /rerank with a Cohere-format backend)
+        # carry the token counts in meta.tokens instead of a top-level usage
+        # object.
+        meta = data.get("meta") if isinstance(data, dict) else None
+        if isinstance(meta, dict):
+            tokens = meta.get("tokens")
+            if isinstance(tokens, dict):
+                return Usage(
+                    input_tokens=tokens.get("input_tokens") or 0,
+                    output_tokens=tokens.get("output_tokens") or 0,
+                    cached_input_tokens=0,
+                    reasoning_tokens=0,
+                )
+
     else:
         # Handle responses API format (top-level usage or in response field)
         usage = getattr(data, "usage", None)

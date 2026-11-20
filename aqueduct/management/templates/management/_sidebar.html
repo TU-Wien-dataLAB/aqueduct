@@ -1,0 +1,35 @@
+{% load i18n static ui %}
+<aside class="aq-sidebar sticky top-0 flex h-screen w-64 flex-col gap-3 overflow-y-auto border-r border-base-300 bg-base-200 p-4">
+    <a href="/" class="flex items-center gap-3 px-3 py-1" data-tip="{% translate 'Aqueduct' %}">
+        <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="" class="h-9 w-9">
+        <span class="rail-label text-xl font-semibold">{% translate "Aqueduct" %}</span>
+    </a>
+
+    {% if shell.org_switch %}{% include "management/_org_switch.html" %}{% endif %}
+
+    <nav aria-label="{% translate 'Main' %}">
+        <ul class="menu w-full gap-1 p-0">
+            {% for section in shell.sections %}
+                {% if section.title %}<li class="menu-title section-label mt-3">{{ section.title }}</li>{% endif %}
+                {% for link in section.links %}{% include "management/_nav_link.html" with rail=True %}{% endfor %}
+            {% endfor %}
+        </ul>
+    </nav>
+
+    <ul class="menu mt-auto w-full gap-1 p-0">
+        {% for link in shell.bottom %}{% include "management/_nav_link.html" with rail=True %}{% endfor %}
+    </ul>
+
+    <div class="border-t border-base-300 pt-3">
+        <div class="aq-account grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-2 pl-3 pr-1.5">
+            <span class="flex" data-tip="{{ shell.viewer.email }}{% if shell.viewer.role %} · {{ shell.viewer.role }}{% endif %}">{% icon "user" %}</span>
+            <span class="rail-label col-start-2 row-start-1 truncate text-sm font-medium" title="{{ shell.viewer.email }}">{{ shell.viewer.email }}</span>
+            {% if shell.viewer.role %}<span class="rail-label muted col-span-3 col-start-2 row-start-2 -mt-1.5 text-xs">{{ shell.viewer.role }}</span>{% endif %}
+            {% include "management/_theme_toggle.html" %}
+            <form action="{% url 'oidc_logout' %}" method="post" class="flex">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-ghost btn-sm btn-square" aria-label="{% translate 'Sign out' %}" title="{% translate 'Sign out' %}">{% icon "sign_out" %}</button>
+            </form>
+        </div>
+    </div>
+</aside>

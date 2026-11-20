@@ -1,0 +1,251 @@
+:root {
+  --paper: #FFFFFF;
+  --foam: #EEF5F7;
+  --abyss: #0B2C3C;
+  --ocean-600: #096597;
+  --deep: #07486B;
+  --krill: #FF7A59;
+  --ocean-800: #0A3A53;
+  --spray: #8FD6F5;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --color-base-100: var(--paper);
+  --color-base-200: var(--foam);
+  --color-base-300: #D3E0E6;
+  --color-base-content: var(--abyss);
+  --color-primary: var(--ocean-600);
+  --color-primary-content: var(--paper);
+  --color-secondary: var(--deep);
+  --color-secondary-content: var(--paper);
+  --color-accent: var(--krill);
+  --color-accent-content: var(--abyss);
+  --color-neutral: var(--abyss);
+  --color-neutral-content: #EAF3F6;
+  --color-info: var(--ocean-600);
+  --color-info-content: var(--paper);
+  --color-success: #1B7A43;
+  --color-success-content: var(--paper);
+  --color-warning: #E8A317;
+  --color-warning-content: var(--abyss);
+  --color-error: #B3261E;
+  --color-error-content: var(--paper);
+
+  --aq-muted: #4A6572;
+  --aq-warn: #8A5A00;
+  --aq-band: var(--deep); --aq-band-muted: #D0EBF7; --aq-band-link: var(--spray);
+  --viz-in: #0A84C6; --viz-track: #D0EBF7;
+  --tok-cached: #449FD6; --tok-new: #0A84C6; --tok-out: #07486B;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-base-100: var(--abyss);
+  --color-base-200: var(--ocean-800);
+  --color-base-300: #1D4C63;
+  --color-base-content: #EAF3F6;
+  --color-primary: var(--spray);
+  --color-primary-content: var(--abyss);
+  --color-secondary: #D0EBF7;
+  --color-secondary-content: var(--abyss);
+  --color-accent: var(--krill);
+  --color-accent-content: var(--abyss);
+  --color-neutral: #041721;
+  --color-neutral-content: #EAF3F6;
+  --color-info: #6BBAE6;
+  --color-info-content: var(--abyss);
+  --color-success: #7ADFA4;
+  --color-success-content: var(--abyss);
+  --color-warning: #F2C14E;
+  --color-warning-content: var(--abyss);
+  --color-error: #FF9A8F;
+  --color-error-content: var(--abyss);
+  --aq-muted: #9DB6C0;
+  --aq-warn: #F2C14E;
+  --aq-band: #041721; --aq-band-muted: #9DB6C0; --aq-band-link: var(--spray);
+  --viz-in: #6BBAE6; --viz-track: #1D4C63;
+  --tok-cached: #0A84C6; --tok-new: #6BBAE6; --tok-out: #D0EBF7;
+}
+
+html[data-theme] {
+  --aq-hover: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  --radius-selector: 1rem;
+  --radius-field: 0.5rem;
+  --radius-box: 1rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* daisyUI sets the root's overflow from --page-overflow, unset by default. A root without an
+   overflow of its own passes body's clip on to the viewport, which then scrolls sideways. */
+@layer base { :root { --page-overflow: auto; } }
+body { overflow-x: clip; }
+.drawer { width: 100vw; }
+:root { scrollbar-color: color-mix(in oklab, var(--color-base-content) 35%, var(--color-base-200)) var(--color-base-200); }
+
+.aq-sidebar { scrollbar-width: thin; }
+
+.skip-link { position: fixed; top: 1rem; left: 1rem; z-index: 50; translate: 0 calc(-100% - 2rem); }
+.skip-link:focus { translate: 0; }
+
+/* Figtree has tabular figures (1111, 0000 and 7777 measure the same width), so numbers line up in the UI font and need no mono face. */
+body { font-variant-numeric: tabular-nums; }
+/* The type scale is 30, 24, 20, 14 and 12 px; daisyUI's smallest button is 11 px. */
+.btn-xs { --fontsize: .75rem; }
+
+.btn:not(.btn-square) { --radius-field: 9999px; }
+.card { box-shadow: none; }
+[data-metric-scope]:has([name=metric][value=tokens]:checked) [data-metric=requests],
+[data-metric-scope]:has([name=metric][value=requests]:checked) [data-metric=tokens] { display: none; }
+/* daisyUI isolates a checked radio button, which lifts its border over the next button in a join. */
+.join > input.btn:checked { isolation: auto; }
+.card-title { --cardtitle-fs: 1.25rem; line-height: 1.75rem; }
+.input > input { text-overflow: ellipsis; }
+.input:has(> a) > input::-webkit-search-cancel-button { appearance: none; }
+.section-label { font: 600 12px/1.3 var(--font-sans); color: var(--color-primary); }
+.muted { color: var(--aq-muted); }
+:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 2px; }
+.aq-ic { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.aq-ic.sm { width: 16px; height: 16px; }
+
+/* From 1024px the sidebar stays open as a 64px icon rail; from 1280px it is full width. Labels stay in the page for screen
+   readers, and aqueduct.js shows each [data-tip] in a tooltip beside the icon. */
+@media (width >= 64rem) and (width < 80rem) {
+  .aq-sidebar { width: 4rem; align-items: center; gap: .5rem; padding: .75rem .5rem; scrollbar-width: none; }
+  .aq-sidebar .rail-label { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .aq-sidebar > a { justify-content: center; padding: .25rem 0; }
+  .aq-sidebar .menu :where(li) > a { justify-content: center; padding-inline: 0; }
+  .aq-sidebar .menu-title { height: 1px; min-height: 0; margin: .5rem 0; padding: 0; overflow: hidden; font-size: 0; line-height: 0; background: var(--color-base-300); }
+  .aq-sidebar .aq-account { grid-template-columns: auto; justify-items: center; padding: 0; row-gap: .25rem; }
+  .aq-org-switch { position: relative; align-self: stretch; align-items: center; border-radius: var(--radius-field); }
+  .aq-org-switch > label { padding: .625rem; }
+  .aq-org-switch > label .aq-ic { width: 20px; height: 20px; }
+  .aq-org-switch > select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .aq-org-switch:has(> select:focus-visible) { outline: 3px solid var(--color-primary); outline-offset: 2px; }
+}
+.aq-rail-tip { position: fixed; z-index: 60; translate: 0 -50%; padding: .25rem .625rem; border-radius: .5rem; pointer-events: none; white-space: nowrap;
+  background: var(--color-neutral); color: var(--color-neutral-content); font: 500 14px/1.3 var(--font-sans); }
+
+.st-ok { color: var(--color-success); } .st-warn { color: var(--aq-warn); } .st-err { color: var(--color-error); } .st-off { color: var(--aq-muted); }
+
+.aq-band { background: var(--aq-band); color: var(--paper); }
+.aq-band .muted { color: var(--aq-band-muted); }
+.aq-band a { color: var(--aq-band-link); text-decoration: none; }
+.aq-band a:hover { text-decoration: underline; }
+.aq-band .section-label { color: var(--aq-band-link); }
+.aq-band :focus-visible { outline-color: var(--aq-band-link); }
+.aq-band .btn-ghost { color: var(--aq-band-link); }
+.aq-band .btn-ghost:hover { background: color-mix(in oklab, var(--paper) 12%, transparent); border-color: transparent; }
+
+html[data-theme="light"] .only-dark, html[data-theme="dark"] .only-light { display: none !important; }
+
+.menu { --menu-active-bg: color-mix(in oklab, var(--color-primary) 12%, transparent); --menu-active-fg: var(--color-primary); }
+.menu :where(li) > a.menu-active { font-weight: 600; }
+.menu :where(li) > a { min-height: 2.75rem; align-content: center; align-items: center; font-weight: 500; }
+
+.table > tbody > tr:is(:has(.row-link), [data-row-toggle]):hover,
+.table > tbody > tr:has(:focus-visible),
+.table > tbody > tr:has([aria-current="true"]),
+.hover-row:hover { background: var(--aq-hover); }
+tr:has(.row-link) { position: relative; }
+a.row-link::after { content: ""; position: absolute; inset: 0; }
+a.row-link:focus-visible { outline: none; }
+a.row-link:focus-visible::after { outline: 3px solid var(--color-primary); outline-offset: -3px; }
+
+.file-row { scroll-margin-top: 6rem; }
+.file-row:target { background: var(--aq-hover); }
+
+.table th { font: 600 12px/1.3 var(--font-sans); color: var(--aq-muted); }
+.table td { font-size: .875rem; }
+/* Tight columns, so a limits table fits a half-width card. */
+.table-tight :is(th, td) { padding-inline: .5rem; }
+.table-tight :is(th, td):first-child { padding-inline-start: 1rem; }
+.table-tight :is(th, td):last-child { padding-inline-end: 1rem; }
+/* Everything in a card starts var(--card-inset) from its edge. A table card's body is .75rem and the first and last cell of a
+   table, .card-head and .card-foot add 1rem, so a table card gets the same inset. */
+:root { --card-inset: 1.75rem; }
+@media (width < 40rem) { :root { --card-inset: 1rem; } }
+.card-body { padding: 1.25rem var(--card-inset); }
+.card-body.table-card { padding: .75rem; }
+@media (width >= 48rem) {
+  .table-sm :is(th, td):first-child { padding-inline-start: 1rem; }
+  .table-sm :is(th, td):last-child { padding-inline-end: 1rem; }
+}
+.card-head { padding: .5rem 1rem 0; }
+.card-foot { padding: .25rem 1rem .5rem; }
+
+/* Column widths of the usage tables (_usage_cols.html): a number column is as wide as its one-line heading plus the cell padding;
+   the name column takes the rest. --min is the fixed columns plus 200px for the name, so a table never squeezes a name and the
+   card scrolls only where the window cannot hold it (under 1024px, 768px with the limit column). The token bar needs a 1440px
+   window and the limit column's From cache 1280px. */
+.usage-table { table-layout: fixed; min-width: var(--min); --min: 744px; --input: 6.5rem; --cached: 6.25rem; --output: 7.25rem; --requests: 5.5rem; --failed: 4.5rem; --median: 6.5rem; --limit: 11rem; --share: 4rem; }
+.usage-table.by-model { --min: 848px; }
+.usage-table .c-bar { width: 14%; }
+.usage-table .c-input { width: var(--input); } .usage-table .c-cached { width: var(--cached); } .usage-table .c-output { width: var(--output); }
+.usage-table .c-requests { width: var(--requests); } .usage-table .c-failed { width: var(--failed); } .usage-table .c-median { width: var(--median); } .usage-table .c-limit { width: var(--limit); } .usage-table .c-share { width: var(--share); }
+@media (width < 90rem) { .usage-table .c-bar { display: none; } }
+@media (width >= 90rem) { .usage-table { --min: 904px; } .usage-table.by-model { --min: 1008px; } }
+@media (width < 48rem) { .usage-table .c-limit { display: none; } }
+@media (width >= 48rem) { .usage-table:has(.c-limit) { --min: 820px; } }
+@media (width < 80rem) { .usage-table:has(.c-limit) .c-cached { display: none; } }
+@media (width >= 80rem) { .usage-table:has(.c-limit) { --min: 920px; } }
+@media (width >= 90rem) { .usage-table:has(.c-limit) { --min: 1080px; } }
+.badge-deprecated { --badge-color: var(--aq-warn); }
+/* Shades the edge a wide table can still scroll towards; the base-200 covers scroll with the table and hide the shade at its ends. */
+.aq-scroll-x { overflow-x: auto; --shade: color-mix(in oklab, var(--color-base-content) 22%, transparent);
+  background: linear-gradient(to right, var(--color-base-200) 40%, transparent) left / 2rem 100% no-repeat local,
+    linear-gradient(to left, var(--color-base-200) 40%, transparent) right / 2rem 100% no-repeat local,
+    linear-gradient(to right, var(--shade), transparent) left / .75rem 100% no-repeat scroll,
+    linear-gradient(to left, var(--shade), transparent) right / .75rem 100% no-repeat scroll; }
+
+.copy-field { display: flex; align-items: center; gap: .25rem; min-width: 0; height: 2.5rem; padding: 0 .25rem 0 .75rem;
+  border: 1px solid var(--color-base-300); border-radius: .5rem; background: var(--color-base-100);
+  font: 400 14px/1 var(--font-mono); }
+.copy-field > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+a.link-plain { color: var(--color-primary); font-weight: 600; text-decoration: none; }
+a.link-plain:hover { text-decoration: underline; }
+
+.tbar { display: flex; gap: 2px; height: 10px; min-width: 12px; }
+.tbar > i { display: block; min-width: 0; }
+.tbar > i:first-child { border-radius: 4px 0 0 4px; }
+.tbar > i:last-child { border-radius: 0 4px 4px 0; }
+.tbar .c, .sw.c, .vbar .c { background: var(--tok-cached); }
+.tbar .n, .sw.n, .vbar .n { background: var(--tok-new); }
+.tbar .o, .sw.o, .vbar .o { background: var(--tok-out); }
+.sw.i, .vbar .i { background: var(--viz-in); }
+.sw.r, .vbar .r { background: var(--aq-warn); }
+.sw.f, .vbar .f { background: var(--color-error); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.pbar { display: flex; gap: 2px; height: 8px; overflow: hidden; border-radius: 9999px; background: var(--viz-track); }
+.pbar > i { display: block; }
+.pbar .i { background: var(--viz-in); }
+.pbar .f { background: var(--color-error); }
+.onebar { height: 10px; border-radius: 0 4px 4px 0; background: var(--viz-in); min-width: 3px; }
+.spark { display: flex; gap: 3px; height: 28px; }
+.spark > span { position: relative; display: flex; align-items: flex-end; flex: 1; max-width: 10px; }
+.spark i { display: block; width: 100%; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--viz-in); opacity: .55; }
+.spark > span:last-child > i, .spark > span:hover > i { opacity: 1; }
+.vbar { position: relative; display: flex; flex-direction: column-reverse; gap: 2px; height: 100%; border-radius: 4px 4px 0 0; }
+.chart-col:hover > .vbar { background: color-mix(in oklab, var(--color-base-300) 60%, transparent); }
+.vbar > i { display: block; min-height: 2px; }
+/* The gridline at the tallest column and the baseline under the bars; 1.5rem is a column's label row. */
+.chart-plot { position: relative; isolation: isolate; padding-top: 1.25rem; }
+.chart-plot::before, .chart-plot::after { content: ""; position: absolute; inset-inline: 0; z-index: -1; pointer-events: none; }
+.chart-plot::before { top: 1.25rem; border-top: 1px dashed var(--color-base-300); }
+.chart-plot::after { bottom: 1.5rem; border-top: 1px solid var(--color-base-300); }
+.chart-top { position: absolute; top: 0; left: 0; line-height: 1rem; }
+.vbar > i:last-of-type { border-radius: 4px 4px 0 0; }
+
+.aq-tip { position: absolute; z-index: 30; bottom: calc(var(--bar, 100%) + 6px); left: 50%; translate: -50% 0;
+  display: none; flex-direction: column; gap: 2px; width: max-content; max-width: 16rem; padding: .5rem .75rem;
+  border-radius: .5rem; background: var(--color-neutral); color: var(--color-neutral-content);
+  font: 400 14px/1.35 var(--font-sans); text-align: left; pointer-events: none; }
+.aq-tip-host:hover .aq-tip { display: flex; }
+.aq-tip-heading { font: 600 12px/1.3 var(--font-sans); opacity: .8; }
+.aq-tip-row { display: flex; align-items: center; gap: .5rem; }
+.aq-tip-row > b { margin-left: auto; padding-left: 1rem; font-weight: 500; }
+.aq-tip .sw { outline: 1px solid var(--color-neutral-content); }
+.spark .aq-tip { bottom: auto; top: calc(100% + 6px); }

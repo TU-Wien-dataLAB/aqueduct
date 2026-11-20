@@ -11,7 +11,9 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views import View
 
+from management.access import Viewer, WholeOrg
 from management.models import Org, ServiceAccount, Team, Token, UserProfile
+from management.org_choice import viewer_of
 
 
 class AccessKeyExpirationContextMixin:
@@ -54,11 +56,16 @@ class BaseAqueductView(LoginRequiredMixin, View):
         return self._profile
 
     @property
+    def viewer(self) -> Viewer:
+        viewer = viewer_of(self.request)
+        if viewer is None:
+            raise UserProfile.DoesNotExist
+        return viewer
+
+    @property
     def org(self) -> Org:
-        """
-        Returns the Organization associated with the user's profile.
-        """
-        return self.profile.org
+        chosen = self.viewer.chosen
+        return chosen.org if isinstance(chosen, WholeOrg) else self.profile.org
 
     def is_admin(self) -> bool:
         """Checks if the current user is a global admin."""

@@ -1,0 +1,14 @@
+{% load i18n %}
+<dialog id="confirm-dialog" class="modal" aria-labelledby="confirm-title" aria-describedby="confirm-use confirm-detail">
+    <form method="post" class="modal-box flex max-w-md flex-col gap-3">
+        {% csrf_token %}
+        <h2 id="confirm-title" class="break-words text-xl font-semibold"></h2>
+        <p id="confirm-use" class="font-medium tabular-nums"></p>
+        <p id="confirm-detail"></p>
+        <div class="mt-2 flex flex-wrap gap-3">
+            <button type="submit" class="btn btn-error" data-confirm-submit>{% translate "Delete" %}</button>
+            <button type="submit" class="btn btn-ghost" formmethod="dialog" formnovalidate autofocus data-confirm-dismiss>{% translate "Cancel" %}</button>
+        </div>
+    </form>
+    <form method="dialog" class="modal-backdrop"><button tabindex="-1" aria-hidden="true">{% translate "Cancel" %}</button></form>
+</dialog>

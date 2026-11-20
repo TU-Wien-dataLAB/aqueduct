@@ -1,0 +1,6 @@
+{% load i18n ui %}
+<button type="button" class="btn btn-ghost btn-sm btn-square flex-none" data-toggle-theme
+        aria-label="{% translate 'Switch between light and dark' %}" title="{% translate 'Switch between light and dark' %}">
+    <span class="only-light flex">{% icon "sun" %}</span>
+    <span class="only-dark flex">{% icon "moon" %}</span>
+</button>

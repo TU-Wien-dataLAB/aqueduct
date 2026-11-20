@@ -7,7 +7,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from management.auth import OIDCBackend
-from management.models import Org, ServiceAccount, Team, TeamMembership, UserProfile
+from management.models import Org, ServiceAccount, Team, TeamMembership, UserGroup, UserProfile
 from management.tests.helpers import join, make_token, make_user, seed_active_config
 from management.tests.test_oauth_team_creation import BASE_SETTINGS
 
@@ -95,6 +95,21 @@ class OrgMoveTest(TestCase):
 
         self.assertEqual(UserProfile.objects.get(user=self.user).org, self.south)
         self.assertEqual(self.teams_of(self.user), {south_team})
+
+
+class OrgSwitchTest(TestCase):
+    def test_a_platform_admin_switching_org_keeps_their_memberships(self):
+        north, south = Org.objects.create(name="north"), Org.objects.create(name="south")
+        team = Team.objects.create(name="NLP", org=north)
+        admin = make_user("root", north, UserGroup.ADMIN)
+        join(admin, team, is_admin=True)
+        self.client.force_login(admin)
+
+        for org in (south, "all", north):
+            self.client.post(reverse("org_switch"), {"org_id": getattr(org, "pk", org)})
+
+            self.assertEqual(UserProfile.objects.get(user=admin).org, north)
+            self.assertEqual(set(admin.profile.teams.all()), {team})
 
 
 @override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG)

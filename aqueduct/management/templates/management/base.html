@@ -1,112 +1,77 @@
-{% load static %}
+{% load i18n static ui %}
+{% get_current_language as LANGUAGE_CODE %}
 
 <!DOCTYPE html>
-<html lang="en" class="bg-base-200">
+<html lang="{{ LANGUAGE_CODE }}" data-theme="light">
 <head>
     <meta charset="UTF-8">
-    <title>Aqueduct AI Gateway</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{% if shell.current %}{{ shell.current.label }} · {% endif %}{% translate "Aqueduct AI Gateway" %}{% endblock %}</title>
     <link rel="shortcut icon" type="image/png" href="{% static 'images/Aqueduct_Icon_80x80.png' %}">
     {% include "management/_cdn.html" %}
 </head>
-<body class="h-screen">
-{% include 'management/header.html' %}
-
-<main class="container mx-auto p-4">
-    {% block content %}{% endblock %}
-
-    <div class="fixed bottom-4 right-4 w-auto max-w-xl z-50">
-        {% if messages %}
-            <div class="space-y-2">
-                {% for message in messages %}
-                    <div role="alert"
-                         class="alert
-            {% if message.tags == 'success' %}alert-success
-            {% elif message.tags == 'error' %}alert-error
-            {% elif message.tags == 'warning' %}alert-warning
-            {% else %}alert-info
-            {% endif %}
-            shadow-lg">
-
-                        {# Icon Section: Use appropriate SVG or img tag. Added shrink-0 and explicit size #}
-                        {% if message.tags == 'success' %}
-                            <img src="{% static 'icons/check.svg' %}" alt="Success Icon" class="h-6 w-6 shrink-0">
-
-                        {% elif message.tags == 'error' %}
-                            <img src="{% static 'icons/error.svg' %}" alt="Error Icon" class="h-6 w-6 shrink-0">
-
-                        {% elif message.tags == 'warning' %}
-                            <img src="{% static 'icons/warning.svg' %}" alt="Warning Icon" class="h-6 w-6 shrink-0">
-
-                        {% else %} {# Info or default icon #}
-                            <img src="{% static 'icons/info.svg' %}" alt="Info Icon" class="h-6 w-6 shrink-0">
-                        {% endif %}
-
-                        {# Text and Button Section - Aligning with DaisyUI structure #}
-                        {% if message.extra_tags == 'token-regenerated-key' %}
-                            <span class="font-mono text-sm">New Key: <span class="font-bold">{{ message }}</span></span>
-                            {# Removed flex-grow and mr-2 #}
-                            <div> {# Added button container div #}
-                                <button class="btn btn-sm btn-soft flex items-center gap-1"
-                                        data-copy-key="{{ message }}">
-                                    <img src="{% static 'icons/copy.svg' %}" alt="Copy Icon"
-                                         class="h-4 w-4 inline-block copy-icon [[data-theme=dark]_&]:invert">
-                                    {# Changed to group-hover:invert #}
-                                    <span class="copy-text">Copy</span>
-                                </button>
-                            </div>
-                        {% else %}
-                            <span>{{ message }}</span>
-                        {% endif %}
-
-                    </div>
-                {% endfor %}
+<body class="min-h-screen bg-base-100 text-base-content">
+<a href="#main" class="skip-link btn btn-primary">{% translate "Skip to content" %}</a>
+<div class="drawer lg:drawer-open">
+    <input id="nav-drawer" type="checkbox" class="drawer-toggle">
+    {% block sidebar %}{% if shell.viewer %}
+        <div class="drawer-side z-40 print:hidden">
+            <label for="nav-drawer" aria-label="{% translate 'Close navigation' %}" class="drawer-overlay"></label>
+            {% include "management/_sidebar.html" %}
+        </div>
+    {% endif %}{% endblock %}
+    <div class="drawer-content flex min-h-screen min-w-0 flex-col{% block page_background %}{% endblock %}">
+        {% block topbar %}{% if shell.viewer %}
+            <div class="navbar border-b border-base-300 bg-base-100 lg:hidden print:hidden">
+                <label for="nav-drawer" class="btn btn-ghost btn-square" aria-label="{% translate 'Open navigation' %}">{% icon "menu" %}</label>
+                <a href="/" class="flex items-center gap-3 px-2">
+                    <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="" class="h-8 w-8">
+                    <span class="text-xl font-semibold">{% translate "Aqueduct" %}</span>
+                </a>
             </div>
-        {% endif %}
+        {% else %}
+            {% include "management/_public_header.html" %}
+        {% endif %}{% endblock %}
+
+        <main id="main" class="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-8">
+            {% block content %}
+                <div class="flex flex-col gap-6">
+                    <div class="breadcrumbs hidden p-0 text-sm has-[li]:block"><ul>{% block breadcrumbs %}{% endblock %}</ul></div>
+                    <header class="flex min-h-12 flex-wrap items-start justify-between gap-4">
+                        {% block header %}
+                            <div class="flex flex-col gap-2">
+                                <h1 class="break-words text-3xl font-semibold">{% block heading %}{% endblock %}</h1>
+                                {% block subheading %}{% endblock %}
+                            </div>
+                            {% block actions %}{% endblock %}
+                        {% endblock %}
+                    </header>
+                    {% block body %}{% endblock %}
+                </div>
+            {% endblock %}
+        </main>
+
+        {% include "management/_footer.html" %}
     </div>
+</div>
 
-</main>
+{% if shell.viewer %}{% include "management/_confirm_dialog.html" %}{% endif %}
 
-<script>
-  document.addEventListener('DOMContentLoaded', (event) => {
-    const copyButtons = document.querySelectorAll('button[data-copy-key]');
-
-    copyButtons.forEach(button => {
-      button.addEventListener('click', () => {
-        const keyToCopy = button.getAttribute('data-copy-key');
-        const copyTextElement = button.querySelector('.copy-text');
-        const copyIconElement = button.querySelector('.copy-icon');
-        const originalButtonText = copyTextElement.textContent;
-        const originalIconSrc = copyIconElement ? copyIconElement.src : null; // Store original icon src
-        const successIconSrc = "{% static 'icons/check.svg' %}"; // Path to your check icon
-
-        navigator.clipboard.writeText(keyToCopy).then(() => {
-          // Success feedback
-          copyTextElement.textContent = 'Copied!';
-          if (copyIconElement) {
-            copyIconElement.src = successIconSrc; // Change icon to checkmark
-          }
-          button.disabled = true; // Briefly disable button
-
-          // Revert after 2 seconds
-          setTimeout(() => {
-            copyTextElement.textContent = originalButtonText;
-            if (copyIconElement && originalIconSrc) {
-              copyIconElement.src = originalIconSrc; // Revert icon
-            }
-            button.disabled = false;
-          }, 2000);
-        }).catch(err => {
-          // Error feedback (optional)
-          console.error('Failed to copy text: ', err);
-          copyTextElement.textContent = 'Failed';
-          setTimeout(() => {
-            copyTextElement.textContent = originalButtonText;
-          }, 2000);
-        });
-      });
-    });
-  });
-</script>
+{% if messages %}
+    <div class="fixed bottom-4 right-4 z-50 flex w-auto max-w-xl flex-col gap-2">
+        {% for message in messages %}
+            <div class="alert alert-{{ message.level_tag }} shadow-lg"
+                 {% if message.level >= DEFAULT_MESSAGE_LEVELS.WARNING %}role="alert"{% else %}role="status" data-autodismiss{% endif %}>
+                {% if message.level_tag == "success" %}{% icon "ok" %}
+                {% elif message.level_tag == "error" %}{% icon "failed" %}
+                {% elif message.level_tag == "warning" %}{% icon "warning" %}
+                {% else %}{% icon "info" %}{% endif %}
+                <span>{{ message }}</span>
+                <button type="button" class="btn btn-ghost btn-sm btn-square" data-dismiss aria-label="{% translate 'Dismiss' %}">{% icon "close" small=True %}</button>
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
 
 </body>
 </html>

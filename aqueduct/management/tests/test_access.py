@@ -4,15 +4,20 @@ from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import TestCase
+from django.db import connection
+from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 from django.utils import timezone
 
+from gateway.tests.utils.base import ROUTER_CONFIG_PATH
 from management.access import EveryOrg, KeyAct, OrgWide, TeamAct, Viewer, WholeOrg, requests_of
 from management.models import (
     Org,
     Request,
     ServiceAccount,
     Team,
+    TeamMembership,
     Token,
     UserGroup,
     UserProfile,
@@ -199,6 +204,20 @@ class RequestScopeTest(Matrix):
                 if not isinstance(viewer.shown, EveryOrg):
                     self.assertNotIn("management_token", str(named.query))
                     self.assertIn("management_token", str(many.query))
+
+
+@override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
+class OneResolutionPerRequestTest(Matrix):
+    def test_a_platform_admins_page_resolves_the_viewer_once(self):
+        self.client.force_login(self.admin)
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.get(reverse("usage"), {"org": self.south.id})
+        self.assertEqual(response.status_code, 200)
+        memberships = TeamMembership._meta.db_table
+        chosen = f'"{Org._meta.db_table}"."id" = {self.south.id}'
+        sql = [query["sql"] for query in captured]
+        self.assertEqual(sum(1 for q in sql if f'FROM "{memberships}"' in q and "is_admin" in q), 1)
+        self.assertEqual(sum(1 for q in sql if chosen in q and "LIMIT 1" in q), 1)
 
 
 class RankTest(TestCase):

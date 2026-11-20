@@ -1,12 +1,16 @@
-# management/views/org.py
+from urllib.parse import urlsplit
 
 from django.contrib import messages
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
-from django.urls import reverse
+from django.urls import Resolver404, resolve, reverse
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.translation import gettext
 from django.views.generic import TemplateView, View
 
+from management.access import WholeOrg
 from management.models import Org
+from management.org_choice import switch, without_org_params
 from management.views.base import BaseAqueductView
 
 
@@ -28,23 +32,25 @@ class OrgView(BaseAqueductView, TemplateView):
 
 
 class OrgSwitchView(BaseAqueductView, View):
-    """
-    Allows admin users to switch their current organization.
-    """
-
     def post(self, request, *args, **kwargs) -> HttpResponse:
-        # Only allow if user is a global admin
-        if self.profile.group != "admin":
-            messages.error(request, "Only admin users can switch organizations.")
-            return redirect(reverse("org"))
+        if not self.viewer.can_switch_org:
+            raise Http404
 
-        org_id = request.POST.get("org_id")
-        if not org_id:
-            messages.error(request, "No organization selected.")
-            return redirect(reverse("org"))
-
-        org = get_object_or_404(Org, pk=org_id)
-        self.profile.org = org
-        self.profile.save(update_fields=["org"])
-        messages.success(request, f"Switched to organization: {org.name}")
+        choice = switch(request, request.POST.get("org_id", ""))
+        messages.success(
+            request,
+            gettext("Viewing %(name)s.") % {"name": choice.org.name}
+            if isinstance(choice, WholeOrg)
+            else gettext("Viewing all organizations."),
+        )
+        back = request.POST.get("next", "")
+        if url_has_allowed_host_and_scheme(back, {request.get_host()}, request.is_secure()):
+            back = without_org_params(back)
+            try:
+                bound = bool(resolve(urlsplit(back).path).kwargs)
+            except Resolver404:
+                bound = True
+            # A page about one org's team, key or settings would keep editing the old org.
+            if not bound:
+                return redirect(back)
         return redirect(reverse("org"))

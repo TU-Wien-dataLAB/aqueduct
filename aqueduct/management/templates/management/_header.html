@@ -1,0 +1,33 @@
+{% load i18n static ui %}
+<header class="navbar sticky top-0 z-50 gap-2 border-b border-base-300 bg-base-100 print:hidden">
+    <div class="navbar-start flex items-center gap-2">
+        <a href="/" class="flex items-center gap-2">
+            <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="" class="h-8 w-8">
+            <span class="text-xl font-semibold">{% translate "Aqueduct" %}</span>
+        </a>
+        <details class="dropdown ml-2">
+            <summary class="btn btn-ghost btn-sm">{% icon "menu" small=True %}{% translate "Menu" %}</summary>
+            <ul class="dropdown-content menu z-10 mt-2 w-64 rounded-box border border-base-300 bg-base-200 p-2">
+                {% for section in shell.sections %}
+                    {% if section.title %}<li class="menu-title section-label">{{ section.title }}</li>{% endif %}
+                    {% for link in section.links %}{% include "management/_nav_link.html" %}{% endfor %}
+                {% endfor %}
+                {% for link in shell.bottom %}{% include "management/_nav_link.html" %}{% endfor %}
+            </ul>
+        </details>
+    </div>
+    <div class="navbar-end flex items-center gap-1">
+        {% include "management/_theme_toggle.html" %}
+        <details class="dropdown dropdown-end">
+            <summary class="btn btn-ghost btn-sm btn-square" aria-label="{% translate 'Account' %}">{% icon "user" %}</summary>
+            <div class="dropdown-content z-10 mt-2 flex w-64 flex-col gap-2 rounded-box border border-base-300 bg-base-200 p-3">
+                <span class="break-all text-sm font-medium">{{ shell.viewer.email }}</span>
+                {% if shell.viewer.role %}<span class="muted text-xs">{{ shell.viewer.role }}</span>{% endif %}
+                <form action="{% url 'oidc_logout' %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm w-full">{% icon "sign_out" small=True %}{% translate "Sign out" %}</button>
+                </form>
+            </div>
+        </details>
+    </div>
+</header>

@@ -1,0 +1,15 @@
+{% load i18n ui %}
+{% translate "Viewing" as viewing %}{% translate "All organizations" as everything %}
+<form method="post" action="{% url 'org_switch' %}" class="aq-org-switch flex flex-col gap-1" data-tip="{{ viewing }}: {% firstof shell.org_switch.chosen.name everything %}">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <label for="org-switch" class="section-label muted flex items-center gap-1.5 px-3">{% icon "organization" small=True %}<span class="rail-label">{{ viewing }}</span></label>
+    <select id="org-switch" name="org_id" class="select select-sm w-full" aria-describedby="org-switch-hint" data-autosubmit>
+        <option value="all"{% if not shell.org_switch.chosen %} selected{% endif %}>{{ everything }}</option>
+        {% for org in shell.org_switch.orgs %}
+            <option value="{{ org.id }}"{% if org == shell.org_switch.chosen %} selected{% endif %}>{{ org.name }}</option>
+        {% endfor %}
+    </select>
+    <span id="org-switch-hint" class="sr-only">{% translate "Changes the organization on every page." %}</span>
+    <noscript><button type="submit" class="btn btn-sm w-full">{% translate "Switch" %}</button></noscript>
+</form>

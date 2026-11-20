@@ -1,0 +1,18 @@
+{% extends "management/base.html" %}
+
+{% block subheading %}<span class="muted text-sm">{{ shell.scope }}</span>{% endblock %}
+
+{% block body %}
+<section class="card bg-base-200">
+    <div class="card-body table-card">
+        <div class="overflow-x-auto">
+            <table class="table table-fixed min-w-[760px] max-md:min-w-[1000px]">
+                <colgroup>{% block colgroup %}{% endblock %}</colgroup>
+                <thead><tr>{% block columns %}{% endblock %}</tr></thead>
+                <tbody>{% block rows %}{% endblock %}</tbody>
+            </table>
+        </div>
+        {% include "management/_pager.html" with pages=listing.pages summary=listing.summary %}
+    </div>
+</section>
+{% endblock %}

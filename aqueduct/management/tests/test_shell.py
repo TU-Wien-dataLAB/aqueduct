@@ -403,6 +403,15 @@ class NavByRoleTest(RoleWorld):
             with self.subTest(url=url, user=user.username):
                 self.assertEqual([found.strip() for found in self.current(user, url)], [label])
 
+    def test_org_scoped_pages_name_their_organization(self):
+        for name in ("usage", "usage_keys", "requests", "files", "batches", "vector_stores"):
+            with self.subTest(page=name):
+                self.client.force_login(self.org_admin)
+                self.assertContains(self.client.get(reverse(name)), "lab-org</span>")
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("requests"), {"org": "all"})
+        self.assertContains(response, '<span class="muted text-sm">All organizations</span>')
+
 
 class RailTest(RoleWorld):
     """From 1024px the sidebar is an icon rail: every icon keeps its name and gets a tip."""

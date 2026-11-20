@@ -1,6 +1,6 @@
 from .auth import SSOTemplateView, check_tos
-from .batches import UserBatchesView
-from .files import UserFilesView
+from .batches import BatchCancelView, UserBatchesView
+from .files import FileDeleteView, UserFilesView
 from .mcp_servers import MCPServersView
 from .models import ModelListView
 from .org import (

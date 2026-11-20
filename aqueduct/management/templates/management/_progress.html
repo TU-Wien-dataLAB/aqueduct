@@ -1,0 +1,2 @@
+{% load l10n %}<div class="pbar" role="img" aria-label="{{ progress.label }}"><i class="i" style="width: {{ progress.completed_share|unlocalize }}%"></i><i class="f" style="width: {{ progress.failed_share|unlocalize }}%"></i></div>
+<div class="muted mt-1.5 truncate text-xs" title="{{ progress.parts|join:' · ' }}">{% for part in progress.parts %}{% if not forloop.first %} {% endif %}<span class="whitespace-nowrap">{% if not forloop.first %}· {% endif %}{{ part }}</span>{% endfor %}</div>

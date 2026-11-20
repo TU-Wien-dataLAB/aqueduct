@@ -75,30 +75,6 @@ class BaseAqueductView(LoginRequiredMixin, View):
         chosen = self.viewer.chosen
         return chosen.org if isinstance(chosen, WholeOrg) else self.profile.org
 
-    def is_admin(self) -> bool:
-        """Checks if the current user is a global admin."""
-        return self.profile.is_admin()
-
-    def is_org_admin(self) -> bool:
-        """Checks if the current user is an admin of their associated organization."""
-        # Relies on the is_org_admin method defined in the UserProfile model.
-        # Assumes self.profile and self.org properties correctly return non-None objects.
-        return self.profile.is_org_admin(self.org)
-
-    def get_teams_for_user(self) -> QuerySet[Team]:
-        """
-        Returns a queryset of teams accessible by the current user.
-        - Org admins see all teams in their org.
-        - Regular users see only teams they are members of.
-        """
-        # profile and org are guaranteed by the properties above for logged-in users.
-        if self.is_org_admin():
-            # Org admin sees all teams in their organization.
-            return self.org.teams.all()
-        # Regular user sees only teams they are a member of via the ManyToManyField.
-        # The 'teams' attribute is guaranteed to exist due to the M2M definition.
-        return self.profile.teams.all()
-
 
 class BaseTeamView(BaseAqueductView):
     """A view about the team in the URL; a team outside `viewer.teams(team_act)` is a 404."""

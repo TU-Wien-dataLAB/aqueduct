@@ -1,8 +1,9 @@
+import time
 
 from django.urls import reverse
 
 from management.access import WholeOrg
-from management.models import Team, UserGroup
+from management.models import Team, UserGroup, VectorStore
 from management.org_choice import SESSION_KEY
 from management.tests.helpers import RoleWorld
 
@@ -189,3 +190,18 @@ class SwitchLandingTest(OrgSwitchTestBase):
                 self.assertRedirects(response, reverse("org"), fetch_redirect_response=False)
         response = self.switch(self.org.id, reverse("usage") + "?span=1d&key=1")
         self.assertRedirects(response, reverse("usage") + "?span=1d", fetch_redirect_response=False)
+
+    def test_every_organization_shows_every_orgs_vector_stores(self):
+        VectorStore.objects.create(
+            id="vs_lab",
+            token=self.pipeline_key,
+            name="lab-store",
+            status="completed",
+            created_at=int(time.time()),
+        )
+        self.as_user(self.far_admin)
+        self.switch("all")
+        listing = self.client.get(reverse("vector_stores"))
+        self.assertIn("vs_lab", [row.store.id for row in listing.context["listing"].rows])
+        detail = self.client.get(reverse("vector_store_detail", args=["vs_lab"]))
+        self.assertIsNotNone(detail.context["detail"])

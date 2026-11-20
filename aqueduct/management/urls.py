@@ -61,7 +61,9 @@ urlpatterns = [
     path("usage/keys/", views.KeyUsageView.as_view(), name="usage_keys"),
     path("requests/", views.RequestLogView.as_view(), name="requests"),
     path("files/", views.UserFilesView.as_view(), name="files"),
+    path("files/<str:id>/delete/", views.FileDeleteView.as_view(), name="file_delete"),
     path("batches/", views.UserBatchesView.as_view(), name="batches"),
+    path("batches/<str:id>/cancel/", views.BatchCancelView.as_view(), name="batch_cancel"),
     path("mcp-servers/", views.MCPServersView.as_view(), name="mcp_servers"),
     path("vector-stores/", views.UserVectorStoresView.as_view(), name="vector_stores"),
     path(

@@ -1,0 +1,46 @@
+{% extends "management/base.html" %}
+{% load i18n ui %}
+
+{% block heading %}{% translate "Settings" %}{% endblock %}
+{% block body %}
+<div class="flex max-w-3xl flex-col gap-4">
+    <section class="card bg-base-200" aria-labelledby="account-title">
+        <div class="card-body gap-4">
+            <h2 id="account-title" class="card-title">{% translate "Account" %}</h2>
+            <dl class="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-4 gap-y-3 text-sm">
+                <dt class="muted">{% translate "Email" %}</dt><dd class="break-all">{{ shell.viewer.email }}</dd>
+                <dt class="muted">{% translate "Organization" %}</dt><dd>{{ view.viewer.org.name }}</dd>
+                <dd class="muted col-start-2 -mt-2 text-xs">{% translate "Set by your sign-in provider." %}</dd>
+                <dt class="muted">{% translate "Role" %}</dt><dd>{% if shell.viewer.role %}<span class="badge badge-sm bg-base-100">{{ shell.viewer.role }}</span>{% else %}<span class="muted">{{ shell.viewer.role|dash }}</span>{% endif %}</dd>
+                <dt class="muted">{% translate "Teams" %}</dt>
+                <dd class="flex flex-wrap gap-x-2">
+                    {% for membership in memberships %}
+                        {% if not forloop.first %}<span aria-hidden="true">·</span>{% endif %}
+                        <a class="link-plain" href="{% url 'team' membership.team.id %}">{{ membership.team.name }}</a>
+                        <span class="muted">{% if membership.is_admin %}{% translate "Team admin" %}{% else %}{% translate "Member" %}{% endif %}</span>
+                    {% empty %}
+                        <span class="muted">{% translate "You are not in a team." %}</span>
+                    {% endfor %}
+                </dd>
+                <dt class="muted">{% translate "Personal keys" %}</dt><dd>{% blocktranslate with used=personal_keys limit=max_tokens %}{{ used }} of {{ limit }}{% endblocktranslate %}</dd>
+            </dl>
+            <form action="{% url 'oidc_logout' %}" method="post" class="border-t border-base-300 pt-4">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline btn-primary">{% icon "sign_out" small=True %}{% translate "Sign out" %}</button>
+            </form>
+        </div>
+    </section>
+
+    {% if show_terms %}
+        <section class="card bg-base-200">
+            <div class="card-body flex-row flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-col gap-1">
+                    <h2 class="card-title">{% translate "Terms of service" %}</h2>
+                    <span class="muted text-sm">{% if terms_accepted_on %}{% blocktranslate with date=terms_accepted_on|when:"date" %}Accepted {{ date }}{% endblocktranslate %}{% else %}{% translate "Not accepted" %}{% endif %}</span>
+                </div>
+                <a class="link-plain" href="{% url 'tos' %}">{% translate "Read the terms" %}</a>
+            </div>
+        </section>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,9 +1,11 @@
 from django.conf import settings
 from django.urls import path
+from django.views.generic import RedirectView
 
 from . import views
 
 urlpatterns = [
+    path("", RedirectView.as_view(pattern_name="tokens")),
     path("tokens/", views.UserTokensView.as_view(), name="tokens"),
     path("tokens/create/", views.TokenCreateView.as_view(), name="token_create"),
     path("tokens/<int:id>/", views.TokenDetailView.as_view(), name="token_detail"),
@@ -65,6 +67,7 @@ urlpatterns = [
     path("batches/", views.UserBatchesView.as_view(), name="batches"),
     path("batches/<str:id>/cancel/", views.BatchCancelView.as_view(), name="batch_cancel"),
     path("mcp-servers/", views.MCPServersView.as_view(), name="mcp_servers"),
+    path("settings/", views.SettingsView.as_view(), name="settings"),
     path("vector-stores/", views.UserVectorStoresView.as_view(), name="vector_stores"),
     path(
         "vector-stores/<str:id>/", views.VectorStoreDetailView.as_view(), name="vector_store_detail"

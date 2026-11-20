@@ -1,11 +1,20 @@
 {% extends 'management/base.html' %}
+{% load i18n ui %}
+{% block title %}{% translate "Sign in" %} · {{ block.super }}{% endblock %}
 
 {% block content %}
-  <div class="max-w-md mx-auto mt-10 p-6 bg-base-100 rounded-lg shadow">
-    <h2 class="text-2xl font-semibold mb-4 text-center">Login Required</h2>
-    <p class="mb-4 text-center">You need to log in to access this application.</p>
-    <a href="{% url 'oidc_authentication_init' %}" class="btn btn-primary w-full">
-      Login with {{ OIDC_PROVIDER|default:"SSO" }}
-    </a>
+  <div class="relative isolate flex flex-col gap-14 py-6 md:py-14">
+    <div aria-hidden="true" class="pointer-events-none absolute -top-40 bottom-0 left-0 right-[calc(50%-50vw)] -z-10 overflow-hidden max-md:hidden">
+      <div class="absolute -right-28 top-0 size-[820px] rounded-full border-[1.5px] border-base-200"></div>
+      <div class="absolute right-38 top-4 size-[460px] rounded-full border-[1.5px] border-base-200"></div>
+    </div>
+
+    <section class="flex max-w-3xl flex-col items-start gap-5" aria-labelledby="login-heading">
+      <p class="section-label">{% translate "Aqueduct AI Gateway" %}</p>
+      <h1 id="login-heading" class="text-4xl font-bold leading-[1.1] tracking-tight text-balance md:text-6xl md:leading-[1.05]">{% translate "One API key for your models." %}</h1>
+      <p class="muted max-w-xl text-lg text-pretty md:text-xl">{% translate "Call your organization's models through one OpenAI-compatible API." %}</p>
+      <a href="{% url 'oidc_authentication_init' %}{% if next %}?next={{ next|urlencode }}{% endif %}" class="btn btn-primary btn-lg mt-2">{% blocktranslate with provider=OIDC_PROVIDER|default:"SSO" %}Sign in with {{ provider }}{% endblocktranslate %}</a>
+      <p class="muted text-sm">{% translate "New here? Your account is created the first time you sign in." %}</p>
+    </section>
   </div>
 {% endblock %}

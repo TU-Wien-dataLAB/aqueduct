@@ -18,6 +18,7 @@ from typing import Any
 
 from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
+from django.urls import reverse_lazy
 from django.utils.translation import gettext_noop
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -118,7 +119,7 @@ OIDC_OP_AUTHORIZATION_ENDPOINT = os.environ.get("OIDC_OP_AUTHORIZATION_ENDPOINT"
 OIDC_OP_TOKEN_ENDPOINT = os.environ.get("OIDC_OP_TOKEN_ENDPOINT")
 OIDC_OP_USER_ENDPOINT = os.environ.get("OIDC_OP_USER_ENDPOINT")
 
-LOGIN_REDIRECT_URL = "/"  # Where to redirect after successful login
+LOGIN_REDIRECT_URL = reverse_lazy("tokens")  # Where to redirect after successful login
 LOGOUT_REDIRECT_URL = "/login/"  # Where to redirect after successful logout
 LOGIN_URL = "/login/"  # Where to redirect if user is not logged in
 

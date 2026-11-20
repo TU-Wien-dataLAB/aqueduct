@@ -224,6 +224,16 @@ class ShellTest(TestCase):
         for url in settings.EXTRA_NAV_LINKS.values():
             self.assertContains(page, f'href="{url}"', count=1)
 
+    def test_help_links_live_in_the_footer_and_the_gateway_url_only_signed_in(self):
+        self.sign_in("user")
+        page = self.client.get(reverse("tokens"))
+        self.assertEqual([link.label for link in page.context["shell"].bottom], ["Settings"])
+        for url in settings.EXTRA_NAV_LINKS.values():
+            self.assertContains(page, f'href="{url}"', count=1)
+        self.assertContains(page, "http://testserver/v1")
+        self.client.logout()
+        self.assertNotContains(self.client.get(reverse("sso")), "http://testserver/v1")
+
     def test_contact_icons_show_unless_their_url_is_empty(self):
         links = {
             "Matrix support channel": "https://matrix.to/#/#support:example.org",
@@ -420,6 +430,20 @@ class RailTest(RoleWorld):
         self.client.force_login(user)
         html = self.client.get(url).content.decode()
         return html.split("<aside", 1)[1].split("</aside>", 1)[0]
+
+    def test_every_nav_icon_is_named_and_has_a_tip_that_says_the_same(self):
+        sidebar = self.sidebar(self.org_admin, reverse("tokens"))
+        links = re.findall(
+            r'<a href="[^"]*"[^>]*data-tip="([^"]+)"[^>]*>\s*<svg[^>]*>.*?</svg>\s*'
+            r'<span class="rail-label">([^<]+)</span>',
+            sidebar,
+            re.S,
+        )
+        self.assertEqual(len(links), len(re.findall(r"<li>\s*<a href", sidebar)))
+        for tip, name in links:
+            self.assertEqual(tip, name)
+        self.assertIn("Limits and access", [name for _, name in links])
+        self.assertIn("Settings", [name for _, name in links])
 
     def test_the_current_page_is_marked_in_the_rail_and_only_it(self):
         sidebar = self.sidebar(self.solo, reverse("usage"))

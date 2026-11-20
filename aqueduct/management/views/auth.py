@@ -6,7 +6,7 @@ from django.contrib.auth import REDIRECT_FIELD_NAME
 from django.core.exceptions import DisallowedRedirect
 from django.http import HttpRequest, HttpResponseBase, HttpResponseRedirect
 from django.shortcuts import redirect
-from django.urls import NoReverseMatch, reverse
+from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.generic import TemplateView
@@ -50,15 +50,12 @@ class SSOTemplateView(TemplateView):
                 # Authenticated users without admin access would otherwise bounce
                 # between the admin and this login view indefinitely.
                 if not targets_admin or admin.site.has_permission(request):
-                    return redirect(next_url)
-            try:
-                org_url = reverse("org")
-                return redirect(org_url)
-            except NoReverseMatch:
-                return redirect(settings.LOGIN_REDIRECT_URL)
+                    return HttpResponseRedirect(next_url)
+            return redirect(settings.LOGIN_REDIRECT_URL)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["OIDC_PROVIDER"] = getattr(settings, "OIDC_PROVIDER", "SSO")
+        context["next"] = safe_next(self.request)
         return context

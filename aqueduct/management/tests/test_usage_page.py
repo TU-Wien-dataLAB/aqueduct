@@ -3,9 +3,11 @@ from datetime import timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
-from django.test import SimpleTestCase, override_settings
+from django.contrib.sessions.backends.base import SessionBase
+from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from mozilla_django_oidc.views import OIDCAuthenticationCallbackView
 
 from management.models import Request
 from management.tests.helpers import CHAT, EMBEDDING, KEY_NAMES, UsagePageTestBase, make_token
@@ -50,6 +52,10 @@ class UsageAccessTest(UsagePageTestBase):
         self.assertContains(response, '<h1 class="break-words text-3xl font-semibold">Usage</h1>')
         self.assertContains(response, "<title>Usage · Aqueduct AI Gateway</title>")
         self.assertNotContains(response, "Overview")
+
+    def test_a_signed_in_visit_to_the_sign_in_page_lands_on_api_keys(self):
+        self.client.force_login(self.member)
+        self.assertRedirects(self.client.get("/login/"), reverse("tokens"))
 
     def test_user_with_one_key_gets_no_key_picker_and_no_top_keys(self):
         response = self.page(self.solo)
@@ -396,6 +402,12 @@ class UsageModelColumnsTest(UsagePageTestBase):
 
 
 class ApiKeysIsTheLandingPageTest(SimpleTestCase):
+    def test_signing_in_lands_on_api_keys(self):
+        request = RequestFactory().get("/")
+        request.session = SessionBase()
+        callback = OIDCAuthenticationCallbackView()
+        callback.setup(request)
+        self.assertEqual(callback.success_url, reverse("tokens"))
 
     def test_the_root_redirects_to_api_keys(self):
         response = self.client.get("/")

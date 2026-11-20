@@ -82,9 +82,12 @@ class GatewayIntegrationTestCase(TestCase):
             cls._patcher.start()
             cls.addClassCleanup(cls._patcher.stop)
 
-            # We want to override the files API url for all tests.
-            settings.AQUEDUCT_FILES_API_URL = cls.mock_server.base_url
-            settings.AQUEDUCT_FILES_API_KEY = "test_key"
+            cls.enterClassContext(
+                override_settings(
+                    AQUEDUCT_FILES_API_URL=cls.mock_server.base_url,
+                    AQUEDUCT_FILES_API_KEY="test_key",
+                )
+            )
 
         cls.headers = _build_chat_headers(cls.AQUEDUCT_ACCESS_TOKEN)
 

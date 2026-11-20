@@ -19,7 +19,9 @@ from gateway.decorators import (
     ensure_usage,
     log_request,
     parse_body,
+    plugin_errors,
     resolve_alias,
+    run_plugins,
     token_authenticated,
     tos_accepted,
 )
@@ -41,7 +43,9 @@ from management.models import Request
 @resolve_alias
 @check_model_availability
 @log_request
+@run_plugins
 @catch_router_exceptions
+@plugin_errors
 async def completions(
     request: ASGIRequest,
     pydantic_model: openai.types.CompletionCreateParams,

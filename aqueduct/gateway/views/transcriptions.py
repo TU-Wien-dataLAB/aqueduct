@@ -19,7 +19,9 @@ from gateway.decorators import (
     check_token_rate_limits,
     log_request,
     parse_body,
+    plugin_errors,
     resolve_alias,
+    run_plugins,
     token_authenticated,
     tos_accepted,
 )
@@ -46,7 +48,9 @@ class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
 @resolve_alias
 @check_model_availability
 @log_request
+@run_plugins
 @catch_router_exceptions
+@plugin_errors
 async def transcriptions(
     request: ASGIRequest,
     pydantic_model: OpenAITranscriptionCreateParams,

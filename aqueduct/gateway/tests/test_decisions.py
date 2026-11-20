@@ -4,7 +4,16 @@ from django.urls import reverse
 
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayIntegrationTestCase
-from management.models import Request
+from management.models import Request, Snippet, SnippetType
+from management.plugins import _plugin_class
+
+AFTER_CALLS: list[bool] = []
+AFTER_PLUGIN = """\
+from gateway.tests.test_decisions import AFTER_CALLS
+class Audit(PluginSnippet):
+    def after_response(self, request, token, response):
+        AFTER_CALLS.append(True)
+"""
 
 _SAMPLE_IMAGE_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7w"
@@ -189,3 +198,38 @@ class DecisionsIntegrationTest(GatewayIntegrationTestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    async def test_plugin_runs_on_decisions(self):
+        """A scoped plugin runs on the /v1/decisions request lifecycle."""
+        _plugin_class.cache_clear()
+        AFTER_CALLS.clear()
+        try:
+            await Snippet.objects.acreate(
+                name="audit", type=SnippetType.PLUGIN, active=True, code=AFTER_PLUGIN
+            )
+
+            headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
+            payload = {
+                "model": self.model,
+                "input": "Which department handles refunds?",
+                "questions": [
+                    {
+                        "type": "choice",
+                        "name": "department",
+                        "instructions": "Which department?",
+                        "choices": [
+                            {"value": "billing", "description": "Payments."},
+                            {"value": "technical", "description": "Problems."},
+                        ],
+                    }
+                ],
+            }
+
+            response = await self.async_client.post(
+                self.url, data=json.dumps(payload), headers=headers, content_type="application/json"
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(AFTER_CALLS, [True], "after_response should run on /v1/decisions")
+        finally:
+            _plugin_class.cache_clear()

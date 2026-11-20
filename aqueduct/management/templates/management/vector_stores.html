@@ -1,61 +1,42 @@
-{% extends "management/base.html" %}
-{% load static %}
+{% extends "management/resource_list.html" %}
+{% load i18n ui %}
 
-{% block title %}Vector Stores{% endblock %}
+{% block heading %}{% translate "Vector stores" %}{% endblock %}
 
-{% block content %}
-<div class="container mx-auto p-6">
-    <div class="mb-6">
-        <h1 class="text-3xl font-bold mb-2">Vector Stores</h1>
-        <p class="text-lg text-base-content/70">
-            Vector stores for file search and retrieval.
-        </p>
-    </div>
+{% block colgroup %}<col><col class="w-[22%]"><col class="w-32"><col class="w-24"><col class="w-28"><col class="w-36 de:w-44"><col class="w-16">{% endblock %}
 
-    {# Personal vector stores section #}
-    <div class="mb-8">
-        <div class="flex items-baseline justify-between mb-4">
-            <h2 class="text-xl font-bold">Your Vector Stores</h2>
-            <span class="text-base text-base-content/70">{{ user_vector_store_count }}/{{ user_vector_store_limit }} used</span>
-        </div>
+{% block columns %}
+    <th>{% translate "Vector store" %}</th>
+    <th>{% translate "Belongs to" %}</th>
+    <th>{% translate "Status" %}</th>
+    <th class="text-right">{% translate "Files" %}</th>
+    <th class="text-right">{% translate "Size" %}</th>
+    <th>{% translate "Expires" %}</th>
+    <th><span class="sr-only">{% translate "Actions" %}</span></th>
+{% endblock %}
 
-        {% if user_vector_stores %}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {% for vs in user_vector_stores %}
-            {% include "management/_vector_store_card.html" %}
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="alert alert-info shadow-lg">
-            <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
-                 class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
-            <span>No personal vector stores found.</span>
-        </div>
-        {% endif %}
-    </div>
-
-    {# Team vector stores sections #}
-    {% for section in team_sections %}
-    <div class="mb-8">
-        <div class="flex items-baseline justify-between mb-4">
-            <h2 class="text-xl font-bold">{{ section.team.name }}</h2>
-            <span class="text-base text-base-content/70">{{ section.count }}/{{ section.limit }} used</span>
-        </div>
-
-        {% if section.vector_stores %}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {% for vs in section.vector_stores %}
-            {% include "management/_vector_store_card.html" %}
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="alert alert-info shadow-lg">
-            <img src="{% static 'icons/info.svg' %}" alt="Info Icon"
-                 class="h-6 w-6 shrink-0 [[data-theme=dark]_&]:invert">
-            <span>No vector stores for this team.</span>
-        </div>
-        {% endif %}
-    </div>
+{% block rows %}
+    {% for row in listing.rows %}
+        <tr>
+            <td>
+                <a class="link-plain row-link block truncate" href="{% url 'vector_store_detail' id=row.store.id %}" title="{{ row.store.name }}">{{ row.store.name }}</a>
+                <div class="muted flex items-center gap-1 font-mono text-xs"><span class="truncate" title="{{ row.store.id }}">{{ row.store.id }}</span>{% blocktranslate with name=row.store.name asvar copy_label %}Copy ID of {{ name }}{% endblocktranslate %}{% copy_button row.store.id copy_label _("Copy vector store ID") extra_class="relative z-10 shrink-0" %}</div>
+            </td>
+            <td class="truncate" title="{{ row.owner }}">{{ row.owner }}</td>
+            <td>{% include "management/_status.html" with status=row.status %}</td>
+            <td class="text-right">{{ row.files|grouped }}</td>
+            <td class="text-right">{{ row.size|filesizeformat }}</td>
+            <td class="muted whitespace-nowrap">{% if row.expiry.at %}{{ row.expiry|expiry }}{% endif %}</td>
+            <td>
+                {% if row.syncable %}
+                    <form class="relative z-10 flex justify-end" action="{% url 'vector_store_card_refresh' id=row.store.id %}" method="post">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-ghost btn-sm btn-square" aria-label="{% blocktranslate with name=row.store.name %}Sync status of {{ name }}{% endblocktranslate %}" title="{% translate 'Sync status' %}">{% icon "rotate" small=True %}</button>
+                    </form>
+                {% endif %}
+            </td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="7" class="muted">{{ listing.empty }} {% blocktranslate with docs=listing.docs %}Create one with the <a class="link" href="{{ docs }}">Vector Stores API</a>.{% endblocktranslate %}</td></tr>
     {% endfor %}
-</div>
 {% endblock %}

@@ -78,16 +78,14 @@ class AccessKeyExpirationViewTests(TestCase):
     @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
     def test_token_create_form_shows_maximum_expiration(self):
         response = self.client.get(reverse("token_create"))
-        self.assertContains(response, "Maximum expiration:")
-        self.assertContains(response, "(7 days from now)")
-        self.assertContains(response, "Leave blank to use the maximum")
-        self.assertContains(response, "data-max-expiration=")
+        self.assertContains(response, "A key can last at most 7 days.")
+        self.assertContains(response, ' max="')
 
     @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=-1)
     def test_token_create_form_omits_maximum_expiration_when_unlimited(self):
         response = self.client.get(reverse("token_create"))
-        self.assertNotContains(response, "Maximum expiration:")
-        self.assertNotContains(response, "data-max-expiration")
+        self.assertNotContains(response, "A key can last at most")
+        self.assertNotContains(response, ' max="')
 
     @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
     def test_service_account_create_and_edit_cap_expiration(self):
@@ -123,9 +121,8 @@ class AccessKeyExpirationViewTests(TestCase):
     @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=7)
     def test_service_account_form_shows_maximum_expiration(self):
         response = self.client.get(reverse("service_account_create", kwargs={"id": self.team.id}))
-        self.assertContains(response, "Maximum expiration:")
-        self.assertContains(response, "(7 days from now)")
-        self.assertContains(response, "data-max-expiration=")
+        self.assertContains(response, "A key can last at most 7 days.")
+        self.assertContains(response, ' max="')
 
     @override_settings(MAX_ACCESS_KEY_EXPIRATION_DAYS=-1)
     def test_unlimited_user_key_can_have_no_expiration(self):

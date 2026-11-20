@@ -4,11 +4,14 @@
     --aqueduct-selected-rgb: 150, 150, 150;
     --body-bg: var(--color-base-200) !important;
     --darkened-bg: var(--color-base-300) !important;
+    --font-family-primary: var(--font-sans) !important;
+    --font-family-monospace: var(--font-mono) !important;
     background-color: var(--color-base-200) !important;
 }
 
 .module h2, .module caption, .inline-group h2 {
     background: var(--color-primary);
+    --header-link-color: var(--color-primary-content);
 }
 
 #nav-sidebar .current-model {
@@ -38,16 +41,8 @@ header * li {
     padding: 0 !important;
 }
 
-header .hidden {
-    display: inline !important;
-}
-
 header * a:link, header * a:visited {
-    color: var(--color-base-content) !important;
-}
-
-header * .ml-4 {
-    margin-left: calc(var(--spacing) * 4) !important;
+    color: var(--color-base-content);
 }
 
 header {

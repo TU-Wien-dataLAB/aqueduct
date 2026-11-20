@@ -7,9 +7,10 @@ expiry date. The delete view scoped by owner; the edit view did not.
 """
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from gateway.tests.utils.base import ROUTER_CONFIG_PATH
 from management.models import Org, ServiceAccount, Team, Token, UserProfile
 
 User = get_user_model()
@@ -22,6 +23,7 @@ def _make_token(user: UserProfile, **kwargs) -> Token:
     return token
 
 
+@override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
 class TokenEditViewOwnershipTests(TestCase):
     def setUp(self):
         self.org = Org.objects.create(name="edit-org")
@@ -57,7 +59,10 @@ class TokenEditViewOwnershipTests(TestCase):
     def test_owner_can_edit_own_token(self):
         self.client.force_login(self.owner)
         token = _make_token(self.owner_profile)
-        resp = self.client.post(self._url(token.id), {"name": "renamed", "expires_at": ""})
-        self.assertRedirects(resp, reverse("tokens"))
+        resp = self.client.post(
+            self._url(token.id), {"name": "renamed", "expires_at": ""}, follow=True
+        )
+        self.assertRedirects(resp, reverse("token_detail", kwargs={"id": token.id}))
+        self.assertContains(resp, "API key renamed saved.")
         token.refresh_from_db()
         self.assertEqual(token.name, "renamed")

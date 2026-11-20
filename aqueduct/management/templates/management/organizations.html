@@ -1,0 +1,26 @@
+{% extends "management/base.html" %}
+{% load i18n ui %}
+{% block title %}{% translate "Organizations" %} · {{ block.super }}{% endblock %}
+
+{% block heading %}{% translate "Organizations" %}{% endblock %}
+{% block body %}
+<section class="card bg-base-200">
+    <div class="card-body table-card">
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead><tr><th>{% translate "Organization" %}</th><th class="text-right">{% translate "Teams" %}</th></tr></thead>
+                <tbody>
+                    {% for org in orgs %}
+                        <tr>
+                            <td><a class="link-plain font-semibold" href="{% url_with 'organization' org=org.id %}">{{ org.name }}</a></td>
+                            <td class="text-right">{{ org.team_count|grouped }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="2" class="muted">{% translate "No organizations yet." %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -18,6 +18,16 @@ HOURS_PER_DAY = 24
 MINUTES_PER_DAY = HOURS_PER_DAY * MINUTES_PER_HOUR
 
 
+LIMIT_FIELDS = (
+    "requests_per_minute",
+    "input_tokens_per_minute",
+    "output_tokens_per_minute",
+    "concurrent_requests_limit",
+    "hourly_limit_multiplier",
+    "daily_limit_multiplier",
+)
+
+
 def _resolve_limits(
     field_name: str, specific_limiter: "LimitMixin", fallbacks: "Iterable[LimitMixin] | None" = None
 ) -> int | None:

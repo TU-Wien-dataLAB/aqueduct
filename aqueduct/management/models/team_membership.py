@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from management.models.team import Team
@@ -18,3 +19,15 @@ class TeamMembership(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_profile} in {self.team}{' (Admin)' if self.is_admin else ''}"
+
+    def clean(self) -> None:
+        if self.user_profile_id is None:
+            return
+        try:
+            team = self.team
+        except Team.DoesNotExist:
+            return
+        if team.org_id != self.user_profile.org_id:
+            raise ValidationError(
+                {"user_profile": f"{self.user_profile.user.email} is in another organization."}
+            )

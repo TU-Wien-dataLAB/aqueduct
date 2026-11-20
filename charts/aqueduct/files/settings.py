@@ -18,6 +18,8 @@ from typing import Any
 
 from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
+from django.urls import reverse_lazy
+from django.utils.translation import gettext_noop
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -117,7 +119,7 @@ OIDC_OP_AUTHORIZATION_ENDPOINT = os.environ.get("OIDC_OP_AUTHORIZATION_ENDPOINT"
 OIDC_OP_TOKEN_ENDPOINT = os.environ.get("OIDC_OP_TOKEN_ENDPOINT")
 OIDC_OP_USER_ENDPOINT = os.environ.get("OIDC_OP_USER_ENDPOINT")
 
-LOGIN_REDIRECT_URL = "/"  # Where to redirect after successful login
+LOGIN_REDIRECT_URL = reverse_lazy("tokens")  # Where to redirect after successful login
 LOGOUT_REDIRECT_URL = "/login/"  # Where to redirect after successful logout
 LOGIN_URL = "/login/"  # Where to redirect if user is not logged in
 
@@ -165,11 +167,17 @@ ADMIN_SUPERUSER_EMAILS = [
 ]
 
 EXTRA_NAV_LINKS = {
-    "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",
-    "Documentation": "https://tu-wien-datalab.github.io/aqueduct/",
+    gettext_noop("Report a bug"): (
+        "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md"
+    ),
+    gettext_noop("Documentation"): "https://tu-wien-datalab.github.io/aqueduct/",
     # 'API Status': '/status/',  # Example internal path
     # 'About Us': 'about_page',  # Example named URL (assuming you have url(..., name='about_page'))
 }
+MATRIX_SUPPORT_URL = os.getenv("MATRIX_SUPPORT_URL", "")
+GITHUB_REPOSITORY_URL = os.getenv(
+    "GITHUB_REPOSITORY_URL", "https://github.com/TU-Wien-dataLAB/aqueduct"
+)
 
 RELAY_REQUEST_TIMEOUT = 60
 
@@ -318,6 +326,7 @@ if SILKY_ENABLED:
     # only superusers should have access to the /silk/ UI
     SILKY_AUTHENTICATION = True
     SILKY_AUTHORISATION = True
+    SILKY_PERMISSIONS = lambda user: user.is_active and user.is_superuser
     # use meta profiling to measure performance overhead
     SILKY_META = True
     # do not log request body (regardless of size)
@@ -343,7 +352,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 # Aqueduct processors
-                "management.context_processors.settings",
+                "management.context_processors.shell",
             ]
         },
     }
@@ -428,6 +437,8 @@ STORAGES = {
     # ...
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"}
 }
+if TESTING:
+    STORAGES["staticfiles"] = {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/

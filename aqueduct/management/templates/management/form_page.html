@@ -1,0 +1,19 @@
+{% extends "management/base.html" %}
+{% load i18n %}
+
+{% block heading %}{{ view_title }}{% endblock %}
+{% block body %}
+<form method="post" class="card max-w-2xl bg-base-200">
+    {% csrf_token %}
+    {% block hidden_fields %}{% endblock %}
+    <div class="card-body gap-6">
+        {% include "management/_form_fields.html" %}
+        {% block note %}{% endblock %}
+        <div class="flex flex-wrap gap-3 border-t border-base-300 pt-5">
+            <button type="submit" class="btn btn-primary">{% block submit %}{% translate "Save changes" %}{% endblock %}</button>
+            <a class="btn btn-ghost" href="{% block cancel_url %}{{ cancel_url }}{% endblock %}">{% translate "Cancel" %}</a>
+        </div>
+    </div>
+</form>
+{% block after_form %}{% endblock %}
+{% endblock %}

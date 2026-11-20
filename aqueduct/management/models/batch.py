@@ -213,3 +213,13 @@ class Batch(models.Model):
             self.finalizing_at = remote.finalizing_at
             await self.asave()
             return remote
+
+    async def acancel_upstream(self, client: AsyncOpenAI) -> openai.types.Batch:
+        remote = await client.batches.cancel(self.id)
+        self.status = remote.status
+        if remote.cancelling_at:
+            self.cancelling_at = remote.cancelling_at
+        if remote.cancelled_at:
+            self.cancelled_at = remote.cancelled_at
+        await self.asave()
+        return remote

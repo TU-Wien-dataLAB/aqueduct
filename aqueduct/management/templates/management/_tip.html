@@ -1,0 +1,5 @@
+<span class="aq-tip" aria-hidden="true">
+    <span class="aq-tip-heading">{{ tip.heading }}</span>
+    {% for css, name, value in tip.parts %}<span class="aq-tip-row"><span class="sw {{ css }}"></span>{{ name }}<b>{{ value }}</b></span>{% endfor %}
+    <b>{{ tip.value }}</b>
+</span>

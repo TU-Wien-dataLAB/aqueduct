@@ -1,0 +1,33 @@
+{% load i18n %}
+{% if not limits.limited and limits.concurrent is None %}
+<p class="muted text-sm">{% translate "No limit on requests or tokens." %}</p>
+{% else %}
+<div class="-mx-4">
+    <table class="table table-sm table-tight">
+        <thead>
+            <tr>
+                <th><span class="sr-only">{% translate "Limit" %}</span></th>
+                {% for heading in limits.headings %}<th class="text-right">{{ heading }}</th>{% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% if limits.limited %}
+                {% for row in limits.rows %}
+                    <tr>
+                        <td class="whitespace-nowrap text-sm">{{ row.label }}</td>
+                        {% for value in row.values %}<td class="whitespace-nowrap text-right text-sm tabular-nums">{{ value }}</td>{% endfor %}
+                    </tr>
+                {% endfor %}
+            {% else %}
+                <tr><td colspan="4" class="muted text-sm">{% translate "No limit on requests or tokens." %}</td></tr>
+            {% endif %}
+            {% if limits.concurrent is not None %}
+                <tr>
+                    <td colspan="2" class="whitespace-nowrap text-sm">{% translate "Concurrent requests" %}</td>
+                    <td colspan="2" class="text-right text-sm tabular-nums">{{ limits.concurrent }}</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

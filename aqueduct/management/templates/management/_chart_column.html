@@ -1,0 +1,6 @@
+{% load l10n %}<div class="aq-tip-host chart-col flex min-w-0 flex-1 flex-col items-center" role="img" aria-label="{{ column.tip }}">
+    <div class="vbar w-full max-w-10 flex-1" style="--bar: {{ column.height|unlocalize }}%">
+        {% for css, height in column.segments %}<i class="{{ css }}" style="height: {{ height|unlocalize }}%"></i>{% endfor %}
+        {% include "management/_tip.html" with tip=column.tip %}
+    </div>
+</div>

@@ -1,0 +1,19 @@
+{% load i18n ui %}
+{% with token=row.token account=row.token.service_account %}
+{% blocktranslate with name=token.name asvar rotate_question %}Rotate {{ name }}?{% endblocktranslate %}
+{% blocktranslate with name=token.name asvar rotate_label %}Rotate {{ name }}{% endblocktranslate %}
+{% blocktranslate with name=token.name asvar edit_label %}Edit {{ name }}{% endblocktranslate %}
+{% blocktranslate with name=token.name asvar delete_label %}Delete {{ name }}{% endblocktranslate %}
+<form action="{% url 'token_regenerate' token.id %}" method="post" class="flex flex-col">
+    {% csrf_token %}
+    <button type="submit" class="{{ button }}" aria-label="{{ rotate_label }}" title="{% translate "Rotate" %}"
+            {% confirm_rotate rotate_question row.activity %}>{% icon "rotate" small=True %}{% if labelled %}{% translate "Rotate" %}{% endif %}</button>
+</form>
+{% if account %}
+    <a class="{{ button }}" href="{% url 'service_account_edit' account.id %}" aria-label="{{ edit_label }}" title="{% translate "Edit" %}">{% icon "admin" small=True %}{% if labelled %}{% translate "Edit" %}{% endif %}</a>
+    <a class="{{ button }}" href="{% url 'service_account_delete' account.id %}" {% confirm_delete account row.activity %} aria-label="{{ delete_label }}" title="{% translate "Delete" %}">{% icon "delete" small=True %}{% if labelled %}{% translate "Delete" %}{% endif %}</a>
+{% else %}
+    <a class="{{ button }}" href="{% url 'token_edit' token.id %}" aria-label="{{ edit_label }}" title="{% translate "Edit" %}">{% icon "admin" small=True %}{% if labelled %}{% translate "Edit" %}{% endif %}</a>
+    <a class="{{ button }}" href="{% url 'token_delete' token.id %}" {% confirm_delete token row.activity %} aria-label="{{ delete_label }}" title="{% translate "Delete" %}">{% icon "delete" small=True %}{% if labelled %}{% translate "Delete" %}{% endif %}</a>
+{% endif %}
+{% endwith %}

@@ -8,14 +8,16 @@ without the 'fields' attribute") -> 500, even though the create view worked.
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from gateway.tests.utils.base import ROUTER_CONFIG_PATH
 from management.models import Org, ServiceAccount, Team, Token, UserGroup, UserProfile
 
 User = get_user_model()
 
 
+@override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
 class ServiceAccountEditViewTests(TestCase):
     def setUp(self):
         self.org = Org.objects.create(name="repro-org")

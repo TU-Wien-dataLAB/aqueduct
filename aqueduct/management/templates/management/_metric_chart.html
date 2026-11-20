@@ -1,0 +1,41 @@
+{% load i18n %}<div class="card bg-base-200 lg:col-span-2" data-metric-scope>
+    <div class="card-body gap-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="card-title"><span data-metric="tokens">{{ tokens_title }}</span><span data-metric="requests">{{ requests_title }}</span></h2>
+            <div class="flex flex-wrap items-center gap-4">
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" data-metric="tokens">
+                    {% include "management/_token_legend.html" %}
+                </div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" data-metric="requests">
+                    <span class="flex items-center gap-2"><span class="sw i"></span>{% translate "OK" %}</span>
+                    <span class="flex items-center gap-2 whitespace-nowrap"><span class="sw r"></span>{% translate "Rate-limited" %}</span>
+                    <span class="flex items-center gap-2 whitespace-nowrap"><span class="sw f"></span>{% translate "Failed" %}</span>
+                </div>
+                <div class="join" role="radiogroup" aria-label="{% translate "Chart metric" %}">
+                    <input type="radio" name="metric" value="tokens" class="btn btn-sm join-item" aria-label="{% translate "Tokens" %}" checked>
+                    <input type="radio" name="metric" value="requests" class="btn btn-sm join-item" aria-label="{% translate "Requests" %}">
+                </div>
+                <script>try { const kept = document.currentScript.previousElementSibling.querySelector(`[value="${sessionStorage.getItem('metric')}"]`); if (kept) kept.checked = true; } catch { }</script>
+            </div>
+        </div>
+        {% if empty %}
+            <p class="muted flex h-72 items-center justify-center text-sm">{{ empty }}</p>
+        {% else %}
+            {% for shown, chart in charts %}
+                <div class="chart-plot" data-metric="{{ shown }}">
+                    <span class="chart-top muted text-xs tabular-nums">{{ chart.top }}</span>
+                    <div class="{{ chart_class }}">
+                        {% for column in chart.columns %}
+                            {% include "management/_chart_column.html" %}
+                        {% endfor %}
+                    </div>
+                    <div class="mt-2 grid h-4 {{ axis_class }}" style="grid-template-columns: repeat({{ chart.columns|length }}, minmax(0, 1fr))" aria-hidden="true">
+                        {% for column in chart.columns %}{% if column.label %}
+                            <span class="muted whitespace-nowrap text-xs" style="grid-column: {{ forloop.counter }} / span {{ column.span }}; padding-left: calc(50% / {{ column.span }})"><span class="inline-block -translate-x-1/2">{% if column.short %}<span class="sm:hidden">{{ column.short }}</span><span class="hidden sm:inline">{{ column.label }}</span>{% else %}{{ column.label }}{% endif %}</span></span>
+                        {% endif %}{% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+</div>

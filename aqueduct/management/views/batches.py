@@ -1,75 +1,58 @@
-from datetime import UTC, datetime
+from typing import ClassVar
 
-from django.db.models import Q
+from asgiref.sync import async_to_sync
+from django.contrib import messages
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
+from django.utils.translation import gettext
+from django.views import View
 from django.views.generic import TemplateView
+from openai import OpenAIError
 
+from gateway.config import get_files_api_client
+from management.access import KeyAct
 from management.models import Batch
+from management.resources import BATCH_STATUSES, CANCELLABLE, Status, batch_list, list_url
 from management.views.base import BaseAqueductView
-
-INPUT_FILE_ID_PREVIEW_THRESHOLD = 12
 
 
 class UserBatchesView(BaseAqueductView, TemplateView):
-    """
-    Displays a list of Batch instances accessible by the current user.
-    """
-
     template_name = "management/batches.html"
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        profile = self.profile
-        user = profile.user
-        teams = profile.teams.all()
-
-        batches = Batch.objects.filter(
-            Q(token__user=user) | Q(token__service_account__team__in=teams)
-        ).order_by("-created_at")
-
-        now_ts = int(timezone.now().timestamp())
-
-        # Convert Unix timestamp to datetime for template date filter
-        for b in batches:
-            b.created_dt = datetime.fromtimestamp(b.created_at, tz=UTC)
-            # input file preview (first lines)
-            b.input_file_preview = b.input_file.preview or ""
-            # short preview of file id for display
-            raw_id = b.input_file.id
-            if len(raw_id) > INPUT_FILE_ID_PREVIEW_THRESHOLD:
-                b.input_file_id_preview = f"{raw_id[:7]}...{raw_id[-5:]}"
-            else:
-                b.input_file_id_preview = raw_id
-            # output file preview
-            if b.output_file:
-                b.output_file_preview = b.output_file.preview or ""
-                b.output_file_has_preview = bool(b.output_file_preview)
-                b.output_file_id_preview = b.output_file.id
-            else:
-                b.output_file_preview = ""
-                b.output_file_has_preview = False
-                b.output_file_id_preview = "-"
-            # error file preview
-            if b.error_file:
-                b.error_file_preview = b.error_file.preview or ""
-                b.error_file_has_preview = bool(b.error_file_preview)
-                b.error_file_id_preview = b.error_file.id
-            else:
-                b.error_file_preview = ""
-                b.error_file_has_preview = False
-                b.error_file_id_preview = "-"
-            # expiration display
-            if b.expires_at is not None:
-                b.expires_dt = datetime.fromtimestamp(b.expires_at, tz=UTC)
-                if b.expires_at <= now_ts:
-                    b.expiration_status = "expired"
-                elif b.expires_at <= now_ts + 86400 * 14:  # within 2 weeks
-                    b.expiration_status = "expiring_soon"
-                else:
-                    b.expiration_status = "active"
-            else:
-                b.expires_dt = None
-                b.expiration_status = "never"
-
-        context["batches"] = batches
+        context["listing"] = batch_list(self.viewer, timezone.now(), self.request.GET.get("page"))
         return context
+
+
+class BatchCancelView(BaseAqueductView, View):
+    http_method_names: ClassVar[list] = ["post"]
+
+    def post(self, request, *args, **kwargs) -> HttpResponse:
+        batch = get_object_or_404(
+            Batch.objects.filter(token__in=self.viewer.keys(KeyAct.OWN)), pk=kwargs["id"]
+        )
+        back = list_url("batches", request.POST.get("page"))
+        if batch.status not in CANCELLABLE:
+            messages.error(
+                request,
+                gettext("Batch %(id)s is %(status)s and cannot be cancelled.")
+                % {
+                    "id": batch.id,
+                    "status": str(Status.of(batch.status, BATCH_STATUSES).label).lower(),
+                },
+            )
+            return redirect(back)
+        try:
+            async_to_sync(batch.acancel_upstream)(get_files_api_client())
+        except (ValueError, OpenAIError):
+            messages.error(
+                request,
+                gettext("Could not cancel batch %(id)s. Try again later.") % {"id": batch.id},
+            )
+        else:
+            messages.success(
+                request, gettext("Batch %(id)s is being cancelled.") % {"id": batch.id}
+            )
+        return redirect(back)

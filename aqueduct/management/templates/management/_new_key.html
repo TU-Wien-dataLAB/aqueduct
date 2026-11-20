@@ -1,0 +1,21 @@
+{% load i18n ui %}
+<section class="card max-w-3xl bg-base-200" aria-labelledby="new-key-title">
+    <div class="card-body gap-5">
+        <div class="flex items-center gap-3">
+            <span class="st-ok">{% icon "ok" %}</span>
+            <h2 id="new-key-title" class="break-words text-2xl font-semibold">{% blocktranslate with name=new_key.token.name %}<span class="break-all font-mono">{{ name }}</span> is ready{% endblocktranslate %}</h2>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 rounded-xl bg-base-100 p-4">
+            <span class="min-w-0 flex-1 break-all font-mono text-sm">{{ new_key.secret }}</span>
+            <button type="button" class="btn btn-primary" data-copy="{{ new_key.secret }}">{% icon "copy" small=True %}<span class="copy-label" data-copied="{% translate 'Copied' %}" data-copy-failed="{% translate 'Copy failed' %}">{% translate "Copy key" %}</span></button>
+        </div>
+        <div class="st-warn flex items-center gap-2 text-sm font-medium">{% icon "warning" small=True %}{% translate "Copy it now. You won't see it again." %}</div>
+        {% if new_key.for_service_account %}
+            <p class="text-sm">{% translate "Store it as a secret, for example OPENAI_API_KEY in your CI." %}</p>
+        {% endif %}
+        <div class="relative">
+            <pre class="overflow-x-auto rounded-lg bg-base-100 p-4 pr-12 font-mono text-xs leading-relaxed">{{ new_key.snippet }}</pre>
+            {% copy_button new_key.snippet _("Copy command") size="sm" extra_class="absolute right-2 top-2" %}
+        </div>
+    </div>
+</section>

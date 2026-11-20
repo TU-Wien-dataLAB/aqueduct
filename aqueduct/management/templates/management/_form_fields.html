@@ -1,0 +1,20 @@
+{% load ui %}
+{% if form.non_field_errors %}
+    <div role="alert" class="alert alert-error">
+        {% icon "warning" small=True %}
+        <span>{{ form.non_field_errors|striptags }}</span>
+    </div>
+{% endif %}
+{% for field in form %}
+    {% if field.name == form.expiration_field %}
+        {% include "management/_expiry_field.html" %}
+    {% elif field.name != "expiry_preset" %}
+    <div class="flex flex-col gap-2">
+        <label class="font-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field|widget }}
+        {% if field.errors %}<span class="text-sm text-error">{{ field.errors|striptags }}</span>{% endif %}
+        {% if field.help_text %}<span class="muted text-sm">{{ field.help_text }}</span>{% endif %}
+        {% for name, preview in form.previews.items %}{% if name == field.name %}{% include "management/_limit_preview.html" %}{% endif %}{% endfor %}
+    </div>
+    {% endif %}
+{% endfor %}

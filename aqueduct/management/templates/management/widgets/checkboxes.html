@@ -1,0 +1,11 @@
+{% load i18n %}<div class="flex flex-col gap-2" data-checklist>
+    {% if widget.optgroups|length > 6 %}
+        <div class="flex gap-2">
+            <button type="button" class="btn btn-ghost btn-xs" data-check-all="true">{% translate "Select all" %}</button>
+            <button type="button" class="btn btn-ghost btn-xs" data-check-all="false">{% translate "Select none" %}</button>
+        </div>
+    {% endif %}
+    <div{% if widget.attrs.id %} id="{{ widget.attrs.id }}"{% endif %} class="grid gap-2 sm:grid-cols-2">{% for group, options, index in widget.optgroups %}{% for option in options %}
+        <label class="flex items-center gap-2 font-mono text-sm">{% include "django/forms/widgets/input.html" with widget=option %}{{ option.label }}</label>{% endfor %}{% endfor %}
+    </div>
+</div>

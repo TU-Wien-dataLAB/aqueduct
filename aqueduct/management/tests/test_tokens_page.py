@@ -1,43 +1,21 @@
-"""Tests for the tokens list page — per-window request-usage indicators.
-
-Covers the ``_rate_usage.html`` include driven by
-``gateway.rate_limiting.get_per_token_usage`` on ``UserTokensView``: the usage
-values passed to the template (per hour / per day) and the HTML that renders
-them under each API key list item.
-"""
-
 from typing import ClassVar
+from unittest import mock
 
 from django.contrib.auth import get_user_model
-from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from gateway.rate_limiting import check_and_reserve
+from gateway.tests.utils.base import ROUTER_CONFIG_PATH
 from management.models import LimitSet
+from management.tests.helpers import limit_grid
 
 User = get_user_model()
 
 
-# Render full management pages without the hashed-manifest staticfiles storage
-# (no collectstatic is run in the test environment), so {% static %} resolves.
-_RENDER_HTML = override_settings(
-    STORAGES={
-        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
-    }
-)
-
-
-@_RENDER_HTML
+@override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
 class TokensPageTest(TestCase):
     fixtures: ClassVar[list[str]] = ["gateway_data.json"]
-
-    def setUp(self) -> None:
-        cache.clear()
-
-    def tearDown(self) -> None:
-        cache.clear()
 
     def test_page_renders_usage_progress_bars(self):
         user = User.objects.get(pk=1)
@@ -65,31 +43,45 @@ class TokensPageTest(TestCase):
             self.assertTrue(allowed)
 
         self.client.force_login(user)
-        resp = self.client.get(reverse("tokens"))
+        resp = self.client.get(reverse("token_detail", args=[1]))
 
         self.assertEqual(resp.status_code, 200)
-        # The hour and day windows each render a progress bar with the used fill.
-        self.assertTemplateUsed(resp, "management/_rate_usage.html")
-        self.assertContains(resp, "progress-primary", count=2)
-        # Bar fill values are clamped percentages of the derived caps.
-        self.assertContains(resp, 'value="1"')  # hour: 6/600 = 1%
-        self.assertContains(resp, 'value="0"')  # day:  6/14400 ~0%
-        # Per-window used/limit text reflects the derived caps.
-        self.assertContains(resp, "6/600")  # hour
-        self.assertContains(resp, "6/14,400")  # day (intcomma)
-        # The per-minute bar is not rendered.
-        self.assertNotContains(resp, "6/10")
+        minute, hour, day = limit_grid(resp)["Requests"]
+        self.assertEqual((minute["used"], minute["limit"], minute["percent"]), ("6", "of 10", "60"))
+        self.assertEqual((hour["used"], hour["limit"], hour["percent"]), ("6", "of 600", "1"))
+        self.assertEqual((day["used"], day["limit"], day["percent"]), ("6", "of 14,400", "0"))
+        self.assertEqual({cell["meter"] for cell in (minute, hour, day)}, {"progress-primary"})
 
-    def test_page_renders_em_dash_when_no_request_limit(self):
-        """No request limit -> no progress bar, only the "—" count text."""
+    def test_meters_warn_from_80_percent_and_turn_red_from_100(self):
+        user = User.objects.get(pk=1)
+        user.profile.requests_per_minute = 10
+        user.profile.save(update_fields=["requests_per_minute"])
+        none = {"in": 0, "out": 0}
+        usage = {
+            1: {
+                "min": {"req": 0, **none},
+                "hour": {"req": 540, **none},
+                "day": {"req": 21600, **none},
+            }
+        }
+        self.client.force_login(user)
+        with mock.patch("management.limits.get_per_token_usage", return_value=usage):
+            resp = self.client.get(reverse("token_detail", args=[1]))
+
+        _minute, hour, day = limit_grid(resp)["Requests"]
+        self.assertEqual(
+            (hour["meter"], hour["percent"], hour["used"]), ("progress-warning", "90", "540")
+        )
+        self.assertEqual(
+            (day["meter"], day["percent"], day["used"]), ("progress-error", "100", "21,600")
+        )
+
+    def test_page_says_no_limit_when_there_is_no_limit(self):
         user = User.objects.get(pk=1)
         self.client.force_login(user)
-        resp = self.client.get(reverse("tokens"))
+        resp = self.client.get(reverse("token_detail", args=[1]))
 
         self.assertEqual(resp.status_code, 200)
-        # No request limit -> the include renders the em-dash placeholder, not a fill.
-        self.assertContains(resp, "—")
-        # No progress bar is rendered at all (every window has no request cap).
-        self.assertNotContains(resp, "progress-primary")
-        self.assertNotContains(resp, "progress-neutral")
+        self.assertContains(resp, "No other limit applies to this key.")
+        self.assertNotContains(resp, "None")
         self.assertNotContains(resp, "<progress")

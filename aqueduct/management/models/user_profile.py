@@ -1,17 +1,30 @@
+import logging
+from collections.abc import Collection
+from typing import Any
+
 from django.conf import settings
 from django.contrib.auth.models import Group
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.db import models
+from django.db import models, transaction
 
 from management.models.mixins import LimitMixin, MCPServerExclusionMixin, ModelExclusionMixin
 from management.models.org import Org
+from management.models.service_account import ServiceAccount
 from management.models.team import Team
+
+log = logging.getLogger("aqueduct")
 
 
 class UserGroup(models.TextChoices):
     ADMIN = "admin", "Admin"
     ORG_ADMIN = "org-admin", "Org Admin"
     USER = "user", "User"
+
+    @classmethod
+    def of(cls, names: Collection[str]) -> "UserGroup | None":
+        return next(
+            (group for group in (cls.ADMIN, cls.ORG_ADMIN, cls.USER) if group in names), None
+        )
 
 
 class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, models.Model):
@@ -39,6 +52,45 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
 
     def __str__(self) -> str:
         return f"{self.user.email} (Profile - {self.org.name})"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """An org move ends the memberships in teams of the old org."""
+        update_fields = kwargs.get("update_fields")
+        writes_org = update_fields is None or not {"org", "org_id"}.isdisjoint(update_fields)
+        if self._state.adding or not writes_org:
+            super().save(*args, **kwargs)
+            return
+        with transaction.atomic():
+            # Compare with the stored row, not the loaded one: a deferred, stale or retried
+            # instance would otherwise report a move that never happened, or miss one.
+            stored = UserProfile.objects.filter(pk=self.pk).values_list("org_id", flat=True).first()
+            super().save(*args, **kwargs)
+            if stored is not None and stored != self.org_id:
+                self._leave_other_orgs()
+
+    def _leave_other_orgs(self) -> None:
+        dropped = self.teammembership_set.exclude(team__org_id=self.org_id)
+        email = self.user.email
+        for team_id, team, is_admin in dropped.values_list("team_id", "team__name", "is_admin"):
+            log.info(
+                "Org move of %s ends their membership in team %s (%s), admin: %s.",
+                email,
+                team_id,
+                team,
+                is_admin,
+            )
+        owned = ServiceAccount.objects.filter(
+            team__in=dropped.values("team_id"), token__user_id=self.user_id
+        )
+        for account in owned:
+            log.warning(
+                "%s left team %s but owns its service account %s (%s); transfer it.",
+                email,
+                account.team_id,
+                account.pk,
+                account.name,
+            )
+        dropped.delete()
 
     @property
     def group(self) -> UserGroup:
@@ -68,67 +120,6 @@ class UserProfile(LimitMixin, ModelExclusionMixin, MCPServerExclusionMixin, mode
                 f"The group '{group}' does not exist in the database."
             ) from None
 
-    def clean(self) -> None:
-        """
-        Validation moved from the old User model.
-        Ensures assigned teams belong to the user's profile organization.
-        """
-        super().clean()
-        # Assumes self.org is always set due to non-nullable ForeignKey.
-        # Check teams only if the profile instance exists in the DB (has a PK).
-        # This prevents issues when accessing M2M relations before the instance is saved.
-        if self.pk:
-            for team in self.teams.all():  # Query M2M relationship
-                if team.org != self.org:
-                    raise ValidationError(
-                        f"Team '{team.name}' (Org: {team.org.name}) does not belong to "
-                        f"the profile's organization '{self.org.name}'."
-                    )
-            # No need for the try/except ValueError, as self.pk ensures the instance is saved.
-
-    def is_admin(self) -> bool:
-        """Checks if the user has the global 'admin' group."""
-        try:
-            return self.group == UserGroup.ADMIN
-        except ValidationError:  # Raised if user has no valid group assigned
-            return False
-
-    def is_org_admin(self, org_to_check: Org) -> bool:
-        """
-        Checks if the user is an administrator for the given organization.
-        Rules:
-        1. Superusers are admins of everything.
-        2. Users with the 'org-admin' group are admins ONLY of their own organization.
-        """
-        try:
-            user_group = self.group
-            if user_group == UserGroup.ADMIN:
-                return True
-            if user_group == UserGroup.ORG_ADMIN:
-                return self.org == org_to_check
-        except ValidationError:
-            return False
-        return False
-
-    def is_team_admin(self, team_to_check: Team) -> bool:
-        """
-        Checks if the user is an administrator for the given team.
-        Rules:
-        1. If the user is an admin of the team's organization, they are admin of the team.
-        2. Otherwise, check the specific TeamMembership for the 'is_admin' flag.
-        """
-        # First, check if they are an admin of the team's parent organization
-        if self.is_org_admin(team_to_check.org):
-            return True
-
-        # If not an org admin, check the specific membership for this team
-        try:
-            # Assumes TeamMembership model exists and is related via user_profile.
-            # Django ensures 'teammembership_set' exists if TeamMembership has a ForeignKey
-            # to UserProfile.
-            membership = self.teammembership_set.get(team=team_to_check)
-        except ObjectDoesNotExist:
-            # No specific membership record found for this user and team
-            return False
-        else:
-            return membership.is_admin
+    @property
+    def rank(self) -> UserGroup:
+        return UserGroup.of(set(self.user.groups.values_list("name", flat=True))) or UserGroup.USER

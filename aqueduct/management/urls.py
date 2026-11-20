@@ -1,11 +1,14 @@
 from django.conf import settings
 from django.urls import path
+from django.views.generic import RedirectView
 
 from . import views
 
 urlpatterns = [
+    path("", RedirectView.as_view(pattern_name="tokens")),
     path("tokens/", views.UserTokensView.as_view(), name="tokens"),
     path("tokens/create/", views.TokenCreateView.as_view(), name="token_create"),
+    path("tokens/<int:id>/", views.TokenDetailView.as_view(), name="token_detail"),
     path("tokens/<int:id>/delete/", views.TokenDeleteView.as_view(), name="token_delete"),
     path("tokens/<int:id>/edit/", views.TokenEditView.as_view(), name="token_edit"),
     path(
@@ -13,9 +16,25 @@ urlpatterns = [
     ),
     path(r"org/", views.OrgView.as_view(), name="org"),
     path("org/switch/", views.OrgSwitchView.as_view(), name="org_switch"),
+    path("organization/", views.OrganizationView.as_view(), name="organization"),
+    path(
+        "organization/<int:id>/limits/",
+        views.OrgLimitsEditView.as_view(),
+        name="organization_limits",
+    ),
+    path(
+        "organization/<int:id>/availability/",
+        views.OrgAvailabilityEditView.as_view(),
+        name="organization_availability",
+    ),
     path("team/create/", views.TeamCreateView.as_view(), name="team_create"),
     path("team/<int:id>/delete/", views.TeamDeleteView.as_view(), name="team_delete"),
     path("team/<int:id>/edit/", views.TeamUpdateView.as_view(), name="team_edit"),
+    path(
+        "team/<int:id>/availability/",
+        views.TeamAvailabilityEditView.as_view(),
+        name="team_availability",
+    ),
     path("team/<int:id>", views.TeamDetailView.as_view(), name="team"),
     path(
         "team/<int:id>/service-accounts/add/",
@@ -37,15 +56,18 @@ urlpatterns = [
         views.ServiceAccountTransferOwnershipView.as_view(),
         name="service_account_transfer",
     ),
-    path(
-        "team/<int:id>/admins/", views.TeamAdminManagementView.as_view(), name="team_admins_manage"
-    ),
+    path("team/<int:id>/members/", views.TeamMembersView.as_view(), name="team_members"),
     # New URL for Model/Endpoint list
     path("models/", views.ModelListView.as_view(), name="models"),
     path("usage/", views.UsageDashboardView.as_view(), name="usage"),
+    path("usage/keys/", views.KeyUsageView.as_view(), name="usage_keys"),
+    path("requests/", views.RequestLogView.as_view(), name="requests"),
     path("files/", views.UserFilesView.as_view(), name="files"),
+    path("files/<str:id>/delete/", views.FileDeleteView.as_view(), name="file_delete"),
     path("batches/", views.UserBatchesView.as_view(), name="batches"),
+    path("batches/<str:id>/cancel/", views.BatchCancelView.as_view(), name="batch_cancel"),
     path("mcp-servers/", views.MCPServersView.as_view(), name="mcp_servers"),
+    path("settings/", views.SettingsView.as_view(), name="settings"),
     path("vector-stores/", views.UserVectorStoresView.as_view(), name="vector_stores"),
     path(
         "vector-stores/<str:id>/", views.VectorStoreDetailView.as_view(), name="vector_store_detail"

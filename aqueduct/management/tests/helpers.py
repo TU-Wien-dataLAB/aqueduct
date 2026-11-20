@@ -1,4 +1,24 @@
-from management.models import Snippet, SnippetType
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+
+import yaml
+from django.test import override_settings
+
+from management.models import (
+    Snippet,
+    SnippetType,
+)
+
+
+@contextmanager
+def router_config(entries: list[dict]) -> Iterator[None]:
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "router.yaml"
+        path.write_text(yaml.safe_dump({"model_list": entries}))
+        with override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=str(path)):
+            yield
 
 
 def seed_active_config(code: str, name: str = "test-config") -> Snippet:

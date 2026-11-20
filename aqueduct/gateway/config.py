@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -110,6 +111,29 @@ def get_router_config() -> dict[str, Any]:
     _validate_router_config(data)
 
     return cast("dict[str, Any]", data)
+
+
+@lru_cache(maxsize=1)
+def model_entries() -> dict[str, dict[str, Any]]:
+    # LiteLLM balances load over entries that repeat a `model_name`; the first one describes it.
+    entries: dict[str, dict[str, Any]] = {}
+    for entry in get_router_config().get("model_list") or ():
+        entries.setdefault(entry["model_name"], entry)
+    return entries
+
+
+@lru_cache(maxsize=1)
+def model_names() -> tuple[str, ...]:
+    return tuple(model_entries())
+
+
+def model_info_with_context(model: Mapping[str, Any]) -> dict[str, Any]:
+    model_info = dict(model.get("model_info") or {})
+    if "max_input_tokens" not in model_info:
+        max_tokens = model_info.get("max_tokens")
+        if isinstance(max_tokens, int) and not isinstance(max_tokens, bool):
+            model_info["max_input_tokens"] = max_tokens
+    return model_info
 
 
 @lru_cache(maxsize=1)

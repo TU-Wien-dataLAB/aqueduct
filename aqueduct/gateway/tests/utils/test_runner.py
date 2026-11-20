@@ -64,6 +64,8 @@ def get_shared_mcp_server() -> "MCPEverythingServer":
 CACHES_BUILT_FROM_SETTING = {
     "LITELLM_ROUTER_CONFIG_FILE_PATH": (
         config.get_router_config,
+        config.model_entries,
+        config.model_names,
         config.get_router,
         config.get_all_model_request_limit_multipliers,
     ),

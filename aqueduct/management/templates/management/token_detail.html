@@ -80,4 +80,49 @@
     </div>
 </section>
 
+<section class="card bg-base-200">
+    <div class="card-body table-card gap-2">
+        <div class="card-head flex flex-wrap items-center justify-between gap-3">
+            <h2 class="card-title">{% translate "Latest requests" %}</h2>
+            <a class="link-plain text-sm" href="{% url 'requests' %}{% querystring log_query %}">{% translate "Requests" %}</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="table table-sm md:table-fixed md:min-w-[760px] max-md:block">
+                <colgroup>
+                    <col class="w-40"><col><col class="w-20"><col class="w-20"><col class="w-28 de:w-32"><col class="w-20"><col class="w-24">
+                </colgroup>
+                <thead class="max-md:hidden">
+                    <tr>
+                        <th>{% translate "Time" %}</th><th>{% translate "Model" %}</th><th>{% translate "Status" %}</th>
+                        <th class="text-right">{% translate "Input" %}</th><th class="text-right">{% translate "From cache" %}</th>
+                        <th class="text-right">{% translate "Output" %}</th><th class="text-right">{% translate "Response" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="max-md:block">
+                    {% for row in latest %}
+                        {% with request=row.request %}
+                            <tr class="max-md:block">
+                                <td class="whitespace-nowrap max-md:block max-md:pb-0"><a class="muted row-link" href="{% url 'requests' %}{% querystring log_query request=request.id %}#request-{{ request.id }}" aria-label="{% blocktranslate with id=request.id %}Open request {{ id }} in the log{% endblocktranslate %}">{{ request.timestamp|when:"recent" }}</a></td>
+                                <td class="truncate max-md:block">
+                                    <span class="font-mono" title="{{ request.model|default:_("n/a") }}">{{ request.model|default:_("n/a") }}</span>
+                                    <div class="muted truncate font-mono text-xs" title="{{ request.path }}">{{ request.path }}</div>
+                                    <div class="muted mt-1 flex flex-wrap gap-x-1.5 text-xs md:hidden">{% include "management/_request_status.html" %}·<span>{{ request.input_tokens|grouped }} → {{ request.output_tokens|grouped }}</span>·<span>{{ row.response_time }}</span></div>
+                                </td>
+                                <td class="max-md:hidden">
+                                    {% include "management/_request_status.html" %}
+                                </td>
+                                <td class="text-right max-md:hidden">{{ request.input_tokens|grouped }}</td>
+                                <td class="text-right max-md:hidden">{{ request.cached_input_tokens|grouped }}</td>
+                                <td class="text-right max-md:hidden">{{ request.output_tokens|grouped }}</td>
+                                <td class="whitespace-nowrap text-right max-md:hidden">{{ row.response_time }}</td>
+                            </tr>
+                        {% endwith %}
+                    {% empty %}
+                        <tr class="max-md:block"><td colspan="7" class="muted max-md:block">{% translate "No requests in the last 30 days." %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
 {% endblock %}

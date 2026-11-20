@@ -231,6 +231,34 @@ class FirstVisitTest(ApiKeysPagesTestBase):
 
 
 class KeyDetailTest(ApiKeysPagesTestBase):
+    def test_owner_sees_totals_models_and_latest_requests(self):
+        self.request_log(
+            self.solo_key,
+            timedelta(minutes=5),
+            model="gpt-4.1-nano",
+            input_tokens=3000,
+            output_tokens=1000,
+            status_code=200,
+            path="/chat/completions",
+            user_agent="curl/8.5.0",
+        )
+        self.request_log(
+            self.solo_key,
+            timedelta(minutes=6),
+            model="gpt-4.1-nano",
+            status_code=504,
+            path="/responses",
+            user_agent="curl/8.5.0",
+        )
+        response = self.get(self.solo, "token_detail", self.solo_key.id)
+        self.assertEqual(response.status_code, 200)
+        page = response.content.decode()
+        self.assertIn("3K", page)
+        self.assertIn("50%", page)
+        self.assertIn("curl/8.5.0 100%", page)
+        self.assertIn("/responses", page)
+        self.assertIn("Last 7 days", page)
+        self.assertNotIn(f"{reverse('usage')}?key={self.solo_key.id}", page)
 
     def test_the_figures_are_the_four_tiles_of_the_usage_page(self):
         self.request_log(
@@ -256,6 +284,48 @@ class KeyDetailTest(ApiKeysPagesTestBase):
         for gone in ("Cache hits", "Cached"):
             self.assertNotIn(gone, page)
 
+    def test_latest_requests_match_the_request_log(self):
+        limited = self.request_log(
+            self.solo_key,
+            timedelta(minutes=5),
+            model="gpt-4.1-nano",
+            status_code=429,
+            response_time_ms=5640,
+        )
+        response = self.get(self.solo, "token_detail", self.solo_key.id)
+        self.assertContains(
+            response, '<span class="st-warn inline-flex items-center gap-1.5" title="Rate-limited">'
+        )
+        self.assertContains(
+            response, '<td class="whitespace-nowrap text-right max-md:hidden">5.6 s</td>', html=True
+        )
+        log = reverse("requests")
+        self.assertContains(
+            response,
+            f'href="{log}?key={self.solo_key.id}&amp;span=1m&amp;request={limited.id}#request-{limited.id}"',
+        )
+        self.assertContains(
+            response,
+            f'<a class="link-plain text-sm" href="{log}?key={self.solo_key.id}&amp;span=1m">'
+            "Requests</a>",
+            html=True,
+        )
+        opened = self.client.get(f"{log}?key={self.solo_key.id}&request={limited.id}")
+        self.assertContains(opened, f'aria-label="Details of request {limited.id}"')
+
+    def test_latest_requests_are_those_the_log_opens_on(self):
+        shown = self.request_log(self.solo_key, timedelta(days=29))
+        self.request_log(self.solo_key, timedelta(days=31))
+        detail = self.get(self.solo, "token_detail", self.solo_key.id)
+        self.assertEqual([row.request for row in detail.context["latest"]], [shown])
+        log = self.get(self.solo, "requests", key=self.solo_key.id, span="1m").context["log"]
+        self.assertEqual([row.request for row in log.rows], [shown])
+        shown.delete()
+        self.assertContains(
+            self.get(self.solo, "token_detail", self.solo_key.id),
+            "No requests in the last 30 days.",
+        )
+
     def test_requests_metric_charts_failed_requests(self):
         self.request_log(self.solo_key, timedelta(minutes=5), status_code=500)
         response = self.get(self.solo, "token_detail", self.solo_key.id)
@@ -279,6 +349,23 @@ class KeyDetailTest(ApiKeysPagesTestBase):
         today = f"{timezone.localdate():%-d %b}"
         self.assertContains(
             response, f'aria-label="{today}: 1 request (OK 0, Rate-limited 0, Failed 1)"'
+        )
+
+    def test_dates_name_the_full_utc_time_and_the_tab_names_the_key(self):
+        used = self.request_log(self.solo_key, timedelta(minutes=5)).timestamp
+        self.solo_key.expires_at = timezone.now() + timedelta(days=30)
+        self.solo_key.save()
+        response = self.get(self.solo, "token_detail", self.solo_key.id)
+        self.assertContains(response, "<title>solo-laptop · API keys · Aqueduct AI Gateway</title>")
+        self.assertContains(
+            response, f'<time datetime="{used.isoformat()}" title="{used:%Y-%m-%d %H:%M:%S} UTC">'
+        )
+        self.assertContains(response, f">{used:%-d %b %H:%M}</time></a>")
+        expires = self.solo_key.expires_at
+        self.assertContains(
+            response,
+            f'<time datetime="{expires.isoformat()}" title="{expires:%Y-%m-%d %H:%M:%S} UTC">'
+            f"Expires {expires:%-d %b %Y}</time>",
         )
 
     def test_unknown_key_is_not_found(self):
@@ -487,6 +574,43 @@ class OrgAdminKeyAccessTest(ApiKeysPagesTestBase):
         super().setUp()
         self.request_log(self.solo_key, timedelta(hours=1), input_tokens=4200)
 
+    def test_org_admin_sees_a_members_key_without_actions(self):
+        response = self.get(self.org_admin, "token_detail", self.solo_key.id)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "4.2K")
+        self.assertContains(response, "Personal · solo@example.com")
+        self.assertContains(response, f"{reverse('requests')}?key={self.solo_key.id}")
+        for action in ("token_regenerate", "token_edit", "token_delete"):
+            self.assertNotContains(response, reverse(action, args=[self.solo_key.id]))
+
+    def test_admin_opens_another_orgs_key_with_a_log_link_into_its_org(self):
+        self.request_log(self.foreign_key, timedelta(hours=1))
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("token_detail", args=[self.foreign_key.id]))
+        self.assertEqual(response.status_code, 200)
+        query = f"key={self.foreign_key.id}&amp;span=1m&amp;org={self.other_org.id}"
+        link = f"{reverse('requests')}?{query}"
+        self.assertContains(response, f'href="{link}"')
+        self.assertEqual(
+            self.client.get(reverse("requests"), {"key": self.foreign_key.id}).status_code, 404
+        )
+        self.assertEqual(self.client.get(html.unescape(link)).status_code, 200)
+
+    def test_admin_follows_a_key_into_the_log_whatever_org_the_switch_shows(self):
+        self.request_log(self.pipeline_key, timedelta(hours=1))
+        self.client.force_login(self.admin)
+        self.client.get(reverse("tokens"), {"org": self.other_org.id})
+        log = re.escape(reverse("requests"))
+        for key in (self.solo_key, self.pipeline_key):
+            page = self.client.get(reverse("token_detail", args=[key.id])).content.decode()
+            links = re.findall(rf'href="({log}\?[^"#]*)', page)
+            self.assertEqual(len(links), 2)
+            for link in links:
+                with self.subTest(key=key.name, link=link):
+                    response = self.client.get(html.unescape(link))
+                    shown = Request.objects.get(token=key)
+                    self.assertContains(response, f'id="request-{shown.id}"')
+
     def test_admin_on_all_organizations_stays_there_after_a_key_log_link(self):
         self.client.force_login(self.admin)
         self.client.get(reverse("tokens"), {"org": "all"})
@@ -526,6 +650,21 @@ class ServiceAccountKeyDetailTest(ApiKeysPagesTestBase):
 
     def detail(self, user):
         return self.get(user, "token_detail", self.pipeline_key.id)
+
+    def test_team_admin_and_org_admin_see_usage_and_can_manage_the_account(self):
+        edit = reverse("service_account_edit", args=[self.pipeline.id])
+        for user in (self.team_admin, self.org_admin):
+            with self.subTest(user=user.username):
+                response = self.detail(user)
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, "Service account · ")
+                self.assertContains(response, "4.2K")
+                self.assertContains(response, f"?key={self.pipeline_key.id}")
+                self.assertContains(response, f'href="{edit}"')
+                self.assertContains(
+                    response, reverse("token_regenerate", args=[self.pipeline_key.id])
+                )
+                self.assertNotContains(response, reverse("token_edit", args=[self.pipeline_key.id]))
 
     def test_plain_team_member_sees_usage_without_management_actions(self):
         response = self.detail(self.plain_member)

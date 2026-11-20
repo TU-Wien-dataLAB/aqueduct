@@ -27,6 +27,8 @@ from management.models import (
 
 User = get_user_model()
 CHAT = "gpt-4.1-nano"
+EMBEDDING = "text-embedding-ada-002"
+PATHS = ("/own", "/others", "/team-sa", "/side-sa", "/sent-as-owner", "/foreign")
 KEY_NAMES = ("solo-laptop", "member-laptop", "pipeline", "foreign-laptop")
 
 
@@ -143,6 +145,45 @@ class UsagePageTestBase(RoleWorld):
                 self.assertContains(response, name)
             else:
                 self.assertNotContains(response, name)
+
+
+class RequestsPageTestBase(RoleWorld):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.other = cls.user("other")
+        cls.sa_creator = cls.user("sa-creator")
+        cls.others_key = make_token(cls.other, "other-laptop")
+        team_sa = ServiceAccount.objects.create(name="team-sa", team=cls.team)
+        cls.team_key = make_token(cls.sa_creator, "team-sa", service_account=team_sa)
+        side_sa = ServiceAccount.objects.create(name="side-sa", team=cls.side_team)
+        cls.side_key = make_token(cls.sa_creator, "side-sa", service_account=side_sa)
+
+    def setUp(self):
+        super().setUp()
+        self.log(self.solo_key, "/own")
+        self.log(self.others_key, "/others")
+        self.log(self.team_key, "/team-sa")
+        self.log(self.side_key, "/side-sa")
+        self.log(self.others_key, "/sent-as-owner", user_id="solo@example.com")
+        self.log(self.foreign_key, "/foreign")
+
+    def log(self, token: Token, path: str, ago=timedelta(hours=1), **fields) -> Request:
+        fields = {"model": CHAT, "status_code": 200, **fields}
+        return Request.objects.create(
+            token=token, path=path, timestamp=timezone.now() - ago, **fields
+        )
+
+    def get(self, user, **params):
+        self.client.force_login(user)
+        return self.client.get(reverse("requests"), params)
+
+    def paths_on(self, response) -> set[str]:
+        return {path for path in PATHS if f">{path}</div>" in response.content.decode()}
+
+
+def listed(response) -> list[str]:
+    return [row.request.path for row in response.context["log"].rows]
 
 
 def _text(markup: str) -> str:

@@ -1,0 +1,1 @@
+{% load i18n ui %}{% if row.outcome %}<span class="{{ row.outcome.tone }} inline-flex items-center gap-1.5" title="{{ row.outcome.label }}">{% icon row.outcome.icon small=True %}{{ row.request.status_code }}</span>{% else %}<span class="st-off inline-flex items-center gap-1.5">{% icon "off" small=True %}{% translate "n/a" %}</span>{% endif %}

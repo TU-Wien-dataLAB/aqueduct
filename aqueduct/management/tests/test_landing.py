@@ -45,6 +45,13 @@ class LandingTest(RoleWorld):
                 reverse("oidc_authentication_callback"), {"code": "c", "state": state}
             )
 
+    def test_signed_in_visit_to_the_login_page_follows_a_next_on_this_site(self):
+        self.client.force_login(self.solo)
+        page = f"{reverse('requests')}?span=1d&status=500"
+        self.assertRedirects(
+            self.client.get(reverse("sso"), {"next": page}), page, fetch_redirect_response=False
+        )
+
     def test_site_root_opens_api_keys(self):
         self.client.force_login(self.solo)
         self.assertRedirects(self.client.get("/"), reverse("tokens"), status_code=301)

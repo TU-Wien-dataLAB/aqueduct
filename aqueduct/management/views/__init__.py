@@ -4,6 +4,7 @@ from .files import UserFilesView
 from .mcp_servers import MCPServersView
 from .models import ModelListView
 from .org import OrgSwitchView, OrgView
+from .requests import RequestLogView
 from .service_account import (
     ServiceAccountCreateView,
     ServiceAccountDeleteView,

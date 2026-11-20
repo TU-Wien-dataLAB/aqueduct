@@ -1,0 +1,9 @@
+{% load i18n ui %}<details class="dropdown">
+    <summary class="btn btn-sm">{% icon "models" small=True %}<span class="sr-only">{{ label }} </span>{% if current %}{{ current }}{% else %}{% translate "All models" %}{% endif %}</summary>
+    <ul class="menu dropdown-content z-10 mt-1 max-h-80 w-64 flex-nowrap overflow-y-auto rounded-box bg-base-100 p-2 shadow">
+        <li><a href="{% query_with param None reset %}{{ anchor }}"{% if not current %} aria-current="true" class="menu-active"{% endif %}>{% translate "All models" %}</a></li>
+        {% for name in models %}
+            <li><a class="font-mono{% if name == current %} menu-active{% endif %}" href="{% query_with param name reset %}{{ anchor }}"{% if name == current %} aria-current="true"{% endif %}>{{ name }}</a></li>
+        {% endfor %}
+    </ul>
+</details>

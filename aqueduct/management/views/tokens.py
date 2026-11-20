@@ -5,12 +5,13 @@ from django.conf import settings
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import QuerySet
-from django.http import HttpResponse
+from django.http import HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.cache import patch_cache_control
 from django.utils.decorators import method_decorator
+from django.utils.http import urlencode
 from django.utils.translation import gettext
 from django.views import View
 from django.views.decorators.http import require_POST
@@ -34,7 +35,10 @@ from management.keys import (
 from management.limits import panels
 from management.models import Token
 from management.nav import gateway_url
-from management.ownership import RELATED, team_of
+from management.org_choice import EVERY_ORG
+from management.ownership import RELATED, org_id, team_of
+from management.request_filters import Key
+from management.request_rows import Row
 from management.views.base import BaseAqueductView, show_new_key, take_new_key
 
 
@@ -77,6 +81,9 @@ class TokenDetailView(BaseAqueductView, DetailView):
         viewer, token = self.viewer, self.object
         now = timezone.now()
         report = key_report(token, now)
+        log_query: dict[str, object] = {"key": token.id, "span": "1m"}
+        if not viewer.may_key(KeyAct.SEE, token):
+            log_query["org"] = org_id(token) or EVERY_ORG
         secret = take_new_key(self.request, token.id)
         can_manage = viewer.may_key(KeyAct.MANAGE, token)
         context.update(
@@ -84,6 +91,8 @@ class TokenDetailView(BaseAqueductView, DetailView):
             if secret and can_manage
             else None,
             report=report,
+            latest=tuple(Row(request, Key(token, None, ""), False) for request in report.latest),
+            log_query=QueryDict(urlencode(log_query)),
             charts=tuple((shown, report.chart(shown)) for shown in ("tokens", "requests")),
             expiry=Expiry.of(token.expires_at, now),
             panel=panels([token], now)[token.id],

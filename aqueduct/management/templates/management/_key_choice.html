@@ -1,0 +1,1 @@
+<a{% if key == filters.key %} class="menu-active" aria-current="true"{% endif %} href="{% querystring key_q=None key=key.token.id scope=None before=None after=None request=None page=None %}"><span class="flex flex-col"><span class="font-mono">{{ key.name }}</span>{% if not key.own %}<span class="text-xs opacity-70">{{ key.note }}</span>{% endif %}</span></a>

@@ -1,0 +1,127 @@
+{% extends "management/base.html" %}
+{% load i18n ui %}
+
+{% block heading %}{% translate "Requests" %}{% endblock %}
+{% block subheading %}<span class="muted text-sm">{{ shell.scope }}</span>{% endblock %}
+{% block body %}
+<div class="flex flex-wrap items-center gap-3">
+    {% if log.searches_text %}{% translate "ID, path, user or agent" as search_hint %}{% translate "Search requests" as search_label %}{% else %}{% translate "Request ID" as search_hint %}{% endif %}
+    {% if log.search %}{% querystring q=None key_q=None before=None after=None page=None request=None as clear_url %}{% endif %}
+    {% include "management/_search.html" with name="q" value=log.search placeholder=search_hint label=search_label maxlength=256 keep=filters.search_params clear_url=clear_url %}
+    {% include "management/_filters.html" %}
+    {% if log.text_blocked %}<p class="muted w-full text-sm">{% translate "Narrow to 7 days or pick a key or model to search text." %}</p>{% endif %}
+</div>
+
+<div class="flex flex-wrap items-center gap-3">
+    <nav class="join max-sm:flex-wrap max-sm:gap-1 max-sm:[&>.join-item]:rounded-full" aria-label="{% translate "Status" %}">
+        {% for tab in log.tabs %}
+            <a class="btn btn-sm join-item{% if tab.value == status %} btn-primary{% endif %}"
+               href="{% querystring key_q=None status=tab.value before=None after=None page=None request=None %}"
+               {% if tab.value == status %}aria-current="page"{% endif %}>{{ tab.label }}{% if tab.codes %} <span class="text-xs font-normal opacity-80">{{ tab.codes }}</span>{% endif %} <span class="text-xs opacity-80">{{ tab.count|grouped }}</span></a>
+        {% endfor %}
+    </nav>
+</div>
+{% include "management/_refused_note.html" with extra_class="-mt-3" %}
+
+<section class="card bg-base-200">
+    <div class="card-body table-card">
+        <div class="aq-scroll-x">
+            <table class="table table-sm md:table-fixed md:min-w-[860px] min-[1366px]:min-w-[1020px] max-md:block">
+                <colgroup>
+                    <col class="w-12"><col class="w-32">{% if log.shows_key %}<col class="w-[20%]">{% endif %}<col><col class="w-20"><col class="w-20"><col class="w-0 min-[1366px]:w-28 de:min-[1366px]:w-32"><col class="w-20"><col class="w-24">
+                </colgroup>
+                <thead class="max-md:hidden">
+                    <tr>
+                        <th rowspan="2"><span class="sr-only">{% translate "Details" %}</span></th>
+                        <th rowspan="2"{% if log.headers.time.aria_sort %} aria-sort="{{ log.headers.time.aria_sort }}"{% endif %}>{% include "management/_sort_heading.html" with header=log.headers.time label=_("Time") %}</th>
+                        {% if log.shows_key %}<th rowspan="2">{% translate "Key" %}</th>{% endif %}
+                        <th rowspan="2"{% if log.headers.model.aria_sort %} aria-sort="{{ log.headers.model.aria_sort }}"{% endif %}>{% include "management/_sort_heading.html" with header=log.headers.model label=_("Model") %}</th>
+                        <th rowspan="2"{% if log.headers.status.aria_sort %} aria-sort="{{ log.headers.status.aria_sort }}"{% endif %}>{% include "management/_sort_heading.html" with header=log.headers.status label=_("Status") %}</th>
+                        <th colspan="3" class="text-center"{% if log.headers.tokens.aria_sort %} aria-sort="{{ log.headers.tokens.aria_sort }}"{% endif %}>{% include "management/_sort_heading.html" with header=log.headers.tokens label=_("Tokens") %}<span class="muted hidden font-normal min-[1366px]:inline"> {% translate "(input + output)" %}</span></th>
+                        <th rowspan="2" class="text-right"{% if log.headers.response.aria_sort %} aria-sort="{{ log.headers.response.aria_sort }}"{% endif %}>{% include "management/_sort_heading.html" with header=log.headers.response label=_("Response") %}</th>
+                    </tr>
+                    <tr>
+                        <th class="text-right">{% translate "Input" %}</th>
+                        <th class="overflow-hidden text-right max-[1365px]:p-0">{% translate "From cache" %}</th>
+                        <th class="text-right">{% translate "Output" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="max-md:block">
+                    {% for row in log.rows %}
+                        {% with request=row.request %}
+                            <tr id="request-{{ request.id }}" class="cursor-pointer max-md:flex max-md:items-start" data-row-toggle>
+                                <td class="max-md:px-1">
+                                    <a class="btn btn-ghost btn-xs btn-square" data-row-toggle-link
+                                       href="{% with here=log.pager.here %}{% if row.is_open %}{% querystring key_q=None request=None before=here.before after=here.after page=here.page %}{% else %}{% querystring key_q=None request=request.id before=here.before after=here.after page=here.page %}#request-{{ request.id }}{% endif %}{% endwith %}"
+                                       aria-expanded="{{ row.is_open|yesno:'true,false' }}"
+                                       aria-label="{% if row.is_open %}{% blocktranslate with id=request.id %}Hide details of request {{ id }}{% endblocktranslate %}{% else %}{% blocktranslate with id=request.id %}Show details of request {{ id }}{% endblocktranslate %}{% endif %}">{% if row.is_open %}{% icon "chevron" small=True extra_class="rotate-90" %}{% else %}{% icon "chevron" small=True %}{% endif %}</a>
+                                </td>
+                                <td class="min-w-0 flex-1 md:hidden">
+                                    <div class="flex items-center gap-1.5 whitespace-nowrap"><span class="muted">{{ request.timestamp|when:"recent" }}</span> · {% include "management/_request_status.html" %} · {{ row.response_time }}</div>
+                                    <div class="flex gap-1.5 whitespace-nowrap"><span class="truncate font-mono" title="{{ request.model }}">{{ request.model|default:_("n/a") }}</span><span class="shrink-0">· {{ request.input_tokens|grouped }} → {{ request.output_tokens|grouped }}</span></div>
+                                    {% if row.unknown_model %}<div class="muted text-xs">{% include "management/_unknown_model.html" %}</div>{% endif %}
+                                    {% if log.shows_key %}<div class="muted truncate font-mono text-xs">{{ row.key.name }}</div>{% endif %}
+                                </td>
+                                <td class="muted whitespace-nowrap max-md:hidden">{{ request.timestamp|when:"recent" }}</td>
+                                {% if log.shows_key %}
+                                    <td class="truncate max-md:hidden">
+                                        {% if row.key.href %}<a class="link-plain font-mono" href="{{ row.key.href }}" title="{{ row.key.name }}">{{ row.key.name }}</a>{% else %}<span class="font-mono" title="{{ row.key.name }}">{{ row.key.name }}</span>{% endif %}
+                                        <div class="muted truncate text-xs" title="{{ row.key.note }}">{{ row.key.note }}</div>
+                                    </td>
+                                {% endif %}
+                                <td class="truncate max-md:hidden">
+                                    {% if request.model %}<a class="link-plain font-mono" href="{% querystring key_q=None model=request.model before=None after=None page=None request=None %}" title="{% blocktranslate with model=request.model %}Show only {{ model }}{% endblocktranslate %}">{{ request.model }}</a>{% else %}{% translate "n/a" %}{% endif %}
+                                    {% if row.unknown_model %}<div class="muted whitespace-normal text-xs">{% include "management/_unknown_model.html" %}</div>{% else %}<div class="muted truncate font-mono text-xs" title="{{ request.path }}">{{ request.path }}</div>{% endif %}
+                                </td>
+                                <td class="max-md:hidden">
+                                    {% include "management/_request_status.html" %}
+                                </td>
+                                <td class="text-right max-md:hidden">{{ request.input_tokens|grouped }}</td>
+                                <td class="overflow-hidden text-right max-md:hidden max-[1365px]:p-0">{{ request.cached_input_tokens|grouped }}</td>
+                                <td class="text-right max-md:hidden">{{ request.output_tokens|grouped }}</td>
+                                <td class="text-right max-md:hidden">{{ row.response_time }}</td>
+                            </tr>
+                            {% if row.is_open %}
+                                <tr class="max-md:block">
+                                    <td class="max-md:hidden"></td>
+                                    <td colspan="{{ log.shows_key|yesno:'8,7' }}" class="max-md:block">
+                                        <dl class="grid grid-cols-1 gap-x-8 gap-y-3 pb-3 sm:grid-cols-2 md:grid-cols-3" aria-label="{% blocktranslate with id=request.id %}Details of request {{ id }}{% endblocktranslate %}">
+                                            <div><dt class="muted text-xs">{% translate "Request ID" %}</dt><dd class="flex items-center gap-1 font-mono text-sm">{{ request.id }}{% blocktranslate with id=request.id asvar copy_label %}Copy request ID {{ id }}{% endblocktranslate %}{% copy_button request.id copy_label _("Copy request ID") %}</dd></div>
+                                            {% if request.path %}<div class="min-w-0"><dt class="muted text-xs">{% translate "Path" %}</dt><dd class="break-words font-mono text-sm">{{ request.path }}</dd></div>{% endif %}
+                                            <div class="min-[1366px]:hidden"><dt class="muted text-xs">{% translate "From cache" %}</dt><dd class="text-sm tabular-nums">{{ request.cached_input_tokens|grouped }}</dd></div>
+                                            {% if row.output_speed %}<div><dt class="muted text-xs">{% translate "Output speed" %}</dt><dd class="text-sm tabular-nums">{{ row.output_speed }}</dd></div>{% endif %}
+                                            {% if log.shows_overhead and row.overhead %}<div><dt class="muted text-xs">{% translate "Gateway overhead" %}</dt><dd class="text-sm tabular-nums">{{ row.overhead }}</dd></div>{% endif %}
+                                            {% if request.user_id %}<div class="min-w-0"><dt class="muted text-xs">{% translate "User ID" %}</dt><dd class="text-sm" title="{{ request.user_id }}">{{ request.user_id|break_at_sign }}</dd></div>{% endif %}
+                                            {% if request.user_agent %}<div class="min-w-0 sm:col-span-2 md:col-span-3"><dt class="muted text-xs">{% translate "User agent" %}</dt><dd class="break-words font-mono text-sm">{{ request.user_agent }}</dd></div>{% endif %}
+                                            {% if row.error %}<div class="sm:col-span-2 md:col-span-3"><dt class="muted text-xs">{% translate "Error" %}</dt><dd class="text-sm">{{ row.error }}</dd></div>{% endif %}
+                                        </dl>
+                                    </td>
+                                </tr>
+                            {% endif %}
+                        {% endwith %}
+                    {% empty %}
+                        <tr class="max-md:block"><td colspan="{{ log.shows_key|yesno:'9,8' }}" class="muted max-md:block">{% if narrowed %}{% translate "No request matches these filters." %}{% else %}{{ filters.span.no_requests }}{% endif %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-foot flex flex-wrap items-center justify-between gap-3">
+            <span class="muted text-xs">
+                {% if log.pager.start and log.rows %}{% blocktranslate with start=log.pager.start|grouped end=log.end|grouped total=log.count|grouped %}{{ start }}–{{ end }} of {{ total }}{% endblocktranslate %}{% else %}{% blocktranslate count n=log.count with total=log.count|grouped %}{{ total }} request{% plural %}{{ total }} requests{% endblocktranslate %}{% endif %}
+                {% if not log.pager.next %}· {% blocktranslate count days=retention_days %}Requests are kept for {{ days }} day{% plural %}Requests are kept for {{ days }} days{% endblocktranslate %}{% endif %}
+            </span>
+            {% if log.pager.previous or log.pager.next %}
+                <nav class="join" aria-label="{% translate "Pages" %}">
+                    {% for label, place in log.pager.links %}
+                        {% if place %}
+                            <a class="btn btn-sm join-item" href="{% querystring key_q=None request=None before=place.before after=place.after page=place.page %}">{{ label }}</a>
+                        {% else %}
+                            <button type="button" class="btn btn-sm join-item" disabled>{{ label }}</button>
+                        {% endif %}
+                    {% endfor %}
+                </nav>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endblock %}

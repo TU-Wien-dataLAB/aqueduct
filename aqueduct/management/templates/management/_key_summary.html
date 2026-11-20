@@ -1,0 +1,1 @@
+{% load i18n ui %}<summary class="btn btn-sm max-w-72">{% icon "key" small=True %}<span class="sr-only">{% translate "Key:" %} </span><span class="truncate"{% if filters.key %} title="{{ filters.key.name }}"{% endif %}>{% if filters.key %}{{ filters.key.name }}{% elif filters.mine %}{% translate "My keys" %}{% else %}{% translate "All keys" %}{% endif %}</span></summary>

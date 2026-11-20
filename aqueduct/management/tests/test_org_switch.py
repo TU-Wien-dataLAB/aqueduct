@@ -22,6 +22,14 @@ class OrgSwitchTest(OrgSwitchTestBase):
         chosen = self.client.get(reverse(url_name), params).context["filters"].viewer.chosen
         return chosen.org if isinstance(chosen, WholeOrg) else None
 
+    def test_switch_returns_without_the_old_orgs_filters(self):
+        self.as_user(self.far_admin)
+        back = f"{reverse('requests')}?org={self.org.id}&key=7&key_q=lap&span=1d&model=gpt-4&page=2"
+        response = self.switch(self.other_org.id, back)
+        self.assertRedirects(
+            response, f"{reverse('requests')}?span=1d&model=gpt-4", fetch_redirect_response=False
+        )
+
     def test_switch_ignores_a_foreign_next(self):
         self.as_user(self.far_admin)
         response = self.switch(self.org.id, "https://evil.example/")

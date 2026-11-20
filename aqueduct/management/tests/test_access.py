@@ -182,6 +182,42 @@ class OrgSwitchTest(Matrix):
         self.assertEqual(stale.member_of, {self.north_a.pk})
 
 
+@override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
+class CrossOrgRuleTest(Matrix):
+    def setUp(self):
+        super().setUp()
+        sent = timezone.now() - timedelta(hours=1)
+        Request.objects.bulk_create(
+            Request(token=token, path=f"/{token.name}", model=CHAT, timestamp=sent, status_code=200)
+            for token in Token.objects.all()
+        )
+
+    def listed(self, page: str, **params) -> set[str]:
+        response = self.client.get(reverse(page), params)
+        self.assertEqual(response.status_code, 200)
+        if page == "requests":
+            return {row.request.token.name for row in response.context["log"].rows}
+        if page == "usage_keys":
+            return {key.name for key in response.context["keys"]}
+        return {row.token.name for row in response.context["keys"].rows}
+
+    def test_the_key_page_and_the_log_agree_for_every_viewer(self):
+        for user in (
+            self.org_admin,
+            self.stale_admin,
+            self.member,
+            self.stale_member,
+            self.moved,
+            self.southerner,
+        ):
+            self.client.force_login(user)
+            listed = self.listed("requests")
+            with self.subTest(user=user.username):
+                for token in Token.objects.all():
+                    status = self.client.get(reverse("token_detail", args=[token.id])).status_code
+                    self.assertEqual(status, 200 if token.name in listed else 404, token.name)
+
+
 class RequestScopeTest(Matrix):
     def test_both_branches_of_the_id_list_lever_return_the_same_requests(self):
         sent = timezone.now() - timedelta(hours=1)

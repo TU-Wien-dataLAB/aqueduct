@@ -313,6 +313,10 @@ class NavByRoleTest(RoleWorld):
             re.S,
         )
 
+    def test_the_main_entries_follow_the_tasks_in_order(self):
+        main = self.sections(self.solo, reverse("tokens"))[None]
+        self.assertEqual(main, ["API keys", "Requests", "Usage", "Models", "MCP servers"])
+
     def test_a_person_in_no_team_sees_no_team_section_and_no_teams_link(self):
         sections = self.sections(self.solo, reverse("tokens"))
         self.assertEqual(list(sections), [None, "Resources"])

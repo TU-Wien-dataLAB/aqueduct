@@ -44,6 +44,7 @@ urlpatterns = [
     # New URL for Model/Endpoint list
     path("models/", views.ModelListView.as_view(), name="models"),
     path("usage/", views.UsageDashboardView.as_view(), name="usage"),
+    path("requests/", views.RequestLogView.as_view(), name="requests"),
     path("files/", views.UserFilesView.as_view(), name="files"),
     path("batches/", views.UserBatchesView.as_view(), name="batches"),
     path("mcp-servers/", views.MCPServersView.as_view(), name="mcp_servers"),

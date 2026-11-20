@@ -21,6 +21,7 @@ from management.models import (
 )
 
 User = get_user_model()
+CHAT = "gpt-4.1-nano"
 
 
 @contextmanager

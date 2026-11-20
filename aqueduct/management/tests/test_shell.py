@@ -122,6 +122,19 @@ class ShellTest(TestCase):
         self.assertNotIn("Terms of service", shown)
         self.assertNotIn("Profiling", shown)
 
+    def test_organization_and_admin_groups_appear_only_for_org_admins_and_staff(self):
+        self.sign_in("user")
+        titles = [s.title for s in self.shell_on(reverse("tokens")).sections]
+        self.assertNotIn("Admin", titles)
+        self.assertNotIn("Organization", titles)
+        self.sign_in("admin")
+        sections = {s.title: s for s in self.shell_on(reverse("tokens")).sections}
+        self.assertEqual([link.label for link in sections["Admin"].links], ["Admin panel"])
+        self.assertEqual(
+            [link.label for link in sections["Organization"].links],
+            ["All keys", "Teams", "Limits and access"],
+        )
+
     @override_settings(AUTHENTICATION_BACKENDS=["django.contrib.auth.backends.ModelBackend"])
     def test_staff_without_superuser_get_the_admin_panel(self):
         admin_url = reverse("admin:index")
@@ -147,6 +160,22 @@ class ShellTest(TestCase):
             [(link.label, link.href) for link in shell.help_links],
             list(settings.EXTRA_NAV_LINKS.items()),
         )
+
+    def test_current_page_follows_url_families(self):
+        self.sign_in("admin")
+        cases = {
+            reverse("tokens"): "API keys",
+            reverse("token_create"): "API keys",
+            reverse("team", kwargs={"id": 1}): "Whale",
+            reverse("org"): "Teams",
+            reverse("usage"): "Usage",
+            reverse("usage_keys"): "All keys",
+            reverse("organization"): "Limits and access",
+            reverse("admin:index"): "Admin panel",
+        }
+        for url, label in cases.items():
+            with self.subTest(url=url):
+                self.assertEqual(self.shell_on(url).current.label, label)
 
     def test_viewer_shows_email_and_role(self):
         self.sign_in("org-admin")
@@ -350,6 +379,29 @@ class NavByRoleTest(RoleWorld):
                 sections = self.sections(user, reverse("tokens"))
                 self.assertEqual(sections["Team"], ["NLP Lab"])
                 self.assertNotIn("Organization", sections)
+
+    def test_org_and_platform_admins_get_the_organization_section(self):
+        for user in (self.org_admin, self.admin):
+            with self.subTest(user=user.username):
+                sections = self.sections(user, reverse("tokens"))
+                self.assertEqual(
+                    sections["Organization"], ["All keys", "Teams", "Limits and access"]
+                )
+
+    def test_exactly_one_entry_is_current_on_each_page(self):
+        cases = (
+            (self.solo, reverse("tokens"), "API keys"),
+            (self.solo, reverse("usage"), "Usage"),
+            (self.org_admin, reverse("usage_keys"), "All keys"),
+            (self.org_admin, reverse("org"), "Teams"),
+            (self.org_admin, reverse("team", args=[self.side_team.id]), "Teams"),
+            (self.org_admin, reverse("organization"), "Limits and access"),
+            (self.member, reverse("team", args=[self.team.id]), "NLP Lab"),
+            (self.team_admin, reverse("service_account_edit", args=[self.pipeline.id]), "NLP Lab"),
+        )
+        for user, url, label in cases:
+            with self.subTest(url=url, user=user.username):
+                self.assertEqual([found.strip() for found in self.current(user, url)], [label])
 
 
 class RailTest(RoleWorld):

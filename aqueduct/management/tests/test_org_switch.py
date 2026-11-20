@@ -23,6 +23,21 @@ class OrgSwitchTest(OrgSwitchTestBase):
         chosen = self.client.get(reverse(url_name), params).context["filters"].viewer.chosen
         return chosen.org if isinstance(chosen, WholeOrg) else None
 
+    def test_admin_switches_once_for_every_page(self):
+        self.as_user(self.far_admin)
+        self.switch(self.org.id)
+        for url_name in ORG_SCOPED:
+            with self.subTest(page=url_name):
+                self.assertEqual(self.viewed(url_name), self.org)
+        teams = self.client.get(reverse("org"))
+        self.assertContains(teams, "NLP Lab")
+        self.assertNotContains(teams, "Foreign")
+        self.assertNotContains(teams, "Organization</th>")
+        organization = self.client.get(reverse("organization"))
+        self.assertContains(organization, "<span>lab-org</span>", html=True)
+        self.far_admin.profile.refresh_from_db()
+        self.assertEqual(self.far_admin.profile.org, self.other_org)
+
     def test_all_organizations_lists_every_team_with_its_org(self):
         self.as_user(self.far_admin)
         self.switch("all")
@@ -39,6 +54,22 @@ class OrgSwitchTest(OrgSwitchTestBase):
         self.assertContains(
             teams, '<span class="muted text-sm">All organizations</span>', html=True
         )
+
+    def test_all_organizations_lists_every_org_to_pick_one(self):
+        self.as_user(self.far_admin)
+        self.switch("all")
+        organization = self.client.get(reverse("organization"))
+        self.assertContains(
+            organization,
+            '<h1 class="break-words text-3xl font-semibold">Organizations</h1>',
+            html=True,
+        )
+        self.assertNotContains(organization, reverse("organization_limits", args=[self.org.id]))
+        for org in (self.org, self.other_org):
+            self.assertContains(organization, f'href="{reverse("organization")}?org={org.id}"')
+        picked = self.client.get(reverse("organization"), {"org": self.org.id})
+        self.assertContains(picked, "<span>lab-org</span>", html=True)
+        self.assertEqual(self.client.session[SESSION_KEY], str(self.org.id))
 
     def test_org_parameter_applies_and_stays_for_later_pages(self):
         self.as_user(self.far_admin)
@@ -143,3 +174,18 @@ class TeamCreateOrgTest(OrgSwitchTestBase):
             with self.subTest(org=org_id):
                 self.assertEqual(self.create(org_id).status_code, 404)
         self.assertFalse(Team.objects.filter(name="Vision").exists())
+
+
+class SwitchLandingTest(OrgSwitchTestBase):
+    def test_a_switch_never_returns_to_a_page_about_the_old_orgs_objects(self):
+        self.as_user(self.far_admin)
+        self.switch(self.org.id)
+        for back in (
+            reverse("organization_limits", args=[self.org.id]),
+            reverse("team", args=[self.team.id]),
+        ):
+            with self.subTest(back=back):
+                response = self.switch(self.other_org.id, back)
+                self.assertRedirects(response, reverse("org"), fetch_redirect_response=False)
+        response = self.switch(self.org.id, reverse("usage") + "?span=1d&key=1")
+        self.assertRedirects(response, reverse("usage") + "?span=1d", fetch_redirect_response=False)

@@ -6,6 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import yaml
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -30,6 +31,13 @@ CHAT = "gpt-4.1-nano"
 EMBEDDING = "text-embedding-ada-002"
 PATHS = ("/own", "/others", "/team-sa", "/side-sa", "/sent-as-owner", "/foreign")
 KEY_NAMES = ("solo-laptop", "member-laptop", "pipeline", "foreign-laptop")
+
+
+TEST_MCP_CONFIG = Path(settings.BASE_DIR).parent / "test-mcp.json"
+
+
+def mcp_config(path: Path | str = TEST_MCP_CONFIG) -> override_settings:
+    return override_settings(MCP_CONFIG_FILE_PATH=path)
 
 
 @contextmanager

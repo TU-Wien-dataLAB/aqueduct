@@ -1,0 +1,56 @@
+{% extends "management/base.html" %}
+{% load i18n ui %}
+
+{% block heading %}{% translate "Limits and access" %}{% endblock %}
+{% block subheading %}
+    <div class="muted flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+        <span>{{ org_object.name }}</span>
+        <span><a class="link-plain" href="{% url 'org' %}">{% blocktranslate with teams=page.teams|grouped count n=page.teams %}{{ teams }} team{% plural %}{{ teams }} teams{% endblocktranslate %}</a></span>
+    </div>
+{% endblock %}
+{% block body %}
+<div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+    <section class="card bg-base-200" aria-labelledby="limits-title">
+        <div class="card-body gap-4">
+            <div class="flex items-center justify-between gap-3">
+                <h2 id="limits-title" class="card-title">{% translate "Limits" %}</h2>
+                <a class="link-plain text-sm" href="{% url 'organization_limits' org_object.id %}" aria-label="{% translate "Edit limits" %}">{% translate "Edit" %}</a>
+            </div>
+            {% include "management/_configured_limits.html" with limits=page.limits %}
+            <p class="muted text-sm">{% translate "Each key gets these limits unless it has its own." %}
+                {% if page.teams_with_limits %}{% blocktranslate count n=page.teams_with_limits %}{{ n }} team has limits of its own.{% plural %}{{ n }} teams have limits of their own.{% endblocktranslate %}{% endif %}
+                {% if page.people_with_limits %}{% blocktranslate count n=page.people_with_limits %}{{ n }} person has limits of their own.{% plural %}{{ n }} people have limits of their own.{% endblocktranslate %}{% endif %}</p>
+            <dl class="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-t border-base-300 pt-4 text-sm">
+                {% include "management/_figure.html" with label=_("Personal keys per person") value=page.max_personal_keys aside=_("(server setting)") %}
+            </dl>
+        </div>
+    </section>
+
+    <section class="card bg-base-200" aria-labelledby="blocked-title">
+        <div class="card-body table-card gap-2">
+            <div class="card-head flex items-center justify-between gap-3">
+                <h2 id="blocked-title" class="card-title">{% translate "Blocked models and MCP servers" %}</h2>
+                <a class="link-plain text-sm" href="{% url 'organization_availability' org_object.id %}" aria-label="{% translate "Edit availability" %}">{% translate "Edit" %}</a>
+            </div>
+            {% if page.unavailable %}
+                <div class="overflow-x-auto">
+                    <table class="table">
+                        <thead><tr><th>{% translate "For" %}</th><th>{% translate "Models" %}</th><th>{% translate "MCP servers" %}</th></tr></thead>
+                        <tbody>
+                            {% for row in page.unavailable %}
+                                <tr>
+                                    <td>{% if row.team %}<a class="link-plain" href="{% url 'team' row.team.id %}">{{ row.team.name }}</a>{% else %}<span class="whitespace-nowrap">{% blocktranslate with name=org_object.name %}Everyone in {{ name }}{% endblocktranslate %}</span>{% endif %}</td>
+                                    <td>{% if row.models %}<div class="flex flex-wrap gap-1.5">{% for model in row.models %}<span class="badge badge-sm bg-base-100 font-mono">{{ model }}</span>{% endfor %}</div>{% endif %}</td>
+                                    <td>{% if row.mcp_servers %}<div class="flex flex-wrap gap-1.5">{% for server in row.mcp_servers %}<span class="badge badge-sm bg-base-100 font-mono">{{ server }}</span>{% endfor %}</div>{% endif %}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="muted text-sm">{% blocktranslate with name=org_object.name %}Nothing is blocked for all of {{ name }}.{% endblocktranslate %}</p>
+            {% endif %}
+        </div>
+    </section>
+</div>
+{% endblock %}

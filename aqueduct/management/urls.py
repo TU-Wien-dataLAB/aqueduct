@@ -14,6 +14,17 @@ urlpatterns = [
     ),
     path(r"org/", views.OrgView.as_view(), name="org"),
     path("org/switch/", views.OrgSwitchView.as_view(), name="org_switch"),
+    path("organization/", views.OrganizationView.as_view(), name="organization"),
+    path(
+        "organization/<int:id>/limits/",
+        views.OrgLimitsEditView.as_view(),
+        name="organization_limits",
+    ),
+    path(
+        "organization/<int:id>/availability/",
+        views.OrgAvailabilityEditView.as_view(),
+        name="organization_availability",
+    ),
     path("team/create/", views.TeamCreateView.as_view(), name="team_create"),
     path("team/<int:id>/delete/", views.TeamDeleteView.as_view(), name="team_delete"),
     path("team/<int:id>/edit/", views.TeamUpdateView.as_view(), name="team_edit"),

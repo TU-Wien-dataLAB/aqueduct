@@ -19,7 +19,8 @@ from .availability import (
 )
 from .expiry_presets import ExpiryForm
 from .formatting import grouped
-from .models import ServiceAccount, Team, Token, UserProfile
+from .limits import MultiplierPreview, multiplier_previews
+from .models import Org, ServiceAccount, Team, Token, UserProfile
 
 NAME_INPUT = "input w-full max-w-md"
 DESCRIPTION_INPUT = "textarea w-full max-w-2xl"
@@ -280,6 +281,46 @@ class TokenCreateForm(AccessKeyExpirationFormMixin, ExpiryForm):
         return cleaned_data
 
 
+class OrgLimitsForm(forms.ModelForm):
+    class Meta:
+        model = Org
+        fields: ClassVar[list] = [
+            "requests_per_minute",
+            "input_tokens_per_minute",
+            "output_tokens_per_minute",
+            "concurrent_requests_limit",
+            "hourly_limit_multiplier",
+            "daily_limit_multiplier",
+        ]
+        widgets: ClassVar[dict] = {
+            field: forms.NumberInput(attrs={"class": NUMBER_INPUT, "min": 0}) for field in fields
+        }
+        labels: ClassVar[dict] = {
+            "requests_per_minute": _("Requests per minute"),
+            "input_tokens_per_minute": _("Input tokens per minute"),
+            "output_tokens_per_minute": _("Output tokens per minute"),
+            "concurrent_requests_limit": _("Concurrent requests"),
+            "hourly_limit_multiplier": _("Per hour, as a multiple of per minute"),
+            "daily_limit_multiplier": _("Per day, as a multiple of per minute"),
+        }
+        help_texts: ClassVar[dict] = {
+            "requests_per_minute": _("Leave it empty for no limit."),
+            "input_tokens_per_minute": _("Leave it empty for no limit."),
+            "output_tokens_per_minute": _("Leave it empty for no limit."),
+            "concurrent_requests_limit": _("Leave it empty for the server default."),
+            "hourly_limit_multiplier": _(
+                "1–60. At 60, a key may keep its per-minute rate for the whole hour."  # noqa: RUF001
+            ),
+            "daily_limit_multiplier": _(
+                "1–1,440. At 1,440, a key may keep its per-minute rate all day."  # noqa: RUF001
+            ),
+        }
+
+    @property
+    def previews(self) -> dict[str, MultiplierPreview]:
+        return multiplier_previews({name: self[name].value() for name in self.fields})
+
+
 class CheckboxList(Checklist):
     template_name = "management/widgets/checkboxes.html"
 
@@ -300,6 +341,43 @@ class ChecklistForm(AvailabilityForm):
         if not configured_mcp_servers():
             del self.fields["available_mcp_servers"]
             self.fields.pop("merge_mcp_server_exclusion_lists", None)
+
+
+class OrgAvailabilityForm(ChecklistForm):
+    class Meta:
+        model = Org
+        fields: ClassVar[list] = ["merge_exclusion_lists", "merge_mcp_server_exclusion_lists"]
+        widgets: ClassVar[dict] = MERGE_WIDGETS
+        labels: ClassVar[dict] = {
+            "merge_exclusion_lists": _("Apply the server's default unavailable models"),
+            "merge_mcp_server_exclusion_lists": _(
+                "Apply the server's default unavailable MCP servers"
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["available_models"].help_text = gettext(
+            "Clear a box to make the model unavailable to keys in this organization. "
+            "A model added to the configuration later starts out available."
+        )
+        defaults = {
+            "merge_exclusion_lists": settings.AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST,
+            "merge_mcp_server_exclusion_lists": settings.AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST,
+        }
+        for name, names in defaults.items():
+            if name not in self.fields:
+                continue
+            if names:
+                self.fields[name].help_text = ngettext(
+                    "The server configuration makes %(names)s unavailable everywhere. "
+                    "Clear this to make it available in this organization.",
+                    "The server configuration makes %(names)s unavailable everywhere. "
+                    "Clear this to make them available in this organization.",
+                    len(names),
+                ) % {"names": ", ".join(names)}
+            else:
+                del self.fields[name]
 
 
 class TeamAvailabilityForm(ChecklistForm):

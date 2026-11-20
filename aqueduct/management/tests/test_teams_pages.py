@@ -96,6 +96,16 @@ class TeamListTest(RoleWorld):
         self.assertIn("Squad 54", second)
         self.assertNotIn("Squad 49", second)
 
+    def test_list_leaves_the_org_limits_to_the_organization_page(self):
+        self.org.requests_per_minute = 600
+        self.org.save()
+        self.org_admin.is_staff = True
+        self.org_admin.save()
+        response = self.as_user(self.org_admin).get(reverse("org"))
+        self.assertNotContains(response, "Default limits")
+        self.assertNotContains(response, reverse("organization_limits", args=[self.org.id]))
+        self.assertNotContains(response, reverse("admin:management_org_change", args=[self.org.id]))
+
 
 class TeamDetailTest(RoleWorld):
     def url(self, team: Team | None = None) -> str:

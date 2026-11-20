@@ -1,0 +1,5 @@
+{% extends "management/form_page.html" %}
+{% block title %}{{ view_title }} · {{ org_object.name }} · {{ block.super }}{% endblock %}
+
+{% block breadcrumbs %}<li><a href="{% url 'organization' %}">{{ org_object.name }}</a></li><li>{{ view_title }}</li>{% endblock %}
+{% block cancel_url %}{% url 'organization' %}{% endblock %}

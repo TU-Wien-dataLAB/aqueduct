@@ -1,40 +1,34 @@
-from copy import deepcopy
+from typing import Any
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import ValidationError
-from django.core.validators import URLValidator
 from django.views.generic import TemplateView
 
-from gateway.config import get_router_config
+from management.access import TeamAct
+from management.model_catalog import Category, load_catalog, scopes_for
+from management.nav import gateway_url
+from management.org_choice import viewer_of
 
 
 class ModelListView(LoginRequiredMixin, TemplateView):
-    """
-    Displays a list of models from the Pydantic RouterConfig.
-    """
-
     template_name = "management/model_list.html"
 
-    def get_context_data(self, **kwargs) -> dict[str, object]:
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
-        try:
-            model_list = deepcopy(get_router_config())["model_list"]
-        except KeyError:
-            model_list = []
-        else:
-            for model in model_list:
-                litellm_params: dict = model.get("litellm_params", {})
-                if not litellm_params.get("api_key", "").startswith("os.environ/"):
-                    litellm_params["api_key"] = "*********"
-                card_url = (model.get("model_info") or {}).get("model_card_url")
-                if card_url:
-                    try:
-                        URLValidator(schemes=["http", "https"])(card_url)
-                    except ValidationError:
-                        pass
-                    else:
-                        model["model_card_url"] = card_url
-
-        context["model_list"] = model_list
-        context["site_host"] = f"{self.request.scheme}://{self.request.get_host()}"
+        viewer = viewer_of(self.request)
+        scopes = scopes_for(viewer.profile, viewer.teams(TeamAct.MINE)) if viewer else ()
+        params = self.request.GET
+        catalog = load_catalog(scopes)
+        category = Category.parse(params.get("type", ""))
+        query = params.get("q", "").strip()
+        cards = catalog.search(category, query)
+        selected = catalog.find(params.get("model", "")) or next(iter(cards or catalog.cards), None)
+        context.update(
+            catalog=catalog,
+            category=category,
+            query=query,
+            cards=cards,
+            selected=selected,
+            snippet=selected.curl(gateway_url(self.request)) if selected else None,
+            show_served_model=viewer is not None and viewer.administers(viewer.org),
+        )
         return context

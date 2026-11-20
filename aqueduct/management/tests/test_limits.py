@@ -1,10 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from unittest import mock
 
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
 from gateway.rate_limiting import check_and_reserve, get_per_token_usage, record_token_usage
 from management.models import ServiceAccount, Token, Usage
@@ -242,6 +243,17 @@ class ClosestLimitTest(LimitsTestBase):
         self.assertContains(response, "No rate limit")
         self.assertNotContains(response, "<progress")
 
+    def test_all_keys_names_the_limit_for_every_listed_key(self):
+        self.set_limits(self.member_key, requests_per_minute=4)
+        with mock.patch(CLOCK, return_value=timezone.now().replace(second=30)):
+            self.use(self.member_key, requests=3)
+            response = self.as_user(self.org_admin).get(reverse("usage_keys"))
+        self.assertContains(response, "Nearest limit")
+        self.assertContains(response, "Requests, minute", count=1)
+        self.assertContains(response, "75%")
+        self.assertContains(response, 'title="Under 1% of every limit"')
+        self.assertContains(response, "No rate limit")
+
 
 class ListPagesTest(LimitsTestBase):
     def read_usage_of(self, user, url: str) -> list[set[int]]:
@@ -253,6 +265,10 @@ class ListPagesTest(LimitsTestBase):
         second = make_token(self.team_admin, "second")
         calls = self.read_usage_of(self.team_admin, reverse("tokens"))
         self.assertEqual(calls, [{second.id, self.pipeline_key.id}])
+
+    def test_all_keys_reads_the_counters_once_for_the_keys_on_the_page(self):
+        calls = self.read_usage_of(self.org_admin, reverse("usage_keys"))
+        self.assertEqual(calls, [{self.solo_key.id, self.member_key.id, self.pipeline_key.id}])
 
     def test_a_page_without_keys_reads_nothing(self):
         stranger = self.user("stranger")
@@ -279,6 +295,18 @@ class ListPagesTest(LimitsTestBase):
         for n in range(3):
             account = ServiceAccount.objects.create(name=f"account-{n}", team=self.team)
             make_token(self.team_admin, f"account-{n}", service_account=account)
+        with CaptureQueriesContext(connection) as large:
+            client.get(url)
+        self.assertEqual(len(large), len(small))
+
+    def test_all_keys_costs_the_same_queries_for_any_number_of_keys(self):
+        client = self.as_user(self.org_admin)
+        url = reverse("usage_keys")
+        with CaptureQueriesContext(connection) as small:
+            client.get(url)
+        for n in range(3):
+            key = make_token(self.solo, f"extra-{n}")
+            self.log(key, timedelta(hours=1), 200, input_tokens=10)
         with CaptureQueriesContext(connection) as large:
             client.get(url)
         self.assertEqual(len(large), len(small))

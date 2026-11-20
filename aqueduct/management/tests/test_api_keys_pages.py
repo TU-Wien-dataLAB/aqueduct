@@ -1,8 +1,10 @@
 import html
 import re
 from datetime import UTC, datetime, timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import connection
 from django.test import SimpleTestCase
 from django.test.utils import CaptureQueriesContext
@@ -374,6 +376,38 @@ class KeyDetailTest(ApiKeysPagesTestBase):
 
 
 class SevenDaysTest(ApiKeysPagesTestBase):
+    def test_key_pages_count_the_same_seven_days_as_the_overview(self):
+        now = datetime(2026, 10, 14, 8, 0, tzinfo=UTC)
+        for ago in (timedelta(days=6, hours=12), timedelta(days=6, hours=7), timedelta(hours=1)):
+            Request.objects.create(
+                token=self.solo_key, timestamp=now - ago, model="gpt-4.1-nano", status_code=200
+            )
+        with mock.patch("django.utils.timezone.now", return_value=now):
+            listed = self.get(self.solo, "tokens").context["keys"].rows[0].activity.requests
+            detail = self.get(self.solo, "token_detail", self.solo_key.id).context["report"]
+            overview = self.get(self.solo, "usage", key=self.solo_key.id, span="1w").context["kpis"]
+        requests = next(kpi.value for kpi in overview if kpi.label == "Requests")
+        self.assertEqual((listed, detail.totals.requests, requests), (2, 2, "2"))
+        self.assertEqual(sum(day.activity.requests for day in detail.days), 2)
+
+    def test_key_pages_and_the_log_show_the_same_requests_even_for_unserved_models(self):
+        served = self.request_log(self.solo_key, timedelta(minutes=3), status_code=200)
+        retired = self.request_log(self.solo_key, timedelta(minutes=2), model="retired-model")
+        no_model = self.request_log(self.solo_key, timedelta(minutes=1), model="", path="/files")
+        everything = [no_model, retired, served]
+        listed = self.get(self.solo, "tokens").context["keys"].rows[0].activity
+        detail = self.get(self.solo, "token_detail", self.solo_key.id).context
+        overview = self.get(self.solo, "usage", key=self.solo_key.id, span="1w").context["kpis"]
+        log = self.get(self.solo, "requests", key=self.solo_key.id).context["log"]
+        requests = next(kpi.value for kpi in overview if kpi.label == "Requests")
+        self.assertEqual((listed.requests, detail["report"].totals.requests, requests), (3, 3, "3"))
+        self.assertEqual(sum(day.activity.requests for day in detail["report"].days), 3)
+        self.assertEqual(
+            (listed.last_used, detail["report"].totals.last_used),
+            (no_model.timestamp, no_model.timestamp),
+        )
+        self.assertEqual([row.request for row in detail["latest"]], everything)
+        self.assertEqual([row.request for row in log.rows], everything)
 
     def test_last_used_reaches_back_past_the_seven_days(self):
         old = self.request_log(self.pipeline_key, timedelta(days=20), model="", path="/files")
@@ -639,6 +673,62 @@ class OrgAdminKeyAccessTest(ApiKeysPagesTestBase):
                 response = self.client.post(reverse(action, args=[self.solo_key.id]), data)
                 self.assertEqual(response.status_code, 404)
         self.assertEqual(Token.objects.values().get(id=self.solo_key.id), before)
+
+
+class KeyLinksTest(ApiKeysPagesTestBase):
+    PAGES = ("requests", "usage", "usage_keys")
+
+    def setUp(self):
+        super().setUp()
+        self.hidden_key = Token.objects.get(name="hidden-sa")
+        self.members_key = make_token(self.team_admin, "members-laptop")
+        for token in (
+            self.solo_key,
+            self.others_key,
+            self.pipeline_key,
+            self.hidden_key,
+            self.members_key,
+        ):
+            self.request_log(token, timedelta(hours=1), input_tokens=100)
+
+    def detail(self, token: Token) -> str:
+        return f'href="{reverse("token_detail", args=[token.id])}"'
+
+    def test_org_admin_sees_every_members_key_linked(self):
+        for page in self.PAGES:
+            response = self.get(self.org_admin, page)
+            for token in (self.solo_key, self.others_key, self.pipeline_key, self.hidden_key):
+                with self.subTest(page=page, key=token.name):
+                    self.assertContains(response, self.detail(token))
+
+    def test_team_member_sees_only_their_own_and_their_teams_keys_linked(self):
+        for page in ("requests", "usage"):
+            response = self.get(self.team_admin, page)
+            with self.subTest(page=page):
+                self.assertContains(response, self.detail(self.members_key))
+                self.assertContains(response, self.detail(self.pipeline_key))
+                for token in (self.solo_key, self.others_key, self.hidden_key):
+                    self.assertNotContains(response, self.detail(token))
+
+    def test_queries_do_not_grow_with_the_keys_listed(self):
+        def queries() -> dict[str, int]:
+            self.client.force_login(self.org_admin)
+            counts = {}
+            for page in self.PAGES:
+                cache.clear()
+                with CaptureQueriesContext(connection) as captured:
+                    self.assertEqual(self.client.get(reverse(page)).status_code, 200)
+                counts[page] = len(captured)
+            return counts
+
+        before = queries()
+        for n in range(5):
+            colleague = self.user(f"colleague-{n}")
+            self.request_log(make_token(colleague, f"colleague-{n}"), timedelta(hours=1))
+            account = ServiceAccount.objects.create(name=f"bot-{n}", team=self.side_team)
+            bot = make_token(colleague, f"bot-{n}", service_account=account)
+            self.request_log(bot, timedelta(hours=1))
+        self.assertEqual(queries(), before)
 
 
 class ServiceAccountKeyDetailTest(ApiKeysPagesTestBase):

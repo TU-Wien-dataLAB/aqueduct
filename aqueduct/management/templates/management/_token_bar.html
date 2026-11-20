@@ -1,0 +1,7 @@
+{% load i18n l10n %}{% if activity.tokens %}
+    <div class="tbar" style="width: {{ width|unlocalize }}%">
+        {% for css, count in activity.segments %}{% if count %}<i class="{{ css }}" style="flex: {{ count|unlocalize }} 1 0%"></i>{% endif %}{% endfor %}
+    </div>
+{% else %}
+    <span class="muted whitespace-nowrap text-xs">{% translate "No token count" %}</span>
+{% endif %}

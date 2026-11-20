@@ -1,0 +1,37 @@
+{% load i18n ui %}{% translate "Tokens" as tokens_label %}{% translate "Requests" as requests_label %}
+<div class="aq-scroll-x">
+    <table class="table usage-table">
+        {% include "management/_usage_cols.html" %}
+        <thead>
+            <tr>
+                <th{% if headers.name.aria_sort %} aria-sort="{{ headers.name.aria_sort }}"{% endif %}>{% if headers %}{% include "management/_sort_heading.html" with header=headers.name label=first_column %}{% else %}{{ first_column }}{% endif %}</th>
+                <th class="hidden min-[90rem]:table-cell"{% if headers.tokens.aria_sort %} aria-sort="{{ headers.tokens.aria_sort }}"{% endif %}>{% if headers %}{% include "management/_sort_heading.html" with header=headers.tokens label=tokens_label %}{% else %}{{ tokens_label }}{% endif %}</th>
+                <th class="text-right">{% translate "Input tokens" %}</th><th class="text-right{% if with_limits %} hidden min-[80rem]:table-cell{% endif %}">{% translate "From cache" %}</th><th class="text-right">{% translate "Output tokens" %}</th>
+                <th class="text-right"{% if headers.requests.aria_sort %} aria-sort="{{ headers.requests.aria_sort }}"{% endif %}>{% if headers %}{% include "management/_sort_heading.html" with header=headers.requests label=requests_label %}{% else %}{{ requests_label }}{% endif %}</th>
+                <th class="text-right">{% translate "Failed" %}</th>
+                {% if with_limits %}<th class="hidden md:table-cell">{% translate "Nearest limit" %}</th>{% endif %}
+                <th class="text-right">{% translate "Share" %}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key in keys %}
+                <tr>
+                    <td>
+                        {% if key.href %}<a class="link-plain row-link block truncate font-mono" href="{{ key.href }}" title="{{ key.name }}">{{ key.name }}</a>{% else %}<div class="truncate font-mono" title="{{ key.name }}">{{ key.name }}</div>{% endif %}
+                        {% if key.detail %}<div class="muted truncate text-xs" title="{{ key.detail }}">{{ key.detail }}</div>{% endif %}
+                    </td>
+                    <td class="hidden min-[90rem]:table-cell">{% include "management/_token_bar.html" with activity=key.activity width=key.width %}</td>
+                    <td class="text-right tabular-nums">{{ key.input }}</td>
+                    <td class="text-right tabular-nums{% if with_limits %} hidden min-[80rem]:table-cell{% endif %}">{{ key.cached }}</td>
+                    <td class="text-right tabular-nums">{{ key.output }}</td>
+                    <td class="text-right tabular-nums">{{ key.activity.requests|grouped }}</td>
+                    {% include "management/_failed_cell.html" with activity=key.activity %}
+                    {% if with_limits %}<td class="hidden md:table-cell">{% include "management/_limit_meter.html" with panel=key.limits %}</td>{% endif %}
+                    <td class="muted text-right tabular-nums">{{ key.share }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="{% if with_limits %}9{% else %}8{% endif %}" class="muted">{{ empty }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

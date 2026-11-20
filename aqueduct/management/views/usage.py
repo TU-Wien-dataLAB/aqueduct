@@ -1,380 +1,162 @@
-import datetime as dt
-import json
+from collections.abc import Callable
+from dataclasses import replace
 from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
-from django.db.models import (
-    Avg,
-    BooleanField,
-    Count,
-    ExpressionWrapper,
-    F,
-    FloatField,
-    Q,
-    QuerySet,
-    Sum,
-    Value,
-)
-from django.db.models.functions import NullIf, TruncDay, TruncHour, TruncMinute
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.paginator import Paginator
+from django.http import HttpRequest, HttpResponse
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import urlencode
+from django.utils.translation import gettext
 from django.views.generic import TemplateView
 
-from gateway.config import get_router_config
-from management.models import Org, Request, Token
-from management.views.base import BaseAqueductView
+from management import usage_report as report
+from management.access import EveryOrg, KeyAct, Viewer, WholeOrg
+from management.charts import OVERVIEW_STATS, columns, slots, stats
+from management.ids import parse_id
+from management.model_catalog import model_kinds
+from management.models import Token, UserProfile
+from management.org_choice import viewer_of
+from management.periods import DEFAULT_SPAN
+from management.request_filters import Filters, Key, describe_key, key_search, read_filters
+from management.request_paging import PAGE_SIZE, Header
+from management.usage_source import UsageSource
 
 
-def _bucket_config_for_range(
-    start_time: dt.datetime, end_time: dt.datetime
-) -> tuple[timedelta, Any]:
-    """Determine bucket delta and round function for a custom time range."""
-    duration = end_time - start_time
-    if duration <= timedelta(hours=2):
-        delta = timedelta(minutes=1)
-        round_time = lambda d: d.replace(second=0, microsecond=0)
-    elif duration <= timedelta(days=2):
-        delta = timedelta(hours=1)
-        round_time = lambda d: d.replace(minute=0, second=0, microsecond=0)
-    else:
-        delta = timedelta(days=1)
-        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
-    return delta, round_time
+def _viewer(request: HttpRequest) -> Viewer:
+    viewer = viewer_of(request)
+    if viewer is None:
+        raise UserProfile.DoesNotExist
+    return viewer
 
 
-def get_all_buckets(start_time: dt.datetime, now: dt.datetime, freq_label: str) -> list[int]:
-    points = []
-    if freq_label == "1h":
-        # one point per minute
-        delta = timedelta(minutes=1)
-        round_time = lambda d: d.replace(second=0, microsecond=0)
-    elif freq_label == "1d":
-        # one point per hour
-        delta = timedelta(hours=1)
-        round_time = lambda d: d.replace(minute=0, second=0, microsecond=0)
-    elif freq_label == "1m":
-        # one point per day
-        delta = timedelta(days=1)
-        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
-    elif freq_label == "custom":
-        delta, round_time = _bucket_config_for_range(start_time, now)
-    else:
-        # one point per day (1w fallback)
-        delta = timedelta(days=1)
-        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
+def _describe(filters: Filters) -> Callable[[Token], Key]:
+    every_org = isinstance(filters.viewer.chosen, EveryOrg)
 
-    d = round_time(start_time)
-    end_time = round_time(now)
-    while d <= end_time:
-        points.append(int(d.timestamp() * 1000))
-        d = d + delta
-    return points
+    def describe(token: Token) -> Key:
+        key = describe_key(token, filters.viewer, with_org=every_org)
+        if not filters.can_pick_scope:
+            return replace(key, note="")
+        return replace(key, note=gettext("You")) if key.own else key
+
+    return describe
 
 
-class UsageDashboardView(BaseAqueductView, TemplateView):
-    """
-    Usage dashboard page: switch between all orgs (global) and per-org token usage.
-    """
-
+class UsageDashboardView(LoginRequiredMixin, TemplateView):
     template_name = "management/usage.html"
 
-    def get_context_data(self, **kwargs) -> dict[str, object]:
+    def get_context_data(self, **kwargs: Any) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
-        profile = self.profile
-        is_global_admin = profile.is_admin() if profile else False
-
-        # Organization selection: 'all' for global, or org id
-        orgs = Org.objects.all() if is_global_admin else Org.objects.filter(pk=profile.org_id)
-
-        selected_org = self._get_selected_org(is_global_admin)
-
-        # Base queryset of requests in scope
-        # Global admins see all requests; org admins see all for the selected org;
-        # standard users see only their own tokens or service accounts of teams they belong to
-        if selected_org is None:
-            reqs = Request.objects.all()
-        # Org-level access: full org view for org admins
-        elif profile.is_org_admin(selected_org):
-            reqs = Request.objects.filter(
-                Q(token__user__profile__org=selected_org)
-                | Q(token__service_account__team__org=selected_org)
-            )
-        else:
-            # Standard user: restrict to own tokens or service accounts' token in their teams;
-            # also include requests whose `user_id` value matches the user's email, even if
-            # the token does not belong to the user, but to another one from the same org.
-            user = profile.user
-            teams = self.get_teams_for_user()
-            reqs = Request.objects.filter(
-                Q(token__user=user)
-                | Q(token__service_account__team__in=teams)
-                | (Q(user_id=user.email) & Q(token__user__profile__org=profile.org))
-            )
-
-        # Only include requests for models configured in the router
-        allowed_models = [m["model_name"] for m in get_router_config().get("model_list", [])]
-        reqs = reqs.filter(model__in=allowed_models)
-
-        # Optional token selection: filter to a single token if provided
-        selected_token = self._get_selected_token(selected_org)
-        if selected_token is not None:
-            reqs = reqs.filter(token=selected_token)
-
-        # Time frame selection: 1 hour, 1 day, 1 week, 1 month, or custom range
-        span_choices = {
-            "1h": {"delta": timedelta(hours=1), "trunc": TruncMinute("timestamp")},
-            "1d": {"delta": timedelta(days=1), "trunc": TruncHour("timestamp")},
-            "1w": {"delta": timedelta(days=7), "trunc": TruncDay("timestamp")},
-            "1m": {"delta": timedelta(days=30), "trunc": TruncDay("timestamp")},
-        }
+        viewer = _viewer(self.request)
+        params = self.request.GET
         now = timezone.now()
+        filters = read_filters(viewer, params, default_span=DEFAULT_SPAN, now=now)
+        selected_key, period = filters.key, filters.period
+        chosen = viewer.chosen
+        selected_org = chosen.org if isinstance(chosen, WholeOrg) else None
 
-        # Parse optional custom date range
-        custom_start_str = self.request.GET.get("start", "")
-        custom_end_str = self.request.GET.get("end", "")
-        custom_start, custom_end, custom_error = self._parse_custom_range(
-            custom_start_str, custom_end_str, now
-        )
+        retention_days = settings.REQUEST_RETENTION_DAYS
+        source = UsageSource.of(filters)
+        timeline = source.series()
+        total = timeline.total
 
-        selected_span = self.request.GET.get("span", "1d")
-        if custom_start and custom_end:
-            selected_span = "custom"
-        elif selected_span not in span_choices:
-            selected_span = "1d"
-
-        if selected_span == "custom" and custom_start and custom_end:
-            start_time = custom_start
-            end_time = custom_end
-            # Determine trunc based on range duration
-            duration = end_time - start_time
-            if duration <= timedelta(hours=2):
-                trunc_fn = TruncMinute("timestamp")
-            elif duration <= timedelta(days=2):
-                trunc_fn = TruncHour("timestamp")
-            else:
-                trunc_fn = TruncDay("timestamp")
-            span_cfg: dict[str, Any] = {"delta": duration, "trunc": trunc_fn}
+        more_keys = False
+        if selected_key is not None:
+            keys = report.user_id_shares(period.of(filters.requests), total.tokens)
+        elif filters.only_key is not None:
+            keys = ()
         else:
-            span_cfg = span_choices[selected_span]
-            start_time = now - span_cfg["delta"]
-            end_time = now
-
-        # Build time-series data for chart
-        timeseries = self._get_timeseries(reqs, selected_span, start_time, end_time, span_cfg)
-
-        # Filter requests based on selected time span
-        reqs_span = reqs.filter(timestamp__gte=start_time)
-        if selected_span == "custom":
-            reqs_span = reqs_span.filter(timestamp__lt=end_time)
-
-        # Top entities: orgs global, or tokens per org, or user IDs per token
-        top_items = self._get_top_items(reqs_span, selected_org, selected_token)
-
-        # Retention warning
-        retention_days = getattr(settings, "REQUEST_RETENTION_DAYS", 7)
-        retention_warning = (now - start_time).days > retention_days
-
-        # Simple statistics
-        total_requests = reqs_span.count()
-        failed_requests = reqs_span.filter(status_code__gte=400).count()
-
-        per_model = list(reqs_span.values("model").annotate(count=Count("id")).order_by("-count"))
-        present_models = {m["model"] for m in per_model}
-        missing_models = [
-            {"model": m["model_name"], "count": 0}
-            for m in get_router_config()["model_list"]
-            if m["model_name"] not in present_models
-        ]
-        per_model += missing_models
-
-        avg_time_comp = reqs_span.filter(path__icontains="completion").aggregate(
-            avg=Avg("response_time_ms")
-        )["avg"]
-        avg_time_emb = reqs_span.filter(path__icontains="embedding").aggregate(
-            avg=Avg("response_time_ms")
-        )["avg"]
-        tokens_sum = reqs_span.aggregate(
-            input_sum=Sum("input_tokens"),
-            output_sum=Sum("output_tokens"),
-            cached_input_sum=Sum("cached_input_tokens"),
-            reasoning_sum=Sum("reasoning_tokens"),
-        )
-        input_tokens = tokens_sum.get("input_sum") or 0
-        output_tokens = tokens_sum.get("output_sum") or 0
-        cached_input_tokens = tokens_sum.get("cached_input_sum") or 0
-        reasoning_tokens = tokens_sum.get("reasoning_sum") or 0
+            ranked = report.ranked(
+                source.key_totals(), report.KeyOrder.TOKENS, viewer.keys(KeyAct.SEE)
+            )
+            more_keys = len(ranked) > report.TOP_KEYS
+            keys = report.key_shares(ranked[: report.TOP_KEYS], total.tokens, _describe(filters))
 
         context.update(
             {
-                "title": "Usage",
-                "is_global_admin": is_global_admin,
-                "orgs": orgs,
-                "selected_org": selected_org,
-                "selected_token": selected_token,
-                "span_choices": list(span_choices.keys()),
-                "selected_span": selected_span,
-                "timeseries": json.dumps(timeseries),
-                "top_items": top_items,
-                "top_k_choices": [10, 25, 100],
-                "total_requests": total_requests,
-                "failed_requests": failed_requests,
-                "per_model_json": json.dumps(per_model),
-                "avg_time_completion": avg_time_comp or 0,
-                "avg_time_embedding": avg_time_emb or 0,
-                "input_tokens": input_tokens,
-                "cached_input_tokens": cached_input_tokens,
-                "output_tokens": output_tokens,
-                "reasoning_tokens": reasoning_tokens,
-                "total_tokens": input_tokens + output_tokens,
-                "retention_warning": retention_warning,
+                "filters": filters,
+                "period": period,
+                "kpis": stats(slots(timeline.points, period.step), OVERVIEW_STATS),
+                "requests_in_period": total.requests,
+                "charts": tuple(
+                    (shown, columns(timeline.points, period.step, shown))
+                    for shown in ("tokens", "requests")
+                ),
+                "statuses": report.statuses(timeline, filters.log_url),
+                "models": report.model_rows(source.models(), model_kinds(), filters.log_url),
+                "keys": keys,
+                "more_keys": more_keys,
+                "all_keys_url": f"{reverse('usage_keys')}?{urlencode(filters.query)}",
+                "orgs_usage": ()
+                if selected_org is not None
+                else report.org_shares(source.org_tokens()),
+                "retention_warning": period.start < now - timedelta(days=retention_days),
                 "retention_days": int(retention_days),
-                "custom_start": custom_start_str,
-                "custom_end": custom_end_str,
-                "custom_error": custom_error,
-                "now_utc_iso": now.strftime("%Y-%m-%dT%H:%M"),
             }
         )
         return context
 
-    def _get_selected_org(self, is_global_admin: bool) -> Org | None:
-        """Optional org selection based on the query param and user permissions"""
-        sel = self.request.GET.get("org")
-        if sel == "all" and is_global_admin:
-            selected_org = None
-        else:
-            try:
-                selected_org = (
-                    Org.objects.get(pk=int(sel))
-                    if sel and sel.isdigit() and is_global_admin
-                    else self.profile.org
-                )
-            except Org.DoesNotExist:
-                selected_org = self.org
-        return selected_org
 
-    @staticmethod
-    def _validate_custom_range(
-        start: dt.datetime | None, end: dt.datetime | None, now: dt.datetime
-    ) -> str | None:
-        """Return the first validation error for a custom range, or ``None``."""
-        if not (start and end):
-            return None
-        if end > now:
-            return "End time is in the future."
-        if start >= end:
-            return "Start must be before end."
-        if (end - start) < timedelta(minutes=1):
-            return "Range must be at least 1 minute."
-        return None
+class KeyUsageView(LoginRequiredMixin, TemplateView):
+    template_name = "management/usage_keys.html"
 
-    def _parse_custom_range(
-        self, start_str: str, end_str: str, now: dt.datetime
-    ) -> tuple[dt.datetime | None, dt.datetime | None, str | None]:
-        """Parse and validate the optional custom start/end query params.
-
-        Returns ``(start, end, error)``:
-            - ``start`` / ``end`` are timezone-aware datetimes in UTC, or ``None``
-              if missing or invalid.
-            - ``error`` is a human-readable message describing the first
-              validation problem found, or ``None`` when the range is valid.
-        """
-        if not start_str and not end_str:
-            return None, None, None
-        try:
-            start = dt.datetime.fromisoformat(start_str) if start_str else None
-            end = dt.datetime.fromisoformat(end_str) if end_str else None
-        except (ValueError, TypeError):
-            return None, None, "Invalid date format."
-        if start is not None and timezone.is_naive(start):
-            start = timezone.make_aware(start, dt.UTC)
-        if end is not None and timezone.is_naive(end):
-            end = timezone.make_aware(end, dt.UTC)
-        return start, end, self._validate_custom_range(start, end, now)
-
-    def _get_selected_token(self, selected_org: Org | None) -> Token | None:
-        """Optional token selection based on the query param and user permissions"""
-        token_param = self.request.GET.get("token")
-        selected_token = None
-        if token_param and token_param.isdigit():
-            try:
-                tok = Token.objects.get(pk=int(token_param))
-                # Ensure the token belongs to the selected_org if scoped
-                if selected_org is not None:
-                    tok_org_id = tok.user.profile.org_id if tok.user else None
-                    sa_org_id = tok.service_account.team.org_id if tok.service_account else None
-                    if selected_org.id not in (tok_org_id, sa_org_id):
-                        raise Token.DoesNotExist
-                selected_token = tok
-            except Token.DoesNotExist:
-                selected_token = None
-        return selected_token
-
-    def _get_timeseries(
-        self,
-        reqs: QuerySet[Request],
-        selected_span: str,
-        start_time: dt.datetime,
-        end_time: dt.datetime,
-        span_cfg: dict,
-    ) -> list[tuple[int, int]]:
-        """Get the request count per time bucket of the timeseries."""
-        qs = reqs.filter(timestamp__gte=start_time)
-        if selected_span == "custom":
-            qs = qs.filter(timestamp__lt=end_time)
-        qs = (
-            qs.annotate(period=span_cfg["trunc"])
-            .values("period")
-            .annotate(count=Count("id"))
-            .order_by("period")
+    def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        params = {name: value for name, value in request.GET.items() if name != "key"}
+        filters = read_filters(
+            _viewer(request), params, default_span=DEFAULT_SPAN, now=timezone.now()
         )
-        period_to_count = {int(item["period"].timestamp() * 1000): item["count"] for item in qs}
-        buckets = get_all_buckets(start_time, end_time, selected_span)
-        return [(b, period_to_count.get(b, 0)) for b in buckets]
+        only_key = filters.only_key
+        if not filters.can_pick_scope and only_key is not None and only_key.href is not None:
+            return redirect(only_key.href)
+        return self.render_to_response(self.get_context_data(filters=filters, **kwargs))
 
-    def _get_top_items(
-        self, reqs: QuerySet[Request], selected_org: Org | None, selected_token: Token | None
-    ) -> QuerySet[Request, dict[str, Any]]:
-        """Annotate the `Request` queryset and get the top-level entities as dicts"""
-        if selected_org is None:
-            # Top orgs sorted by request count - only available for global admins.
-            # Note: service account tokens belong to the same org as the token's user.
-            top_items = reqs.annotate(
-                name=F("token__user__profile__org__name"), org_id=F("token__user__profile__org__id")
-            ).values("name", "org_id")
-        elif selected_token is None:
-            # Top tokens for the selected org by request count
-            top_items = reqs.values("token_id").annotate(
-                name=F("token__name"),
-                user_email=F("token__user__email"),
-                service_account_name=F("token__service_account__name"),
-            )
-        else:
-            # Top user IDs for the selected token by request count
-            top_items = reqs.annotate(name=F("token__name")).values("name", "user_id")
+    def get_context_data(self, *, filters: Filters, **kwargs: Any) -> dict[str, object]:
+        context = super().get_context_data(**kwargs)
+        params = self.request.GET
+        q = params.get("q", "").replace("\x00", "").strip()
+        search = key_search(q, by_owner=filters.can_pick_scope)
+        order = report.KeyOrder.parse(params.get("sort", "")) or report.KeyOrder.TOKENS
+        totals = UsageSource.of(filters).key_totals()
+        everyone = report.KeyTotals.of(totals)
+        tokens = filters.viewer.keys(KeyAct.SEE)
+        if q:
+            ids = set(tokens.filter(search).values_list("id", flat=True))
+            totals = {token_id: a for token_id, a in totals.items() if token_id in ids}
+        rows = report.ranked(totals, order, tokens)
 
-        # Add annotations and ordering common to all cases; limit the result to 100 items
-        user_is_org_admin = self.profile.is_org_admin(selected_org)
-        teams = self.get_teams_for_user()
-        top_items = top_items.annotate(
-            count=Count("id"),
-            user_is_token_owner=ExpressionWrapper(
-                Value(user_is_org_admin)  # admin and org-admin users
-                | Q(token__user=self.profile.user)  # tokens belonging to the user
-                | Q(token__service_account__team__in=teams),  # tokens for user's teams
-                output_field=BooleanField(),
-            ),
-            input_sum=Sum("input_tokens", default=0),
-            cached_input_sum=Sum("cached_input_tokens", default=0),
-            output_sum=Sum("output_tokens", default=0),
-            reasoning_sum=Sum("reasoning_tokens", default=0),
-            total_sum=Sum(F("input_tokens") + F("output_tokens")),
-            cached_input_percent=ExpressionWrapper(
-                Value(100.0) * F("cached_input_sum") / NullIf(F("input_sum"), Value(0)),
-                output_field=FloatField(),
-            ),
-            reasoning_percent=ExpressionWrapper(
-                Value(100.0) * F("reasoning_sum") / NullIf(F("output_sum"), Value(0)),
-                output_field=FloatField(),
-            ),
+        pages = Paginator(rows, PAGE_SIZE).get_page(parse_id(params.get("page")) or 1)
+        keys = report.key_shares(
+            pages.object_list,
+            everyone.tokens,
+            _describe(filters),
+            everyone.busiest,
+            limits_at=timezone.now(),
         )
-        return top_items.order_by("-count")[:100]
+        context.update(
+            {
+                "filters": filters,
+                "usage_url": f"{reverse('usage')}?{urlencode(filters.query)}",
+                "keys": keys,
+                "count": len(rows),
+                "q": q,
+                "order": order,
+                "headers": {
+                    option.value: Header(
+                        sortable=True,
+                        choice=None if option is report.KeyOrder.TOKENS else option.value,
+                        aria_sort=(
+                            ("ascending" if option.ascending else "descending")
+                            if option is order
+                            else None
+                        ),
+                    )
+                    for option in report.KeyOrder
+                },
+                "pages": pages,
+            }
+        )
+        return context

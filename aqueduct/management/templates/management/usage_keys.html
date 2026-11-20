@@ -1,0 +1,34 @@
+{% extends "management/base.html" %}
+{% load i18n ui %}
+{% block title %}{% translate "All keys" %} · {{ block.super }}{% endblock %}
+
+{% block breadcrumbs %}<li><a href="{{ usage_url }}">{% translate "Usage" %}</a></li><li>{% translate "All keys" %}</li>{% endblock %}
+{% block heading %}{% translate "All keys" %}{% endblock %}
+{% block subheading %}<div class="muted flex flex-wrap items-center gap-x-5 gap-y-1 text-sm"><span>{{ shell.scope }}</span><span>{% blocktranslate with shown=count|grouped count n=count %}{{ shown }} key{% plural %}{{ shown }} keys{% endblocktranslate %}</span></div>{% endblock %}
+{% block body %}
+<div class="flex flex-wrap items-center gap-3">
+    {% if filters.can_pick_scope %}{% translate "Key name or owner email" as search_hint %}{% else %}{% translate "Key name" as search_hint %}{% endif %}
+    {% include "management/_search.html" with name="q" value=q placeholder=search_hint label=_("Search keys") keep=filters.search_params %}
+    {% if not filters.only_key and filters.can_pick_scope and filters.keys %}
+    <details class="dropdown">
+        {% include "management/_key_summary.html" %}
+        <div class="dropdown-content z-10 mt-1 flex w-80 flex-col gap-1 rounded-box bg-base-100 p-2 shadow">
+            <ul class="menu max-h-80 w-full flex-nowrap overflow-y-auto p-0">
+                <li><a href="{% querystring key_q=None key=None scope=None before=None after=None request=None page=None %}"{% if not filters.key and not filters.mine %} aria-current="true" class="menu-active"{% endif %}>{% translate "All keys" %}</a></li>
+                <li><a href="{% querystring key_q=None key=None scope='mine' before=None after=None request=None page=None %}"{% if not filters.key and filters.mine %} aria-current="true" class="menu-active"{% endif %}>{% translate "My keys" %}</a></li>
+            </ul>
+        </div>
+    </details>
+    {% endif %}
+    {% include "management/_filters.html" with without_key_menu=True %}
+</div>
+
+<section class="card bg-base-200">
+    <div class="card-body table-card">
+        {% translate "Key" as first_column %}
+        {% if q %}{% blocktranslate asvar empty %}No key that matches “{{ q }}” has requests in this time frame.{% endblocktranslate %}{% else %}{% translate "No requests in this time frame." as empty %}{% endif %}
+        {% include "management/_key_table.html" with first_column=first_column headers=headers empty=empty with_limits=True %}
+        {% include "management/_pager.html" %}
+    </div>
+</section>
+{% endblock %}

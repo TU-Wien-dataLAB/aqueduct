@@ -26,7 +26,7 @@ from .tokens import (
     TokenRegenerateView,
     UserTokensView,
 )
-from .usage import UsageDashboardView
+from .usage import KeyUsageView, UsageDashboardView
 from .vector_stores import (
     UserVectorStoresView,
     VectorStoreCardRefreshView,

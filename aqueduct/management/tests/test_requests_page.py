@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
+from management.formatting import percent
 from management.models import Request, TeamMembership
 from management.outcomes import Outcome
 from management.tests.helpers import CHAT, EMBEDDING, RequestsPageTestBase, join, listed, make_token
@@ -11,6 +12,67 @@ User = get_user_model()
 
 
 class RequestsScopeTest(RequestsPageTestBase):
+    def test_matches_the_overview_status_counts_for_every_role(self):
+        self.log(self.solo_key, "/retired", model="not-in-the-router")
+        self.log(self.others_key, "/limited", status_code=429, user_id="solo@example.com")
+        self.log(self.team_key, "/invalid", status_code=400)
+        self.log(self.side_key, "/broken", status_code=502)
+        viewers = (
+            (self.solo, {}),
+            (self.other, {}),
+            (self.member, {}),
+            (self.org_admin, {}),
+            (self.other_org_admin, {}),
+            (self.admin, {"org": "all"}),
+            (self.admin, {"org": self.other_org.id}),
+        )
+        for user, params in viewers:
+            with self.subTest(user=user.username, **params):
+                self.client.force_login(user)
+                usage = self.client.get(reverse("usage"), {"span": "1m", **params})
+                overview = {row.outcome.codes: row.count for row in usage.context["statuses"]}
+                log = self.get(user, **params).context["log"]
+                groups = {tab.value: tab.count for tab in log.tabs if tab.value in overview}
+                self.assertEqual(groups, overview)
+                self.assertEqual(log.count, sum(overview.values()))
+
+    def test_overview_links_to_the_log_with_its_filters(self):
+        self.client.force_login(self.admin)
+        params = {"org": self.other_org.id, "key": self.foreign_key.id, "model": CHAT}
+        response = self.client.get(reverse("usage"), {**params, "span": "1d"})
+        query = (
+            f"org={self.other_org.id}&amp;key={self.foreign_key.id}&amp;model={CHAT}&amp;span=1d"
+        )
+        self.assertContains(response, f'href="{reverse("requests")}?{query}"')
+
+    def test_overview_figures_open_the_log_on_the_same_requests(self):
+        self.log(self.solo_key, "/limited", status_code=429)
+        self.log(self.team_key, "/invalid", status_code=400, model=EMBEDDING)
+        self.log(self.side_key, "/broken", status_code=502)
+        self.log(self.solo_key, "/last-week", ago=timedelta(days=3))
+        viewers = (
+            (self.solo, {}),
+            (self.member, {"span": "1d"}),
+            (self.org_admin, {"span": "1h"}),
+            (self.org_admin, {"scope": "mine"}),
+            (self.org_admin, {"key": self.team_key.id, "span": "1m"}),
+            (self.admin, {"org": "all", "model": CHAT}),
+        )
+        for user, params in viewers:
+            with self.subTest(user=user.username, **params):
+                self.client.force_login(user)
+                usage = self.client.get(reverse("usage"), params).context
+                figures = [(row.href, row.count) for row in usage["statuses"]]
+                figures += [(row.log_url, row.activity.requests) for row in usage["models"]]
+                kpis = {kpi.label: kpi for kpi in usage["kpis"]}
+                total = int(kpis["Requests"].value)
+                failed = sum(row.count for row in usage["statuses"] if row.outcome.failed)
+                if total:
+                    self.assertEqual(kpis["Failed"].value, percent(failed, total))
+                figures.append((usage["filters"].log_url(), total))
+                for href, count in figures:
+                    log = self.client.get(href).context["log"]
+                    self.assertEqual(log.count, count, href)
 
     def test_log_opens_on_24_hours_and_an_unknown_time_frame_falls_back_to_it(self):
         self.log(self.solo_key, "/yesterday", ago=timedelta(hours=30))

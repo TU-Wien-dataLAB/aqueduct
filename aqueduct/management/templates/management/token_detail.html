@@ -2,7 +2,7 @@
 {% load i18n l10n ui %}
 {% block title %}{{ token.name }} · {{ block.super }}{% endblock %}
 
-{% block breadcrumbs %}{% if team %}<li><a href="{% url 'org' %}">{% translate "Teams" %}</a></li><li><a href="{% url 'team' team.id %}">{{ team.name }}</a></li>{% elif own %}<li><a href="{% url 'tokens' %}">{% translate "API keys" %}</a></li>{% endif %}<li class="font-mono">{{ token.name }}</li>{% endblock %}
+{% block breadcrumbs %}{% if team %}<li><a href="{% url 'org' %}">{% translate "Teams" %}</a></li><li><a href="{% url 'team' team.id %}">{{ team.name }}</a></li>{% elif own %}<li><a href="{% url 'tokens' %}">{% translate "API keys" %}</a></li>{% else %}<li><a href="{% url 'usage_keys' %}">{% translate "All keys" %}</a></li>{% endif %}<li class="font-mono">{{ token.name }}</li>{% endblock %}
 {% block heading %}<span class="block break-all font-mono">{{ token.name }}</span>{% endblock %}
 {% block subheading %}
     <div class="muted flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">

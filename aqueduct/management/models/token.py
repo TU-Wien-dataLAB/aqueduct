@@ -1,24 +1,20 @@
 import hashlib
 import secrets
-import typing
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
 from gateway.config import resolve_model
-from management.models.mixins import (
-    LimitMixin,
-    LimitSet,
-    MCPServerExclusionMixin,
-    ModelExclusionMixin,
-)
+from management.models.exclusions import Exclusion, excluded
+from management.models.mixins import LimitMixin, LimitSet
 from management.models.service_account import ServiceAccount
+from management.ownership import RELATED, of_teams, personal
 
-if typing.TYPE_CHECKING:
-    from management.models import Org, Team, UserProfile
+if TYPE_CHECKING:
+    from management.models import Team, UserProfile
 
 
 class Token(LimitMixin, models.Model):
@@ -83,6 +79,11 @@ class Token(LimitMixin, models.Model):
             return None
         return timezone.now() + timedelta(days=days)
 
+    def reach(self) -> models.Q:
+        if self.service_account:
+            return of_teams([self.service_account.team_id], "token__")
+        return personal(self.user_id, "token__")
+
     @property
     def is_expired(self) -> bool:
         return self.expires_at is not None and self.expires_at <= timezone.now()
@@ -132,18 +133,9 @@ class Token(LimitMixin, models.Model):
         """
         super().clean()
 
-    def _get_obj_hierarchy(self) -> "tuple[UserProfile | Team, Org]":
-        token_instance = Token.objects.select_related(
-            "user__profile__org", "service_account__team__org"
-        ).get(pk=self.pk)
-
-        if token_instance.service_account:
-            team = token_instance.service_account.team
-            org = team.org
-            return team, org
-        profile = token_instance.user.profile
-        org = profile.org
-        return profile, org
+    def _owner(self) -> "Team | UserProfile":
+        token = Token.objects.select_related(*RELATED).get(pk=self.pk)
+        return token.service_account.team if token.service_account else token.user.profile
 
     def get_limits(self) -> "LimitSet":
         """
@@ -157,78 +149,19 @@ class Token(LimitMixin, models.Model):
         - Service Account Token: Uses Team limits, falls back to Org limits.
         - User Token: Uses UserProfile limits, falls back to Org limits.
         """
-        hierarchy = self._get_obj_hierarchy()
-        return LimitSet.from_objects(self, hierarchy)
+        found = self._owner()
+        return LimitSet.from_objects(self, [found, found.org])
 
-    @classmethod
-    def _exclusion_list_from_objects(
-        cls,
-        specific_exclusion: Optional["ModelExclusionMixin"],
-        org_exclusion: Optional["ModelExclusionMixin"],
-    ) -> list[str]:
-        exclusion_list: list[str] = specific_exclusion.excluded_models if specific_exclusion else []
-        if specific_exclusion and specific_exclusion.merge_exclusion_lists:
-            org_exclusion_list: list[str] = org_exclusion.excluded_models if org_exclusion else []
-            exclusion_list = exclusion_list + org_exclusion_list
-            if org_exclusion and org_exclusion.merge_exclusion_lists:
-                settings_exclusion_list: list[str] = getattr(
-                    settings, "AQUEDUCT_DEFAULT_MODEL_EXCLUSION_LIST", []
-                )
-                exclusion_list = exclusion_list + settings_exclusion_list
-
-        return list(set(exclusion_list))
-
-    def model_exclusion_list(self) -> list[str]:
-        """
-        Determines if a model is excluded for this token, returning either True or False.
-        Assumes database integrity for related objects.
-
-        Hierarchy Rules:
-        - Service Account Token: Uses the Team exclusion list, falls back to the Org exclusion list.
-        - User Token: Uses the UserProfile exclusion list, falls back to the Org exclusion list.
-        """
-        hierarchy = self._get_obj_hierarchy()
-        return Token._exclusion_list_from_objects(*hierarchy)
+    def model_exclusion_list(self) -> frozenset[str]:
+        return excluded(self._owner(), Exclusion.MODELS)
 
     def model_excluded(self, model: str) -> bool:
         # Resolve alias to actual model name before checking exclusion
         resolved_model = resolve_model(model).routing_name
         return resolved_model in self.model_exclusion_list()
 
-    @classmethod
-    def _mcp_server_exclusion_list_from_objects(
-        cls,
-        specific_exclusion: Optional["MCPServerExclusionMixin"],
-        org_exclusion: Optional["MCPServerExclusionMixin"],
-    ) -> list[str]:
-        exclusion_list: list[str] = (
-            specific_exclusion.excluded_mcp_servers if specific_exclusion else []
-        )
-        if specific_exclusion and specific_exclusion.merge_mcp_server_exclusion_lists:
-            org_exclusion_list: list[str] = (
-                org_exclusion.excluded_mcp_servers if org_exclusion else []
-            )
-            exclusion_list = exclusion_list + org_exclusion_list
-            if org_exclusion and org_exclusion.merge_mcp_server_exclusion_lists:
-                settings_exclusion_list: list[str] = getattr(
-                    settings, "AQUEDUCT_DEFAULT_MCP_SERVER_EXCLUSION_LIST", []
-                )
-                exclusion_list = exclusion_list + settings_exclusion_list
-
-        return list(set(exclusion_list))
-
-    def mcp_server_exclusion_list(self) -> list[str]:
-        """
-        Determines if an MCP server is excluded for this token,
-        returning a list of excluded servers.
-        Assumes database integrity for related objects.
-
-        Hierarchy Rules:
-        - Service Account Token: Uses the Team exclusion list, falls back to the Org exclusion list.
-        - User Token: Uses the UserProfile exclusion list, falls back to the Org exclusion list.
-        """
-        hierarchy = self._get_obj_hierarchy()
-        return Token._mcp_server_exclusion_list_from_objects(*hierarchy)
+    def mcp_server_exclusion_list(self) -> frozenset[str]:
+        return excluded(self._owner(), Exclusion.MCP_SERVERS)
 
     def mcp_server_excluded(self, server_name: str) -> bool:
         return server_name in self.mcp_server_exclusion_list()
@@ -244,8 +177,6 @@ class Token(LimitMixin, models.Model):
         try:
             hashed_key = cls._hash_key(key_value)
             # Use select_related for efficiency if you often need related objects after lookup
-            return cls.objects.select_related(
-                "user__profile__org", "service_account__team__org"
-            ).get(key_hash=hashed_key)
+            return cls.objects.select_related(*RELATED).get(key_hash=hashed_key)
         except cls.DoesNotExist:
             return None

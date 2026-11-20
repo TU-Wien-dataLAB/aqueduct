@@ -20,19 +20,18 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
         super().setUpClass()
         cls.url = reverse("gateway:v1_systemone")
 
-    async def test_create_systemone_predicate(self):
+    async def test_create_systemone_noul(self):
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
             "model": self.model,
-            "input": "Inspect the product in this photo.",
-            "questions": [
-                {
-                    "type": "predicate",
-                    "name": "visible_damage",
+            "state": "Inspect the product in this photo.",
+            "questions": {
+                "visible_damage": {
+                    "type": "noul",
                     "instructions": "Does the product have visible damage?",
                 }
-            ],
+            },
         }
 
         response = await self.async_client.post(
@@ -47,10 +46,9 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
 
         response_json = response.json()
         self.assertIn("answers", response_json)
-        self.assertIsInstance(response_json["answers"], list)
-        self.assertEqual(response_json["answers"][0]["name"], "visible_damage")
-        self.assertEqual(response_json["answers"][0]["type"], "predicate")
-        self.assertIn("probability", response_json["answers"][0])
+        self.assertIsInstance(response_json["answers"], dict)
+        self.assertEqual(response_json["answers"]["visible_damage"]["type"], "noul")
+        self.assertIn("noul", response_json["answers"]["visible_damage"])
 
         requests = [r async for r in Request.objects.all()]
         self.assertEqual(len(requests), 1, "Exactly one request should be logged.")
@@ -65,18 +63,17 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
 
         payload = {
             "model": self.model,
-            "input": "Which department handles refunds?",
-            "questions": [
-                {
+            "state": {"input": "Which department handles refunds?"},
+            "questions": {
+                "department": {
                     "type": "choice",
-                    "name": "department",
                     "instructions": "Which department should handle this complaint?",
-                    "choices": [
-                        {"value": "billing", "description": "Payments, invoices, and refunds."},
-                        {"value": "technical", "description": "Problems using the product."},
-                    ],
+                    "criteria": {
+                        "billing": "Payments, invoices, and refunds.",
+                        "technical": "Problems using the product.",
+                    },
                 }
-            ],
+            },
         }
 
         response = await self.async_client.post(
@@ -88,7 +85,7 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
         forwarded = self.mock_server.get_last_request("systemone")
         self.assertIsNotNone(forwarded, "The systemone request should reach the upstream mock.")
         self.assertEqual(forwarded["model"], self.model)
-        self.assertEqual(forwarded["input"], payload["input"])
+        self.assertEqual(forwarded["state"], payload["state"])
         self.assertEqual(forwarded["questions"], payload["questions"])
         self.assertNotIn("timeout", forwarded)
 
@@ -97,7 +94,7 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
 
         payload = {
             "model": self.model,
-            "input": [
+            "state": [
                 {
                     "role": "user",
                     "content": [
@@ -109,13 +106,12 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
                     ],
                 }
             ],
-            "questions": [
-                {
-                    "type": "predicate",
-                    "name": "visible_damage",
+            "questions": {
+                "visible_damage": {
+                    "type": "noul",
                     "instructions": "Does the product have visible damage?",
                 }
-            ],
+            },
         }
 
         response = await self.async_client.post(
@@ -130,18 +126,17 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
 
         payload = {
             "model": "systemone",
-            "input": "Which department handles refunds?",
-            "questions": [
-                {
+            "state": {"input": "Which department handles refunds?"},
+            "questions": {
+                "department": {
                     "type": "choice",
-                    "name": "department",
                     "instructions": "Which department should handle this complaint?",
-                    "choices": [
-                        {"value": "billing", "description": "Payments, invoices, and refunds."},
-                        {"value": "technical", "description": "Problems using the product."},
-                    ],
+                    "criteria": {
+                        "billing": "Payments, invoices, and refunds.",
+                        "technical": "Problems using the product.",
+                    },
                 }
-            ],
+            },
         }
 
         response = await self.async_client.post(
@@ -158,8 +153,8 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
-            "input": "Inspect the product.",
-            "questions": [{"type": "predicate", "name": "d", "instructions": "Damage?"}],
+            "state": {"input": "Inspect the product."},
+            "questions": {"d": {"type": "noul", "instructions": "Damage?"}},
         }
 
         response = await self.async_client.post(
@@ -168,16 +163,15 @@ class SystemOneIntegrationTest(GatewayIntegrationTestCase):
 
         self.assertEqual(response.status_code, 400)
         response_json = response.json()
-        self.assertEqual(response_json["error"]["message"], "Missing required parameter: model")
-        self.assertEqual(response_json["error"]["param"], "model")
+        self.assertIn("model", response_json["error"]["message"])
 
     async def test_systemone_unknown_model(self):
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
             "model": "nonexistent-model",
-            "input": "Inspect the product.",
-            "questions": [{"type": "predicate", "name": "d", "instructions": "Damage?"}],
+            "state": "Inspect the product.",
+            "questions": {"d": {"type": "noul", "instructions": "Damage?"}},
         }
 
         response = await self.async_client.post(

@@ -201,8 +201,8 @@ def responses_detail_response(ids: PathIds) -> dict[str, Any]:
 
 def systemone_detail_response(ids: PathIds) -> dict[str, Any]:
     return {
-        "answers": [{"name": "visible_damage", "type": "predicate", "probability": 0.92}],
         "model": "gpt-6-luna",
+        "answers": {"visible_damage": {"type": "noul", "noul": 0.92}},
         "usage": {"input_tokens": 15, "output_tokens": 9, "total_tokens": 24},
     }
 

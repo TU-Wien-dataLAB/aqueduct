@@ -11,6 +11,7 @@ from .service_account import (
     ServiceAccountTransferOwnershipView,
     ServiceAccountUpdateView,
 )
+from .settings import SettingsView
 from .team import (
     TeamAdminManagementView,
     TeamCreateView,

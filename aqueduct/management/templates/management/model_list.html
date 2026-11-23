@@ -69,7 +69,10 @@
                     {% translate "Copy model name" as copy_label %}{% copy_button selected.model_name copy_label size="sm" %}
                 </div>
                 {% if info.description %}<p class="text-sm">{{ info.description }}</p>{% endif %}
-                {% if selected.model_card_url %}<a class="link-plain inline-flex items-center gap-1 text-sm" href="{{ selected.model_card_url }}" target="_blank" rel="noopener noreferrer">{% translate "Model card" %}{% icon "external" small=True %}</a>{% endif %}
+                <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                    {% if selected.model_card_url %}<a class="link-plain inline-flex items-center gap-1" href="{{ selected.model_card_url }}" target="_blank" rel="noopener noreferrer">{% translate "Model card" %}{% icon "external" small=True %}</a>{% endif %}
+                    <a class="link-plain" href="{% url 'requests' %}?model={{ selected.model_name|urlencode }}">{% translate "Requests" %}</a>
+                </div>
             </div>
 
             {% if info.deprecation_date %}

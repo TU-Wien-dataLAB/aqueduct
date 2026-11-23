@@ -188,3 +188,7 @@ a.link-plain:hover { text-decoration: underline; }
 .pbar .i { background: var(--viz-in); }
 .pbar .f { background: var(--color-error); }
 
+
+/* A log row's <details> toggle opens the row of details below it. */
+.row-details { display: none; }
+tr:has(> td > details[open]) + .row-details { display: table-row; }

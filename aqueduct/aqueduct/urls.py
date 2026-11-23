@@ -21,6 +21,7 @@ from django.urls import include, path
 
 from management import views
 
+# Our confirm view comes first so it shadows django-tos's, which follows off-site `next` URLs.
 terms_of_service = path(
     "terms-of-service/",
     include(

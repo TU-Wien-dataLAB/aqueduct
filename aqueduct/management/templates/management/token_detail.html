@@ -88,6 +88,7 @@
     <div class="card-body table-card gap-2">
         <div class="card-head flex flex-wrap items-center justify-between gap-3">
             <h2 id="latest-title" class="card-title">{% translate "Latest requests" %}</h2>
+            <a class="link-plain text-sm" href="{% url 'requests' %}?key={{ token.id }}">{% translate "All requests of this key" %}</a>
         </div>
         <div class="overflow-x-auto">
             <table class="table table-sm">

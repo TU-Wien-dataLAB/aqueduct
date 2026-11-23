@@ -10,6 +10,7 @@
     <nav aria-label="{% translate 'Main' %}">
         <ul class="menu w-full gap-1 p-0">
             {% url 'tokens' as href %}{% include "management/_nav_link.html" with label=_("API keys") icon="key" names=" tokens token_create token_edit token_delete token_regenerate token_detail " %}
+            {% url 'requests' as href %}{% include "management/_nav_link.html" with label=_("Requests") icon="requests" names=" requests " %}
             {% url 'usage' as href %}{% include "management/_nav_link.html" with label=_("Usage") icon="overview" names=" usage " %}
             {% url 'models' as href %}{% include "management/_nav_link.html" with label=_("Models") icon="models" names=" models " %}
             {% url 'mcp_servers' as href %}{% include "management/_nav_link.html" with label=_("MCP servers") icon="mcp" names=" mcp_servers " %}

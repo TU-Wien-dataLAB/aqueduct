@@ -1,6 +1,7 @@
 ---
 title: Deployment
 nav_order: 4
+has_children: true
 ---
 
 # Deployment
@@ -11,9 +12,35 @@ nav_order: 4
 > **Planned topics:**
 > - Writing and using a Helm chart for Aqueduct
 > - Required configuration (secrets, settings.py for orgs etc.)
-> - Scaling
 > - Authentication (OIDC/Dex) configuration
 > - Reverse proxy and HTTPS setup
+
+## Horizontal scaling
+
+- [Roll out horizontal scaling](horizontal-scaling-rollout.md): legacy Beat transition, staging
+  validation, load measurements, promotion and recovery.
+
+Production web replicas remain **1** until two-replica staging validation passes. Staging evidence
+and measurements are currently **pending / not run**; this is not an end-to-end HA or slowdown-fix claim.
+
+## Access key expiration
+
+Set `MAX_ACCESS_KEY_EXPIRATION_DAYS` to a positive integer to limit the expiration
+of user and service-account keys. The default, `-1`, imposes no maximum. The key
+forms show the maximum expiration and reject an explicit date later than the
+current time plus the configured number of days. Leaving the expiration empty uses
+the maximum. Programmatic saves with no expiration or a later expiration are still
+capped at the maximum; earlier expirations are preserved.
+
+Run `python manage.py migrate` with the new setting whenever enabling or reducing
+the limit. This shortens existing keys with no expiration or an expiration beyond
+the new deadline; it does not extend earlier expirations. The Helm chart and
+Docker Compose run migrations during deployment. All application and migration
+processes must use the same setting. In Helm, set it under the shared `env` list,
+not `web.extraEnv`, so the migration container receives it too. A restart without
+running migrations does not update existing keys. Increasing or disabling the limit
+does not restore previously shortened expirations; already-expired keys are never
+reactivated by reconciliation.
 
 ## Database
 
@@ -105,7 +132,66 @@ service). Set `celery.brokerUrl` explicitly to point at an external broker.
 The broker holds only transient Celery task messages (`valkey.dataStorage` is
 disabled by default), so there is no persistent data.
 
+## Concurrency lease renewal
+
+Token and model concurrency slots are Redis leases with a fixed lifetime,
+configured by `AQUEDUCT_TOKEN_CONCURRENT_REQUESTS_LIMIT_TTL_SECONDS` (default
+`600` seconds). The lease is reserved while the request view runs and is not
+renewed on a timer.
+
+For streaming responses, each non-empty chunk renews the lease only if the same
+lease still exists and has not expired. Normal completion, errors, cancellation,
+and closing the response release the reservation. Empty chunks do not renew it.
+
+If a request produces no stream progress, its lease expires after the TTL and
+frees accounting capacity. This applies to stalled views, stalled streams,
+never-consumed streams, and crashed workers. Expiry does not cancel or close the
+local view or upstream request: Aqueduct does not enforce a maximum request
+lifetime, and silent or backpressured upstream work may continue after its
+capacity has been released. If that work later produces a chunk, the expired
+lease cannot be renewed; the gateway stops forwarding that stream.
+
+A Redis refresh error also stops forwarding. Release is best effort, as with
+other cleanup paths. A reservation released after its lease expired cannot
+remove a newer reservation.
+
 ## Upgrading
+
+### Migration init containers
+
+Every web, worker and Beat pod validates the router configuration and runs Django migrations
+before starting. Pods explicitly use the namespace's `default` ServiceAccount so upgrades clear
+both the old `serviceAccountName` and Kubernetes' deprecated `serviceAccount` alias; they no longer
+need migration-specific Kubernetes API permissions. Verify both live fields before removing the
+old gate ServiceAccount. PostgreSQL migrations use a session advisory lock shared by all Aqueduct pods
+on the same database; each later pod runs Django's normal no-op migration check. PostgreSQL
+limits lock acquisition to 10 minutes, and connection attempts use a 5-second libpq timeout.
+The lock timeout is reset before migration; a network stall is not subject to a hard deadline.
+A failed init container is retried by Kubernetes and the application container does not start.
+Inspect `kubectl logs <pod> -c migrate` and resolve the failure before proceeding. A failed
+nontransactional migration may have left partial changes; assess them before retrying.
+
+Use a direct PostgreSQL connection or a session-pooling proxy, not transaction pooling: the lock
+must remain on the migration session; migrations must not close or reopen that connection.
+Budget for one migration connection per starting pod in
+addition to running application pools and surge/terminating pods. Init containers use the pod's
+role scheduling and `migrate.resources` and `migrate.containerSecurityContext`. Each init receives
+exactly its application role's environment, including role-specific `extraEnv`; configure database
+and app settings there or in global `env`. `migrate.extraEnv` must be empty to prevent configuration
+mismatch. The migration connection is deliberately unpooled; `migrate.databasePool`,
+`migrate.scheduling` and `migrate.activeDeadlineSeconds` have been removed; rendering fails if
+these obsolete keys are still configured, so remove them from existing values files. Pin the same
+immutable image identity for init and application containers.
+
+The Helm chart requires PostgreSQL. The init fails if effective Django settings resolve to
+SQLite or another backend, including settings supplied by secrets or `settingsPy.extra`.
+SQLite remains supported for local Django development outside this chart.
+
+Migrations can run while old pods serve. Use expand/contract schema changes compatible with both
+images, or schedule maintenance and stop traffic, producers, workers and Beat for incompatible or
+uncertain changes. A lock serializes migrations, not application access. See the
+[rollout guide](horizontal-scaling-rollout.md) for the transition from Job-based releases, cleanup,
+and rollback precautions.
 
 ### Before upgrading from the Bitnami-backed chart
 

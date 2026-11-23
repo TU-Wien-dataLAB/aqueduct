@@ -1,7 +1,10 @@
 import logging
 import time
-from collections.abc import Generator
+import typing
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
+from functools import cache as memoize
+from typing import Any
 
 import httpx2
 import litellm
@@ -31,6 +34,37 @@ def cache_lock(lock_id: str, ttl: int) -> Generator[bool, None, None]:
     finally:
         if status and time.monotonic() < timeout_at:
             cache.delete(lock_id)
+
+
+@memoize
+def _declared_fields(params_type: Any) -> frozenset[str]:
+    members = typing.get_args(params_type) or (params_type,)
+    return frozenset().union(*(m.__required_keys__ | m.__optional_keys__ for m in members))
+
+
+def router_kwargs(body: Mapping[str, object], params_type: Any) -> dict[str, Any]:
+    """Build LiteLLM router keyword arguments from a validated request body.
+
+    LiteLLM takes routing settings and credentials (`api_base`, `api_key`, `fallbacks`,
+    `mock_response`, ...) as keyword arguments next to the request parameters, so a body key
+    passed as a keyword can redirect the request or the upstream key. Only fields declared by
+    `params_type` (an OpenAI request TypedDict, or a union of them) and the gateway's `timeout`
+    are passed as keywords; every other field goes to the upstream in `extra_body`.
+    Nested client extras cannot override these validated fields in the upstream JSON.
+    """
+    allowed = _declared_fields(params_type) | {"timeout"}
+    kwargs = {key: value for key, value in body.items() if key in allowed}
+    extra_body = {key: value for key, value in body.items() if key not in allowed}
+    client_extra_body = extra_body.pop("extra_body", None)
+    if isinstance(client_extra_body, dict):
+        # The upstream SDK merges extra_body over the request, including its checked model.
+        client_extra_body = {
+            key: value for key, value in client_extra_body.items() if key not in allowed
+        }
+        extra_body = {**client_extra_body, **extra_body}
+    if extra_body:
+        kwargs["extra_body"] = extra_body
+    return kwargs
 
 
 def oai_client_from_body(model: str, request: ASGIRequest) -> tuple[openai.AsyncClient, str]:

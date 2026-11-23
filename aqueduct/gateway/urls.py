@@ -19,6 +19,9 @@ urlpatterns = [
     # Embeddings endpoints
     path("embeddings", views.embeddings, name="embeddings"),
     path("v1/embeddings", views.embeddings, name="v1_embeddings"),
+    # Rerank endpoints
+    path("rerank", views.rerank, name="rerank"),
+    path("v1/rerank", views.rerank, name="v1_rerank"),
     # Decisions endpoints (non-streaming)
     path("decisions", views.decisions, name="decisions"),
     path("v1/decisions", views.decisions, name="v1_decisions"),
@@ -36,6 +39,9 @@ urlpatterns = [
     # Image generation endpoint
     path("images/generations", views.image_generation, name="image_generation"),
     path("v1/images/generations", views.image_generation, name="v1_image_generation"),
+    # Image edit endpoint
+    path("images/edits", views.image_edit, name="image_edit"),
+    path("v1/images/edits", views.image_edit, name="v1_image_edit"),
     # Files endpoints
     path("files", views.files, name="files"),
     path("v1/files", views.files, name="v1_files"),

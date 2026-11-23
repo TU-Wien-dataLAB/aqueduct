@@ -6,6 +6,7 @@ from json import JSONDecodeError
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from starlette.datastructures import UploadFile
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from starlette.status import HTTP_404_NOT_FOUND
@@ -114,6 +115,18 @@ async def mock_endpoint(path: str, request: Request) -> Response:
             last_requests[path] = await request.json()
         except (AttributeError, JSONDecodeError, UnicodeDecodeError):
             last_requests[path] = None
+        if path == "images/edits" and request.headers.get("content-type", "").startswith(
+            "multipart/"
+        ):
+            form = await request.form()
+            captured: dict[str, Any] = {}
+            for key, value in form.multi_items():
+                if isinstance(value, UploadFile):
+                    item = {"filename": value.filename, "content": (await value.read()).hex()}
+                else:
+                    item = value
+                captured.setdefault(key, []).append(item)
+            last_requests[path] = captured
     ids: tuple[str, ...] = ()
 
     try:

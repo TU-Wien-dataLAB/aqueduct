@@ -14,6 +14,7 @@ urlpatterns = [
         "tokens/<int:id>/regenerate/", views.TokenRegenerateView.as_view(), name="token_regenerate"
     ),
     path(r"org/", views.OrgView.as_view(), name="org"),
+    path("org/<int:id>/limits/", views.OrgLimitsEditView.as_view(), name="org_limits"),
     path("org/switch/", views.OrgSwitchView.as_view(), name="org_switch"),
     path("team/create/", views.TeamCreateView.as_view(), name="team_create"),
     path("team/<int:id>/delete/", views.TeamDeleteView.as_view(), name="team_delete"),

@@ -1,12 +1,14 @@
 # management/views/org.py
 
 from django.contrib import messages
+from django.db.models import QuerySet
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.generic import TemplateView, View
+from django.views.generic import TemplateView, UpdateView, View
 
+from management.forms import OrgLimitsForm
 from management.models import Org
 from management.views.base import ORG_SESSION_KEY, BaseAqueductView
 
@@ -23,6 +25,26 @@ class OrgView(BaseAqueductView, TemplateView):
         context["teams"] = self.get_teams_for_user()
         context["org_object"] = self.org
         return context
+
+
+class OrgLimitsEditView(BaseAqueductView, UpdateView):
+    """The default limits of an org, for its admins."""
+
+    form_class = OrgLimitsForm
+    template_name = "management/edit/org.html"
+    pk_url_kwarg = "id"
+    context_object_name = "org_object"
+    success_url = reverse_lazy("org")
+
+    def get_queryset(self) -> QuerySet[Org]:
+        return self.profile.administered_orgs()
+
+    def form_valid(self, form: OrgLimitsForm) -> HttpResponse:
+        messages.success(self.request, f"Limits of {form.instance.name} saved.")
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs) -> dict[str, object]:
+        return super().get_context_data(view_title=f"Limits of {self.object.name}", **kwargs)
 
 
 class OrgSwitchView(BaseAqueductView, View):

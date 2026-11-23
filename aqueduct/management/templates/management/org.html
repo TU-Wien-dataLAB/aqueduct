@@ -48,7 +48,10 @@
 
 <section class="card max-w-3xl bg-base-200" aria-labelledby="org-limits-title">
     <div class="card-body gap-3">
-        <h2 id="org-limits-title" class="card-title">{% translate "Default limits" %}</h2>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="org-limits-title" class="card-title">{% translate "Default limits" %}</h2>
+            {% if is_org_admin %}<a class="link-plain text-sm" href="{% url 'org_limits' org_object.id %}" aria-label="{% translate 'Edit default limits' %}">{% translate "Edit" %}</a>{% endif %}
+        </div>
         <p class="muted text-sm">{% translate "These limits apply per API key unless a team or person has their own." %}</p>
         {% include "management/_limits_table.html" with first=org_object first_title=_("Organization") %}
     </div>

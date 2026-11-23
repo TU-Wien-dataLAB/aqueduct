@@ -70,3 +70,18 @@ class ModelsPageTest(TestCase):
         self.assertContains(response, 'href="https://huggingface.co/example/model"')
         self.assertContains(response, "Model card", count=1)
         self.assertNotContains(response, 'href="javascript:')
+
+    def test_chat_and_embedding_models_show_how_to_call_them(self):
+        self.client.force_login(get_user_model().objects.get(pk=1))
+        config = {
+            "model_list": [
+                {"model_name": "chatty"},
+                {"model_name": "vectors", "model_info": {"mode": "embedding"}},
+                {"model_name": "voice", "model_info": {"mode": "audio_speech"}},
+            ]
+        }
+        with patch("management.views.models.get_router_config", return_value=config):
+            response = self.client.get(reverse("models"))
+        self.assertContains(response, "curl http://testserver/v1/chat/completions", count=1)
+        self.assertContains(response, "curl http://testserver/v1/embeddings", count=1)
+        self.assertContains(response, '"model": "vectors"')

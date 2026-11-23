@@ -1,265 +1,134 @@
 {% extends 'management/base.html' %}
-{% load static %}
-{% load humanize %}
+{% load i18n humanize ui %}
 
-{% block header %}{{ title }}{% endblock %}
-
-{% block content %}
-    <div class="flex items-center justify-between mb-6">
-        <div class="flex items-baseline">
-            <h1 class="text-3xl font-bold">{{ title }}</h1>
-            {% if selected_token %}
-                <span class="text-lg text-base-content/50 font-normal ml-4">
-                for "{{ selected_token.name }}"
-            </span>
-            {% endif %}
-        </div>
-    </div>
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-6">
+{% block title %}{% translate "Usage" %} · {{ block.super }}{% endblock %}
+{% block breadcrumbs %}{% if selected_token %}<li><a href="?org={{ selected_org.id }}&span={{ selected_span }}">{% translate "Usage" %}</a></li><li class="font-mono">{{ selected_token.name }}</li>{% endif %}{% endblock %}
+{% block heading %}{% translate "Usage" %}{% if selected_token %} <span class="muted font-mono text-xl">{{ selected_token.name }}</span>{% endif %}{% endblock %}
+{% block subheading %}{% if not is_global_admin %}<span class="muted text-sm">{{ selected_org.name }}</span>{% endif %}{% endblock %}
+{% block body %}
+    <div class="flex flex-wrap items-center gap-3">
         {% if is_global_admin %}
-            <label for="org-select" class="font-medium">Organization:</label>
-            <select
-                    id="org-select"
-                    class="select select-bordered"
-                    onchange="onOrgChange()"
-            >
-                <option value="all" {% if not selected_org %}selected{% endif %}>
-                    All
-                </option>
-                {% for org in orgs %}
-                    <option
-                            value="{{ org.id }}"
-                            {% if org.id == selected_org.id %}selected{% endif %}
-                    >
-                        {{ org.name }}
-                    </option>
-                {% endfor %}
-            </select>
-        {% else %}
-            <span class="font-medium">Organization: {{ selected_org.name }}</span>
+            <label class="flex items-center gap-2">
+                <span class="section-label">{% translate "Organization" %}</span>
+                <select id="org-select" class="select select-sm w-56" onchange="onOrgChange()">
+                    <option value="all" {% if not selected_org %}selected{% endif %}>{% translate "All" %}</option>
+                    {% for org in orgs %}
+                        <option value="{{ org.id }}" {% if org.id == selected_org.id %}selected{% endif %}>{{ org.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
         {% endif %}
 
-        <label class="font-medium">Time Frame:</label>
-        <div id="span-tabs" class="tabs tabs-box">
+        <div id="span-tabs" class="join" role="group" aria-label="{% translate 'Time frame' %}">
             {% for sp in span_choices %}
-                <a
-                        class="tab{% if sp == selected_span and selected_span != 'custom' %} tab-active{% endif %}"
-                        data-span="{{ sp }}"
-                >
-                    {{ sp }}
-                </a>
+                <a class="tab btn btn-sm join-item{% if sp == selected_span and selected_span != 'custom' %} tab-active btn-primary{% endif %}" data-span="{{ sp }}">{{ sp }}</a>
             {% endfor %}
-            <a
-                    class="tab{% if selected_span == 'custom' %} tab-active{% endif %}"
-                    data-span="custom"
-            >
-                Custom
-            </a>
+            <a class="tab btn btn-sm join-item{% if selected_span == 'custom' %} tab-active btn-primary{% endif %}" data-span="custom">{% translate "Custom" %}</a>
         </div>
 
-        <div id="custom-range" class="flex items-center gap-2{% if selected_span != 'custom' %} hidden{% endif %}">
-            <input
-                id="custom-start"
-                type="datetime-local"
-                lang="de"
-                max="{{ now_utc_iso }}"
-                class="input input-bordered input-sm"
-                value="{{ custom_start }}"
-                placeholder="YYYY-MM-DD HH:MM"
-            />
-            <span class="text-base-content/50">to</span>
-            <input
-                id="custom-end"
-                type="datetime-local"
-                lang="de"
-                max="{{ now_utc_iso }}"
-                class="input input-bordered input-sm"
-                value="{{ custom_end }}"
-                placeholder="YYYY-MM-DD HH:MM"
-            />
-            <button id="custom-apply" class="btn btn-sm btn-outline">Apply</button>
+        <div id="custom-range" class="flex flex-wrap items-center gap-2{% if selected_span != 'custom' %} hidden{% endif %}">
+            <input id="custom-start" type="datetime-local" lang="de" max="{{ now_utc_iso }}" class="input input-sm" value="{{ custom_start }}" placeholder="YYYY-MM-DD HH:MM"/>
+            <span class="muted">{% translate "to" %}</span>
+            <input id="custom-end" type="datetime-local" lang="de" max="{{ now_utc_iso }}" class="input input-sm" value="{{ custom_end }}" placeholder="YYYY-MM-DD HH:MM"/>
+            <button id="custom-apply" class="btn btn-sm btn-outline">{% translate "Apply" %}</button>
             {% if selected_span == "custom" %}
-                <button id="custom-clear" class="btn btn-sm btn-ghost" title="Reset to default range">✕</button>
+                <button id="custom-clear" class="btn btn-sm btn-ghost btn-square" title="{% translate 'Reset to default range' %}" aria-label="{% translate 'Reset to default range' %}">{% icon "close" small=True %}</button>
             {% endif %}
-            <span class="text-xs text-base-content/50">UTC</span>
+            <span class="muted text-xs">UTC</span>
         </div>
         {% if custom_error %}
-            <div class="alert alert-error py-2 px-3 text-sm w-full" role="alert">
-                <span>{{ custom_error }}</span>
-            </div>
+            <div class="alert alert-error w-full px-3 py-2 text-sm" role="alert">{% icon "failed" small=True %}<span>{{ custom_error }}</span></div>
         {% endif %}
     </div>
 
     {% if retention_warning %}
-    <div class="alert alert-warning mb-4">
-        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-        </svg>
-        <span>The selected time frame exceeds the data retention period of {{ retention_days }} days. Data older than {{ retention_days }} days may be incomplete.</span>
-    </div>
+        <div class="alert alert-warning" role="alert">
+            {% icon "warning" %}
+            <span>{% blocktranslate with days=retention_days %}The selected time frame exceeds the data retention period of {{ days }} days. Data older than {{ days }} days may be incomplete.{% endblocktranslate %}</span>
+        </div>
     {% endif %}
 
-    <!-- STATS BAR -->
-    <div class="stats stats-vertical md:stats-horizontal shadow bg-base-100 rounded-box mb-4 w-full">
-        <div class="stat">
-            <div class="stat-title">Total Requests</div>
-            <div class="stat-value text-primary">{{ total_requests|intcomma }}</div>
-        </div>
-        <div class="stat">
-            <div class="stat-title">Failed Requests</div>
-            <div class="stat-value text-primary">{{ failed_requests|intcomma }}</div>
-        </div>
-        <div class="stat">
-            <div class="stat-title">Avg Resp Time (Completion)</div>
-            <div class="stat-value text-primary">
-                {{ avg_time_completion|floatformat:1|intcomma }} ms
-            </div>
-        </div>
-        <div class="stat">
-            <div class="stat-title">Avg Resp Time (Embedding)</div>
-            <div class="stat-value text-primary">
-                {{ avg_time_embedding|floatformat:1|intcomma }} ms
-            </div>
-        </div>
-        <div class="stat">
-            <div class="stat-title">Input Tokens</div>
-            <div class="stat-value text-primary">{{ input_tokens|intcomma }}</div>
-            <div class="stat-desc">Of which {{ cached_input_tokens|intcomma }} were cached</div>
-        </div>
-        <div class="stat">
-            <div class="stat-title">Output Tokens</div>
-            <div class="stat-value text-primary">{{ output_tokens|intcomma }}</div>
-            <div class="stat-desc">Of which {{ reasoning_tokens|intcomma }} were reasoning tokens</div>
-        </div>
-        <div class="stat">
-            <div class="stat-title">Total Tokens</div>
-            <div class="stat-value text-primary">{{ total_tokens|intcomma }}</div>
-        </div>
-    </div>
+    <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="{% translate 'Totals' %}">
+        {% translate "Requests" as label %}{% blocktranslate asvar note with failed=failed_requests|intcomma %}{{ failed }} failed{% endblocktranslate %}
+        {% include "management/_stat_card.html" with value=total_requests|intcomma %}
+        {% translate "Input tokens" as label %}{% blocktranslate asvar note with cached=cached_input_tokens|intcomma %}{{ cached }} from cache{% endblocktranslate %}
+        {% include "management/_stat_card.html" with value=input_tokens|intcomma %}
+        {% translate "Output tokens" as label %}{% blocktranslate asvar note with reasoning=reasoning_tokens|intcomma %}{{ reasoning }} reasoning{% endblocktranslate %}
+        {% include "management/_stat_card.html" with value=output_tokens|intcomma %}
+        {% translate "Average response" as label %}{% blocktranslate asvar note with embedding=avg_time_embedding|floatformat:0|intcomma %}Completions · embeddings {{ embedding }} ms{% endblocktranslate %}
+        {% include "management/_stat_card.html" with value=avg_time_completion|floatformat:0|intcomma|add:" ms" %}
+    </section>
 
-    <!-- FLEX CONTAINER: CHARTS + TABLE -->
-    <div class="flex flex-col lg:flex-row gap-6">
-
-        <!-- LEFT: CHARTS COLUMN (40% width) -->
-        <div class="flex flex-col gap-6 w-full lg:w-2/5">
-            <!-- Requests Over Time Chart -->
-            <div class="flex flex-col">
-                <h2 class="text-xl font-semibold mb-2">Requests Over Time</h2>
-                <div id="usage-chart" style="height: 220px;"></div>
+    <section class="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div class="flex flex-col gap-4 lg:col-span-2">
+            <div class="card bg-base-200">
+                <div class="card-body gap-2">
+                    <h2 class="card-title">{% translate "Requests over time" %}</h2>
+                    <div id="usage-chart" style="height: 220px;"></div>
+                </div>
             </div>
-
-            <!-- Requests by Model Bar Chart -->
-            <div class="flex flex-col">
-                <h2 class="text-xl font-semibold mb-2">Requests by Model</h2>
-                <div id="model-bar-chart" style="height: 150px;"></div>
+            <div class="card bg-base-200">
+                <div class="card-body gap-2">
+                    <h2 class="card-title">{% translate "Requests by model" %}</h2>
+                    <div id="model-bar-chart" style="height: 150px;"></div>
+                </div>
             </div>
         </div>
 
-        <!-- RIGHT: REQUESTS TABLE (60% width, full height) -->
-        <div class="w-full lg:w-3/5 flex-shrink-0 flex flex-col" style="min-width:600px;">
-            <div class="flex justify-between items-center mb-2">
-                <h2 class="text-xl font-semibold mb-2">Request Counts by
-                    {% if selected_token %}User ID{% elif selected_org %}API Key{% else %}Organization{% endif %}
-                </h2>
-                {% if selected_token %}
-                    <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="btn btn-sm btn-outline">
-                        Show all tokens
-                    </a>
-                {% elif selected_org and is_global_admin %}
-                    <a href="?org=all&span={{ selected_span }}" class="btn btn-sm btn-outline">
-                        Show all orgs
-                    </a>
-
-                {% endif %}
-            </div>
-            <div class="flex-1 overflow-y-auto" style="max-height: 600px;">
-                <table class="table w-full table-zebra">
-                    <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>{% if selected_token %}User ID{% elif selected_org %}API Key Name{% else %}
-                            Organization{% endif %}</th>
-                        <th>Requests</th>
-                        <th>Input<br>Tokens</th>
-                        <th>Output<br>Tokens</th>
-                        <th>Total<br>Tokens</th>
-                        {% if selected_org and not selected_token %}
-                            <th>API Key Owner</th>
-                        {% endif %}
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {% if top_items %}
+        <div class="card bg-base-200 lg:col-span-3">
+            <div class="card-body table-card gap-2">
+                <div class="card-head flex flex-wrap items-center justify-between gap-3">
+                    <h2 class="card-title">{% if selected_token %}{% translate "Requests by user ID" %}{% elif selected_org %}{% translate "Requests by API key" %}{% else %}{% translate "Requests by organization" %}{% endif %}</h2>
+                    {% if selected_token %}
+                        <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="link-plain text-sm">{% translate "Show all keys" %}</a>
+                    {% elif selected_org and is_global_admin %}
+                        <a href="?org=all&span={{ selected_span }}" class="link-plain text-sm">{% translate "Show all organizations" %}</a>
+                    {% endif %}
+                </div>
+                <div class="max-h-[600px] overflow-auto">
+                    <table class="table table-sm">
+                        <thead>
+                        <tr>
+                            <th>{% if selected_token %}{% translate "User ID" %}{% elif selected_org %}{% translate "API key" %}{% else %}{% translate "Organization" %}{% endif %}</th>
+                            <th class="text-right">{% translate "Requests" %}</th>
+                            <th class="text-right">{% translate "Input" %}</th>
+                            <th class="text-right">{% translate "Output" %}</th>
+                            <th class="text-right">{% translate "Total" %}</th>
+                            {% if selected_org and not selected_token %}<th class="max-lg:hidden">{% translate "Owner" %}</th>{% endif %}
+                        </tr>
+                        </thead>
+                        <tbody>
                         {% for item in top_items %}
                             <tr>
-                                <td>{{ forloop.counter }}</td>
-                                <td>
+                                <td class="max-w-64">
                                     {% if selected_token %}
-                                        <span class="font-bold">
-                                            {{ item.user_id|default:"N/A" }}
-                                        </span>
+                                        <span class="break-all">{{ item.user_id|default:"N/A" }}</span>
                                     {% elif selected_org %}
                                         {% if item.user_is_token_owner %}
-                                            <a href="?org={{ selected_org.id }}&span={{ selected_span }}&token={{ item.token_id }}"
-                                               class="font-bold link link-hover text-primary">
-                                                {{ item.service_account_name|default:item.name|default:"N/A" }}
-                                            </a>
-                                        {%  else %}
-                                            <span class="font-bold">
-                                                {{ item.service_account_name|default:item.name|default:"N/A" }}
-                                            </span>
+                                            <a href="?org={{ selected_org.id }}&span={{ selected_span }}&token={{ item.token_id }}" class="link-plain font-mono">{{ item.service_account_name|default:item.name|default:"N/A" }}</a>
+                                        {% else %}
+                                            <span class="font-mono">{{ item.service_account_name|default:item.name|default:"N/A" }}</span>
                                         {% endif %}
-                                        {% if item.service_account_name %}
-                                            <span class="badge badge-sm badge-soft badge-secondary ml-1 whitespace-nowrap">Service Account</span>
-                                        {% endif %}
+                                        {% if item.service_account_name %}<div class="muted text-xs">{% translate "Service account" %}</div>{% endif %}
                                     {% else %}
-                                        <a href="?org={{ item.org_id }}&span={{ selected_span }}"
-                                           class="font-bold link link-hover text-primary">
-                                            {{ item.name|default:"N/A" }}
-                                        </a>
+                                        <a href="?org={{ item.org_id }}&span={{ selected_span }}" class="link-plain">{{ item.name|default:"N/A" }}</a>
                                     {% endif %}
                                 </td>
-                                <td class="font-bold">
-                                    {{ item.count|intcomma }}
-                                </td>
-                                <td class="font-bold">
-                                    {{ item.input_sum|intcomma }}
-                                    {% if item.cached_input_percent != None %}
-                                        <div class="text-xs font-normal text-base-content/60">
-                                            {{ item.cached_input_percent|floatformat }}% cached
-                                        </div>
-                                    {% endif %}
-                                </td>
-                                <td class="font-bold">
-                                    {{ item.output_sum|intcomma }}
-                                    {% if item.reasoning_percent != None %}
-                                        <div class="text-xs font-normal text-base-content/60">
-                                            {{ item.reasoning_percent|floatformat }}% reasoning
-                                        </div>
-                                    {% endif %}
-                                </td>
-                                <td class="font-bold">
-                                    {{ item.total_sum|intcomma }}
-                                </td>
-                                {% if selected_org and not selected_token %}
-                                    <td>
-                                        {{ item.user_email }}
-                                    </td>
-                                {% endif %}
+                                <td class="text-right">{{ item.count|intcomma }}</td>
+                                <td class="text-right">{{ item.input_sum|intcomma }}{% if item.cached_input_percent != None %}<div class="muted text-xs">{% blocktranslate with percent=item.cached_input_percent|floatformat %}{{ percent }}% cached{% endblocktranslate %}</div>{% endif %}</td>
+                                <td class="text-right">{{ item.output_sum|intcomma }}{% if item.reasoning_percent != None %}<div class="muted text-xs">{% blocktranslate with percent=item.reasoning_percent|floatformat %}{{ percent }}% reasoning{% endblocktranslate %}</div>{% endif %}</td>
+                                <td class="text-right">{{ item.total_sum|intcomma }}</td>
+                                {% if selected_org and not selected_token %}<td class="muted max-w-48 truncate max-lg:hidden">{{ item.user_email }}</td>{% endif %}
                             </tr>
+                        {% empty %}
+                            <tr><td colspan="6" class="muted">{% translate "No data available." %}</td></tr>
                         {% endfor %}
-                    {% else %}
-                        <tr>
-                            <td colspan="3" class="text-base-content/50">
-                                No data available.
-                            </td>
-                        </tr>
-                    {% endif %}
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
-    </div>
+    </section>
 
     <script>
         const timeseries = JSON.parse("{{ timeseries|escapejs }}");
@@ -392,8 +261,8 @@
                 tab.addEventListener("click", () => {
                     document
                         .querySelectorAll("#span-tabs .tab")
-                        .forEach((t) => t.classList.remove("tab-active"));
-                    tab.classList.add("tab-active");
+                        .forEach((t) => t.classList.remove("tab-active", "btn-primary"));
+                    tab.classList.add("tab-active", "btn-primary");
                     if (tab.dataset.span === "custom") {
                         // Reveal the custom-range controls without navigating.
                         customRangeEl.classList.remove("hidden");

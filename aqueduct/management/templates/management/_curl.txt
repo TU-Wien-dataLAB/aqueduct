@@ -1,4 +1,7 @@
-curl {{ gateway }}/chat/completions \
+{% if mode == "embedding" %}curl {{ gateway }}/embeddings \
   -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
   -H "Content-Type: application/json" \
-  -d '{"model": "{{ model|default:'MODEL' }}", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "{{ model }}", "input": "Hello"}'{% else %}curl {{ gateway }}/chat/completions \
+  -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ model|default:'MODEL' }}", "messages": [{"role": "user", "content": "Hello"}]}'{% endif %}

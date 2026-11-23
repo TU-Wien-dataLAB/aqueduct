@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.views.generic import TemplateView, View
 
 from management.models import Org
-from management.views.base import BaseAqueductView
+from management.views.base import ORG_SESSION_KEY, BaseAqueductView
 
 
 class OrgView(BaseAqueductView, TemplateView):
@@ -44,7 +44,8 @@ class OrgSwitchView(BaseAqueductView, View):
             return redirect(reverse("org"))
 
         org = get_object_or_404(Org, pk=org_id)
-        self.profile.org = org
-        self.profile.save(update_fields=["org"])
+        # The session keeps the choice: moving the admin's profile would end their
+        # memberships in the teams of their own org.
+        request.session[ORG_SESSION_KEY] = org.pk
         messages.success(request, f"Switched to organization: {org.name}")
         return redirect(reverse("org"))

@@ -246,7 +246,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 selected_org = (
                     Org.objects.get(pk=int(sel))
                     if sel and sel.isdigit() and is_global_admin
-                    else self.profile.org
+                    else self.org
                 )
             except Org.DoesNotExist:
                 selected_org = self.org

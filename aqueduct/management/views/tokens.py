@@ -4,15 +4,23 @@ from django import forms
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.messages import get_messages
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Max, QuerySet
+from django.db.models import Max, Q, QuerySet
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.http import require_POST
-from django.views.generic import CreateView, DeleteView, DetailView, TemplateView, UpdateView
+from django.views.generic import (
+    CreateView,
+    DeleteView,
+    DetailView,
+    ListView,
+    TemplateView,
+    UpdateView,
+)
 
 from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
@@ -111,6 +119,30 @@ class TokenCreateView(AccessKeyExpirationContextMixin, BaseAqueductView, CreateV
         context["view_title"] = "Create New API Key"
         context["tz"] = settings.TIME_ZONE
         return context
+
+
+class AllKeysView(BaseAqueductView, ListView):
+    """Every key of the org the page shows, for its admins, with owner and last use."""
+
+    template_name = "management/all_keys.html"
+    context_object_name = "keys"
+    paginate_by = 50
+
+    def get_queryset(self) -> QuerySet[Token]:
+        if not self.profile.is_org_admin(self.org):
+            raise PermissionDenied
+        keys = self.profile.visible_tokens(self.org).select_related("service_account__team", "user")
+        query = self.request.GET.get("q", "").strip()
+        if query:
+            keys = keys.filter(
+                Q(name__icontains=query)
+                | Q(user__email__icontains=query)
+                | Q(service_account__team__name__icontains=query)
+            )
+        return keys.annotate(last_used=Max("requests__timestamp")).order_by("name", "id")
+
+    def get_context_data(self, **kwargs) -> dict[str, object]:
+        return super().get_context_data(query=self.request.GET.get("q", "").strip(), **kwargs)
 
 
 class TokenDetailView(BaseAqueductView, DetailView):

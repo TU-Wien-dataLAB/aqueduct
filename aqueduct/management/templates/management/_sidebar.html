@@ -29,6 +29,7 @@
 
             {% if viewer_is_org_admin %}
                 <li class="menu-title section-label mt-3">{% translate "Organization" %}</li>
+                {% url 'all_keys' as href %}{% include "management/_nav_link.html" with label=_("All keys") icon="key" names=" all_keys " %}
                 {% url 'org' as href %}{% include "management/_nav_link.html" with label=_("Teams") icon="teams" names=" org team_create team_edit team_delete team_admins_manage service_account_create service_account_edit service_account_delete service_account_transfer " %}
             {% endif %}
 

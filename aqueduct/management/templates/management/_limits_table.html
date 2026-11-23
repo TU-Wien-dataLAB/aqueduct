@@ -1,0 +1,18 @@
+{% load i18n humanize %}
+<div class="-mx-4 overflow-x-auto">
+    <table class="table table-sm table-tight">
+        <thead>
+            <tr>
+                <th><span class="sr-only">{% translate "Limit" %}</span></th>
+                <th class="text-right">{{ first_title }}</th>
+                {% if second %}<th class="text-right">{{ second_title }}</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            <tr><th scope="row" class="font-medium">{% translate "Requests per minute" %}</th><td class="text-right tabular-nums">{{ first.requests_per_minute|intcomma|default:"—" }}</td>{% if second %}<td class="muted text-right tabular-nums">{{ second.requests_per_minute|intcomma|default:"—" }}</td>{% endif %}</tr>
+            <tr><th scope="row" class="font-medium">{% translate "Input tokens per minute" %}</th><td class="text-right tabular-nums">{{ first.input_tokens_per_minute|intcomma|default:"—" }}</td>{% if second %}<td class="muted text-right tabular-nums">{{ second.input_tokens_per_minute|intcomma|default:"—" }}</td>{% endif %}</tr>
+            <tr><th scope="row" class="font-medium">{% translate "Output tokens per minute" %}</th><td class="text-right tabular-nums">{{ first.output_tokens_per_minute|intcomma|default:"—" }}</td>{% if second %}<td class="muted text-right tabular-nums">{{ second.output_tokens_per_minute|intcomma|default:"—" }}</td>{% endif %}</tr>
+            <tr><th scope="row" class="font-medium">{% translate "Concurrent requests" %}</th><td class="text-right tabular-nums">{{ first.concurrent_requests_limit|intcomma|default:"—" }}</td>{% if second %}<td class="muted text-right tabular-nums">{{ second.concurrent_requests_limit|intcomma|default:"—" }}</td>{% endif %}</tr>
+        </tbody>
+    </table>
+</div>

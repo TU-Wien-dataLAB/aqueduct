@@ -52,7 +52,7 @@ class ServiceAccountForm(AccessKeyExpirationFormMixin, forms.ModelForm):
     token_expires_at = forms.DateTimeField(
         required=False,
         widget=forms.DateTimeInput(
-            attrs={"type": "datetime-local", "class": "input"}, format="%Y-%m-%dT%H:%M"
+            attrs={"type": "datetime-local", "class": "input w-full"}, format="%Y-%m-%dT%H:%M"
         ),
         label="API Key Expiration Date (optional)",
         help_text="Set an expiration date for the service account API key (optional).",
@@ -62,9 +62,15 @@ class ServiceAccountForm(AccessKeyExpirationFormMixin, forms.ModelForm):
         model = ServiceAccount
         fields: ClassVar[list] = ["name", "description"]
         widgets: ClassVar[dict] = {
-            "name": forms.TextInput(attrs={"placeholder": "Enter service account name"}),
+            "name": forms.TextInput(
+                attrs={"class": "input w-full", "placeholder": "Enter service account name"}
+            ),
             "description": forms.Textarea(
-                attrs={"rows": 3, "placeholder": "Optional description..."}
+                attrs={
+                    "class": "textarea w-full",
+                    "rows": 3,
+                    "placeholder": "Optional description...",
+                }
             ),
         }
         labels: ClassVar[dict] = {"name": "Service Account Name", "description": "Description"}
@@ -130,9 +136,15 @@ class TeamCreateForm(forms.ModelForm):
         model = Team
         fields: ClassVar[list] = ["name", "description"]
         widgets: ClassVar[dict] = {
-            "name": forms.TextInput(attrs={"placeholder": "Enter team name"}),
+            "name": forms.TextInput(
+                attrs={"class": "input w-full", "placeholder": "Enter team name"}
+            ),
             "description": forms.Textarea(
-                attrs={"rows": 3, "placeholder": "Optional description..."}
+                attrs={
+                    "class": "textarea w-full",
+                    "rows": 3,
+                    "placeholder": "Optional description...",
+                }
             ),
         }
         labels: ClassVar[dict] = {"name": "Team Name", "description": "Description"}

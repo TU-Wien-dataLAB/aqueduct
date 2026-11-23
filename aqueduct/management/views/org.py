@@ -22,9 +22,6 @@ class OrgView(BaseAqueductView, TemplateView):
         context["is_org_admin"] = self.is_org_admin()
         context["teams"] = self.get_teams_for_user()
         context["org_object"] = self.org
-        # Add all orgs for admin users
-        if self.profile.group == "admin":
-            context["all_orgs"] = Org.objects.all()
         return context
 
 

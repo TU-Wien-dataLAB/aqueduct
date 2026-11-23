@@ -7,7 +7,7 @@ treat the value as UTC; no timezone conversion is performed.
 {% endcomment %}
 <script>
   (() => {
-    const input = document.getElementById('{{ field.id_for_label }}');
+    const input = document.getElementById('{{ field.auto_id }}');
     if (!input) {
       return;
     }

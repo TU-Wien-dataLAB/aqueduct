@@ -20,9 +20,12 @@ class AccessKeyExpirationFormMixin:
     expiration_field: str
 
     def _describe_expiration_limit(self) -> None:
+        widget = self.fields[self.expiration_field].widget
+        widget.attrs["data-min-expiration"] = timezone.now().isoformat(timespec="seconds")
         deadline = Token.max_expiration()
         if deadline is None:
             return
+        widget.attrs["data-max-expiration"] = deadline.isoformat(timespec="seconds")
         days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
         self.fields[self.expiration_field].help_text = (
             f"Maximum expiration: {_format_expiration_deadline(deadline)} "
@@ -173,9 +176,11 @@ class TokenCreateForm(AccessKeyExpirationFormMixin, forms.ModelForm):
         model = Token
         fields: ClassVar[list] = ["name", "expires_at"]
         widgets: ClassVar[dict] = {
-            "name": forms.TextInput(attrs={"placeholder": "Enter API key name"}),
+            "name": forms.TextInput(
+                attrs={"class": "input w-full", "placeholder": "Enter API key name"}
+            ),
             "expires_at": forms.DateTimeInput(
-                attrs={"type": "datetime-local", "class": "input"}, format="%Y-%m-%dT%H:%M"
+                attrs={"type": "datetime-local", "class": "input w-full"}, format="%Y-%m-%dT%H:%M"
             ),
         }
         labels: ClassVar[dict] = {

@@ -1,0 +1,20 @@
+{% load i18n ui %}
+{% if form.non_field_errors %}
+    <div role="alert" class="alert alert-error">
+        {% icon "warning" small=True %}
+        <span>{{ form.non_field_errors|striptags }}</span>
+    </div>
+{% endif %}
+{% for field in form %}
+    <div class="flex flex-col gap-2">
+        <label class="font-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {% if field.name == form.expiration_field %}
+            <div class="flex items-center gap-2">{{ field|widget }}<span class="muted text-xs">UTC</span></div>
+        {% else %}
+            {{ field|widget }}
+        {% endif %}
+        {% if field.errors %}<span class="text-sm text-error">{{ field.errors|striptags }}</span>{% endif %}
+        {% if field.help_text %}<span class="muted text-sm">{{ field.help_text }}</span>{% endif %}
+    </div>
+    {% if field.name == form.expiration_field %}{% include "management/_expiration_input_script.html" %}{% endif %}
+{% endfor %}

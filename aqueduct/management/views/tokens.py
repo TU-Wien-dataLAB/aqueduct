@@ -3,20 +3,24 @@ from typing import ClassVar
 from django import forms
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.messages import get_messages
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Max, QuerySet
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.http import require_POST
-from django.views.generic import CreateView, DeleteView, TemplateView, UpdateView
+from django.views.generic import CreateView, DeleteView, DetailView, TemplateView, UpdateView
 
 from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
 from management.models import LimitSet, ServiceAccount, Token
 from management.views.base import AccessKeyExpirationContextMixin, BaseAqueductView
+
+NEW_KEY_TAG = "token-regenerated-key"
+"""The message tag that carries a new key's secret to the next page, which shows it once."""
 
 
 class UserTokensView(BaseAqueductView, TemplateView):
@@ -26,10 +30,12 @@ class UserTokensView(BaseAqueductView, TemplateView):
         context = super().get_context_data(**kwargs)
         profile = self.profile  # Provided by BaseAqueductView
 
-        tokens = profile.own_tokens()
+        tokens = profile.own_tokens().annotate(last_used=Max("requests__timestamp"))
         teams = profile.member_teams()
-        service_accounts = ServiceAccount.objects.filter(team__in=teams).select_related(
-            "team__org", "token"
+        service_accounts = (
+            ServiceAccount.objects.filter(team__in=teams)
+            .select_related("team__org", "token")
+            .annotate(last_used=Max("token__requests__timestamp"))
         )
 
         max_tokens = getattr(settings, "MAX_USER_TOKENS", 3)
@@ -96,14 +102,57 @@ class TokenCreateView(AccessKeyExpirationContextMixin, BaseAqueductView, CreateV
 
         # Use the returned secret_key in the success message
         messages.success(self.request, f"API key '{self.object.name}' created successfully.")
-        messages.info(self.request, f"{secret_key}", extra_tags="token-regenerated-key")
+        messages.info(self.request, f"{secret_key}", extra_tags=NEW_KEY_TAG)
 
-        return redirect(self.get_success_url())
+        return redirect("token_detail", id=self.object.id)
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         context["view_title"] = "Create New API Key"
         context["tz"] = settings.TIME_ZONE
+        return context
+
+
+class TokenDetailView(BaseAqueductView, DetailView):
+    """One key: who owns it, its limits and current use, and its latest requests."""
+
+    template_name = "management/token_detail.html"
+    pk_url_kwarg = "id"
+    context_object_name = "token"
+
+    def get_queryset(self) -> QuerySet[Token]:
+        return self.profile.visible_tokens().select_related("service_account__team", "user")
+
+    def get_context_data(self, **kwargs) -> dict[str, object]:
+        context = super().get_context_data(**kwargs)
+        token: Token = self.object
+        limits = token.get_limits()
+        usage = get_per_token_usage([token.id])[token.id]
+        context.update(
+            can_manage=self.profile.manageable_tokens().filter(pk=token.pk).exists(),
+            team=token.service_account.team if token.service_account else None,
+            own=token.user_id == self.request.user.id and token.service_account is None,
+            limit_rows=[
+                {
+                    "window": name,
+                    "requests": (usage[name]["req"], requests),
+                    "input_tokens": (usage[name]["in"], input_tokens),
+                    "output_tokens": (usage[name]["out"], output_tokens),
+                }
+                for name, _seconds, requests, input_tokens, output_tokens in limits.windows()
+            ],
+            concurrent_limit=limits.concurrent_requests_limit,
+            last_used=token.requests.aggregate(last=Max("timestamp"))["last"],
+            latest=token.requests.order_by("-timestamp")[:10],
+            new_key=next(
+                (
+                    str(message.message)
+                    for message in get_messages(self.request)
+                    if message.extra_tags == NEW_KEY_TAG
+                ),
+                None,
+            ),
+        )
         return context
 
 
@@ -200,16 +249,17 @@ class TokenRegenerateView(BaseAqueductView, View):
 
             # --- Regeneration --- #
             if can_regenerate:
+                redirect_url = reverse("token_detail", kwargs={"id": token.id})
                 new_key = token.regenerate_key()  # Assumes regenerate_key() saves the token
                 messages.success(
                     request,
-                    f"API key '{token_name}' has been regenerated. The new key is displayed below. "
+                    f"API key '{token_name}' has been regenerated. "
                     f"Please update any clients using the old key.",
                 )
                 messages.info(
                     request,
                     f"{new_key}",  # Only include the key itself in the message
-                    extra_tags="token-regenerated-key",  # Use a specific tag
+                    extra_tags=NEW_KEY_TAG,
                 )
             # Else: error message already added during permission check
 

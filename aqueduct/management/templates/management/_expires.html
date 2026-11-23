@@ -1,0 +1,1 @@
+{% load i18n %}{% if not token.expires_at %}<span class="muted">{% translate "Never" %}</span>{% elif token.is_expired %}<span class="st-err" title="{{ token.expires_at|date:'Y-m-d H:i' }} UTC">{% translate "Expired" %}</span>{% else %}<span title="{{ token.expires_at|date:'Y-m-d H:i' }} UTC">{{ token.expires_at|date:"j M Y" }}</span>{% endif %}

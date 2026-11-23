@@ -1,0 +1,11 @@
+{% load humanize %}
+<div class="min-w-0 flex-1" title="{{ used|floatformat:'0' }} / {{ limit|default:'—' }}">
+    <div class="flex items-baseline justify-between gap-2 text-xs">
+        <span class="muted">{{ label }}</span>
+        <span class="tabular-nums">{% if limit %}{{ used|floatformat:"0" }}/{{ limit|intcomma }}{% else %}—{% endif %}</span>
+    </div>
+    {% if limit %}
+        {% widthratio used limit 100 as pct %}
+        <progress class="progress h-1.5 w-full {% if pct >= 100 %}progress-error{% elif pct >= 80 %}progress-warning{% else %}progress-primary{% endif %}" value="{% if pct > 100 %}100{% else %}{{ pct }}{% endif %}" max="100"></progress>
+    {% endif %}
+</div>

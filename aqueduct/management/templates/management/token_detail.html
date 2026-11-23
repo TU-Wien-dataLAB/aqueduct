@@ -1,0 +1,118 @@
+{% extends "management/base.html" %}
+{% load i18n humanize ui %}
+
+{% block title %}{{ token.name }} · {{ block.super }}{% endblock %}
+{% block breadcrumbs %}{% if team %}<li><a href="{% url 'team' team.id %}">{{ team.name }}</a></li>{% else %}<li><a href="{% url 'tokens' %}">{% translate "API keys" %}</a></li>{% endif %}<li class="font-mono">{{ token.name }}</li>{% endblock %}
+{% block heading %}<span class="block break-all font-mono">{{ token.name }}</span>{% endblock %}
+{% block subheading %}
+    <div class="muted flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+        <span>{% if team %}{% translate "Service account" %} · <a class="link-plain" href="{% url 'team' team.id %}">{{ team.name }}</a>{% elif own %}{% translate "Personal" %}{% else %}{% translate "Personal" %} · {{ token.user.email }}{% endif %}</span>
+        <span class="font-mono">{{ token.key_preview }}</span>
+        <span>{% blocktranslate with date=token.created_at|date:"j M Y" %}Created {{ date }}{% endblocktranslate %}</span>
+        <span>{% translate "Expires" %}: {% include "management/_expires.html" %}</span>
+        <span>{% if last_used %}{% blocktranslate with time=last_used|naturaltime %}Last used {{ time }}{% endblocktranslate %}{% else %}{% translate "Never used" %}{% endif %}</span>
+    </div>
+{% endblock %}
+{% block actions %}
+    {% if can_manage %}
+        <div class="flex flex-wrap gap-2">
+            {% if team %}
+                {% blocktranslate with name=token.name asvar rotate_question %}Rotate {{ name }}?{% endblocktranslate %}
+                {% translate "The current key stops working immediately." as rotate_detail %}{% translate "Rotate" as rotate_action %}
+                <form action="{% url 'token_regenerate' token.id %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline btn-primary" {% confirm rotate_question rotate_detail rotate_action %}>{% icon "rotate" small=True %}{{ rotate_action }}</button>
+                </form>
+                <a class="btn btn-outline btn-primary" href="{% url 'service_account_edit' token.service_account.id %}">{% icon "admin" small=True %}{% translate "Edit" %}</a>
+            {% else %}
+                {% include "management/_key_actions.html" with labelled=True %}
+            {% endif %}
+        </div>
+    {% endif %}
+{% endblock %}
+{% block body %}
+{% if new_key %}
+<section class="card max-w-3xl bg-base-200" aria-labelledby="new-key-title">
+    <div class="card-body gap-5">
+        <div class="flex items-center gap-3">
+            <span class="st-ok">{% icon "ok" %}</span>
+            <h2 id="new-key-title" class="break-words text-2xl font-semibold">{% blocktranslate with name=token.name %}<span class="break-all font-mono">{{ name }}</span> is ready{% endblocktranslate %}</h2>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 rounded-xl bg-base-100 p-4">
+            <span class="min-w-0 flex-1 break-all font-mono text-sm">{{ new_key }}</span>
+            <button type="button" class="btn btn-primary" data-copy="{{ new_key }}">{% icon "copy" small=True %}<span class="copy-label" data-copied="{% translate 'Copied' %}" data-copy-failed="{% translate 'Copy failed' %}">{% translate "Copy key" %}</span></button>
+        </div>
+        <div class="st-warn flex items-center gap-2 text-sm font-medium">{% icon "warning" small=True %}{% translate "Copy it now. You won't see it again." %}</div>
+        {% with gateway=request.scheme|add:"://"|add:request.get_host|add:"/v1" %}
+            <div class="relative">
+                <pre class="overflow-x-auto rounded-lg bg-base-100 p-4 pr-12 font-mono text-xs leading-relaxed">{% include "management/_curl.txt" with key=new_key %}</pre>
+            </div>
+        {% endwith %}
+    </div>
+</section>
+{% endif %}
+
+<section class="card bg-base-200" aria-labelledby="limits-title">
+    <div class="card-body table-card gap-2">
+        <h2 id="limits-title" class="card-head card-title">{% translate "Limits" %}</h2>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th><span class="sr-only">{% translate "Window" %}</span></th>
+                        <th>{% translate "Requests" %}</th>
+                        <th>{% translate "Input tokens" %}</th>
+                        <th>{% translate "Output tokens" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in limit_rows %}
+                        <tr>
+                            <th scope="row" class="whitespace-nowrap text-sm font-medium">{% if row.window == "min" %}{% translate "This minute" %}{% elif row.window == "hour" %}{% translate "This hour" %}{% else %}{% translate "Today" %}{% endif %}</th>
+                            {% with cell=row.requests %}{% include "management/_limit_cell.html" %}{% endwith %}
+                            {% with cell=row.input_tokens %}{% include "management/_limit_cell.html" %}{% endwith %}
+                            {% with cell=row.output_tokens %}{% include "management/_limit_cell.html" %}{% endwith %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="card-foot muted text-sm">
+            {% if concurrent_limit is not None %}{% blocktranslate count n=concurrent_limit %}At most {{ n }} request at once.{% plural %}At most {{ n }} requests at once.{% endblocktranslate %} {% endif %}
+            {% translate "Over a limit the gateway answers 429 until the window resets." %}
+        </p>
+    </div>
+</section>
+
+<section class="card bg-base-200" aria-labelledby="latest-title">
+    <div class="card-body table-card gap-2">
+        <div class="card-head flex flex-wrap items-center justify-between gap-3">
+            <h2 id="latest-title" class="card-title">{% translate "Latest requests" %}</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>{% translate "Time" %}</th><th>{% translate "Model" %}</th><th>{% translate "Status" %}</th>
+                        <th class="text-right">{% translate "Input" %}</th><th class="text-right">{% translate "Output" %}</th><th class="text-right">{% translate "Response" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for request in latest %}
+                        <tr>
+                            <td class="muted whitespace-nowrap" title="{{ request.timestamp|date:'Y-m-d H:i:s' }} UTC">{{ request.timestamp|naturaltime }}</td>
+                            <td><span class="font-mono">{{ request.model|default:"—" }}</span><div class="muted truncate font-mono text-xs">{{ request.path }}</div></td>
+                            <td>{% include "management/_request_status.html" %}</td>
+                            <td class="text-right">{{ request.input_tokens|default_if_none:"—"|intcomma }}</td>
+                            <td class="text-right">{{ request.output_tokens|default_if_none:"—"|intcomma }}</td>
+                            <td class="whitespace-nowrap text-right">{% if request.response_time_ms is not None %}{{ request.response_time_ms|intcomma }} ms{% else %}—{% endif %}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6" class="muted">{% translate "This key has made no requests yet." %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -6,6 +6,7 @@ from . import views
 urlpatterns = [
     path("tokens/", views.UserTokensView.as_view(), name="tokens"),
     path("tokens/create/", views.TokenCreateView.as_view(), name="token_create"),
+    path("tokens/<int:id>/", views.TokenDetailView.as_view(), name="token_detail"),
     path("tokens/<int:id>/delete/", views.TokenDeleteView.as_view(), name="token_delete"),
     path("tokens/<int:id>/edit/", views.TokenEditView.as_view(), name="token_edit"),
     path(

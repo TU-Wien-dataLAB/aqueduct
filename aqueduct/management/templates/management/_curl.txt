@@ -1,0 +1,4 @@
+curl {{ gateway }}/chat/completions \
+  -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ model|default:'MODEL' }}", "messages": [{"role": "user", "content": "Hello"}]}'

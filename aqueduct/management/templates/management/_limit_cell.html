@@ -1,0 +1,4 @@
+{% load i18n humanize %}<td class="align-top">{% with used=cell.0 limit=cell.1 %}
+    <div class="whitespace-nowrap text-sm tabular-nums">{{ used|floatformat:"0"|intcomma }}{% if limit is not None %} <span class="muted">{% blocktranslate with limit=limit|intcomma %}of {{ limit }}{% endblocktranslate %}</span>{% else %} <span class="muted">· {% translate "no limit" %}</span>{% endif %}</div>
+    {% if limit %}{% widthratio used limit 100 as pct %}<progress class="progress mt-1 block h-1 w-full {% if pct >= 100 %}progress-error{% elif pct >= 80 %}progress-warning{% else %}progress-primary{% endif %}" value="{% if pct > 100 %}100{% else %}{{ pct }}{% endif %}" max="100"></progress>{% endif %}
+{% endwith %}</td>

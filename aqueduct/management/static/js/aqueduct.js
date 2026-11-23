@@ -25,12 +25,13 @@
     };
     // The Clipboard API exists only on HTTPS and localhost.
     if (!navigator.clipboard) return report(false);
-    navigator.clipboard.writeText(button.dataset.copy).then(() => report(true), () => report(false));
+    const text = button.dataset.copyFrom ? document.querySelector(button.dataset.copyFrom).textContent : button.dataset.copy;
+    navigator.clipboard.writeText(text).then(() => report(true), () => report(false));
   }
 
   document.addEventListener('click', (event) => {
     if (event.target.closest('[data-toggle-theme]')) toggleTheme();
-    const copyButton = event.target.closest('[data-copy]');
+    const copyButton = event.target.closest('[data-copy], [data-copy-from]');
     if (copyButton) copy(copyButton);
     const dismissButton = event.target.closest('[data-dismiss]');
     if (dismissButton) dismissButton.parentElement.remove();

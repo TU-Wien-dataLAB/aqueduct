@@ -5,81 +5,143 @@
 {% block heading %}{% translate "Models" %}{% endblock %}
 {% block subheading %}<p class="muted">{% translate "AI models available through the Aqueduct gateway." %}</p>{% endblock %}
 {% block body %}
-{% with gateway=site_host|add:"/v1" %}
-{% if model_list %}
-<div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-    {% for model in model_list %}
-    {% with info=model.model_info mode=model.model_info.mode|default:"chat" %}
-    <article class="card bg-base-200">
-        <div class="card-body gap-4">
-            <div class="flex items-start justify-between gap-2">
-                <div class="flex min-w-0 flex-col gap-1.5">
-                    <h2 class="break-all font-mono text-lg font-semibold">{{ model.model_name }}</h2>
-                    <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="badge badge-sm bg-base-100">
-                            {% if mode == "embedding" %}{% translate "Embedding" %}
-                            {% elif mode == "rerank" %}{% translate "Reranking" %}
-                            {% elif mode == "audio_speech" %}{% translate "Text-to-Speech" %}
-                            {% elif mode == "audio_transcriptions" %}{% translate "Speech-to-Text" %}
-                            {% elif mode == "image_generations" %}{% translate "Image Generation" %}
-                            {% else %}{% translate "Chat" %}{% endif %}
-                        </span>
-                        {% if info.supports_vision %}<span class="badge badge-sm bg-base-100">{% translate "Vision" %}</span>{% endif %}
-                        {% if info.request_limit_multiplier and info.request_limit_multiplier != 1 %}<span class="badge badge-sm badge-soft badge-success">{% blocktranslate with n=info.request_limit_multiplier %}{{ n }}x Limits{% endblocktranslate %}</span>{% endif %}
-                    </div>
-                    {% if info.aliases %}<p class="muted text-xs">{% translate "Aliases:" %} {% for alias in info.aliases %}<span class="font-mono">{{ alias }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
-                </div>
-                {% translate "Copy model name" as copy_label %}{% copy_button model.model_name copy_label size="sm" %}
-            </div>
-
-            {% if info.contextWindow or info.max_tokens or info.maxTokens or info.thinkingLevels %}
-            <dl class="flex flex-col gap-2 text-sm">
-                {% if info.contextWindow or info.max_tokens %}
-                <div class="flex flex-wrap justify-between gap-x-4">
-                    <dt class="muted">{% translate "Context window" %}</dt>
-                    <dd class="font-medium tabular-nums">{% if info.contextWindow %}{{ info.contextWindow|intcomma }}{% else %}{{ info.max_tokens|intcomma }}{% endif %} {% translate "tokens" %}</dd>
-                </div>
-                {% endif %}
-                {% if info.maxTokens %}
-                <div class="flex flex-wrap justify-between gap-x-4">
-                    <dt class="muted">{% translate "Max output tokens" %}</dt>
-                    <dd class="font-medium tabular-nums">{{ info.maxTokens|intcomma }} {% translate "tokens" %}</dd>
-                </div>
-                {% endif %}
-                {% if info.thinkingLevels %}
-                <div class="flex flex-wrap justify-between gap-x-4">
-                    <dt class="muted">{% translate "Thinking levels" %}</dt>
-                    <dd class="flex flex-wrap justify-end gap-1">{% for level in info.thinkingLevels %}<span class="badge badge-sm bg-base-100">{{ level }}</span>{% endfor %}</dd>
-                </div>
-                {% endif %}
-            </dl>
-            {% endif %}
-            {% if model.model_card_url %}<a class="link-plain inline-flex items-center gap-1 text-sm" href="{{ model.model_card_url }}">{% translate "Model card" %} {% icon "external" small=True %}</a>{% endif %}
-
-            <div class="mt-auto flex flex-col gap-2 border-t border-base-300 pt-3">
-                {% if mode == "chat" or mode == "embedding" %}
-                <details class="group">
-                    <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium">{% icon "chevron" small=True extra_class="transition-transform group-open:rotate-90" %}{% translate "Call it" %}</summary>
-                    <div class="relative mt-2">
-                        <pre class="overflow-x-auto rounded-lg bg-base-100 p-3 pr-10 font-mono text-xs leading-relaxed">{% include "management/_curl.txt" with model=model.model_name %}</pre>
-                    </div>
-                </details>
-                {% endif %}
-                <details class="group">
-                    <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium">{% icon "chevron" small=True extra_class="transition-transform group-open:rotate-90" %}{% translate "Provider settings" %}</summary>
-                    <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                        <dt class="muted">TPM</dt><dd class="font-mono">{{ model.litellm_params.tpm|default:"—" }}</dd>
-                        <dt class="muted">RPM</dt><dd class="font-mono">{{ model.litellm_params.rpm|default:"—" }}</dd>
-                        <dt class="muted">{% translate "Concurrent requests limit" %}</dt><dd class="font-mono">{{ model.litellm_params.max_parallel_requests|default:"—" }}</dd>
-                        <dt class="muted">{% translate "Timeout" %}</dt><dd class="font-mono">{% if model.litellm_params.timeout %}{{ model.litellm_params.timeout }}s{% else %}—{% endif %}</dd>
-                    </dl>
-                </details>
-            </div>
-        </div>
-    </article>
-    {% endwith %}
-    {% endfor %}
+{% if selected %}
+<div class="flex flex-wrap items-center gap-3">
+    <form method="get" role="search" class="max-sm:w-full">
+        {% if category %}<input type="hidden" name="type" value="{{ category }}">{% endif %}
+        <label class="input input-sm w-full sm:w-64">
+            {% icon "search" small=True %}
+            <input type="search" name="q" value="{{ query }}" placeholder="{% translate 'Search models and aliases' %}" aria-label="{% translate 'Search models and aliases' %}">
+        </label>
+    </form>
+    {% if categories|length > 1 %}
+        <nav class="join max-sm:flex-wrap" aria-label="{% translate 'Model type' %}">
+            <a class="btn btn-sm join-item{% if not category %} btn-primary{% endif %}" href="{% querystring type=None model=None %}"{% if not category %} aria-current="page"{% endif %}>{% translate "All" %}</a>
+            {% for key, label in categories %}
+                <a class="btn btn-sm join-item{% if key == category %} btn-primary{% endif %}" href="{% querystring type=key model=None %}"{% if key == category %} aria-current="page"{% endif %}>{{ label }}</a>
+            {% endfor %}
+        </nav>
+    {% endif %}
 </div>
+
+<section class="grid grid-cols-1 gap-4 xl:grid-cols-5">
+    <div class="card min-w-0 self-start bg-base-200 xl:col-span-3">
+        <div class="card-body table-card overflow-x-auto">
+            <table class="table table-fixed">
+                <thead>
+                    <tr>
+                        <th>{% translate "Model" %}</th>
+                        <th class="hidden w-52 xl:table-cell">{% translate "Aliases" %}</th>
+                        <th class="w-24 text-right">{% translate "Context" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for model in model_list %}
+                        {% with info=model.model_info %}
+                        <tr>
+                            <td>
+                                <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                                    <a class="row-link min-w-0 max-w-full truncate font-mono font-semibold" title="{{ model.model_name }}" href="{% querystring model=model.model_name %}#model-detail"{% if model == selected %} aria-current="true"{% endif %}>{{ model.model_name }}</a>
+                                    {% if info.deprecation_date %}<span class="badge badge-outline badge-sm flex-none uppercase">{% translate "Deprecated" %}</span>{% endif %}
+                                </div>
+                                <p class="muted mt-0.5 truncate text-xs"{% if info.description %} title="{{ info.description }}"{% endif %}>{% include "management/_model_mode.html" with mode=model.mode %}{% if info.description %} · {{ info.description }}{% endif %}</p>
+                                {% if info.aliases %}<p class="muted mt-0.5 truncate font-mono text-xs xl:hidden" title="{{ info.aliases|join:', ' }}">{{ info.aliases|join:", " }}</p>{% endif %}
+                            </td>
+                            <td class="muted hidden break-words font-mono text-xs xl:table-cell">{{ info.aliases|join:", " }}</td>
+                            <td class="text-right tabular-nums">{% firstof info.contextWindow info.max_input_tokens "—" as context_length %}{{ context_length|intcomma }}</td>
+                        </tr>
+                        {% endwith %}
+                    {% empty %}
+                        <tr><td colspan="3" class="muted">{% translate "No model matches." %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% with info=selected.model_info mode=selected.mode %}
+    <aside id="model-detail" class="card min-w-0 scroll-mt-4 self-start bg-base-200 xl:sticky xl:top-4 xl:col-span-2" aria-labelledby="model-detail-name">
+        <div class="card-body gap-5">
+            <div class="flex flex-col gap-2">
+                <p class="section-label">{% include "management/_model_mode.html" %}</p>
+                <div class="flex items-start justify-between gap-2">
+                    <h2 id="model-detail-name" class="break-all font-mono text-xl font-semibold">{{ selected.model_name }}</h2>
+                    {% translate "Copy model name" as copy_label %}{% copy_button selected.model_name copy_label size="sm" %}
+                </div>
+                {% if info.description %}<p class="text-sm">{{ info.description }}</p>{% endif %}
+                {% if selected.model_card_url %}<a class="link-plain inline-flex items-center gap-1 text-sm" href="{{ selected.model_card_url }}" target="_blank" rel="noopener noreferrer">{% translate "Model card" %}{% icon "external" small=True %}</a>{% endif %}
+            </div>
+
+            {% if info.deprecation_date %}
+                <div class="flex items-start gap-2 rounded-lg bg-base-100 px-3 py-2 text-sm">
+                    {% icon "warning" small=True extra_class="st-warn mt-0.5" %}
+                    <span>{% blocktranslate with date=info.deprecation_date|date|default:info.deprecation_date %}<span class="font-semibold">Deprecated.</span> Retirement date: {{ date }}.{% endblocktranslate %}</span>
+                </div>
+            {% endif %}
+
+            {% firstof info.contextWindow info.max_input_tokens as context_length %}{% firstof info.maxTokens info.max_output_tokens as max_output %}{% firstof info.max_parallel_requests default_parallel as parallel %}
+            {% if context_length or max_output or info.output_vector_size or info.supported_modalities or info.supported_output_modalities or parallel or viewer_is_org_admin and selected.litellm_params.model %}
+                <dl class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {% if context_length %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% if selected.category == "embeddings" %}{% translate "Max input tokens" %}{% else %}{% translate "Context length" %}{% endif %}</dt><dd class="break-words font-semibold">{{ context_length|intcomma }}</dd></div>{% endif %}
+                    {% if max_output %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Max output tokens" %}</dt><dd class="break-words font-semibold">{{ max_output|intcomma }}</dd></div>{% endif %}
+                    {% if info.output_vector_size %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Dimensions" %}</dt><dd class="break-words font-semibold">{{ info.output_vector_size|intcomma }}</dd></div>{% endif %}
+                    {% if info.supported_modalities %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Input" %}</dt><dd class="break-words font-semibold">{{ info.supported_modalities|join:", "|capfirst }}</dd></div>{% endif %}
+                    {% if info.supported_output_modalities %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Output" %}</dt><dd class="break-words font-semibold">{{ info.supported_output_modalities|join:", "|capfirst }}</dd></div>{% endif %}
+                    {% if parallel %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Parallel requests" %}</dt><dd class="break-words font-semibold">{{ parallel|intcomma }}</dd></div>{% endif %}
+                    {% if viewer_is_org_admin and selected.litellm_params.model %}<div class="col-span-full flex flex-col rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Served model" %}</dt><dd class="break-all font-mono text-sm font-semibold">{{ selected.litellm_params.model }}</dd></div>{% endif %}
+                </dl>
+            {% endif %}
+
+            {% if info.aliases %}
+                <div class="flex flex-col gap-2">
+                    <span class="text-sm font-semibold">{% translate "Aliases" %}</span>
+                    <div class="flex flex-wrap gap-1.5">
+                        {% for alias in info.aliases %}<span class="break-all rounded-md bg-base-100 px-2 py-0.5 font-mono text-xs">{{ alias }}</span>{% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if info.supports_vision or info.supports_function_calling or info.supports_response_schema or info.supports_reasoning or info.supports_web_search or info.supports_pdf_input or info.supports_audio_input or info.supports_audio_output or info.supports_prompt_caching or info.supports_native_streaming or info.request_limit_multiplier and info.request_limit_multiplier != 1 %}
+                <div class="flex flex-col gap-2">
+                    <span class="text-sm font-semibold">{% translate "Capabilities" %}</span>
+                    <div class="flex flex-wrap gap-1.5">
+                        {% if info.supports_vision %}<span class="badge badge-sm bg-base-100">{% translate "Vision" %}</span>{% endif %}
+                        {% if info.supports_function_calling %}<span class="badge badge-sm bg-base-100">{% translate "Tools" %}</span>{% endif %}
+                        {% if info.supports_response_schema %}<span class="badge badge-sm bg-base-100">{% translate "JSON schema" %}</span>{% endif %}
+                        {% if info.supports_reasoning %}<span class="badge badge-sm bg-base-100">{% translate "Reasoning" %}</span>{% endif %}
+                        {% if info.supports_web_search %}<span class="badge badge-sm bg-base-100">{% translate "Web search" %}</span>{% endif %}
+                        {% if info.supports_pdf_input %}<span class="badge badge-sm bg-base-100">{% translate "PDF input" %}</span>{% endif %}
+                        {% if info.supports_audio_input %}<span class="badge badge-sm bg-base-100">{% translate "Audio input" %}</span>{% endif %}
+                        {% if info.supports_audio_output %}<span class="badge badge-sm bg-base-100">{% translate "Audio output" %}</span>{% endif %}
+                        {% if info.supports_prompt_caching %}<span class="badge badge-sm bg-base-100">{% translate "Prompt caching" %}</span>{% endif %}
+                        {% if info.supports_native_streaming %}<span class="badge badge-sm bg-base-100">{% translate "Streaming" %}</span>{% endif %}
+                        {% if info.request_limit_multiplier and info.request_limit_multiplier != 1 %}<span class="badge badge-sm bg-base-100">{% blocktranslate with n=info.request_limit_multiplier %}{{ n }}x request limit{% endblocktranslate %}</span>{% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if info.thinkingLevels %}
+                <div class="flex flex-col gap-2">
+                    <span class="text-sm font-semibold">{% translate "Thinking levels" %}</span>
+                    <div class="flex flex-wrap gap-1.5">
+                        {% for level in info.thinkingLevels %}<span class="badge badge-sm bg-base-100 font-mono">{{ level }}</span>{% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if selected.category != "other" or mode == "rerank" %}
+                <div class="flex flex-col gap-2">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-sm font-semibold">{% translate "Example" %}</span>
+                        <button type="button" class="btn btn-ghost btn-xs btn-square" data-copy-from="#model-example" aria-label="{% translate 'Copy example' %}" title="{% translate 'Copy example' %}">{% icon "copy" small=True %}</button>
+                    </div>
+                    <pre id="model-example" class="whitespace-pre-wrap rounded-lg bg-base-100 p-3 font-mono text-xs leading-relaxed [overflow-wrap:anywhere]">{% include "management/_curl.txt" with gateway=site_host|add:"/v1" model=selected.model_name %}</pre>
+                </div>
+            {% endif %}
+        </div>
+    </aside>
+    {% endwith %}
+</section>
 {% else %}
 <section class="card max-w-2xl bg-base-200">
     <div class="card-body">
@@ -88,5 +150,4 @@
     </div>
 </section>
 {% endif %}
-{% endwith %}
 {% endblock %}

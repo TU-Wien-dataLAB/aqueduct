@@ -137,6 +137,29 @@ class ResolvePluginsTestCase(TestCase):
         self.assertIsNot(plugins_a[0], plugins_b[0])
         self.assertIs(type(plugins_a[0]), type(plugins_b[0]))
 
+    def test_cache_invalidated_on_snippet_update(self):
+        snippet = self._plugin("on", "pass", active=True)
+        old_cls = type(resolve_active_plugins()[0])
+
+        snippet.code = (
+            "class P(PluginSnippet):\n"
+            "    def before_request(self, request, token, body):\n"
+            "        body['updated'] = True\n"
+            "        return body\n"
+        )
+        snippet.save()
+
+        new_cls = type(resolve_active_plugins()[0])
+        self.assertIsNot(new_cls, old_cls, "Updating a plugin must recompile its class")
+
+    def test_cache_invalidated_on_snippet_delete(self):
+        snippet = self._plugin("on", "pass", active=True)
+        _plugin_class(snippet.pk)  # populate the cache
+        snippet.delete()
+        # Cache must be cleared so a re-query raises instead of returning a stale class.
+        with self.assertRaises(Snippet.DoesNotExist):
+            _plugin_class(snippet.pk)
+
 
 class DispatchPluginsTestCase(TestCase):
     def _make(self, before=None, after=None, on_error=None, on_stream=None) -> PluginSnippet:

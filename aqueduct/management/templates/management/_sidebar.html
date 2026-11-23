@@ -1,0 +1,59 @@
+{% load i18n static ui %}
+<aside class="aq-sidebar sticky top-0 flex h-screen w-64 flex-col gap-3 overflow-y-auto border-r border-base-300 bg-base-200 p-4">
+    <a href="{% url 'tokens' %}" class="flex items-center gap-3 px-3 py-1" data-tip="{% translate 'Aqueduct' %}">
+        <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="" class="h-9 w-9">
+        <span class="rail-label text-xl font-semibold">{% translate "Aqueduct" %}</span>
+    </a>
+
+    {% if viewer.is_admin %}{% include "management/_org_switch.html" %}{% endif %}
+
+    <nav aria-label="{% translate 'Main' %}">
+        <ul class="menu w-full gap-1 p-0">
+            {% url 'tokens' as href %}{% include "management/_nav_link.html" with label=_("API keys") icon="key" names=" tokens token_create token_edit token_delete token_regenerate token_detail " %}
+            {% url 'usage' as href %}{% include "management/_nav_link.html" with label=_("Usage") icon="overview" names=" usage " %}
+            {% url 'models' as href %}{% include "management/_nav_link.html" with label=_("Models") icon="models" names=" models " %}
+            {% url 'mcp_servers' as href %}{% include "management/_nav_link.html" with label=_("MCP servers") icon="mcp" names=" mcp_servers " %}
+
+            {% with teams=viewer.member_teams|dictsort:"name" %}{% if teams %}
+                <li class="menu-title section-label mt-3">{% blocktranslate count counter=teams|length %}Team{% plural %}Teams{% endblocktranslate %}</li>
+                {% for team in teams %}
+                    {% url 'team' team.id as href %}
+                    <li>
+                        <a href="{{ href }}"{% if request.resolver_match.url_name == "team" and request.resolver_match.kwargs.id == team.id %} class="menu-active" aria-current="page"{% endif %} data-tip="{{ team.name }}">
+                            {% icon "teams" %}<span class="rail-label">{{ team.name }}</span>
+                        </a>
+                    </li>
+                {% endfor %}
+            {% endif %}{% endwith %}
+
+            {% if viewer_is_org_admin %}
+                <li class="menu-title section-label mt-3">{% translate "Organization" %}</li>
+                {% url 'org' as href %}{% include "management/_nav_link.html" with label=_("Teams") icon="teams" names=" org team_create team_edit team_delete team_admins_manage service_account_create service_account_edit service_account_delete service_account_transfer " %}
+            {% endif %}
+
+            <li class="menu-title section-label mt-3">{% translate "Resources" %}</li>
+            {% url 'files' as href %}{% include "management/_nav_link.html" with label=_("Files") icon="file" names=" files " %}
+            {% url 'batches' as href %}{% include "management/_nav_link.html" with label=_("Batches") icon="batch" names=" batches " %}
+            {% url 'vector_stores' as href %}{% include "management/_nav_link.html" with label=_("Vector stores") icon="vector_store" names=" vector_stores vector_store_detail " %}
+
+            {% if user.is_staff or user.is_superuser and settings.SILKY_ENABLED %}
+                <li class="menu-title section-label mt-3">{% translate "Admin" %}</li>
+                {% if user.is_staff %}{% url 'admin:index' as href %}{% include "management/_nav_link.html" with label=_("Admin panel") icon="admin" external=True names="" %}{% endif %}
+                {% if user.is_superuser and settings.SILKY_ENABLED %}{% url 'silk:summary' as href %}{% include "management/_nav_link.html" with label=_("Profiling") icon="profiling" external=True names="" %}{% endif %}
+            {% endif %}
+        </ul>
+    </nav>
+
+    <div class="mt-auto border-t border-base-300 pt-3">
+        <div class="aq-account grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-2 pl-3 pr-1.5">
+            <span class="flex" data-tip="{{ user.email }}">{% icon "user" %}</span>
+            <span class="rail-label col-start-2 row-start-1 truncate text-sm font-medium" title="{{ user.email }}">{{ user.email }}</span>
+            {% include "management/_role.html" %}
+            {% include "management/_theme_toggle.html" %}
+            <form action="{% url 'oidc_logout' %}" method="post" class="flex">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-ghost btn-sm btn-square" aria-label="{% translate 'Sign out' %}" title="{% translate 'Sign out' %}">{% icon "sign_out" %}</button>
+            </form>
+        </div>
+    </div>
+</aside>

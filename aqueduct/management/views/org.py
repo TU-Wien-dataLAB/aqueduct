@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import TemplateView, View
 
 from management.models import Org
@@ -48,4 +49,8 @@ class OrgSwitchView(BaseAqueductView, View):
         # memberships in the teams of their own org.
         request.session[ORG_SESSION_KEY] = org.pk
         messages.success(request, f"Switched to organization: {org.name}")
+        # The sidebar's switch sends the page it was on, and the admin stays there.
+        back = request.POST.get("next", "")
+        if url_has_allowed_host_and_scheme(back, {request.get_host()}, request.is_secure()):
+            return redirect(back)
         return redirect(reverse("org"))

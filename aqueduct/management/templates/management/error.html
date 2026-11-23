@@ -1,0 +1,15 @@
+{% extends "management/base.html" %}
+{% load i18n %}
+
+{% block title %}{{ heading }} · {% translate "Aqueduct AI Gateway" %}{% endblock %}
+
+{% block heading %}{{ heading }}{% endblock %}
+{% block subheading %}<span class="muted text-sm">{{ code }}</span>{% endblock %}
+{% block body %}
+<section class="card max-w-2xl bg-base-200">
+    <div class="card-body items-start gap-4">
+        <p>{{ message }}</p>
+        <a class="btn btn-primary" href="{% url 'tokens' %}">{% translate "API keys" %}</a>
+    </div>
+</section>
+{% endblock %}

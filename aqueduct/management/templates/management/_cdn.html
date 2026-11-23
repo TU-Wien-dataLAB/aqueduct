@@ -1,3 +1,14 @@
+{% load static %}
 <link href="https://cdn.jsdelivr.net/npm/daisyui@5.4.7" rel="stylesheet" type="text/css"/>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.17"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/@fontsource-variable/figtree@5.3.0/index.css" rel="stylesheet" type="text/css"/>
+<link href="https://cdn.jsdelivr.net/npm/@fontsource-variable/jetbrains-mono@5.3.0/index.css" rel="stylesheet" type="text/css"/>
+<style type="text/tailwindcss">
+    @theme {
+        --font-sans: "Figtree Variable", "Helvetica Neue", Arial, sans-serif;
+        --font-mono: "JetBrains Mono Variable", ui-monospace, Menlo, Consolas, monospace;
+    }
+</style>
+<link href="{% static 'css/aqueduct-theme.css' %}" rel="stylesheet" type="text/css"/>
+<script src="{% static 'js/aqueduct.js' %}"></script>

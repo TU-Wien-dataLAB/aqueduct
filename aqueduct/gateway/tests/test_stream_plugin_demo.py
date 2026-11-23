@@ -13,8 +13,8 @@ from typing import ClassVar
 
 from django.test import override_settings
 
-from gateway.tests.test_endpoints import ChatCompletionsBase
 from gateway.tests.utils import _read_streaming_response_lines
+from gateway.tests.utils.base import ChatCompletionsBase
 from management.models import Snippet, SnippetType
 from management.plugins import _plugin_class
 

@@ -1,30 +1,50 @@
+from __future__ import annotations
+
 import inspect
 import logging
 import time
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.core.exceptions import ValidationError
 
 from management.models import Snippet, SnippetType
 
+if TYPE_CHECKING:
+    from gateway.response_type import RawJsonResponse, RawStreamingResponse
+
 log = logging.getLogger("aqueduct")
 
 
 class PluginSnippet:
+    #: Normalized endpoint paths this plugin applies to (e.g. ``"chat/completions"``).
+    #: Empty means the plugin applies to every endpoint.
+    endpoints: ClassVar[list[str]] = []
+
+    #: Internal bookkeeping for per-hook timing (not part of the plugin API).
     processing_time_ms: int = 0
 
     def before_request(self, request: Any, token: Any, body: Any) -> Any:
-        pass
+        """Optionally transform/replace the request body.
 
-    def after_response(self, request: Any, token: Any, response: Any) -> None:
-        pass
+        Return the (possibly mutated) body to pass downstream, or ``None`` to
+        leave the body unchanged. Raise :class:`BlockedByPlugin` to stop the
+        request.
+        """
 
-    def on_error(self, request: Any, exc: Exception) -> None:
-        pass
+    def after_response(self, response: RawJsonResponse) -> RawJsonResponse | None:
+        """Run for non-streaming responses only.
 
-    def on_stream_chunk(self, chunk: Any) -> Any:
-        """Called per streaming chunk. Override to tap or transform the stream."""
+        Return a replacement response, or ``None`` to keep the response unchanged.
+        """
+
+    def after_streaming_response(
+        self, response: RawStreamingResponse
+    ) -> RawStreamingResponse | None:
+        """Run for streaming responses only — a wrapper for headers/status, not content.
+
+        Return a replacement response, or ``None`` to keep the response unchanged.
+        """
 
 
 class BlockedByPlugin(Exception):  # noqa: N818
@@ -40,52 +60,67 @@ def _record_call(plugin: PluginSnippet, start: float) -> None:
     log.debug("Plugin %s hook took %d ms", type(plugin).__name__, duration_ms)
 
 
+def _endpoint(request: Any) -> str:
+    """Return the normalized endpoint path for ``request`` (no leading/v1 prefix)."""
+    return str(request.path.strip("/").removeprefix("v1/"))
+
+
+def _plugin_applies(plugin: PluginSnippet, request: Any) -> bool:
+    """Whether ``plugin`` should run for this request's endpoint.
+
+    A plugin with an empty ``endpoints`` list applies to every endpoint;
+    otherwise the normalized request path must be listed in ``endpoints``.
+    """
+    endpoints = plugin.endpoints
+    if not endpoints:
+        return True
+    return _endpoint(request) in endpoints
+
+
 def before_hook(plugins: list[PluginSnippet], request: Any, token: Any, body: Any) -> Any:
     for plugin in plugins:
-        call = getattr(plugin, "before_request", None)
-        if call is None:
+        if not _plugin_applies(plugin, request):
             continue
         start = time.monotonic()
-        result = call(request, token, body)
+        result = plugin.before_request(request, token, body)
         _record_call(plugin, start)
         if result is not None:
             body = result
     return body
 
 
-def after_hook(plugins: list[PluginSnippet], request: Any, token: Any, response: Any) -> None:
+def after_hook(plugins: list[PluginSnippet], request: Any, response: Any) -> Any:
+    """Run non-streaming ``after_response`` hooks in order.
+
+    Each plugin may return a replacement response, which becomes the input to
+    the next plugin; the final response is returned.
+    """
     for plugin in plugins:
-        call = getattr(plugin, "after_response", None)
-        if call is None:
+        if not _plugin_applies(plugin, request):
             continue
         start = time.monotonic()
-        call(request, token, response)
-        _record_call(plugin, start)
-
-
-def stream_hook(plugins: list[PluginSnippet], chunk: Any) -> Any:
-    for plugin in plugins:
-        call = getattr(plugin, "on_stream_chunk", None)
-        if call is None:
-            continue
-        start = time.monotonic()
-        result = call(chunk)
+        result = plugin.after_response(response)
         _record_call(plugin, start)
         if result is not None:
-            chunk = result
-    return chunk
+            response = result
+    return response
 
 
-def _error_hook(plugins: list[PluginSnippet], request: Any, exc: Exception) -> None:
+def after_streaming_hook(plugins: list[PluginSnippet], request: Any, response: Any) -> Any:
+    """Run streaming ``after_streaming_response`` hooks in order (headers/status only).
+
+    Each plugin may return a replacement response, which becomes the input to
+    the next plugin; the final response is returned.
+    """
     for plugin in plugins:
-        call = getattr(plugin, "on_error", None)
-        if call is None:
+        if not _plugin_applies(plugin, request):
             continue
         start = time.monotonic()
-        try:
-            call(request, exc)
-        finally:
-            _record_call(plugin, start)
+        result = plugin.after_streaming_response(response)
+        _record_call(plugin, start)
+        if result is not None:
+            response = result
+    return response
 
 
 def compile_plugin_class(code: str) -> type[PluginSnippet]:

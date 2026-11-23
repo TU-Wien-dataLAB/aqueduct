@@ -11,7 +11,7 @@ AFTER_CALLS: list[bool] = []
 AFTER_PLUGIN = """\
 from gateway.tests.test_decisions import AFTER_CALLS
 class Audit(PluginSnippet):
-    def after_response(self, request, token, response):
+    def after_response(self, response):
         AFTER_CALLS.append(True)
 """
 

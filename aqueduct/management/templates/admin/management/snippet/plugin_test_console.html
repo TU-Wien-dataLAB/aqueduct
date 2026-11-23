@@ -55,8 +55,7 @@
             The console chains it through the plugin hooks like the real request flow:
             <ul style="margin:0.25rem 0 0 1.25rem;">
               <li><code>before_request(request, token, body)</code> receives the object; a returned dict is shown as the transformed body.</li>
-              <li><code>after_response(request, token, response)</code> receives a sample response dict.</li>
-              <li><code>on_error(request, exc)</code> receives a simulated error.</li>
+              <li><code>after_response(response)</code> receives a sample response; a returned object replaces it.</li>
               <li>Try adding <code>"block me"</code> to a message to see the example <code>BlockedByPlugin</code> path.</li>
             </ul>
           </div>

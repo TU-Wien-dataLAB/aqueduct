@@ -30,23 +30,14 @@ class StreamTapper(PluginSnippet):
     def before_request(self, request, token, body):
         CALLED.append("before_request")
 
-    def on_stream_chunk(self, chunk):
-        # chunk is a litellm ModelResponseStream; grab the text delta.
-        pieces = []
-        for choice in chunk.get("choices", []):
-            delta = choice.get("delta") or {}
-            pieces.append(delta.get("content") or "")
-        CALLED.append("on_stream_chunk")
-        print("  [plugin] on_stream_chunk ->", "".join(pieces))
-        return chunk
-
-    def after_response(self, request, token, response):
+    def after_response(self, response):
         CALLED.append("after_response")
         print("  [plugin] after_response ->", type(response).__name__)
 
-    def on_error(self, request, exc):
-        CALLED.append("on_error")
-        print("  [plugin] on_error ->", exc)
+    def after_streaming_response(self, response):
+        CALLED.append("after_streaming_response")
+        print("  [plugin] after_streaming_response ->", type(response).__name__)
+        return response
 """
 
 
@@ -73,8 +64,7 @@ class StreamPluginDemo(ChatCompletionsBase):
             print("  *", name)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertIn("on_stream_chunk", CALLED, "on_stream_chunk never fired")
+        self.assertIn("after_streaming_response", CALLED, "after_streaming_response never fired")
         self.assertIn("before_request", CALLED)
-        self.assertIn("after_response", CALLED)
 
         _plugin_class.cache_clear()

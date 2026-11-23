@@ -19,7 +19,6 @@ from gateway.decorators import (
     ensure_usage,
     log_request,
     parse_body,
-    plugin_errors,
     resolve_alias,
     run_plugins,
     token_authenticated,
@@ -44,7 +43,6 @@ from management.models import Request
 @log_request
 @run_plugins
 @catch_router_exceptions
-@plugin_errors
 async def speech(
     request: ASGIRequest,
     pydantic_model: openai.types.audio.SpeechCreateParams,

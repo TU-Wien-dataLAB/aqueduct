@@ -20,7 +20,6 @@ from gateway.decorators import (
     log_request,
     normalize_reasoning_fields,
     parse_body,
-    plugin_errors,
     process_file_content,
     resolve_alias,
     run_plugins,
@@ -49,7 +48,6 @@ from management.models import Request
 @log_request
 @run_plugins
 @catch_router_exceptions
-@plugin_errors
 async def chat_completions(
     request: ASGIRequest,
     pydantic_model: openai.types.chat.CompletionCreateParams,

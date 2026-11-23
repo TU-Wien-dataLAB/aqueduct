@@ -21,6 +21,7 @@ from django.utils.html import format_html
 
 from gateway.config import get_files_api_client, get_router_config
 from gateway.rate_limiting import get_per_token_usage
+from gateway.response_type import RawJsonResponse
 from management.models import (
     Batch,
     FileObject,
@@ -1059,6 +1060,8 @@ TEST_PAYLOAD_EXAMPLE = {"email": "you@example.com", "groups": ["E123-Students", 
 
 PLUGIN_TEST_CODE_EXAMPLE = """\
 class MyPlugin(PluginSnippet):
+    endpoints = ["chat/completions"]
+
     def before_request(self, request, token, body):
         text = " ".join(m.get("content", "") for m in body.get("messages", []))
         if "block me" in text:
@@ -1066,11 +1069,8 @@ class MyPlugin(PluginSnippet):
         body["flagged"] = True
         return body
 
-    def after_response(self, request, token, response):
-        response["audited"] = True
-
-    def on_error(self, request, exc):
-        print("error happened:", exc)
+    def after_response(self, response):
+        response.data["audited"] = True
 """
 
 PLUGIN_TEST_PAYLOAD_EXAMPLE = {
@@ -1301,19 +1301,15 @@ class SnippetAdmin(admin.ModelAdmin):
             else:
                 lines.append("before_request ran; body unchanged")
 
-        response = {"id": "chatcmpl-test", "choices": [], "usage": {}}
+        response = RawJsonResponse({"id": "chatcmpl-test", "choices": [], "usage": {}})
         try:
-            plugin.after_response(request, token, response)
+            result = plugin.after_response(response)
         except Exception as e:
             lines.append(f"after_response raised {e!r}")
         else:
-            lines.append("after_response ran")
-
-        try:
-            plugin.on_error(request, ValueError("simulated downstream error"))
-        except Exception as e:
-            lines.append(f"on_error raised {e!r}")
-        else:
-            lines.append("on_error ran")
+            if result is not None:
+                lines.append("after_response returned a replacement response")
+            else:
+                lines.append("after_response ran; response unchanged")
 
         return lines

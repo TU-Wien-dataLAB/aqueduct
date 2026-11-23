@@ -5,35 +5,43 @@ from management.models import Snippet, SnippetType
 from management.plugins import (
     BlockedByPlugin,
     PluginSnippet,
-    _error_hook,
     _plugin_class,
     after_hook,
+    after_streaming_hook,
     before_hook,
     compile_plugin_class,
     resolve_active_plugins,
-    stream_hook,
 )
 
 GOOD_PLUGIN = """\
 class MyPlugin(PluginSnippet):
+    endpoints = ["chat/completions"]
+
     def before_request(self, request, token, body):
         body["flagged"] = True
         return body
 
-    def after_response(self, request, token, response):
+    def after_response(self, response):
         self.seen = response
 """
 
 BAD_SYNTAX = "class MyPlugin(PluginSnippet):\n   def before_request(self"
 
 
+class _FakeRequest:
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+
 class PluginBaseTestCase(TestCase):
     def test_default_hooks_are_no_ops(self):
         p = PluginSnippet()
         self.assertIsNone(p.before_request("r", "t", "b"))
-        self.assertIsNone(p.after_response("r", "t", "resp"))
-        self.assertIsNone(p.on_error("r", ValueError("boom")))
-        self.assertIsNone(p.on_stream_chunk("chunk"))
+        self.assertIsNone(p.after_response("resp"))
+        self.assertIsNone(p.after_streaming_response("resp"))
+
+    def test_default_endpoints_is_empty(self):
+        self.assertEqual(PluginSnippet.endpoints, [])
 
     def test_blocked_by_plugin_defaults(self):
         e = BlockedByPlugin("nope")
@@ -51,6 +59,7 @@ class CompilePluginTestCase(TestCase):
         cls = compile_plugin_class(GOOD_PLUGIN)
         self.assertTrue(issubclass(cls, PluginSnippet))
         self.assertIsNot(cls, PluginSnippet)
+        self.assertEqual(cls.endpoints, ["chat/completions"])
 
     def test_base_class_auto_injected(self):
         cls = compile_plugin_class("class P(PluginSnippet):\n    pass\n")
@@ -90,9 +99,7 @@ class ResolvePluginsTestCase(TestCase):
             active=active,
             order=order,
             code=(
-                "class P(PluginSnippet):\n"
-                "    def after_response(self, r, t, resp):\n"
-                f"        {cap}\n"
+                f"class P(PluginSnippet):\n    def after_response(self, response):\n        {cap}\n"
             ),
         )
 
@@ -162,7 +169,7 @@ class ResolvePluginsTestCase(TestCase):
 
 
 class DispatchPluginsTestCase(TestCase):
-    def _make(self, before=None, after=None, on_error=None, on_stream=None) -> PluginSnippet:
+    def _make(self, before=None, after=None, on_stream_after=None, endpoints=None) -> PluginSnippet:
         class P(PluginSnippet):
             pass
 
@@ -170,10 +177,10 @@ class DispatchPluginsTestCase(TestCase):
             P.before_request = staticmethod(before)
         if after is not None:
             P.after_response = staticmethod(after)
-        if on_error is not None:
-            P.on_error = staticmethod(on_error)
-        if on_stream is not None:
-            P.on_stream_chunk = staticmethod(on_stream)
+        if on_stream_after is not None:
+            P.after_streaming_response = staticmethod(on_stream_after)
+        if endpoints is not None:
+            P.endpoints = endpoints
         return P()
 
     def test_before_hook_pipeline(self):
@@ -189,7 +196,7 @@ class DispatchPluginsTestCase(TestCase):
 
         plugins = [self._make(before=a), self._make(before=b)]
         body = {"x": 0}
-        result = before_hook(plugins, "req", "tok", body)
+        result = before_hook(plugins, _FakeRequest("chat/completions"), "tok", body)
         self.assertEqual(result, {"x": 0, "a": 1})
         self.assertEqual(calls, ["a", "b"])
 
@@ -209,63 +216,88 @@ class DispatchPluginsTestCase(TestCase):
             self._make(before=lambda r, t, b: None),
         ]
         with self.assertRaises(BlockedByPlugin) as ctx:
-            before_hook(plugins, "req", "tok", {})
+            before_hook(plugins, _FakeRequest("chat/completions"), "tok", {})
         self.assertEqual(ctx.exception.reason, "denied")
         self.assertEqual(reached, ["a"])
 
     def test_before_hook_records_processing_time(self):
         p = self._make(before=lambda r, t, b: b)
-        before_hook([p], "req", "tok", {})
+        before_hook([p], _FakeRequest("chat/completions"), "tok", {})
         self.assertIsInstance(p.processing_time_ms, int)
 
     def test_after_hook_runs_all(self):
         calls = []
 
-        def a(request, token, response):
+        def a(response):
             calls.append(("a", response))
+            return response
 
-        def b(request, token, response):
+        def b(response):
             calls.append(("b", response))
+            return response
 
         plugins = [self._make(after=a), self._make(after=b)]
-        after_hook(plugins, "req", "tok", "resp")
+        result = after_hook(plugins, _FakeRequest("chat/completions"), "resp")
+        self.assertEqual(result, "resp")
         self.assertEqual(calls, [("a", "resp"), ("b", "resp")])
 
-    def test_stream_hook_runs_all_and_returns_chunk(self):
-        seen = []
+    def test_after_hook_replaces_response(self):
+        def a(response):
+            return {"replaced": True}
 
-        def tap(chunk):
-            seen.append(chunk)
+        plugins = [self._make(after=a)]
+        result = after_hook(plugins, _FakeRequest("chat/completions"), {"orig": True})
+        self.assertEqual(result, {"replaced": True})
 
-        plugins = [self._make(on_stream=tap), self._make(on_stream=tap)]
-        result = stream_hook(plugins, {"chunk": 1})
-        self.assertEqual(result, {"chunk": 1})
-        self.assertEqual(seen, [{"chunk": 1}, {"chunk": 1}])
-
-    def test_stream_hook_transform_composes(self):
-        def a(chunk):
-            chunk["a"] = 1
-            return chunk
-
-        def b(chunk):
-            chunk["b"] = 2
-            return chunk
-
-        plugins = [self._make(on_stream=a), self._make(on_stream=b)]
-        result = stream_hook(plugins, {})
-        self.assertEqual(result, {"a": 1, "b": 2})
-
-    def test_stream_hook_records_processing_time(self):
-        p = self._make(on_stream=lambda c: c)
-        stream_hook([p], {"chunk": 1})
+    def test_after_hook_records_processing_time(self):
+        p = self._make(after=lambda r: None)
+        after_hook([p], _FakeRequest("chat/completions"), "resp")
         self.assertIsInstance(p.processing_time_ms, int)
 
-    def test_error_hook_receives_exception(self):
+    def test_after_streaming_hook_runs_all(self):
         seen = []
-        e = ValueError("boom")
 
-        def handler(request, exc):
-            seen.append(exc)
+        def a(response):
+            seen.append(("a", response))
+            return response
 
-        _error_hook([self._make(on_error=handler)], "req", e)
-        self.assertEqual(seen, [e])
+        def b(response):
+            seen.append(("b", response))
+            return response
+
+        plugins = [self._make(on_stream_after=a), self._make(on_stream_after=b)]
+        result = after_streaming_hook(plugins, _FakeRequest("chat/completions"), "resp")
+        self.assertEqual(result, "resp")
+        self.assertEqual(seen, [("a", "resp"), ("b", "resp")])
+
+    def test_after_streaming_hook_replaces_response(self):
+        def a(response):
+            return {"wrapped": True}
+
+        plugins = [self._make(on_stream_after=a)]
+        result = after_streaming_hook(plugins, _FakeRequest("chat/completions"), "resp")
+        self.assertEqual(result, {"wrapped": True})
+
+    def test_plugin_skipped_for_non_listed_endpoint(self):
+        calls = []
+
+        def a(request, token, body):
+            calls.append(body)
+            return body
+
+        plugin = self._make(before=a, endpoints=["chat/completions"])
+        before_hook([plugin], _FakeRequest("/v1/chat/completions"), "tok", {"x": 1})
+        before_hook([plugin], _FakeRequest("/v1/embeddings"), "tok", {"x": 2})
+        self.assertEqual(calls, [{"x": 1}], "plugin must only run on its listed endpoint")
+
+    def test_endpoint_normalizes_v1_and_leading_slash(self):
+        calls = []
+
+        def a(request, token, body):
+            calls.append(True)
+            return body
+
+        plugin = self._make(before=a, endpoints=["chat/completions"])
+        before_hook([plugin], _FakeRequest("/v1/chat/completions"), "tok", {})
+        before_hook([plugin], _FakeRequest("/chat/completions"), "tok", {})
+        self.assertEqual(calls, [True, True])

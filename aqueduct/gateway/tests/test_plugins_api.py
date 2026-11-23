@@ -10,7 +10,6 @@ from mock_api.mock_configs import MockConfig
 
 AFTER_CALLS: list[bool] = []
 EVENTS: list[str] = []
-ERROR_CALLS: list[str] = []
 STREAM_CALLS: list[str] = []
 BODY_EXTRA_KEY = "custom_plugin_field"
 
@@ -34,7 +33,7 @@ class Guard(PluginSnippet):
 AFTER_PLUGIN = """\
 from gateway.tests.test_plugins_api import AFTER_CALLS
 class Audit(PluginSnippet):
-    def after_response(self, request, token, response):
+    def after_response(self, response):
         AFTER_CALLS.append(True)
 """
 
@@ -82,20 +81,41 @@ class Boom(PluginSnippet):
 """
 
 
-ERROR_PLUGIN = """\
-from gateway.tests.test_plugins_api import ERROR_CALLS
-class Err(PluginSnippet):
-    def on_error(self, request, exc):
-        ERROR_CALLS.append(str(exc))
+STREAM_PLUGIN = """\
+from gateway.tests.test_plugins_api import STREAM_CALLS
+class Wrap(PluginSnippet):
+    def after_streaming_response(self, response):
+        STREAM_CALLS.append("after_streaming_response")
+        return response
 """
 
 
-STREAM_PLUGIN = """\
-from gateway.tests.test_plugins_api import STREAM_CALLS
-class Tap(PluginSnippet):
-    def on_stream_chunk(self, chunk):
-        STREAM_CALLS.append("chunk")
-        return chunk
+AFTER_REPLACING_PLUGIN = """\
+from gateway.response_type import RawJsonResponse
+from gateway.tests.test_plugins_api import AFTER_CALLS
+class Replace(PluginSnippet):
+    def after_response(self, response):
+        return RawJsonResponse({"plugin": "replaced", "kept": True})
+"""
+
+
+ENDPOINT_SCOPED_PLUGIN = """\
+from gateway.tests.test_plugins_api import EVENTS
+class Scoped(PluginSnippet):
+    endpoints = ["chat/completions"]
+    def before_request(self, request, token, body):
+        EVENTS.append("chat/completions")
+        return body
+"""
+
+
+ENDPOINT_MISMATCH_PLUGIN = """\
+from gateway.tests.test_plugins_api import EVENTS
+class Mismatch(PluginSnippet):
+    endpoints = ["embeddings"]
+    def before_request(self, request, token, body):
+        EVENTS.append("embeddings")
+        return body
 """
 
 
@@ -114,7 +134,6 @@ class PluginGatewayIntegrationTest(ChatCompletionsBase):
         _plugin_class.cache_clear()
         AFTER_CALLS.clear()
         EVENTS.clear()
-        ERROR_CALLS.clear()
         STREAM_CALLS.clear()
 
     def tearDown(self):
@@ -205,30 +224,30 @@ class PluginGatewayIntegrationTest(ChatCompletionsBase):
         resp = self._send_chat_completion(self.MESSAGES)
         self.assertEqual(resp.status_code, 500)
 
-    def test_on_error_hook_fires_on_upstream_failure(self):
-        seed_plugin("err", ERROR_PLUGIN)
-        bad = MockConfig(
-            status_code=400,
-            response_data={"error": {"message": "upstream boom", "type": "invalid_request_error"}},
-        )
-        with self.mock_server.patch_external_api("chat/completions", bad):
-            resp = self._send_chat_completion(self.MESSAGES)
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(len(ERROR_CALLS), 1)
-        self.assertIn("upstream boom", ERROR_CALLS[0])
-
-    def test_on_error_not_called_on_success(self):
-        seed_plugin("err", ERROR_PLUGIN)
+    def test_after_hook_replaces_response(self):
+        seed_plugin("replace", AFTER_REPLACING_PLUGIN)
         resp = self._send_chat_completion(self.MESSAGES)
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(ERROR_CALLS, [])
+        self.assertEqual(resp.json()["plugin"], "replaced")
 
-    async def test_streaming_plugin_taps_chunks(self):
+    def test_endpoint_scoped_plugin_runs_on_listed_endpoint(self):
+        seed_plugin("scoped", ENDPOINT_SCOPED_PLUGIN)
+        resp = self._send_chat_completion(self.MESSAGES)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(EVENTS, ["chat/completions"])
+
+    def test_endpoint_scoped_plugin_skipped_on_other_endpoint(self):
+        seed_plugin("mismatch", ENDPOINT_MISMATCH_PLUGIN)
+        resp = self._send_chat_completion(self.MESSAGES)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(EVENTS, [], "plugin scoped to another endpoint must not run")
+
+    async def test_streaming_plugin_wraps_response(self):
         await Snippet.objects.acreate(
-            name="tap", type=SnippetType.PLUGIN, active=True, order=0, code=STREAM_PLUGIN
+            name="wrap", type=SnippetType.PLUGIN, active=True, order=0, code=STREAM_PLUGIN
         )
         response = await self._send_chat_completion_streaming(self.MESSAGES)
         self.assertEqual(response.status_code, 200)
         streamed_lines = await _read_streaming_response_lines(response)
         self.assertGreater(len(streamed_lines), 0, "Should receive at least one data chunk.")
-        self.assertGreater(len(STREAM_CALLS), 0, "on_stream_chunk should fire per chunk.")
+        self.assertIn("after_streaming_response", STREAM_CALLS)

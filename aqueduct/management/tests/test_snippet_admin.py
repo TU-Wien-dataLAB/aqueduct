@@ -352,8 +352,8 @@ class MyPlugin(PluginSnippet):
         body["flagged"] = True
         return body
 
-    def after_response(self, request, token, response):
-        response["audited"] = True
+    def after_response(self, response):
+        response.data["audited"] = True
 """
 
 

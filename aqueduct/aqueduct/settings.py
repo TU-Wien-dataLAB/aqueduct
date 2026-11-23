@@ -168,6 +168,7 @@ ADMIN_SUPERUSER_EMAILS = [
 EXTRA_NAV_LINKS = {
     "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",
     "Documentation": "https://tu-wien-datalab.github.io/aqueduct/",
+    "GitHub repository": "https://github.com/TU-Wien-dataLAB/aqueduct",
     # 'API Status': '/status/',  # Example internal path
     # 'About Us': 'about_page',  # Example named URL (assuming you have url(..., name='about_page'))
 }

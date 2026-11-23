@@ -66,6 +66,25 @@ class SidebarTest(RoleWorld):
         page = self.as_user(self.solo).get(reverse("tokens"))
         self.assertContains(page, 'data-copy="http://testserver/v1"')
 
+    @override_settings(
+        EXTRA_NAV_LINKS={
+            "Chat with us": "https://matrix.to/#/#aqueduct:matrix.org",
+            "Source": "https://github.com/TU-Wien-dataLAB/aqueduct",
+            "Docs": "https://example.org/docs",
+        }
+    )
+    def test_footer_links_carry_an_icon_for_their_site(self):
+        page = self.as_user(self.solo).get(reverse("tokens")).content.decode()
+        items = page[page.index("<footer") :].split("<li")
+        for label, icon in (
+            ("Chat with us", "M7 4H4v16h3"),
+            ("Source", "M15 22v-4"),
+            ("Docs", "M10 14a4 4 0"),
+        ):
+            with self.subTest(label):
+                (item,) = [item for item in items if f"<span>{label}</span>" in item]
+                self.assertIn(icon, item)
+
 
 class ErrorPageTest(RoleWorld):
     def test_404_renders_in_the_shell(self):

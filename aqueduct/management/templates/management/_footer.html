@@ -16,8 +16,8 @@
             <nav class="flex flex-col gap-2 text-sm" aria-labelledby="footer-help">
                 <p id="footer-help" class="section-label">{% translate "Help" %}</p>
                 <ul class="flex flex-col gap-1.5">
-                    {% for name, url in settings.EXTRA_NAV_LINKS.items %}<li><a href="{{ url }}">{{ name }}</a></li>{% endfor %}
-                    {% if settings.TOS_ENABLED %}<li><a href="{% url 'tos' %}">{% translate "Terms of service" %}</a></li>{% endif %}
+                    {% for name, url in settings.EXTRA_NAV_LINKS.items %}<li class="flex"><a class="inline-flex items-center gap-2" href="{{ url }}">{% if "matrix." in url %}{% icon "matrix" small=True %}{% elif "github.com" in url %}{% icon "github" small=True %}{% else %}{% icon "link" small=True %}{% endif %}<span>{{ name }}</span></a></li>{% endfor %}
+                    {% if settings.TOS_ENABLED %}<li class="flex"><a class="inline-flex items-center gap-2" href="{% url 'tos' %}">{% icon "file" small=True %}<span>{% translate "Terms of service" %}</span></a></li>{% endif %}
                 </ul>
             </nav>
         {% endif %}

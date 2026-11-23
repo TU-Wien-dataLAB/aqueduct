@@ -130,6 +130,37 @@
         </div>
     </section>
 
+    <section class="card bg-base-200" aria-labelledby="per-model-title">
+        <div class="card-body table-card gap-2">
+            <h2 id="per-model-title" class="card-head card-title">{% translate "Usage by model" %}</h2>
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>{% translate "Model" %}</th>
+                            <th class="text-right">{% translate "Requests" %}</th>
+                            <th class="text-right">{% translate "Input tokens" %}</th>
+                            <th class="text-right">{% translate "Output tokens" %}</th>
+                            <th class="max-sm:hidden"><span class="sr-only">{% translate "Share of requests" %}</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in per_model %}{% if row.count %}
+                            <tr>
+                                <td class="max-w-64 truncate font-mono" title="{{ row.model }}">{{ row.model|default:"N/A" }}</td>
+                                <td class="text-right tabular-nums">{{ row.count|intcomma }}</td>
+                                <td class="text-right tabular-nums">{{ row.input_sum|intcomma }}</td>
+                                <td class="text-right tabular-nums">{{ row.output_sum|intcomma }}</td>
+                                <td class="w-1/4 max-sm:hidden"><div class="h-1.5 rounded-full bg-(--viz-track)"><div class="h-full rounded-full bg-(--viz-in)" style="width: {% widthratio row.count total_requests 100 %}%"></div></div></td>
+                            </tr>
+                        {% endif %}{% endfor %}
+                        {% if not total_requests %}<tr><td colspan="5" class="muted">{% translate "No data available." %}</td></tr>{% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
     <script>
         const timeseries = JSON.parse("{{ timeseries|escapejs }}");
         const perModel = JSON.parse("{{ per_model_json|escapejs }}");

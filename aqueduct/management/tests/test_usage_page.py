@@ -20,3 +20,19 @@ class UsagePageTest(RoleWorld):
         for user in (self.solo, self.member, self.org_admin, self.admin):
             with self.subTest(user=user.username):
                 self.assertEqual(self.as_user(user).get(reverse("usage")).status_code, 200)
+
+    def test_usage_by_model_sums_tokens(self):
+        Request.objects.create(
+            token=self.solo_key, model="gpt-4.1-nano", input_tokens=1200, output_tokens=30
+        )
+        Request.objects.create(
+            token=self.solo_key, model="gpt-4.1-nano", input_tokens=800, output_tokens=0
+        )
+        Request.objects.create(token=self.member_key, model="gpt-4.1-nano", input_tokens=5)
+        page = self.as_user(self.solo).get(reverse("usage"))
+        (row,) = [row for row in page.context["per_model"] if row["count"]]
+        self.assertEqual(
+            row, {"model": "gpt-4.1-nano", "count": 2, "input_sum": 2000, "output_sum": 30}
+        )
+        self.assertContains(page, "Usage by model")
+        self.assertContains(page, '<td class="text-right tabular-nums">2,000</td>', html=True)

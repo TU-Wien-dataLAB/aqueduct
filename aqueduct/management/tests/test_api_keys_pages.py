@@ -35,6 +35,25 @@ class KeyListTest(RoleWorld):
         self.assertNotContains(page, "Create API key")
         self.assertNotContains(self.as_user(self.solo).get(reverse("tokens")), "first API key")
 
+    def test_keys_show_their_requests_per_day(self):
+        now = timezone.now()
+        for days_ago in (0, 0, 1, 8):
+            Request.objects.create(token=self.member_key, timestamp=now - timedelta(days=days_ago))
+        Request.objects.create(token=self.solo_key, timestamp=now)
+        page = self.as_user(self.member).get(reverse("tokens"))
+        member_key, pipeline_key = page.context["tokens"][0], page.context["service_accounts"][0]
+        self.assertEqual([n for _day, n in member_key.week], [0, 0, 0, 0, 0, 1, 2])
+        self.assertEqual(member_key.week_max, 2)
+        self.assertEqual([n for _day, n in pipeline_key.token.week], [0] * 7)
+        self.assertContains(page, "Requests per day, last 7 days: 0, 0, 0, 0, 0, 1, 2")
+
+    def test_all_keys_show_their_requests_per_day(self):
+        Request.objects.create(token=self.solo_key)
+        page = self.as_user(self.org_admin).get(reverse("all_keys"))
+        weeks = {key.name: [n for _day, n in key.week] for key in page.context["keys"]}
+        self.assertEqual(weeks["solo-laptop"], [0, 0, 0, 0, 0, 0, 1])
+        self.assertEqual(weeks["member-laptop"], [0] * 7)
+
 
 class KeyPageTest(RoleWorld):
     def page(self, user, token: Token):
@@ -89,3 +108,19 @@ class KeyPageTest(RoleWorld):
         )
         self.assertRedirects(response, reverse("token_detail", args=[self.solo_key.id]))
         self.assertContains(response, "Copy it now")
+
+    def test_shows_requests_per_day_and_per_model_of_this_key_only(self):
+        for model, tokens in (("gpt-4.1-nano", 10), ("gpt-4.1-nano", 5), ("whisper-1", 1)):
+            Request.objects.create(token=self.pipeline_key, model=model, input_tokens=tokens)
+        Request.objects.create(token=self.member_key, model="dall-e-2")
+        Request.objects.create(
+            token=self.pipeline_key, model="dall-e-2", timestamp=timezone.now() - timedelta(days=9)
+        )
+        page = self.page(self.member, self.pipeline_key)
+        self.assertEqual(
+            [(row["model"], row["count"], row["input"]) for row in page.context["by_model"]],
+            [("gpt-4.1-nano", 2, 15), ("whisper-1", 1, 1)],
+        )
+        self.assertEqual([n for _day, n in page.context["week_chart"]], [0, 0, 0, 0, 0, 0, 3])
+        self.assertContains(page, 'id="key-week-data"')
+        self.assertContains(page, "2 requests")

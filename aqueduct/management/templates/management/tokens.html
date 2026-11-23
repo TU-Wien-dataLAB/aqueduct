@@ -22,6 +22,7 @@
                     <tr>
                         <th>{% translate "Key" %}</th>
                         <th class="max-md:hidden">{% translate "Last used" %}</th>
+                        <th class="max-sm:hidden">{% translate "Last 7 days" %}</th>
                         <th class="max-lg:hidden">{% translate "Requests" %}</th>
                         <th class="max-md:hidden">{% translate "Expires" %}</th>
                         <th><span class="sr-only">{% translate "Actions" %}</span></th>
@@ -35,6 +36,7 @@
                                 <div class="muted text-xs"><span class="font-mono">{{ token.key_preview }}</span> · {% blocktranslate with date=token.created_at|date:"j M Y" %}Created {{ date }}{% endblocktranslate %}</div>
                             </td>
                             <td class="muted whitespace-nowrap max-md:hidden">{% if token.last_used %}{{ token.last_used|naturaltime }}{% else %}{% translate "Never" %}{% endif %}</td>
+                            <td class="max-sm:hidden">{% include "management/_week_bars.html" with week=token.week week_max=token.week_max %}</td>
                             <td class="min-w-56 max-lg:hidden">{% include "management/_rate_usage.html" with usage=token.usage limits=user_limits %}</td>
                             <td class="whitespace-nowrap max-md:hidden">{% include "management/_expires.html" %}</td>
                             <td>
@@ -61,6 +63,7 @@
                     <tr>
                         <th>{% translate "Service account" %}</th>
                         <th class="max-md:hidden">{% translate "Last used" %}</th>
+                        <th class="max-sm:hidden">{% translate "Last 7 days" %}</th>
                         <th class="max-lg:hidden">{% translate "Requests" %}</th>
                         <th class="max-md:hidden">{% translate "Expires" %}</th>
                     </tr>
@@ -73,6 +76,7 @@
                                 <div class="muted text-xs"><a class="link-plain relative z-10" href="{% url 'team' sa.team.id %}">{{ sa.team.name }}</a> · <span class="font-mono">{{ sa.token.key_preview }}</span></div>
                             </td>
                             <td class="muted whitespace-nowrap max-md:hidden">{% if sa.last_used %}{{ sa.last_used|naturaltime }}{% else %}{% translate "Never" %}{% endif %}</td>
+                            <td class="max-sm:hidden">{% include "management/_week_bars.html" with week=sa.token.week week_max=sa.token.week_max %}</td>
                             <td class="min-w-56 max-lg:hidden">{% include "management/_rate_usage.html" with usage=sa.usage limits=sa.effective_limits %}</td>
                             <td class="whitespace-nowrap max-md:hidden">{% include "management/_expires.html" with token=sa.token %}</td>
                         </tr>

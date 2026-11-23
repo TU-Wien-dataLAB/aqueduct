@@ -1,6 +1,9 @@
-from django.urls import reverse
+from datetime import timedelta
 
-from management.models import Team
+from django.urls import reverse
+from django.utils import timezone
+
+from management.models import Request, Team
 from management.tests.helpers import RoleWorld
 
 
@@ -25,6 +28,23 @@ class TeamsListTest(RoleWorld):
         response = self.client.post(reverse("team_delete", args=[self.side_team.id]))
         self.assertRedirects(response, reverse("org"))
         self.assertFalse(Team.objects.filter(pk=self.side_team.pk).exists())
+
+    def test_teams_show_their_service_accounts_requests_of_the_last_week(self):
+        Request.objects.create(token=self.pipeline_key, input_tokens=100, output_tokens=20)
+        Request.objects.create(token=self.pipeline_key, output_tokens=7)
+        Request.objects.create(
+            token=self.pipeline_key, timestamp=timezone.now() - timedelta(days=8), input_tokens=1
+        )
+        Request.objects.create(token=self.member_key, input_tokens=1000)
+        page = self.as_user(self.org_admin).get(reverse("org"))
+        weeks = {team.name: team.week for team in page.context["teams"]}
+        self.assertEqual(
+            weeks["NLP Lab"],
+            {"token__service_account__team": self.team.id, "requests": 2, "tokens": 127},
+        )
+        self.assertIsNone(weeks["Robotics"])
+        self.assertContains(page, "Requests, 7 days")
+        self.assertContains(page, ">127</td>")
 
 
 class TeamPageTest(RoleWorld):

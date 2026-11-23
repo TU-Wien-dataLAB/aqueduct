@@ -52,6 +52,48 @@
 </section>
 {% endif %}
 
+<section class="grid grid-cols-1 gap-4 lg:grid-cols-5">
+    <div class="card bg-base-200 lg:col-span-3">
+        <div class="card-body gap-2">
+            <h2 class="card-title">{% translate "Requests per day" %}</h2>
+            <div id="key-week-chart" class="h-56" role="img" aria-label="{% translate 'Requests per day, last 7 days:' %} {% for day, n in token.week %}{{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}"></div>
+        </div>
+    </div>
+    <div class="card bg-base-200 lg:col-span-2">
+        <div class="card-body gap-3">
+            <h2 class="card-title">{% translate "Models, last 7 days" %}</h2>
+            {% for row in by_model %}
+                <div class="flex flex-col gap-1">
+                    <div class="flex items-baseline justify-between gap-3 text-sm">
+                        <span class="truncate font-mono" title="{{ row.model }}">{{ row.model|default:"—" }}</span>
+                        <span class="muted whitespace-nowrap text-xs tabular-nums">{% blocktranslate count n=row.count with requests=row.count|intcomma %}{{ requests }} request{% plural %}{{ requests }} requests{% endblocktranslate %} · {{ row.input|intcomma }} → {{ row.output|intcomma }}</span>
+                    </div>
+                    <div class="h-1.5 rounded-full bg-(--viz-track)"><div class="h-full rounded-full bg-(--viz-in)" style="width: {% widthratio row.count by_model.0.count 100 %}%"></div></div>
+                </div>
+            {% empty %}
+                <p class="muted text-sm">{% translate "No requests in the last 7 days." %}</p>
+            {% endfor %}
+            {% if by_model %}<p class="muted text-xs">{% translate "Tokens: input → output." %}</p>{% endif %}
+        </div>
+    </div>
+</section>
+{{ week_chart|json_script:"key-week-data" }}
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const week = JSON.parse(document.getElementById("key-week-data").textContent);
+        const color = getComputedStyle(document.body).getPropertyValue("--viz-in");
+        const chart = echarts.init(document.getElementById("key-week-chart"), null, {renderer: "svg"});
+        chart.setOption({
+            grid: {left: 40, right: 8, top: 16, bottom: 24},
+            tooltip: {trigger: "axis"},
+            xAxis: {type: "category", data: week.map(([day]) => new Date(day + "T00:00").toLocaleDateString(document.documentElement.lang, {weekday: "short", day: "numeric"}))},
+            yAxis: {type: "value", minInterval: 1},
+            series: [{name: "{% translate 'Requests' as requests_label %}{{ requests_label|escapejs }}", type: "bar", data: week.map(([, n]) => n), itemStyle: {color}, emphasis: {itemStyle: {color: "inherit"}}}],
+        });
+        window.addEventListener("resize", () => chart.resize());
+    });
+</script>
+
 <section class="card bg-base-200" aria-labelledby="limits-title">
     <div class="card-body table-card gap-2">
         <h2 id="limits-title" class="card-head card-title">{% translate "Limits" %}</h2>

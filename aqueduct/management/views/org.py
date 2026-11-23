@@ -1,10 +1,13 @@
 # management/views/org.py
 
+from datetime import timedelta
+
 from django.contrib import messages
-from django.db.models import QuerySet
+from django.db.models import Count, QuerySet, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import TemplateView, UpdateView, View
 
@@ -22,7 +25,22 @@ class OrgView(BaseAqueductView, TemplateView):
         context = super().get_context_data(**kwargs)
         # Pass org admin status and list of teams to the template
         context["is_org_admin"] = self.is_org_admin()
-        context["teams"] = self.get_teams_for_user()
+        teams = list(self.get_teams_for_user())
+        week = (
+            self.profile.visible_requests(self.org)
+            .filter(token__service_account__team__in=teams)
+            .filter(timestamp__gte=timezone.now() - timedelta(days=7))
+            .values("token__service_account__team")
+            .annotate(
+                requests=Count("id"),
+                tokens=Sum("input_tokens", default=0) + Sum("output_tokens", default=0),
+            )
+            .order_by()
+        )
+        by_team = {row["token__service_account__team"]: row for row in week}
+        for team in teams:
+            team.week = by_team.get(team.id)  # type: ignore[attr-defined]
+        context["teams"] = teams
         context["org_object"] = self.org
         return context
 

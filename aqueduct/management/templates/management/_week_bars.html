@@ -1,0 +1,3 @@
+{% load i18n humanize %}<div class="flex h-7 items-end gap-[3px]" role="img" aria-label="{% translate 'Requests per day, last 7 days:' %} {% for day, n in week %}{{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+    {% for day, n in week %}<span class="w-2 rounded-t-sm bg-(--viz-in) opacity-60 last:opacity-100" style="height: max(2px, {% widthratio n week_max 100 %}%)" title="{{ day|date:'D j M' }}: {{ n|intcomma }}"></span>{% endfor %}
+</div>

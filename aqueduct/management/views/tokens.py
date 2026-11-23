@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+from datetime import date, timedelta
 from typing import ClassVar
 
 from django import forms
@@ -6,10 +8,12 @@ from django.contrib import messages
 from django.contrib.messages import get_messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Max, Q, QuerySet
+from django.db.models import Count, Max, Q, QuerySet, Sum
+from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.http import require_POST
@@ -25,11 +29,29 @@ from django.views.generic import (
 from gateway.config import get_router_config
 from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
-from management.models import LimitSet, ServiceAccount, Token
+from management.models import LimitSet, ServiceAccount, Token, UserProfile
 from management.views.base import BaseAqueductView
 
 NEW_KEY_TAG = "token-regenerated-key"
 """The message tag that carries a new key's secret to the next page, which shows it once."""
+
+
+def add_week(profile: UserProfile, tokens: Iterable[Token]) -> list[date]:
+    """Give each key `week`, its requests on each of the last 7 days, and `week_max`."""
+    days = [timezone.localdate() - timedelta(days=n) for n in range(6, -1, -1)]
+    tokens = list(tokens)
+    counts = {
+        (row["token_id"], row["day"]): row["n"]
+        for row in profile.visible_requests()
+        .filter(token__in=tokens, timestamp__date__gte=days[0])
+        .values("token_id", day=TruncDate("timestamp"))
+        .annotate(n=Count("id"))
+        .order_by()
+    }
+    for token in tokens:
+        token.week = [(day, counts.get((token.id, day), 0)) for day in days]  # type: ignore[attr-defined]
+        token.week_max = max(n for _day, n in token.week)  # type: ignore[attr-defined]
+    return days
 
 
 class UserTokensView(BaseAqueductView, TemplateView):
@@ -67,6 +89,7 @@ class UserTokensView(BaseAqueductView, TemplateView):
         for sa in service_accounts:
             sa.effective_limits = LimitSet.from_objects(sa.team, [sa.team.org])  # type: ignore[attr-defined]
             sa.usage = per_sa_token_usage[sa.token.id]  # type: ignore[attr-defined]
+        add_week(profile, [*tokens, *(sa.token for sa in service_accounts)])
 
         context.update(
             {
@@ -153,7 +176,9 @@ class AllKeysView(BaseAqueductView, ListView):
         return keys.annotate(last_used=Max("requests__timestamp")).order_by("name", "id")
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
-        return super().get_context_data(query=self.request.GET.get("q", "").strip(), **kwargs)
+        context = super().get_context_data(query=self.request.GET.get("q", "").strip(), **kwargs)
+        add_week(self.profile, context["keys"])
+        return context
 
 
 class TokenDetailView(BaseAqueductView, DetailView):
@@ -171,7 +196,20 @@ class TokenDetailView(BaseAqueductView, DetailView):
         token: Token = self.object
         limits = token.get_limits()
         usage = get_per_token_usage([token.id])[token.id]
+        days = add_week(self.profile, [token])
         context.update(
+            week_chart=[[day.isoformat(), n] for day, n in token.week],  # type: ignore[attr-defined]
+            by_model=list(
+                self.profile.visible_requests()
+                .filter(token=token, timestamp__date__gte=days[0])
+                .values("model")
+                .annotate(
+                    count=Count("id"),
+                    input=Sum("input_tokens", default=0),
+                    output=Sum("output_tokens", default=0),
+                )
+                .order_by("-count", "model")
+            ),
             can_manage=self.profile.manageable_tokens().filter(pk=token.pk).exists(),
             team=token.service_account.team if token.service_account else None,
             own=token.user_id == self.request.user.id and token.service_account is None,

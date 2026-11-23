@@ -178,10 +178,18 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         total_requests = reqs_span.count()
         failed_requests = reqs_span.filter(status_code__gte=400).count()
 
-        per_model = list(reqs_span.values("model").annotate(count=Count("id")).order_by("-count"))
+        per_model = list(
+            reqs_span.values("model")
+            .annotate(
+                count=Count("id"),
+                input_sum=Sum("input_tokens", default=0),
+                output_sum=Sum("output_tokens", default=0),
+            )
+            .order_by("-count")
+        )
         present_models = {m["model"] for m in per_model}
         missing_models = [
-            {"model": m["model_name"], "count": 0}
+            {"model": m["model_name"], "count": 0, "input_sum": 0, "output_sum": 0}
             for m in get_router_config()["model_list"]
             if m["model_name"] not in present_models
         ]
@@ -218,6 +226,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 "top_k_choices": [10, 25, 100],
                 "total_requests": total_requests,
                 "failed_requests": failed_requests,
+                "per_model": per_model,
                 "per_model_json": json.dumps(per_model),
                 "avg_time_completion": avg_time_comp or 0,
                 "avg_time_embedding": avg_time_emb or 0,

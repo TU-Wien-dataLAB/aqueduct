@@ -1,12 +1,22 @@
+import logging
 from datetime import UTC, datetime
 
+import openai
+from asgiref.sync import async_to_sync
+from django.contrib import messages
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
-from django.views.generic import TemplateView
+from django.views.generic import TemplateView, View
 
+from gateway.config import get_files_api_client
 from management.models import Batch
 from management.views.base import BaseAqueductView
 
 INPUT_FILE_ID_PREVIEW_THRESHOLD = 12
+CANCELLABLE = ("validating", "in_progress", "finalizing")
+
+log = logging.getLogger("aqueduct")
 
 
 class UserBatchesView(BaseAqueductView, TemplateView):
@@ -67,4 +77,31 @@ class UserBatchesView(BaseAqueductView, TemplateView):
                 b.expiration_status = "never"
 
         context["batches"] = batches
+        context["manageable_token_ids"] = set(
+            profile.manageable_tokens().values_list("id", flat=True)
+        )
         return context
+
+
+class BatchCancelView(BaseAqueductView, View):
+    """Cancels a running batch the page lists, upstream, and keeps the status it reports."""
+
+    def post(self, request, *args, **kwargs) -> HttpResponse:
+        batch = get_object_or_404(
+            Batch.objects.filter(
+                token__in=self.profile.manageable_tokens(), status__in=CANCELLABLE
+            ),
+            pk=kwargs["id"],
+        )
+        try:
+            remote = async_to_sync(get_files_api_client().batches.cancel)(batch.id)
+        except (ValueError, openai.OpenAIError):
+            log.exception("Could not cancel batch %s upstream", batch.id)
+            messages.error(request, f"Could not cancel batch {batch.id}. Try again later.")
+            return redirect("batches")
+        batch.status = remote.status
+        batch.cancelling_at = remote.cancelling_at or batch.cancelling_at
+        batch.cancelled_at = remote.cancelled_at or batch.cancelled_at
+        batch.save(update_fields=["status", "cancelling_at", "cancelled_at"])
+        messages.success(request, f"Batch {batch.id} is being cancelled.")
+        return redirect("batches")

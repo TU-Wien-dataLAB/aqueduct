@@ -1,0 +1,44 @@
+{% load i18n ui %}
+<section class="card bg-base-200">
+    <div class="card-body table-card gap-2">
+        <div class="card-head flex flex-wrap items-baseline justify-between gap-3">
+            <h2 class="card-title">{{ title }}</h2>
+            <span class="muted text-sm">{% blocktranslate %}{{ count }} of {{ limit }} used{% endblocktranslate %}</span>
+        </div>
+        {% if stores %}
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>{% translate "Vector store" %}</th>
+                            <th>{% translate "Status" %}</th>
+                            <th class="text-right">{% translate "Files" %}</th>
+                            <th class="text-right max-md:hidden">{% translate "Size" %}</th>
+                            <th class="max-md:hidden">{% translate "Created" %}</th>
+                            <th><span class="sr-only">{% translate "Actions" %}</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for vs in stores %}
+                            <tr>
+                                <td class="max-w-80"><a class="link-plain row-link block truncate" href="{% url 'vector_store_detail' id=vs.id %}">{{ vs.name|default:vs.id }}</a><div class="muted truncate font-mono text-xs">{{ vs.id }}</div></td>
+                                <td>{% include "management/_status.html" with status=vs.status %}</td>
+                                <td class="text-right tabular-nums">{{ vs.files_count }}<span class="muted">/{{ files_limit }}</span></td>
+                                <td class="whitespace-nowrap text-right max-md:hidden">{{ vs.size_bytes|filesizeformat }}</td>
+                                <td class="muted whitespace-nowrap max-md:hidden">{{ vs.created_dt|date:"j M Y" }}</td>
+                                <td>
+                                    <form method="post" action="{% url 'vector_store_card_refresh' id=vs.id %}" class="relative z-10 flex justify-end">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-ghost btn-xs btn-square" aria-label="{% blocktranslate with name=vs.name %}Refresh {{ name }}{% endblocktranslate %}" title="{% translate 'Sync from the upstream API' %}">{% icon "rotate" small=True %}</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="card-foot muted">{{ empty }}</p>
+        {% endif %}
+    </div>
+</section>

@@ -1,0 +1,1 @@
+{% if status == "completed" %}<span class="st-ok">{{ status }}</span>{% elif status == "failed" or status == "expired" %}<span class="st-err">{{ status }}</span>{% elif status == "in_progress" %}<span class="st-warn">{{ status }}</span>{% else %}<span class="muted">{{ status }}</span>{% endif %}

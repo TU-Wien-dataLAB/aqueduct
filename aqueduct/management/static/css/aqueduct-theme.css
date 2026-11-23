@@ -36,7 +36,6 @@ html[data-theme="light"] {
   --aq-warn: #8A5A00;
   --aq-band: var(--deep); --aq-band-muted: #D0EBF7; --aq-band-link: var(--spray);
   --viz-in: #0A84C6; --viz-track: #D0EBF7;
-  --tok-cached: #449FD6; --tok-new: #0A84C6; --tok-out: #07486B;
 }
 
 html[data-theme="dark"] {
@@ -65,7 +64,6 @@ html[data-theme="dark"] {
   --aq-warn: #F2C14E;
   --aq-band: #041721; --aq-band-muted: #9DB6C0; --aq-band-link: var(--spray);
   --viz-in: #6BBAE6; --viz-track: #1D4C63;
-  --tok-cached: #0A84C6; --tok-new: #6BBAE6; --tok-out: #D0EBF7;
 }
 
 html[data-theme] {
@@ -97,8 +95,6 @@ body { font-variant-numeric: tabular-nums; }
 
 .btn:not(.btn-square) { --radius-field: 9999px; }
 .card { box-shadow: none; }
-[data-metric-scope]:has([name=metric][value=tokens]:checked) [data-metric=requests],
-[data-metric-scope]:has([name=metric][value=requests]:checked) [data-metric=tokens] { display: none; }
 /* daisyUI isolates a checked radio button, which lifts its border over the next button in a join. */
 .join > input.btn:checked { isolation: auto; }
 .card-title { --cardtitle-fs: 1.25rem; line-height: 1.75rem; }
@@ -145,17 +141,13 @@ html[data-theme="light"] .only-dark, html[data-theme="dark"] .only-light { displ
 .menu :where(li) > a.menu-active { font-weight: 600; }
 .menu :where(li) > a { min-height: 2.75rem; align-content: center; align-items: center; font-weight: 500; }
 
-.table > tbody > tr:is(:has(.row-link), [data-row-toggle]):hover,
+.table > tbody > tr:has(.row-link):hover,
 .table > tbody > tr:has(:focus-visible),
-.table > tbody > tr:has([aria-current="true"]),
-.hover-row:hover { background: var(--aq-hover); }
+.table > tbody > tr:has([aria-current="true"]) { background: var(--aq-hover); }
 tr:has(.row-link) { position: relative; }
 a.row-link::after { content: ""; position: absolute; inset: 0; }
 a.row-link:focus-visible { outline: none; }
 a.row-link:focus-visible::after { outline: 3px solid var(--color-primary); outline-offset: -3px; }
-
-.file-row { scroll-margin-top: 6rem; }
-.file-row:target { background: var(--aq-hover); }
 
 .table th { font: 600 12px/1.3 var(--font-sans); color: var(--aq-muted); }
 .table td { font-size: .875rem; }
@@ -176,23 +168,6 @@ a.row-link:focus-visible::after { outline: 3px solid var(--color-primary); outli
 .card-head { padding: .5rem 1rem 0; }
 .card-foot { padding: .25rem 1rem .5rem; }
 
-/* Column widths of the usage tables (_usage_cols.html): a number column is as wide as its one-line heading plus the cell padding;
-   the name column takes the rest. --min is the fixed columns plus 200px for the name, so a table never squeezes a name and the
-   card scrolls only where the window cannot hold it (under 1024px, 768px with the limit column). The token bar needs a 1440px
-   window and the limit column's From cache 1280px. */
-.usage-table { table-layout: fixed; min-width: var(--min); --min: 744px; --input: 6.5rem; --cached: 6.25rem; --output: 7.25rem; --requests: 5.5rem; --failed: 4.5rem; --median: 6.5rem; --limit: 11rem; --share: 4rem; }
-.usage-table.by-model { --min: 848px; }
-.usage-table .c-bar { width: 14%; }
-.usage-table .c-input { width: var(--input); } .usage-table .c-cached { width: var(--cached); } .usage-table .c-output { width: var(--output); }
-.usage-table .c-requests { width: var(--requests); } .usage-table .c-failed { width: var(--failed); } .usage-table .c-median { width: var(--median); } .usage-table .c-limit { width: var(--limit); } .usage-table .c-share { width: var(--share); }
-@media (width < 90rem) { .usage-table .c-bar { display: none; } }
-@media (width >= 90rem) { .usage-table { --min: 904px; } .usage-table.by-model { --min: 1008px; } }
-@media (width < 48rem) { .usage-table .c-limit { display: none; } }
-@media (width >= 48rem) { .usage-table:has(.c-limit) { --min: 820px; } }
-@media (width < 80rem) { .usage-table:has(.c-limit) .c-cached { display: none; } }
-@media (width >= 80rem) { .usage-table:has(.c-limit) { --min: 920px; } }
-@media (width >= 90rem) { .usage-table:has(.c-limit) { --min: 1080px; } }
-.badge-deprecated { --badge-color: var(--aq-warn); }
 /* Shades the edge a wide table can still scroll towards; the base-200 covers scroll with the table and hide the shade at its ends. */
 .aq-scroll-x { overflow-x: auto; --shade: color-mix(in oklab, var(--color-base-content) 22%, transparent);
   background: linear-gradient(to right, var(--color-base-200) 40%, transparent) left / 2rem 100% no-repeat local,
@@ -208,44 +183,8 @@ a.row-link:focus-visible::after { outline: 3px solid var(--color-primary); outli
 a.link-plain { color: var(--color-primary); font-weight: 600; text-decoration: none; }
 a.link-plain:hover { text-decoration: underline; }
 
-.tbar { display: flex; gap: 2px; height: 10px; min-width: 12px; }
-.tbar > i { display: block; min-width: 0; }
-.tbar > i:first-child { border-radius: 4px 0 0 4px; }
-.tbar > i:last-child { border-radius: 0 4px 4px 0; }
-.tbar .c, .sw.c, .vbar .c { background: var(--tok-cached); }
-.tbar .n, .sw.n, .vbar .n { background: var(--tok-new); }
-.tbar .o, .sw.o, .vbar .o { background: var(--tok-out); }
-.sw.i, .vbar .i { background: var(--viz-in); }
-.sw.r, .vbar .r { background: var(--aq-warn); }
-.sw.f, .vbar .f { background: var(--color-error); }
-.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
 .pbar { display: flex; gap: 2px; height: 8px; overflow: hidden; border-radius: 9999px; background: var(--viz-track); }
 .pbar > i { display: block; }
 .pbar .i { background: var(--viz-in); }
 .pbar .f { background: var(--color-error); }
-.onebar { height: 10px; border-radius: 0 4px 4px 0; background: var(--viz-in); min-width: 3px; }
-.spark { display: flex; gap: 3px; height: 28px; }
-.spark > span { position: relative; display: flex; align-items: flex-end; flex: 1; max-width: 10px; }
-.spark i { display: block; width: 100%; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--viz-in); opacity: .55; }
-.spark > span:last-child > i, .spark > span:hover > i { opacity: 1; }
-.vbar { position: relative; display: flex; flex-direction: column-reverse; gap: 2px; height: 100%; border-radius: 4px 4px 0 0; }
-.chart-col:hover > .vbar { background: color-mix(in oklab, var(--color-base-300) 60%, transparent); }
-.vbar > i { display: block; min-height: 2px; }
-/* The gridline at the tallest column and the baseline under the bars; 1.5rem is a column's label row. */
-.chart-plot { position: relative; isolation: isolate; padding-top: 1.25rem; }
-.chart-plot::before, .chart-plot::after { content: ""; position: absolute; inset-inline: 0; z-index: -1; pointer-events: none; }
-.chart-plot::before { top: 1.25rem; border-top: 1px dashed var(--color-base-300); }
-.chart-plot::after { bottom: 1.5rem; border-top: 1px solid var(--color-base-300); }
-.chart-top { position: absolute; top: 0; left: 0; line-height: 1rem; }
-.vbar > i:last-of-type { border-radius: 4px 4px 0 0; }
 
-.aq-tip { position: absolute; z-index: 30; bottom: calc(var(--bar, 100%) + 6px); left: 50%; translate: -50% 0;
-  display: none; flex-direction: column; gap: 2px; width: max-content; max-width: 16rem; padding: .5rem .75rem;
-  border-radius: .5rem; background: var(--color-neutral); color: var(--color-neutral-content);
-  font: 400 14px/1.35 var(--font-sans); text-align: left; pointer-events: none; }
-.aq-tip-host:hover .aq-tip { display: flex; }
-.aq-tip-heading { font: 600 12px/1.3 var(--font-sans); opacity: .8; }
-.aq-tip-row { display: flex; align-items: center; gap: .5rem; }
-.aq-tip-row > b { margin-left: auto; padding-left: 1rem; font-weight: 500; }
-.aq-tip .sw { outline: 1px solid var(--color-neutral-content); }
-.spark .aq-tip { bottom: auto; top: calc(100% + 6px); }

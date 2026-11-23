@@ -34,29 +34,7 @@
     if (copyButton) copy(copyButton);
     const dismissButton = event.target.closest('[data-dismiss]');
     if (dismissButton) dismissButton.parentElement.remove();
-    toggleRow(event);
   });
-  document.addEventListener('auxclick', (event) => {
-    if (event.button === 1) toggleRow(event);
-  });
-
-  let pendingToggle;
-
-  function toggleRow(event) {
-    clearTimeout(pendingToggle);
-    const row = event.target.closest('[data-row-toggle]');
-    if (!row || event.target.closest('a, button')) return;
-    const href = row.querySelector('[data-row-toggle-link]').href;
-    if (event.button === 1 || event.ctrlKey || event.metaKey || event.shiftKey) {
-      window.open(href, '_blank', 'noopener');
-      return;
-    }
-    if (event.detail > 1) return;
-    pendingToggle = setTimeout(() => {
-      if (!getSelection().toString()) window.location.href = href;
-    }, 250);
-  }
-
   let confirming = null;
   document.addEventListener('click', (event) => {
     const trigger = event.target.closest('a[href][data-confirm], button[type=submit][data-confirm]');

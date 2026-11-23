@@ -25,7 +25,7 @@ from django.views.generic import (
 from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
 from management.models import LimitSet, ServiceAccount, Token
-from management.views.base import AccessKeyExpirationContextMixin, BaseAqueductView
+from management.views.base import BaseAqueductView
 
 NEW_KEY_TAG = "token-regenerated-key"
 """The message tag that carries a new key's secret to the next page, which shows it once."""
@@ -79,7 +79,7 @@ class UserTokensView(BaseAqueductView, TemplateView):
         return context
 
 
-class TokenCreateView(AccessKeyExpirationContextMixin, BaseAqueductView, CreateView):
+class TokenCreateView(BaseAqueductView, CreateView):
     model = Token
     form_class = TokenCreateForm
     template_name = "management/create/token.html"
@@ -188,7 +188,7 @@ class TokenDetailView(BaseAqueductView, DetailView):
         return context
 
 
-class TokenEditView(AccessKeyExpirationContextMixin, BaseAqueductView, UpdateView):
+class TokenEditView(BaseAqueductView, UpdateView):
     model = Token
     form_class = TokenCreateForm
     template_name = "management/edit/token.html"

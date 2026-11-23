@@ -4,53 +4,52 @@
 {% block title %}{% translate "API keys" %} · {{ block.super }}{% endblock %}
 {% block heading %}{% translate "API keys" %}{% endblock %}
 {% block actions %}
-    {% if can_add_token %}
+    {% if first_key_form %}
+    {% elif can_add_token %}
         <a class="btn btn-primary" href="{% url 'token_create' %}">{% icon "plus" small=True %}{% translate "Create API key" %}<span class="text-xs font-normal opacity-80">{{ tokens|length }}/{{ max_tokens }}</span></a>
     {% else %}
         <button type="button" class="btn btn-primary" disabled title="{% translate 'Delete a key to create a new one.' %}">{% blocktranslate count n=max_tokens %}{{ n }} of {{ n }} key used{% plural %}{{ n }} of {{ n }} keys used{% endblocktranslate %}</button>
     {% endif %}
 {% endblock %}
 {% block body %}
+{% if first_key_form %}{% include "management/_first_key.html" %}{% else %}
 <section class="card bg-base-200" aria-labelledby="personal-title">
     <div class="card-body table-card gap-2">
         <h2 id="personal-title" class="card-head card-title">{% translate "Personal keys" %}</h2>
-        {% if tokens %}
-            <div class="overflow-x-auto">
-                <table class="table">
-                    <thead>
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>{% translate "Key" %}</th>
+                        <th class="max-md:hidden">{% translate "Last used" %}</th>
+                        <th class="max-lg:hidden">{% translate "Requests" %}</th>
+                        <th class="max-md:hidden">{% translate "Expires" %}</th>
+                        <th><span class="sr-only">{% translate "Actions" %}</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for token in tokens %}
                         <tr>
-                            <th>{% translate "Key" %}</th>
-                            <th class="max-md:hidden">{% translate "Last used" %}</th>
-                            <th class="max-lg:hidden">{% translate "Requests" %}</th>
-                            <th class="max-md:hidden">{% translate "Expires" %}</th>
-                            <th><span class="sr-only">{% translate "Actions" %}</span></th>
+                            <td>
+                                <a class="link-plain row-link block truncate font-mono" href="{% url 'token_detail' token.id %}">{{ token.name }}</a>
+                                <div class="muted text-xs"><span class="font-mono">{{ token.key_preview }}</span> · {% blocktranslate with date=token.created_at|date:"j M Y" %}Created {{ date }}{% endblocktranslate %}</div>
+                            </td>
+                            <td class="muted whitespace-nowrap max-md:hidden">{% if token.last_used %}{{ token.last_used|naturaltime }}{% else %}{% translate "Never" %}{% endif %}</td>
+                            <td class="min-w-56 max-lg:hidden">{% include "management/_rate_usage.html" with usage=token.usage limits=user_limits %}</td>
+                            <td class="whitespace-nowrap max-md:hidden">{% include "management/_expires.html" %}</td>
+                            <td>
+                                <div class="relative z-10 flex justify-end gap-1">
+                                    {% include "management/_key_actions.html" %}
+                                </div>
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        {% for token in tokens %}
-                            <tr>
-                                <td>
-                                    <a class="link-plain row-link block truncate font-mono" href="{% url 'token_detail' token.id %}">{{ token.name }}</a>
-                                    <div class="muted text-xs"><span class="font-mono">{{ token.key_preview }}</span> · {% blocktranslate with date=token.created_at|date:"j M Y" %}Created {{ date }}{% endblocktranslate %}</div>
-                                </td>
-                                <td class="muted whitespace-nowrap max-md:hidden">{% if token.last_used %}{{ token.last_used|naturaltime }}{% else %}{% translate "Never" %}{% endif %}</td>
-                                <td class="min-w-56 max-lg:hidden">{% include "management/_rate_usage.html" with usage=token.usage limits=user_limits %}</td>
-                                <td class="whitespace-nowrap max-md:hidden">{% include "management/_expires.html" %}</td>
-                                <td>
-                                    <div class="relative z-10 flex justify-end gap-1">
-                                        {% include "management/_key_actions.html" %}
-                                    </div>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <p class="card-foot muted">{% translate "You have no API keys yet. Create one to call the gateway." %}</p>
-        {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
+{% endif %}
 
 {% if service_accounts %}
 <section class="card bg-base-200" aria-labelledby="team-title">

@@ -22,6 +22,7 @@ from django.views.generic import (
     UpdateView,
 )
 
+from gateway.config import get_router_config
 from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
 from management.models import LimitSet, ServiceAccount, Token
@@ -76,6 +77,16 @@ class UserTokensView(BaseAqueductView, TemplateView):
                 "user_limits": user_limits,
             }
         )
+        if can_add_token and not tokens:
+            try:
+                models = get_router_config().get("model_list", [])
+            except RuntimeError:  # Without a router config the example names no model.
+                models = []
+            context["first_key_form"] = TokenCreateForm(
+                user=self.request.user, initial={"name": "my-first-key"}
+            )
+            modes = [(m.get("model_info") or {}).get("mode") or "chat" for m in models]
+            context["first_model"] = models[modes.index("chat")] if "chat" in modes else None
         return context
 
 

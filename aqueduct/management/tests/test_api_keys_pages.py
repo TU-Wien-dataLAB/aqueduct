@@ -24,6 +24,17 @@ class KeyListTest(RoleWorld):
         self.assertContains(page, reverse("token_edit", args=[self.member_key.id]))
         self.assertNotContains(page, reverse("token_edit", args=[self.pipeline_key.id]))
 
+    def test_without_keys_the_page_walks_through_the_first_one(self):
+        page = self.as_user(self.team_admin).get(reverse("tokens"))
+        self.assertContains(page, "Create your first API key")
+        self.assertContains(page, f'action="{reverse("token_create")}"')
+        self.assertContains(page, 'value="my-first-key"')
+        self.assertContains(page, "curl http://testserver/v1/chat/completions")
+        self.assertContains(page, '"model": "gpt-4.1-nano"')
+        self.assertContains(page, reverse("token_detail", args=[self.pipeline_key.id]))
+        self.assertNotContains(page, "Create API key")
+        self.assertNotContains(self.as_user(self.solo).get(reverse("tokens")), "first API key")
+
 
 class KeyPageTest(RoleWorld):
     def page(self, user, token: Token):

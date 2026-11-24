@@ -19,6 +19,24 @@ class KeyListTest(RoleWorld):
         self.assertContains(page, "Never")
         self.assertNotContains(page, reverse("token_detail", args=[self.solo_key.id]))
 
+    def test_last_use_is_the_newest_request_of_each_key(self):
+        now = timezone.now()
+        for key, hours_ago in [(self.member_key, 5), (self.member_key, 2), (self.pipeline_key, 3)]:
+            Request.objects.create(token=key, timestamp=now - timedelta(hours=hours_ago))
+        Request.objects.create(token=self.pipeline_key, timestamp=now - timedelta(days=9))
+        page = self.as_user(self.member).get(reverse("tokens"))
+        self.assertEqual(page.context["tokens"][0].last_used, now - timedelta(hours=2))
+        self.assertEqual(page.context["service_accounts"][0].last_used, now - timedelta(hours=3))
+        page = self.as_user(self.org_admin).get(reverse("all_keys"))
+        self.assertEqual(
+            {key.name: key.last_used for key in page.context["keys"]},
+            {
+                "member-laptop": now - timedelta(hours=2),
+                "pipeline": now - timedelta(hours=3),
+                "solo-laptop": None,
+            },
+        )
+
     def test_team_keys_have_no_personal_actions(self):
         page = self.as_user(self.member).get(reverse("tokens"))
         self.assertContains(page, reverse("token_edit", args=[self.member_key.id]))

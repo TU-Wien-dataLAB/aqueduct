@@ -8,7 +8,7 @@ from django.contrib import messages
 from django.contrib.messages import get_messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Count, Max, Q, QuerySet
+from django.db.models import Count, Max, OuterRef, Q, QuerySet, Subquery
 from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -31,12 +31,19 @@ from django.views.generic import (
 from gateway.config import get_router_config
 from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
-from management.models import LimitSet, ServiceAccount, Token, UserProfile
+from management.models import LimitSet, Request, ServiceAccount, Token, UserProfile
 from management.views.base import BaseAqueductView
 from management.views.usage import model_rows, show_requests, spark, usage_charts, usage_series
 
 NEW_KEY_TAG = "token-regenerated-key"
 """The message tag that carries a new key's secret to the next page, which shows it once."""
+
+
+def last_used(key: str = "pk") -> Subquery:
+    """The time of the newest request of the key at `key`: one step into the (token, timestamp)
+    index per key, where Max over a join reads every request of every key."""
+    newest = Request.objects.filter(token=OuterRef(key)).order_by("-timestamp")
+    return Subquery(newest.values("timestamp")[:1])
 
 
 def add_week(profile: UserProfile, tokens: Iterable[Token]) -> None:
@@ -65,12 +72,12 @@ class UserTokensView(BaseAqueductView, TemplateView):
         context = super().get_context_data(**kwargs)
         profile = self.profile  # Provided by BaseAqueductView
 
-        tokens = profile.own_tokens().annotate(last_used=Max("requests__timestamp"))
+        tokens = profile.own_tokens().annotate(last_used=last_used())
         teams = profile.member_teams()
         service_accounts = (
             ServiceAccount.objects.filter(team__in=teams)
             .select_related("team__org", "token")
-            .annotate(last_used=Max("token__requests__timestamp"))
+            .annotate(last_used=last_used("token"))
         )
 
         max_tokens = getattr(settings, "MAX_USER_TOKENS", 3)
@@ -177,7 +184,7 @@ class AllKeysView(BaseAqueductView, ListView):
                 | Q(user__email__icontains=query)
                 | Q(service_account__team__name__icontains=query)
             )
-        return keys.annotate(last_used=Max("requests__timestamp")).order_by("name", "id")
+        return keys.annotate(last_used=last_used()).order_by("name", "id")
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(query=self.request.GET.get("q", "").strip(), **kwargs)

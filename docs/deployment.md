@@ -45,7 +45,7 @@ reactivated by reconciliation.
 ## Custom themes
 
 The management UI's Settings page offers System, Light and Dark, and the daisyUI themes
-Cupcake, Dim, Night and Nord from `management/builtin_themes/`. To offer more, set
+Cupcake, Night and Nord from `management/builtin_themes/`. To offer more, set
 `THEMES_DIR` to a directory of CSS files; in Helm, set `themes` to a map of file name to
 CSS instead. A file named like a built-in theme replaces it. The app reads the files once, so restart it after changing them; Helm
 restarts the web pods when `themes` changes.

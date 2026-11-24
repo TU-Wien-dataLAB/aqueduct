@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -110,6 +112,16 @@ class RequestLogExtrasTest(RoleWorld):
             | {"client_error": 0, "server_error": 0},
         )
         self.assertContains(self.page(status="failed"), 'aria-current="page">Failed')
+
+    def test_each_tab_pages_through_the_rows_it_counts(self):
+        tabs = {"": "all", "ok": "ok", "server_error": "server_error", "bogus": "all"}
+        for status, tab in tabs.items():
+            with self.subTest(status=status), CaptureQueriesContext(connection) as queries:
+                page = self.page(status=status)
+                self.assertEqual(page.context["paginator"].count, page.context["counts"][tab])
+                self.assertEqual(len(page.context["requests"]), page.context["counts"][tab])
+            # The tabs' counts serve the paginator too, without a COUNT of its own.
+            self.assertFalse([query for query in queries if '"__count"' in query["sql"]])
 
     def test_filters_by_model_and_time(self):
         self.assertEqual(self.paths(model="text-embedding-ada-002"), ["/v1/embeddings"])

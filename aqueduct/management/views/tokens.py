@@ -33,7 +33,14 @@ from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
 from management.models import LimitSet, Request, ServiceAccount, Token
 from management.views.base import BaseAqueductView
-from management.views.usage import model_rows, show_requests, spark, usage_charts, usage_series
+from management.views.usage import (
+    model_rows,
+    show_requests,
+    spark,
+    usage_charts,
+    usage_rows,
+    usage_series,
+)
 
 NEW_KEY_TAG = "token-regenerated-key"
 """The message tag that carries a new key's secret to the next page, which shows it once."""
@@ -222,7 +229,9 @@ class TokenDetailView(BaseAqueductView, DetailView):
         # The last 7 days, drawn as the Usage page draws them.
         now = timezone.now()
         start = now - timedelta(days=7)
-        week = self.profile.visible_requests().filter(token=token, timestamp__gte=start)
+        week = usage_rows(
+            self.profile.visible_requests().filter(token=token, timestamp__gte=start), "day"
+        )
         log = f"{reverse('requests')}?key={token.pk}"
         context.update(
             charts=usage_charts(usage_series(week, "day", start, now), "day"),

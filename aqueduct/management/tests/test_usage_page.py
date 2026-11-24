@@ -1,7 +1,9 @@
 from datetime import timedelta
 
+from django.db import connection
 from django.template import Context, Template
 from django.test import SimpleTestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -63,6 +65,82 @@ class UsagePageTest(RoleWorld):
         self.assertContains(
             page, '<td class="whitespace-nowrap text-right tabular-nums">1.2 s</td>'
         )
+
+    def requests_in_two_orgs(self):
+        """Requests of four keys of both orgs over three days, with two models and statuses."""
+        now = timezone.now()
+        for key, model, status, hours_ago, tokens, response_ms in [
+            (self.solo_key, "gpt-4.1-nano", 200, 1, 100, 900),
+            (self.solo_key, "gpt-4.1-nano", 429, 30, 0, None),
+            (self.member_key, "whisper-1", 200, 2, 40, 300),
+            (self.member_key, "gpt-4.1-nano", 500, 50, 0, None),
+            (self.pipeline_key, "gpt-4.1-nano", 200, 3, 70, 1500),
+            (self.foreign_key, "whisper-1", 200, 4, 999, 100),
+        ]:
+            Request.objects.create(
+                token=key,
+                model=model,
+                status_code=status,
+                timestamp=now - timedelta(hours=hours_ago),
+                input_tokens=tokens,
+                output_tokens=tokens // 10,
+                response_time_ms=response_ms,
+                user_id="alice" if key == self.pipeline_key else "",
+            )
+
+    def test_every_table_adds_up_to_the_totals(self):
+        self.requests_in_two_orgs()
+        for user, params in [
+            (self.org_admin, {"span": "1w"}),
+            (self.admin, {"span": "1w", "org": "all"}),
+            (self.member, {"span": "1w", "token": self.pipeline_key.id}),
+            (self.solo, {"span": "1d"}),
+        ]:
+            with self.subTest(user=user.username, **params):
+                context = self.page(user, **params).context
+                totals = context["totals"]
+                for table in ("per_model", "top_items"):
+                    for name in ("requests", "input", "output", "failed", "rate_limited"):
+                        rows = context[table]
+                        self.assertEqual(sum(row[name] for row in rows), totals[name], table)
+
+    def test_all_orgs_rank_the_orgs_by_tokens(self):
+        self.requests_in_two_orgs()
+        rows = self.page(self.admin, span="1w", org="all").context["top_items"]
+        self.assertEqual(
+            [(row["name"], row["org_id"], row["requests"], row["tokens"]) for row in rows],
+            [("other-org", self.other_org.id, 1, 1098), ("lab-org", self.org.id, 5, 231)],
+        )
+        rows = self.page(self.org_admin, span="1w").context["top_items"]
+        self.assertEqual(
+            [(row["name"], row["team_name"], row["tokens"]) for row in rows],
+            [("solo-laptop", None, 110), ("pipeline", "NLP Lab", 77), ("member-laptop", None, 44)],
+        )
+
+    def test_response_time_averages_the_requests_that_have_one(self):
+        self.requests_in_two_orgs()
+        Request.objects.create(token=self.solo_key, model="gpt-image-1", status_code=500)
+        per_model = self.page(self.org_admin, span="1w").context["per_model"]
+        self.assertEqual(
+            {row["model"]: row["avg_ms"] for row in per_model},
+            {"gpt-4.1-nano": 1200, "whisper-1": 300, "gpt-image-1": None},
+        )
+
+    def test_reads_the_requests_in_one_pass(self):
+        self.requests_in_two_orgs()
+        key_page = reverse("token_detail", args=[self.solo_key.id])
+        for url, params in [
+            (reverse("usage"), {"span": "1w"}),
+            (reverse("usage"), {"span": "1w", "org": "all"}),
+            (reverse("usage"), {"span": "1w", "token": self.pipeline_key.id}),
+            (key_page, {}),
+        ]:
+            with self.subTest(url=url, **params), CaptureQueriesContext(connection) as queries:
+                self.assertEqual(self.as_user(self.admin).get(url, params).status_code, 200)
+            passes = [
+                query for query in queries if 'SUM("management_request"."input' in query["sql"]
+            ]
+            self.assertEqual(len(passes), 1)
 
     def test_filters_by_model(self):
         Request.objects.create(token=self.solo_key, model="gpt-4.1-nano", input_tokens=10)

@@ -1,5 +1,6 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -72,6 +73,18 @@ class KeyListTest(RoleWorld):
         weeks = {key.name: [bar["text"] for bar in key.week] for key in page.context["keys"]}
         self.assertEqual(weeks["solo-laptop"], ["0 requests"] * 6 + ["1 request"])
         self.assertEqual(weeks["member-laptop"], ["0 requests"] * 7)
+
+    @override_settings(TIME_ZONE="Europe/Vienna")
+    def test_a_day_runs_from_local_midnight_to_midnight(self):
+        today = timezone.make_aware(datetime.combine(timezone.localdate(), time.min))
+        first = today - timedelta(days=6)
+        for moment in (first - timedelta(seconds=1), first, today - timedelta(seconds=1), today):
+            Request.objects.create(token=self.member_key, timestamp=moment)
+        page = self.as_user(self.member).get(reverse("tokens"))
+        self.assertEqual(
+            [bar["text"] for bar in page.context["tokens"][0].week],
+            ["1 request", *["0 requests"] * 4, "1 request", "1 request"],
+        )
 
 
 class KeyPageTest(RoleWorld):

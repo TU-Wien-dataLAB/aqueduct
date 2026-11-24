@@ -1,5 +1,6 @@
+import itertools
 from collections.abc import Iterable
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from typing import ClassVar
 
 from django import forms
@@ -9,7 +10,6 @@ from django.contrib.messages import get_messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Max, OuterRef, Q, QuerySet, Subquery
-from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
@@ -31,7 +31,7 @@ from django.views.generic import (
 from gateway.config import get_router_config
 from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
-from management.models import LimitSet, Request, ServiceAccount, Token, UserProfile
+from management.models import LimitSet, Request, ServiceAccount, Token
 from management.views.base import BaseAqueductView
 from management.views.usage import model_rows, show_requests, spark, usage_charts, usage_series
 
@@ -46,21 +46,33 @@ def last_used(key: str = "pk") -> Subquery:
     return Subquery(newest.values("timestamp")[:1])
 
 
-def add_week(profile: UserProfile, tokens: Iterable[Token]) -> None:
+def add_week(tokens: Iterable[Token]) -> None:
     """Give each key `week`, a spark of its requests on each of the last 7 days."""
     days = [timezone.localdate() - timedelta(days=n) for n in range(6, -1, -1)]
+    midnights = [
+        timezone.make_aware(datetime.combine(day, time.min))
+        for day in [*days, days[-1] + timedelta(days=1)]
+    ]
     tokens = list(tokens)
+    # A row per key with a count per day, not a row per key and day: PostgreSQL then expects
+    # as few groups as there are keys and aggregates in parallel.
+    per_day = {
+        f"day{n}": Count("id", filter=Q(timestamp__gte=start, timestamp__lt=end))
+        for n, (start, end) in enumerate(itertools.pairwise(midnights))
+    }
     counts = {
-        (row["token_id"], row["day"]): row["n"]
-        for row in profile.visible_requests()
-        .filter(token__in=tokens, timestamp__date__gte=days[0])
-        .values("token_id", day=TruncDate("timestamp"))
-        .annotate(n=Count("id"))
+        row.pop("token_id"): row
+        for row in Request.objects.filter(
+            token_id__in=[token.id for token in tokens], timestamp__gte=midnights[0]
+        )
+        .values("token_id")
+        .annotate(**per_day)
         .order_by()
     }
     for token in tokens:
+        found = counts.get(token.id, {})
         token.week = spark(  # type: ignore[attr-defined]
-            [(date_format(day, "D j M"), counts.get((token.id, day), 0)) for day in days],
+            [(date_format(day, "D j M"), found.get(f"day{n}", 0)) for n, day in enumerate(days)],
             show_requests,
         )
 
@@ -100,7 +112,7 @@ class UserTokensView(BaseAqueductView, TemplateView):
         for sa in service_accounts:
             sa.effective_limits = LimitSet.from_objects(sa.team, [sa.team.org])  # type: ignore[attr-defined]
             sa.usage = per_sa_token_usage[sa.token.id]  # type: ignore[attr-defined]
-        add_week(profile, [*tokens, *(sa.token for sa in service_accounts)])
+        add_week([*tokens, *(sa.token for sa in service_accounts)])
 
         context.update(
             {
@@ -188,7 +200,7 @@ class AllKeysView(BaseAqueductView, ListView):
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(query=self.request.GET.get("q", "").strip(), **kwargs)
-        add_week(self.profile, context["keys"])
+        add_week(context["keys"])
         return context
 
 

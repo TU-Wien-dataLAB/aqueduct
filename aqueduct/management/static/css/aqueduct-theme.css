@@ -174,7 +174,9 @@ html[data-scheme="light"] .only-dark, html[data-scheme="dark"] .only-light { dis
 .table > tbody > tr:has(:focus-visible),
 .table > tbody > tr:has([aria-current="true"]),
 .hover-row:hover { background: var(--aq-hover); }
-tr:has(.row-link) { position: relative; }
+/* The row link's overlay covers its row. A transform, not position: relative, makes the row its box: Safari 26 ignores a
+   positioned row, so every overlay covered the whole table and each click opened the last row. */
+tr:has(.row-link) { transform: translate(0); }
 a.row-link::after { content: ""; position: absolute; inset: 0; }
 a.row-link:focus-visible { outline: none; }
 a.row-link:focus-visible::after { outline: 3px solid var(--aq-link); outline-offset: -3px; }

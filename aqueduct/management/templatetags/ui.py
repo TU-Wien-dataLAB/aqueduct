@@ -1,13 +1,17 @@
-"""Presentation helpers for the management templates: icons, copy buttons, confirm dialogs."""
+"""Presentation helpers for the management templates: icons, copy buttons, confirm dialogs,
+short numbers."""
 
 from django import template
+from django.contrib.humanize.templatetags.humanize import intcomma
 from django.forms import BoundField
+from django.template.defaultfilters import floatformat
 from django.template.loader import get_template
 from django.utils.html import format_html
 from django.utils.safestring import SafeString, mark_safe
 from django.utils.translation import gettext
 
 register = template.Library()
+THOUSAND = 1000
 
 
 @register.simple_tag
@@ -58,3 +62,30 @@ def widget(field: BoundField) -> SafeString:
         return field.as_widget()
     component = classes.split()[0]
     return field.as_widget(attrs={"class": f"{classes} {component}-error"})
+
+
+@register.filter
+def compact(count: float | None) -> str:
+    """`count` in thousands, millions or billions with one decimal: 950, 1.2K, 33.8K."""
+    number, suffix = float(count or 0), ""
+    for bigger in ("K", "M", "B"):
+        if abs(round(number, 1)) < THOUSAND:
+            break
+        number, suffix = number / THOUSAND, bigger
+    return f"{floatformat(round(number, 1), -1)}{suffix}"
+
+
+@register.filter
+def percent(part: float, whole: float) -> str:
+    """`part` as a whole percent of `whole`, or a dash when there is no whole."""
+    return f"{round(100 * part / whole)}%" if whole else "—"
+
+
+@register.filter
+def duration(ms: float | None) -> str:
+    """Milliseconds as `258 ms`, or as `4.6 s` from a second up."""
+    if ms is None:
+        return "—"
+    if ms < THOUSAND:
+        return f"{intcomma(round(ms))} ms"
+    return f"{floatformat(ms / THOUSAND, 1)} s"

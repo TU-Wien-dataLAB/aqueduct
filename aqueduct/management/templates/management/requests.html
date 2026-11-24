@@ -36,6 +36,7 @@
             <option value="1h"{% if span == "1h" %} selected{% endif %}>{% translate "Last hour" %}</option>
             <option value="1d"{% if span == "1d" %} selected{% endif %}>{% translate "Last 24 hours" %}</option>
             <option value="7d"{% if span == "7d" %} selected{% endif %}>{% translate "Last 7 days" %}</option>
+            <option value="30d"{% if span == "30d" %} selected{% endif %}>{% translate "Last 30 days" %}</option>
         </select>
     </label>
     <noscript><button type="submit" class="btn btn-sm">{% translate "Filter" %}</button></noscript>

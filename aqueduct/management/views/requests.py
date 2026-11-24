@@ -12,8 +12,16 @@ STATUSES = {
     "ok": Q(status_code__lt=400),
     "rate_limited": Q(status_code=429),
     "failed": Q(status_code__gte=400) & ~Q(status_code=429),
+    "client_error": Q(status_code__gte=400, status_code__lt=500) & ~Q(status_code=429),
+    "server_error": Q(status_code__gte=500),
 }
-SPANS = {"1h": timedelta(hours=1), "1d": timedelta(days=1), "7d": timedelta(days=7)}
+"""The status filters; the log's tabs show the first three, the Usage page links to all."""
+SPANS = {
+    "1h": timedelta(hours=1),
+    "1d": timedelta(days=1),
+    "7d": timedelta(days=7),
+    "30d": timedelta(days=30),
+}
 SORTS = {
     "time": "timestamp",
     "model": "model",

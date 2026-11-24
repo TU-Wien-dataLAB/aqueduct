@@ -86,6 +86,10 @@
   }
   document.addEventListener('change', (event) => {
     if (event.target.matches('[data-autosubmit]')) event.target.form.submit();
+    // The usage chart restores the pick while it parses, so the chart does not flash.
+    if (event.target.name === 'metric') {
+      try { sessionStorage.setItem('metric', event.target.value); } catch { }
+    }
   });
   // The icon rail (1024 to 1279px) names each icon in a tooltip beside it; Escape dismisses it.
   const rail = matchMedia('(64rem <= width < 80rem)');

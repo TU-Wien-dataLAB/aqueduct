@@ -1,35 +1,56 @@
 {% extends 'management/base.html' %}
-{% load i18n humanize ui %}
+{% load i18n humanize l10n ui %}
 
 {% block title %}{% translate "Usage" %} · {{ block.super }}{% endblock %}
-{% block breadcrumbs %}{% if selected_token %}<li><a href="?org={{ selected_org.id }}&span={{ selected_span }}">{% translate "Usage" %}</a></li><li class="font-mono">{{ selected_token.name }}</li>{% endif %}{% endblock %}
-{% block heading %}{% translate "Usage" %}{% if selected_token %} <span class="muted font-mono text-xl">{{ selected_token.name }}</span>{% endif %}{% endblock %}
-{% block subheading %}{% if not is_global_admin %}<span class="muted text-sm">{{ selected_org.name }}</span>{% endif %}{% endblock %}
+{% block heading %}{% translate "Usage" %}{% endblock %}
+{% block subheading %}
+    <div class="muted flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+        <span>{% if selected_org %}{{ selected_org.name }}{% else %}{% translate "All organizations" %}{% endif %}</span>
+        {% if selected_token %}
+            <span>{% blocktranslate with name=selected_token.name %}for the key <span class="font-mono">{{ name }}</span>{% endblocktranslate %}</span>
+            <a class="link-plain" href="{% querystring token=None rows=None %}">{% translate "Show all keys" %}</a>
+        {% endif %}
+    </div>
+{% endblock %}
 {% block body %}
     <div class="flex flex-wrap items-center gap-3">
-        {% if is_global_admin %}
-            <label class="flex items-center gap-2">
-                <span class="section-label">{% translate "Organization" %}</span>
-                <select id="org-select" class="select select-sm w-56" onchange="onOrgChange()">
-                    <option value="all" {% if not selected_org %}selected{% endif %}>{% translate "All" %}</option>
-                    {% for org in orgs %}
-                        <option value="{{ org.id }}" {% if org.id == selected_org.id %}selected{% endif %}>{{ org.name }}</option>
-                    {% endfor %}
+        <form method="get" class="contents">
+            {% if selected_span == "custom" %}
+                <input type="hidden" name="start" value="{{ custom_start }}"><input type="hidden" name="end" value="{{ custom_end }}">
+            {% else %}
+                <input type="hidden" name="span" value="{{ selected_span }}">
+            {% endif %}
+            {% if is_global_admin %}
+                <select name="org" class="select select-sm w-56" aria-label="{% translate 'Organization' %}" data-autosubmit>
+                    <option value="all">{% translate "All organizations" %}</option>
+                    {% for org in orgs %}<option value="{{ org.id }}"{% if org == selected_org %} selected{% endif %}>{{ org.name }}</option>{% endfor %}
                 </select>
-            </label>
-        {% endif %}
+            {% endif %}
+            {% if keys or selected_token %}
+                <select name="token" class="select select-sm w-56" aria-label="{% translate 'Key' %}" data-autosubmit>
+                    <option value="">{% translate "All keys" %}</option>
+                    {% if selected_token and selected_token not in keys %}<option value="{{ selected_token.pk }}" selected>{{ selected_token.name }}</option>{% endif %}
+                    {% for key in keys %}<option value="{{ key.pk }}"{% if key == selected_token %} selected{% endif %}>{{ key.name }}</option>{% endfor %}
+                </select>
+            {% endif %}
+            <select name="model" class="select select-sm w-56" aria-label="{% translate 'Model' %}" data-autosubmit>
+                <option value="">{% translate "All models" %}</option>
+                {% for name in model_names %}<option{% if name == selected_model %} selected{% endif %}>{{ name }}</option>{% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn btn-sm">{% translate "Filter" %}</button></noscript>
+        </form>
 
-        <div id="span-tabs" class="join" role="group" aria-label="{% translate 'Time frame' %}">
-            {% for sp in span_choices %}
-                <a class="tab btn btn-sm join-item{% if sp == selected_span and selected_span != 'custom' %} tab-active btn-primary{% endif %}" data-span="{{ sp }}">{{ sp }}</a>
+        <nav class="join" aria-label="{% translate 'Time frame' %}">
+            {% for value, label in spans %}
+                <a class="btn btn-sm join-item{% if value == selected_span %} btn-primary{% endif %}" href="{% querystring span=value start=None end=None %}"{% if value == selected_span %} aria-current="page"{% endif %}>{{ label }}</a>
             {% endfor %}
-            <a class="tab btn btn-sm join-item{% if selected_span == 'custom' %} tab-active btn-primary{% endif %}" data-span="custom">{% translate "Custom" %}</a>
-        </div>
+            <button type="button" id="custom-toggle" class="btn btn-sm join-item{% if selected_span == 'custom' %} btn-primary{% endif %}" aria-controls="custom-range" aria-expanded="{% if selected_span == 'custom' %}true{% else %}false{% endif %}">{% translate "Custom" %}</button>
+        </nav>
 
         <div id="custom-range" class="flex flex-wrap items-center gap-2{% if selected_span != 'custom' %} hidden{% endif %}">
-            <input id="custom-start" type="datetime-local" lang="de" max="{{ now_utc_iso }}" class="input input-sm" value="{{ custom_start }}" placeholder="YYYY-MM-DD HH:MM"/>
+            <input id="custom-start" type="datetime-local" lang="de" max="{{ now_utc_iso }}" class="input input-sm" value="{{ custom_start }}" placeholder="YYYY-MM-DD HH:MM" aria-label="{% translate 'Start' %}"/>
             <span class="muted">{% translate "to" %}</span>
-            <input id="custom-end" type="datetime-local" lang="de" max="{{ now_utc_iso }}" class="input input-sm" value="{{ custom_end }}" placeholder="YYYY-MM-DD HH:MM"/>
+            <input id="custom-end" type="datetime-local" lang="de" max="{{ now_utc_iso }}" class="input input-sm" value="{{ custom_end }}" placeholder="YYYY-MM-DD HH:MM" aria-label="{% translate 'End' %}"/>
             <button id="custom-apply" class="btn btn-sm btn-outline">{% translate "Apply" %}</button>
             {% if selected_span == "custom" %}
                 <button id="custom-clear" class="btn btn-sm btn-ghost btn-square" title="{% translate 'Reset to default range' %}" aria-label="{% translate 'Reset to default range' %}">{% icon "close" small=True %}</button>
@@ -49,112 +70,159 @@
     {% endif %}
 
     <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="{% translate 'Totals' %}">
-        {% translate "Requests" as label %}{% blocktranslate asvar note with failed=failed_requests|intcomma %}{{ failed }} failed{% endblocktranslate %}
-        {% include "management/_stat_card.html" with value=total_requests|intcomma %}
-        {% translate "Input tokens" as label %}{% blocktranslate asvar note with cached=cached_input_tokens|intcomma %}{{ cached }} from cache{% endblocktranslate %}
-        {% include "management/_stat_card.html" with value=input_tokens|intcomma %}
-        {% translate "Output tokens" as label %}{% blocktranslate asvar note with reasoning=reasoning_tokens|intcomma %}{{ reasoning }} reasoning{% endblocktranslate %}
-        {% include "management/_stat_card.html" with value=output_tokens|intcomma %}
-        {% translate "Average response" as label %}{% blocktranslate asvar note with embedding=avg_time_embedding|floatformat:0|intcomma %}Completions · embeddings {{ embedding }} ms{% endblocktranslate %}
-        {% include "management/_stat_card.html" with value=avg_time_completion|floatformat:0|intcomma|add:" ms" %}
+        {% for kpi in kpis %}
+            {% include "management/_stat_card.html" with label=kpi.label value=kpi.value note=kpi.note spark=kpi.spark %}
+        {% endfor %}
     </section>
 
-    <section class="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div class="flex flex-col gap-4 lg:col-span-2">
-            <div class="card bg-base-200">
-                <div class="card-body gap-2">
-                    <h2 class="card-title">{% translate "Requests over time" %}</h2>
-                    <div id="usage-chart" style="height: 220px;"></div>
+    <section class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div class="card bg-base-200 lg:col-span-2" data-metric-scope>
+            <div class="card-body gap-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <h2 class="card-title">{% for metric, title, top, bars in charts.metrics %}<span data-metric="{{ metric }}">{{ title }}</span>{% endfor %}</h2>
+                    <div class="flex flex-wrap items-center gap-4">
+                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" data-metric="tokens">
+                            {% include "management/_token_legend.html" %}
+                        </div>
+                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" data-metric="requests">
+                            <span class="flex items-center gap-2"><span class="sw i"></span>{% translate "OK" %}</span>
+                            <span class="flex items-center gap-2 whitespace-nowrap"><span class="sw r"></span>{% translate "Rate-limited" %}</span>
+                            <span class="flex items-center gap-2 whitespace-nowrap"><span class="sw f"></span>{% translate "Failed" %}</span>
+                        </div>
+                        <div class="join" role="radiogroup" aria-label="{% translate 'Chart metric' %}">
+                            <input type="radio" name="metric" value="tokens" class="btn btn-sm join-item" aria-label="{% translate 'Tokens' %}" checked>
+                            <input type="radio" name="metric" value="requests" class="btn btn-sm join-item" aria-label="{% translate 'Requests' %}">
+                        </div>
+                        <script>try { const kept = document.currentScript.previousElementSibling.querySelector(`[value="${sessionStorage.getItem('metric')}"]`); if (kept) kept.checked = true; } catch { }</script>
+                    </div>
                 </div>
-            </div>
-            <div class="card bg-base-200">
-                <div class="card-body gap-2">
-                    <h2 class="card-title">{% translate "Requests by model" %}</h2>
-                    <div id="model-bar-chart" style="height: 150px;"></div>
-                </div>
+                {% if not totals.requests %}
+                    <p class="muted flex h-72 items-center justify-center text-sm">{% translate "No requests in this time frame." %}</p>
+                {% else %}
+                    {% for metric, title, top, bars in charts.metrics %}
+                        <div class="chart-plot" data-metric="{{ metric }}">
+                            <span class="chart-top muted text-xs tabular-nums">{{ top }}</span>
+                            <div class="flex h-72 gap-px sm:gap-1">
+                                {% for bar in bars %}
+                                    <div class="aq-tip-host chart-col flex min-w-0 flex-1 flex-col items-center" role="img" aria-label="{{ bar.heading }}: {{ bar.text }}">
+                                        <div class="vbar w-full max-w-10 flex-1" style="--bar: {{ bar.height|unlocalize }}%">
+                                            {% for css, height in bar.segments %}<i class="{{ css }}" style="height: {{ height|unlocalize }}%"></i>{% endfor %}
+                                            {% include "management/_tip.html" with heading=bar.heading total=bar.text parts=bar.parts %}
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                            <div class="mt-2 grid h-4 gap-px sm:gap-1" style="grid-template-columns: repeat({{ charts.columns }}, minmax(0, 1fr))" aria-hidden="true">
+                                {% for tick in charts.axis %}
+                                    <span class="muted whitespace-nowrap text-xs" style="grid-column: {{ tick.column }} / span {{ tick.span }}; padding-left: calc(50% / {{ tick.span }})"><span class="inline-block -translate-x-1/2">{{ tick.label }}</span></span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
             </div>
         </div>
 
-        <div class="card bg-base-200 lg:col-span-3">
-            <div class="card-body table-card gap-2">
-                <div class="card-head flex flex-wrap items-center justify-between gap-3">
-                    <h2 class="card-title">{% if selected_token %}{% translate "Requests by user ID" %}{% elif selected_org %}{% translate "Requests by API key" %}{% else %}{% translate "Requests by organization" %}{% endif %}</h2>
-                    {% if selected_token %}
-                        <a href="?org={{ selected_org.id }}&span={{ selected_span }}" class="link-plain text-sm">{% translate "Show all keys" %}</a>
-                    {% elif selected_org and is_global_admin %}
-                        <a href="?org=all&span={{ selected_span }}" class="link-plain text-sm">{% translate "Show all organizations" %}</a>
-                    {% endif %}
+        <div class="card bg-base-200">
+            <div class="card-body gap-4">
+                <div class="flex items-center justify-between gap-3">
+                    <h2 class="card-title">{% translate "Status" %}</h2>
+                    <a class="link-plain text-sm" href="{{ log_url }}">{% translate "Requests" %}</a>
                 </div>
-                <div class="max-h-[600px] overflow-auto">
-                    <table class="table table-sm">
-                        <thead>
-                        <tr>
-                            <th>{% if selected_token %}{% translate "User ID" %}{% elif selected_org %}{% translate "API key" %}{% else %}{% translate "Organization" %}{% endif %}</th>
-                            <th class="text-right">{% translate "Requests" %}</th>
-                            <th class="text-right">{% translate "Input" %}</th>
-                            <th class="text-right">{% translate "Output" %}</th>
-                            <th class="text-right">{% translate "Total" %}</th>
-                            {% if selected_org and not selected_token %}<th class="max-lg:hidden">{% translate "Owner" %}</th>{% endif %}
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {% for item in top_items %}
-                            <tr>
-                                <td class="max-w-64">
-                                    {% if selected_token %}
-                                        <span class="break-all">{{ item.user_id|default:"N/A" }}</span>
-                                    {% elif selected_org %}
-                                        {% if item.user_is_token_owner %}
-                                            <a href="?org={{ selected_org.id }}&span={{ selected_span }}&token={{ item.token_id }}" class="link-plain font-mono">{{ item.service_account_name|default:item.name|default:"N/A" }}</a>
-                                        {% else %}
-                                            <span class="font-mono">{{ item.service_account_name|default:item.name|default:"N/A" }}</span>
-                                        {% endif %}
-                                        {% if item.service_account_name %}<div class="muted text-xs">{% translate "Service account" %}</div>{% endif %}
-                                    {% else %}
-                                        <a href="?org={{ item.org_id }}&span={{ selected_span }}" class="link-plain">{{ item.name|default:"N/A" }}</a>
-                                    {% endif %}
-                                </td>
-                                <td class="text-right">{{ item.count|intcomma }}</td>
-                                <td class="text-right">{{ item.input_sum|intcomma }}{% if item.cached_input_percent != None %}<div class="muted text-xs">{% blocktranslate with percent=item.cached_input_percent|floatformat %}{{ percent }}% cached{% endblocktranslate %}</div>{% endif %}</td>
-                                <td class="text-right">{{ item.output_sum|intcomma }}{% if item.reasoning_percent != None %}<div class="muted text-xs">{% blocktranslate with percent=item.reasoning_percent|floatformat %}{{ percent }}% reasoning{% endblocktranslate %}</div>{% endif %}</td>
-                                <td class="text-right">{{ item.total_sum|intcomma }}</td>
-                                {% if selected_org and not selected_token %}<td class="muted max-w-48 truncate max-lg:hidden">{{ item.user_email }}</td>{% endif %}
-                            </tr>
-                        {% empty %}
-                            <tr><td colspan="6" class="muted">{% translate "No data available." %}</td></tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
+                <div class="flex h-3 gap-0.5 overflow-hidden rounded-full bg-base-300">
+                    {% for row in statuses %}{% if row.count %}<div class="{{ row.tone }} min-w-1 bg-current" style="flex: {{ row.count|unlocalize }} 1 0%"></div>{% endif %}{% endfor %}
                 </div>
+                <ul class="-mx-2 flex flex-col">
+                    {% for row in statuses %}
+                        <li class="border-t border-base-300">
+                            <a class="hover-row flex items-center gap-3 rounded-lg px-2 py-2.5 text-sm" href="{{ row.url }}">
+                                <span class="{{ row.tone }}">{% icon row.icon %}</span>
+                                <span class="flex flex-col leading-tight"><span class="font-medium">{{ row.label }}</span><span class="muted text-xs">{{ row.codes }}</span></span>
+                                <span class="ml-auto tabular-nums">{{ row.count|intcomma }}</span>
+                                <span class="muted w-12 text-right text-xs tabular-nums">{{ row.share }}</span>
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+                <p class="muted text-sm">{% translate "Rate-limited counts 429s from the model provider. Requests the gateway stops at a limit are not logged." %}</p>
             </div>
         </div>
     </section>
 
     <section class="card bg-base-200" aria-labelledby="per-model-title">
         <div class="card-body table-card gap-2">
-            <h2 id="per-model-title" class="card-head card-title">{% translate "Usage by model" %}</h2>
-            <div class="overflow-x-auto">
-                <table class="table table-sm">
+            <div class="card-head flex flex-wrap items-center justify-between gap-3">
+                <h2 id="per-model-title" class="card-title">{% translate "By model" %}</h2>
+                <div class="hidden items-center gap-4 text-sm md:flex">{% include "management/_token_legend.html" %}</div>
+            </div>
+            <div class="aq-scroll-x">
+                <table class="table usage-table by-model">
+                    <colgroup><col><col class="c-bar"><col class="c-input"><col class="c-cached"><col class="c-output"><col class="c-requests"><col class="c-failed"><col class="c-median"><col class="c-share"></colgroup>
                     <thead>
                         <tr>
-                            <th>{% translate "Model" %}</th>
-                            <th class="text-right">{% translate "Requests" %}</th>
-                            <th class="text-right">{% translate "Input tokens" %}</th>
-                            <th class="text-right">{% translate "Output tokens" %}</th>
-                            <th class="max-sm:hidden"><span class="sr-only">{% translate "Share of requests" %}</span></th>
+                            <th>{% translate "Model" %}</th><th class="hidden min-[90rem]:table-cell">{% translate "Tokens" %}</th>
+                            <th class="text-right">{% translate "Input tokens" %}</th><th class="text-right">{% translate "From cache" %}</th><th class="text-right">{% translate "Output tokens" %}</th>
+                            <th class="text-right">{% translate "Requests" %}</th><th class="text-right">{% translate "Failed" %}</th>
+                            <th class="text-right">{% translate "Avg. time" %}</th><th class="text-right">{% translate "Share" %}</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for row in per_model %}{% if row.count %}
+                        {% for row in per_model %}
                             <tr>
-                                <td class="max-w-64 truncate font-mono" title="{{ row.model }}">{{ row.model|default:"N/A" }}</td>
-                                <td class="text-right tabular-nums">{{ row.count|intcomma }}</td>
-                                <td class="text-right tabular-nums">{{ row.input_sum|intcomma }}</td>
-                                <td class="text-right tabular-nums">{{ row.output_sum|intcomma }}</td>
-                                <td class="w-1/4 max-sm:hidden"><div class="h-1.5 rounded-full bg-(--viz-track)"><div class="h-full rounded-full bg-(--viz-in)" style="width: {% widthratio row.count total_requests 100 %}%"></div></div></td>
+                                <td>
+                                    <a class="link-plain row-link block truncate font-mono" href="{{ row.log_url }}" title="{{ row.model }}" aria-label="{% blocktranslate with name=row.model %}{{ name }}, open its requests in the request log{% endblocktranslate %}">{{ row.model }}</a>
+                                    <div class="muted truncate text-xs">{% include "management/_model_mode.html" with mode=row.mode %}</div>
+                                </td>
+                                {% include "management/_token_bar.html" with busiest=models_busiest %}
+                                {% include "management/_usage_cells.html" %}
+                                <td class="whitespace-nowrap text-right tabular-nums">{{ row.avg_ms|duration }}</td>
+                                <td class="muted text-right tabular-nums">{% if row.tokens %}{{ row.tokens|percent:totals.tokens }}{% else %}—{% endif %}</td>
                             </tr>
-                        {% endif %}{% endfor %}
-                        {% if not total_requests %}<tr><td colspan="5" class="muted">{% translate "No data available." %}</td></tr>{% endif %}
+                        {% empty %}
+                            <tr><td colspan="9" class="muted">{% translate "No requests in this time frame." %}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="card bg-base-200" aria-labelledby="top-items-title">
+        <div class="card-body table-card gap-2">
+            <div class="card-head flex flex-wrap items-baseline justify-between gap-2">
+                <h2 id="top-items-title" class="card-title">{% if not selected_org %}{% translate "By organization" %}{% elif selected_token %}{% translate "By user ID" %}{% else %}{% translate "Top keys" %}{% endif %}</h2>
+                {% if more_items %}<a class="link-plain text-sm" href="{% querystring rows='all' %}">{% translate "Show all" %}</a>{% endif %}
+            </div>
+            <div class="aq-scroll-x">
+                <table class="table usage-table">
+                    <colgroup><col><col class="c-bar"><col class="c-input"><col class="c-cached"><col class="c-output"><col class="c-requests"><col class="c-failed"><col class="c-share"></colgroup>
+                    <thead>
+                        <tr>
+                            <th>{% if not selected_org %}{% translate "Organization" %}{% elif selected_token %}{% translate "User ID" %}{% else %}{% translate "Key" %}{% endif %}</th><th class="hidden min-[90rem]:table-cell">{% translate "Tokens" %}</th>
+                            <th class="text-right">{% translate "Input tokens" %}</th><th class="text-right">{% translate "From cache" %}</th><th class="text-right">{% translate "Output tokens" %}</th>
+                            <th class="text-right">{% translate "Requests" %}</th><th class="text-right">{% translate "Failed" %}</th><th class="text-right">{% translate "Share" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in top_items %}
+                            <tr>
+                                <td>
+                                    {% if not selected_org %}
+                                        <a class="link-plain row-link block truncate" href="{% querystring org=row.org_id token=None rows=None %}" title="{{ row.name }}">{{ row.name|default:_("No organization") }}</a>
+                                    {% elif selected_token %}
+                                        <div class="truncate font-mono" title="{{ row.user_id }}">{{ row.user_id|default:_("Not sent") }}</div>
+                                    {% else %}
+                                        {% if row.token_id in openable %}<a class="link-plain row-link block truncate font-mono" href="{% url 'token_detail' row.token_id %}" title="{{ row.name }}">{{ row.name }}</a>{% else %}<div class="truncate font-mono" title="{{ row.name }}">{{ row.name }}</div>{% endif %}
+                                        <div class="muted truncate text-xs">{% if row.service_account_name %}{% blocktranslate with team=row.team_name %}Service account · {{ team }}{% endblocktranslate %}{% elif row.owner_id == user.id %}{% translate "You" %}{% else %}{{ row.user_email }}{% endif %}</div>
+                                    {% endif %}
+                                </td>
+                                {% include "management/_token_bar.html" with busiest=items_busiest %}
+                                {% include "management/_usage_cells.html" %}
+                                <td class="muted text-right tabular-nums">{% if row.tokens %}{{ row.tokens|percent:totals.tokens }}{% else %}—{% endif %}</td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="8" class="muted">{% translate "No requests in this time frame." %}</td></tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>
@@ -162,13 +230,6 @@
     </section>
 
     <script>
-        const timeseries = JSON.parse("{{ timeseries|escapejs }}");
-        const perModel = JSON.parse("{{ per_model_json|escapejs }}");
-        const chartHeight = perModel.length * 30 + 20;
-        document.getElementById("model-bar-chart").style.height = `${chartHeight}px`;
-        const selectedSpan = "{{ selected_span }}";
-        const color = window.getComputedStyle(document.body).getPropertyValue('--color-primary');
-
         // ── Custom range helpers ───────────────────────────────────────
         // All input values are interpreted as UTC (server is UTC-naive).
         const startEl = document.getElementById("custom-start");
@@ -265,47 +326,16 @@
             window.location.search = params.toString();
         }
 
-        function onOrgChange() {
-            const sel = document.getElementById("org-select");
-            const val = sel.value;
-            const params = new URLSearchParams(window.location.search);
-            if (val === "all") {
-                params.set("org", "all");
-                params.delete("token");
-            } else {
-                params.set("org", val);
-            }
-            window.location.search = params.toString();
-        }
-
-        function onSpanChange(span) {
-            const params = new URLSearchParams(window.location.search);
-            params.set("span", span);
-            params.delete("start");
-            params.delete("end");
-            window.location.search = params.toString();
-        }
-
         document.addEventListener("DOMContentLoaded", () => {
-            // span-tabs click handler
-            document.querySelectorAll("#span-tabs .tab").forEach((tab) => {
-                tab.addEventListener("click", () => {
-                    document
-                        .querySelectorAll("#span-tabs .tab")
-                        .forEach((t) => t.classList.remove("tab-active", "btn-primary"));
-                    tab.classList.add("tab-active", "btn-primary");
-                    if (tab.dataset.span === "custom") {
-                        // Reveal the custom-range controls without navigating.
-                        customRangeEl.classList.remove("hidden");
-                        if (startEl.value || endEl.value) {
-                            applyBtn?.focus();
-                        } else {
-                            startEl.focus();
-                        }
-                    } else {
-                        onSpanChange(tab.dataset.span);
-                    }
-                });
+            // The Custom tab shows the range inputs without navigating.
+            document.getElementById("custom-toggle").addEventListener("click", (event) => {
+                customRangeEl.classList.remove("hidden");
+                event.currentTarget.setAttribute("aria-expanded", "true");
+                if (startEl.value || endEl.value) {
+                    applyBtn?.focus();
+                } else {
+                    startEl.focus();
+                }
             });
 
             // custom range apply button
@@ -340,68 +370,6 @@
 
             // Initial validation in case the server already flagged an error.
             validateCustomRange();
-
-            // initialize ECharts for the selected time span
-            const chart = echarts.init(document.getElementById("usage-chart"), null, {renderer: "svg"});
-            chart.setOption({
-                useUTC: selectedSpan === '1w' || selectedSpan === '1m' || selectedSpan === 'custom',
-                tooltip: {trigger: "axis"},
-                xAxis: {
-                    type: "time",
-                    min: timeseries.length > 0 ? timeseries[0][0] : undefined,
-                    max: timeseries.length > 0 ? timeseries[timeseries.length - 1][0] : undefined
-                },
-                yAxis: {type: "value"},
-                series: [
-                    {
-                        name: selectedSpan,
-                        type: "bar",
-                        data: timeseries,
-                        showSymbol: false,
-                        itemStyle: {
-                            color: color,
-                        },
-                        emphasis: {itemStyle: {color: 'inherit'}, areaStyle: {color: 'inherit'}},
-                    },
-                ],
-            });
-
-            // --- Requests by Model bar chart ---
-            const modelBarChart = echarts.init(
-                document.getElementById("model-bar-chart"),
-                null,
-                {renderer: "svg"},
-            );
-
-            // Prepare data
-            const modelNames = perModel.map((x) => x.model ?? "(none)");
-            const modelCounts = perModel.map((x) => x.count);
-
-            modelBarChart.setOption({
-                tooltip: {trigger: "axis"},
-                xAxis: {type: "value"},
-                yAxis: {
-                    type: "category",
-                    data: modelNames,
-                    inverse: true,
-                },
-                series: [
-                    {
-                        type: "bar",
-                        data: modelCounts,
-                        itemStyle: {
-                            color: color,
-                        },
-                        // https://github.com/apache/echarts/issues/20757
-                        emphasis: {itemStyle: {color: 'inherit'}, areaStyle: {color: 'inherit'}},
-                    },
-                ],
-            });
-
-            window.addEventListener('resize', function () {
-                chart.resize();
-                modelBarChart.resize();
-            });
         });
     </script>
 {% endblock %}

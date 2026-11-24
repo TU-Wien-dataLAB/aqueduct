@@ -92,18 +92,30 @@ class RequestLogExtrasTest(RoleWorld):
         return [request.path for request in self.page(**params).context["requests"]]
 
     def test_status_tabs_count_the_other_filters(self):
+        counts = self.page().context["counts"]
         self.assertEqual(
-            self.page().context["counts"], {"all": 4, "ok": 2, "rate_limited": 1, "failed": 1}
+            counts,
+            {"all": 4, "ok": 2, "rate_limited": 1, "failed": 1}
+            | {"client_error": 0, "server_error": 1},
         )
         counts = self.page(model="gpt-4.1-nano", status="ok").context["counts"]
-        self.assertEqual(counts, {"all": 2, "ok": 1, "rate_limited": 1, "failed": 0})
+        self.assertEqual(
+            counts,
+            {"all": 2, "ok": 1, "rate_limited": 1, "failed": 0}
+            | {"client_error": 0, "server_error": 0},
+        )
         self.assertContains(self.page(status="failed"), 'aria-current="page">Failed')
 
     def test_filters_by_model_and_time(self):
         self.assertEqual(self.paths(model="text-embedding-ada-002"), ["/v1/embeddings"])
         self.assertEqual(len(self.paths(span="1h")), 2)
         self.assertEqual(len(self.paths(span="1d")), 3)
+        self.assertEqual(len(self.paths(span="30d")), 4)
         self.assertEqual(len(self.paths(span="forever")), 4)
+
+    def test_filters_by_client_and_server_errors_for_the_usage_page(self):
+        self.assertEqual(self.paths(status="server_error"), ["/v1/audio/speech"])
+        self.assertEqual(self.paths(status="client_error"), [])
 
     def test_text_search_looks_at_model_and_path_only(self):
         self.assertEqual(self.paths(q="EMBED"), ["/v1/embeddings"])

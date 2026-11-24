@@ -116,7 +116,7 @@
                                                 <form method="post">
                                                     {% csrf_token %}
                                                     <input type="hidden" name="user_profile_to_remove_id" value="{{ member.profile.id }}">
-                                                    <button type="submit" class="btn btn-ghost btn-sm text-error" {% confirm remove_question remove_detail remove_action %}>{{ remove_action }}</button>
+                                                    <button type="submit" class="btn btn-ghost btn-sm st-err" {% confirm remove_question remove_detail remove_action %}>{{ remove_action }}</button>
                                                 </form>
                                             {% else %}
                                                 <button type="button" class="btn btn-ghost btn-sm" disabled title="{% translate 'Owns service accounts in this team. Transfer or delete them first.' %}">{% translate "Remove" %}</button>

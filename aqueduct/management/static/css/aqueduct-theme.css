@@ -72,6 +72,10 @@
 
 [data-scheme] {
   --aq-band-content: var(--paper);
+  /* The primary, success and error colors as text. A theme whose colors are fills, too light to read, darkens these. */
+  --aq-link: var(--color-primary);
+  --aq-ok: var(--color-success);
+  --aq-err: var(--color-error);
   --aq-hover: color-mix(in oklab, var(--color-base-content) 10%, transparent);
   --radius-selector: 1rem;
   --radius-field: 0.5rem;
@@ -100,6 +104,7 @@ body { font-variant-numeric: tabular-nums; }
 .btn-xs { --fontsize: .75rem; }
 
 .btn:not(.btn-square) { --radius-field: var(--aq-btn-radius); }
+.btn-outline.btn-primary { --btn-rest-fg: var(--aq-link); --btn-border: var(--aq-link); }
 .card { box-shadow: none; }
 /* A button group marks its choice with a tint of the primary color, as the sidebar marks the current page; a solid
    primary button is an action. */
@@ -112,9 +117,9 @@ body { font-variant-numeric: tabular-nums; }
 .card-title { --cardtitle-fs: 1.25rem; line-height: 1.75rem; }
 .input > input { text-overflow: ellipsis; }
 .input:has(> a) > input::-webkit-search-cancel-button { appearance: none; }
-.section-label { font: 600 12px/1.3 var(--font-sans); color: var(--color-primary); }
+.section-label { font: 600 12px/1.3 var(--font-sans); color: var(--aq-link); }
 .muted { color: var(--aq-muted); }
-:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 2px; }
+:focus-visible { outline: 3px solid var(--aq-link); outline-offset: 2px; }
 .aq-ic { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .aq-ic.sm { width: 16px; height: 16px; }
 
@@ -131,12 +136,12 @@ body { font-variant-numeric: tabular-nums; }
   .aq-org-switch > label { padding: .625rem; }
   .aq-org-switch > label .aq-ic { width: 20px; height: 20px; }
   .aq-org-switch > select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-  .aq-org-switch:has(> select:focus-visible) { outline: 3px solid var(--color-primary); outline-offset: 2px; }
+  .aq-org-switch:has(> select:focus-visible) { outline: 3px solid var(--aq-link); outline-offset: 2px; }
 }
 .aq-rail-tip { position: fixed; z-index: 60; translate: 0 -50%; padding: .25rem .625rem; border-radius: var(--radius-field); pointer-events: none; white-space: nowrap;
   background: var(--color-neutral); color: var(--color-neutral-content); font: 500 14px/1.3 var(--font-sans); }
 
-.st-ok { color: var(--color-success); } .st-warn { color: var(--aq-warn); } .st-err { color: var(--color-error); } .st-off { color: var(--aq-muted); }
+.st-ok { color: var(--aq-ok); } .st-warn { color: var(--aq-warn); } .st-err { color: var(--aq-err); } .st-off { color: var(--aq-muted); }
 
 .aq-band { background: var(--aq-band); color: var(--aq-band-content); }
 .aq-band .muted { color: var(--aq-band-muted); }
@@ -149,7 +154,7 @@ body { font-variant-numeric: tabular-nums; }
 
 html[data-scheme="light"] .only-dark, html[data-scheme="dark"] .only-light { display: none !important; }
 
-.menu { --menu-active-bg: color-mix(in oklab, var(--color-primary) 12%, transparent); --menu-active-fg: var(--color-primary); }
+.menu { --menu-active-bg: color-mix(in oklab, var(--color-primary) 12%, transparent); --menu-active-fg: var(--aq-link); }
 .menu :where(li) > a.menu-active { font-weight: 600; }
 .menu :where(li) > a { min-height: 2.75rem; align-content: center; align-items: center; font-weight: 500; }
 
@@ -160,7 +165,7 @@ html[data-scheme="light"] .only-dark, html[data-scheme="dark"] .only-light { dis
 tr:has(.row-link) { position: relative; }
 a.row-link::after { content: ""; position: absolute; inset: 0; }
 a.row-link:focus-visible { outline: none; }
-a.row-link:focus-visible::after { outline: 3px solid var(--color-primary); outline-offset: -3px; }
+a.row-link:focus-visible::after { outline: 3px solid var(--aq-link); outline-offset: -3px; }
 
 .table th { font: 600 12px/1.3 var(--font-sans); color: var(--aq-muted); }
 .table td { font-size: .875rem; }
@@ -204,7 +209,7 @@ a.row-link:focus-visible::after { outline: 3px solid var(--color-primary); outli
   font: 400 14px/1 var(--font-mono); }
 .copy-field > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-a.link-plain { color: var(--color-primary); font-weight: 600; text-decoration: none; }
+a.link-plain { color: var(--aq-link); font-weight: 600; text-decoration: none; }
 a.link-plain:hover { text-decoration: underline; }
 
 .pbar { display: flex; gap: 2px; height: 8px; overflow: hidden; border-radius: 9999px; background: var(--viz-track); }
@@ -248,7 +253,7 @@ a.link-plain:hover { text-decoration: underline; }
 
 
 /* A choice on the Settings page's Appearance card (_theme_option.html); the outline keeps a preview off a page of its color. */
-.theme-option:has(:checked) { border-color: var(--color-primary); }
+.theme-option:has(:checked) { border-color: var(--aq-link); }
 .theme-option-previews { outline: 1px solid var(--color-base-300); }
 /* A theme in small (_theme_preview.html): its page, a card with a line of text and a button, and its accent. */
 .theme-preview { position: relative; display: flex; align-items: flex-end; height: 4.5rem; padding: .5rem;

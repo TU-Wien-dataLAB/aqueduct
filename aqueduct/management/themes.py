@@ -1,4 +1,5 @@
-"""Themes an operator adds as CSS files in THEMES_DIR, beside the built-in light and dark ones.
+"""Themes beside light and dark: the built-in ones in builtin_themes/, then an operator's in
+THEMES_DIR, which replace a built-in theme of the same name.
 
 A file `<id>.css` holds one `[data-theme="<id>"]` rule that declares `color-scheme: light` or
 `dark`. The page starts from that scheme's variables, so the rule sets only the colors and radii
@@ -17,6 +18,7 @@ from django.conf import settings
 log = logging.getLogger("aqueduct")
 
 BUILT_IN = ("system", "light", "dark")
+BUILTIN_THEMES_DIR = Path(__file__).resolve().parent / "builtin_themes"
 _ID = re.compile(r"[A-Za-z0-9_-]+")
 _SCHEME = re.compile(r"color-scheme\s*:\s*(light|dark)\b")
 
@@ -31,14 +33,15 @@ class Theme:
 
 def custom_themes() -> tuple[Theme, ...]:
     directory = getattr(settings, "THEMES_DIR", None)
-    return _load(str(directory)) if directory else ()
+    themes = _load(str(BUILTIN_THEMES_DIR)) + (_load(str(directory)) if directory else ())
+    return tuple({theme.id: theme for theme in themes}.values())
 
 
 @functools.cache
 def _load(directory: str) -> tuple[Theme, ...]:
     path = Path(directory)
     if not path.is_dir():
-        log.error("THEMES_DIR %s is not a directory; no custom themes loaded.", directory)
+        log.error("Theme directory %s is not a directory; no themes loaded from it.", directory)
         return ()
     themes = []
     for file in sorted(path.glob("*.css")):
@@ -55,6 +58,7 @@ def _load(directory: str) -> tuple[Theme, ...]:
             problem = "it contains </, which would end the page's <style> element"
         else:
             label = re.sub(r"[-_]+", " ", theme_id)
+            label = label[:1].upper() + label[1:]
             themes.append(Theme(id=theme_id, label=label, scheme=scheme[1], css=css))
             continue
         log.error("Theme %s left out: %s.", file, problem)

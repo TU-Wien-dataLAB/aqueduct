@@ -27,7 +27,11 @@ class UserBatchesView(BaseAqueductView, TemplateView):
         context = super().get_context_data(**kwargs)
         profile = self.profile
 
-        batches = Batch.objects.filter(token__in=profile.my_tokens()).order_by("-created_at")
+        batches = (
+            Batch.objects.filter(token__in=profile.my_tokens())
+            .select_related("input_file", "output_file", "error_file")
+            .order_by("-created_at")
+        )
 
         # Convert Unix timestamp to datetime for template date filter
         for b in batches:

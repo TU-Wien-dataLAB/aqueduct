@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from management.models import Request, Team
-from management.tests.helpers import RoleWorld
+from management.tests.helpers import RoleWorld, make_user
 
 
 class TeamsListTest(RoleWorld):
@@ -78,6 +78,21 @@ class TeamPageTest(RoleWorld):
             reverse("team", args=[self.team.id]), {"user_profile_to_add_id": self.solo.profile.id}
         )
         self.assertTrue(self.team.member_profiles.filter(pk=self.solo.profile.pk).exists())
+
+    def test_reads_the_people_without_a_query_per_person(self):
+        client = self.as_user(self.org_admin)
+        client.get(reverse("team", args=[self.team.id]))
+        for name in ("", "newcomer", "latecomer"):
+            if name:  # Each one more person to add to the team.
+                make_user(name, self.org)
+            with self.subTest(newcomer=name), self.assertNumQueries(22):
+                page = self.page(self.org_admin)
+        self.assertContains(page, "latecomer@example.com")
+        self.assertContains(page, "member@example.com")
+        # Without an order the rows would come in whatever order the query plan reads them.
+        members = [badge["profile"].pk for badge in page.context["member_badges"]]
+        candidates = [profile.pk for profile in page.context["available_profiles"]]
+        self.assertEqual((members, candidates), (sorted(members), sorted(candidates)))
 
     def test_limits_show_the_team_and_the_org_default(self):
         self.org.requests_per_minute = 1000

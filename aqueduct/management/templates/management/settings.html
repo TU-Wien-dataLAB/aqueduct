@@ -38,15 +38,19 @@
                 <h2 id="appearance-title" class="card-title">{% translate "Appearance" %}</h2>
                 <p class="muted text-sm">{% translate "Saved in this browser." %}</p>
             </div>
-            <fieldset class="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3">
-                <legend class="sr-only">{% translate "Theme" %}</legend>
-                {% translate "System" as label %}{% include "management/_theme_option.html" with id="system" label=label scheme="" %}
-                {% translate "Light" as label %}{% include "management/_theme_option.html" with id="light" label=label scheme="light" %}
-                {% translate "Dark" as label %}{% include "management/_theme_option.html" with id="dark" label=label scheme="dark" %}
-                {% for theme in custom_themes %}
-                    {% include "management/_theme_option.html" with id=theme.id label=theme.label scheme=theme.scheme %}
-                {% endfor %}
+            <fieldset class="flex flex-col gap-2">
+                <legend class="section-label mb-2">{% translate "Mode" %}</legend>
+                <div class="join">
+                    <input type="radio" name="mode" value="system" class="btn btn-sm join-item" aria-label="{% translate 'System' %}" data-appearance checked>
+                    <input type="radio" name="mode" value="light" class="btn btn-sm join-item" aria-label="{% translate 'Light' %}" data-appearance>
+                    <input type="radio" name="mode" value="dark" class="btn btn-sm join-item" aria-label="{% translate 'Dark' %}" data-appearance>
+                </div>
+                <p class="muted text-xs">{% translate "System follows your device. The sun and moon button switches between your light and dark theme." %}</p>
             </fieldset>
+            {% translate "Light theme" as legend %}{% translate "Light" as label %}
+            {% include "management/_theme_scheme.html" with scheme="light" %}
+            {% translate "Dark theme" as legend %}{% translate "Dark" as label %}
+            {% include "management/_theme_scheme.html" with scheme="dark" %}
         </div>
     </section>
 

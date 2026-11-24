@@ -44,9 +44,11 @@ reactivated by reconciliation.
 
 ## Custom themes
 
-The management UI's Settings page offers System, Light and Dark, and Black, Cupcake, Night,
-Nord and Wireframe from `management/builtin_themes/`: daisyUI's themes, with a calmer primary
-color in Cupcake, Night and Nord. To offer more, set
+On the management UI's Settings page, each person picks a light theme, a dark theme, and
+whether to follow the device or stay light or dark; the sun and moon button switches between
+the two picks. Beside Light and Dark, it offers Cupcake, Nord and Wireframe as light themes
+and Black and Night as dark ones, from `management/builtin_themes/`: daisyUI's themes, with
+a calmer primary color in Cupcake, Night and Nord. To offer more, set
 `THEMES_DIR` to a directory of CSS files; in Helm, set `themes` to a map of file name to
 CSS instead. A file named like a built-in theme replaces it. The app reads the files once, so restart it after changing them; Helm
 restarts the web pods when `themes` changes.
@@ -54,8 +56,8 @@ restarts the web pods when `themes` changes.
 A file `<id>.css` becomes the theme `<id>`, labelled with its name, capitalized, with `-`
 and `_` read as spaces. The id may hold letters, digits, `-` and `_`, and cannot be `system`, `light` or
 `dark`. The file holds one `[data-theme="<id>"]` rule, without `html` in front, so the
-Settings page can preview it. The rule declares `color-scheme: light` or `dark`; the theme
-starts from that scheme's variables and sets only the ones it changes:
+Settings page can preview it. The rule declares `color-scheme: light` or `dark`, which makes it a light or dark theme;
+it starts from that scheme's variables and sets only the ones it changes:
 
 ```css
 [data-theme="tu-wien"] {

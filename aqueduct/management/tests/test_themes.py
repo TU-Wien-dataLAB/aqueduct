@@ -89,12 +89,16 @@ class ThemesDirTest(RoleWorld):
                 html=False,
             )
             settings_page = self.as_user(self.solo).get(reverse("settings"))
-        self.assertContains(settings_page, 'value="TU-Wien"')
+        self.assertContains(settings_page, 'name="light-theme" value="TU-Wien"')
         self.assertContains(settings_page, "TU Wien")
         self.assertContains(settings_page, 'data-theme="TU-Wien" data-scheme="light"')
 
-    def test_without_a_themes_dir_settings_offers_the_built_in_themes(self):
+    def test_without_a_themes_dir_settings_offers_a_mode_and_the_built_in_theme_of_each_scheme(
+        self,
+    ):
         page = self.as_user(self.solo).get(reverse("settings"))
-        for choice in ["system", "light", "dark", *(theme_id for theme_id, _ in BUILT_IN)]:
-            self.assertContains(page, f'name="theme" value="{choice}"')
+        for mode in ("system", "light", "dark"):
+            self.assertContains(page, f'name="mode" value="{mode}"')
+        for theme_id, scheme in [("light", "light"), ("dark", "dark"), *BUILT_IN]:
+            self.assertContains(page, f'name="{scheme}-theme" value="{theme_id}"')
         self.assertContains(page, '<style data-theme-id="night" data-scheme="dark">')

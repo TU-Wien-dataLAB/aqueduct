@@ -254,9 +254,8 @@ a.link-plain:hover { text-decoration: underline; }
 
 /* A choice on the Settings page's Appearance card (_theme_option.html); the outline keeps a preview off a page of its color. */
 .theme-option:has(:checked) { border-color: var(--aq-link); }
-/* The previews sit .5rem inside the option, so their corners follow its corners at that distance. */
-.theme-option-previews { border-radius: max(0rem, var(--radius-box) - .5rem); outline: 1px solid var(--color-base-300); }
-/* A theme in small (_theme_preview.html): its page, a card with a line of text and a button, and its accent. */
+/* The preview sits .5rem inside the option, so its corners follow the option's corners at that distance. */
+.theme-option-preview { border-radius: max(0rem, var(--radius-box) - .5rem); outline: 1px solid var(--color-base-300); }
 .theme-preview { position: relative; display: flex; align-items: flex-end; height: 4.5rem; padding: .5rem;
   background: var(--color-base-100); color: var(--color-base-content); }
 .theme-preview-card { display: flex; flex: 1; flex-direction: column; gap: .375rem; padding: .5rem; border-radius: var(--radius-box); background: var(--color-base-200); }

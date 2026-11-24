@@ -5,6 +5,7 @@ from django.db.models import Count, Q, QuerySet
 from django.utils import timezone
 from django.views.generic import ListView
 
+from gateway.config import get_router_config
 from management.models import Request
 from management.views.base import BaseAqueductView
 
@@ -72,12 +73,14 @@ class RequestLogView(BaseAqueductView, ListView):
 
     def get_context_data(self, **kwargs: Any) -> dict[str, object]:
         params = self.request.GET
+        # The router's models, as on the Usage page: reading them from the requests is a pass
+        # over all of them. A model gone from the router stays listed while a link selects it.
+        models = [model["model_name"] for model in get_router_config().get("model_list", [])]
+        if params.get("model") and params["model"] not in models:
+            models.append(params["model"])
         return super().get_context_data(
             keys=self.profile.visible_tokens(self.org).order_by("name"),
-            models=self.profile.visible_requests(self.org)
-            .order_by("model")
-            .values_list("model", flat=True)
-            .distinct(),
+            models=models,
             counts=self.narrowed().aggregate(
                 all=Count("id"), **{name: Count("id", filter=q) for name, q in STATUSES.items()}
             ),

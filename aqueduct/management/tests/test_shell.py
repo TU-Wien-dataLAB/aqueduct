@@ -88,13 +88,16 @@ class SidebarTest(RoleWorld):
 
 class ErrorPageTest(RoleWorld):
     def test_404_renders_in_the_shell(self):
-        with override_settings(DEBUG=False):
-            response = self.as_user(self.solo).get(
-                reverse("token_edit", args=[self.foreign_key.id])
-            )
-        self.assertEqual(response.status_code, 404)
-        self.assertContains(response, "Page not found", status_code=404)
-        self.assertContains(response, 'class="aq-sidebar', status_code=404)
+        for where, url, marked in (
+            ("in a view", reverse("token_edit", args=[self.foreign_key.id]), 1),
+            ("no URL matches", "/definitely/not/here/", 0),
+        ):
+            with self.subTest(where), override_settings(DEBUG=False):
+                response = self.as_user(self.solo).get(url)
+                self.assertEqual(response.status_code, 404)
+                self.assertContains(response, "Page not found", status_code=404)
+                self.assertContains(response, 'class="aq-sidebar', status_code=404)
+                self.assertContains(response, 'aria-current="page"', marked, status_code=404)
 
 
 class AdminHeaderTest(RoleWorld):

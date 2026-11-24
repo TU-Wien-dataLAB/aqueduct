@@ -16,9 +16,9 @@
     </form>
     {% if categories|length > 1 %}
         <nav class="join max-sm:flex-wrap" aria-label="{% translate 'Model type' %}">
-            <a class="btn btn-sm join-item{% if not category %} btn-primary{% endif %}" href="{% querystring type=None model=None %}"{% if not category %} aria-current="page"{% endif %}>{% translate "All" %}</a>
+            <a class="btn btn-sm join-item" href="{% querystring type=None model=None %}"{% if not category %} aria-current="page"{% endif %}>{% translate "All" %}</a>
             {% for key, label in categories %}
-                <a class="btn btn-sm join-item{% if key == category %} btn-primary{% endif %}" href="{% querystring type=key model=None %}"{% if key == category %} aria-current="page"{% endif %}>{{ label }}</a>
+                <a class="btn btn-sm join-item" href="{% querystring type=key model=None %}"{% if key == category %} aria-current="page"{% endif %}>{{ label }}</a>
             {% endfor %}
         </nav>
     {% endif %}

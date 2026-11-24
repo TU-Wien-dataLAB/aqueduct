@@ -1,7 +1,7 @@
 {% load ui %}{% with url_name=request.resolver_match.url_name %}{% with here=" "|add:url_name|add:" " %}
 <li>
-    <a href="{{ href }}"{% if names and here in names %} class="menu-active" aria-current="page"{% endif %} data-tip="{{ label }}">
-        {% icon icon %}<span class="rail-label">{{ label }}</span>{% if external %}{% icon "external" small=True extra_class="ml-auto rail-label" %}{% endif %}
+    <a href="{{ href }}"{% if names and here in names %} class="menu-active" aria-current="page"{% endif %}>
+        {% icon icon %}<span>{{ label }}</span>{% if external %}{% icon "external" small=True extra_class="ml-auto" %}{% endif %}
     </a>
 </li>
 {% endwith %}{% endwith %}

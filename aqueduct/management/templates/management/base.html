@@ -12,7 +12,7 @@
 </head>
 <body class="min-h-screen bg-base-100 text-base-content">
 <a href="#main" class="skip-link btn btn-primary">{% translate "Skip to content" %}</a>
-<div class="drawer lg:drawer-open">
+<div class="drawer xl:drawer-open">
     <input id="nav-drawer" type="checkbox" class="drawer-toggle">
     {% block sidebar %}{% if viewer %}
         <div class="drawer-side z-40 print:hidden">
@@ -22,7 +22,7 @@
     {% endif %}{% endblock %}
     <div class="drawer-content flex min-h-screen min-w-0 flex-col">
         {% block topbar %}{% if viewer %}
-            <div class="navbar border-b border-base-300 bg-base-100 lg:hidden print:hidden">
+            <div class="navbar border-b border-base-300 bg-base-100 xl:hidden print:hidden">
                 <label for="nav-drawer" class="btn btn-ghost btn-square" aria-label="{% translate 'Open navigation' %}">{% icon "menu" %}</label>
                 <a href="{% url 'tokens' %}" class="flex items-center gap-3 px-2">
                     <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="" class="h-8 w-8">

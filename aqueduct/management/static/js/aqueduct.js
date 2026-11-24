@@ -91,35 +91,6 @@
       try { sessionStorage.setItem('metric', event.target.value); } catch { }
     }
   });
-  // The icon rail (1024 to 1279px) names each icon in a tooltip beside it; Escape dismisses it.
-  const rail = matchMedia('(64rem <= width < 80rem)');
-  let railTip = null;
-  function hideRailTip() {
-    railTip?.remove();
-    railTip = null;
-  }
-  function showRailTip(host) {
-    hideRailTip();
-    if (!rail.matches) return;
-    const box = host.getBoundingClientRect();
-    railTip = Object.assign(document.createElement('div'), { className: 'aq-rail-tip', textContent: host.dataset.tip });
-    railTip.setAttribute('aria-hidden', 'true');
-    railTip.style.top = `${box.top + box.height / 2}px`;
-    railTip.style.left = `${box.right + 8}px`;
-    document.body.append(railTip);
-  }
-  for (const [enter, leave] of [['pointerover', 'pointerout'], ['focusin', 'focusout']]) {
-    document.addEventListener(enter, (event) => {
-      const host = event.target.closest?.('.aq-sidebar [data-tip]');
-      if (host) showRailTip(host);
-    });
-    document.addEventListener(leave, (event) => {
-      if (event.target.closest?.('.aq-sidebar [data-tip]')) hideRailTip();
-    });
-  }
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') hideRailTip();
-  });
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-autodismiss]').forEach(autodismiss);
   });

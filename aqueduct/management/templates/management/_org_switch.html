@@ -1,8 +1,8 @@
 {% load i18n ui %}
-<form method="post" action="{% url 'org_switch' %}" class="aq-org-switch flex flex-col gap-1" data-tip="{% translate 'Organization' %}: {{ view.org.name|default:viewer.org.name }}">
+<form method="post" action="{% url 'org_switch' %}" class="flex flex-col gap-1">
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ request.get_full_path }}">
-    <label for="org-switch" class="section-label muted flex items-center gap-1.5 px-3">{% icon "organization" small=True %}<span class="rail-label">{% translate "Organization" %}</span></label>
+    <label for="org-switch" class="section-label muted flex items-center gap-1.5 px-3">{% icon "organization" small=True %}<span>{% translate "Organization" %}</span></label>
     <select id="org-switch" name="org_id" class="select select-sm w-full" aria-describedby="org-switch-hint" data-autosubmit>
         {% with shown=view.org.id|default:viewer.org_id %}{% for org in viewer.administered_orgs|dictsort:"name" %}
             <option value="{{ org.id }}"{% if org.id == shown %} selected{% endif %}>{{ org.name }}</option>

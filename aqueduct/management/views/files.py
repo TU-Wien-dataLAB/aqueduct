@@ -46,8 +46,7 @@ class FileDeleteView(BaseAqueductView, View):
         file = get_object_or_404(
             FileObject.objects.filter(token__in=self.profile.manageable_tokens()), pk=kwargs["id"]
         )
-        running = ("validating", "in_progress", "finalizing")
-        if Batch.objects.filter(input_file=file, status__in=running).exists():
+        if Batch.objects.filter(input_file=file, status__in=Batch.RUNNING).exists():
             messages.error(request, f"{file.filename} feeds a running batch. Cancel it first.")
             return redirect("files")
         try:

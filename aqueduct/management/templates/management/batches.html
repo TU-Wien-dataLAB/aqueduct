@@ -35,7 +35,7 @@
                             <td class="muted whitespace-nowrap max-md:hidden">{{ batch.created_dt|date:"j M Y H:i" }}</td>
                             <td class="whitespace-nowrap max-md:hidden">{% include "management/_expires.html" with at=batch.expires_dt %}</td>
                             <td>
-                                {% if batch.token_id in manageable_token_ids and batch.status in "validating in_progress finalizing" %}
+                                {% if batch.token_id in manageable_token_ids and batch.is_running %}
                                     {% blocktranslate with id=batch.id asvar question %}Cancel batch {{ id }}?{% endblocktranslate %}
                                     {% translate "Requests that have not run yet are dropped." as detail %}{% translate "Cancel batch" as action %}
                                     <form method="post" action="{% url 'batch_cancel' batch.id %}" class="flex justify-end">

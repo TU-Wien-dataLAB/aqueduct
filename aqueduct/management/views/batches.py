@@ -8,12 +8,10 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views.generic import TemplateView, View
 
-from gateway.config import get_files_api_client
 from management.models import Batch
 from management.views.base import BaseAqueductView
 
 INPUT_FILE_ID_PREVIEW_THRESHOLD = 12
-CANCELLABLE = ("validating", "in_progress", "finalizing")
 
 log = logging.getLogger("aqueduct")
 
@@ -75,19 +73,15 @@ class BatchCancelView(BaseAqueductView, View):
     def post(self, request, *args, **kwargs) -> HttpResponse:
         batch = get_object_or_404(
             Batch.objects.filter(
-                token__in=self.profile.manageable_tokens(), status__in=CANCELLABLE
+                token__in=self.profile.manageable_tokens(), status__in=Batch.RUNNING
             ),
             pk=kwargs["id"],
         )
         try:
-            remote = async_to_sync(get_files_api_client().batches.cancel)(batch.id)
+            async_to_sync(batch.acancel_upstream)()
         except (ValueError, openai.OpenAIError):
             log.exception("Could not cancel batch %s upstream", batch.id)
             messages.error(request, f"Could not cancel batch {batch.id}. Try again later.")
             return redirect("batches")
-        batch.status = remote.status
-        batch.cancelling_at = remote.cancelling_at or batch.cancelling_at
-        batch.cancelled_at = remote.cancelled_at or batch.cancelled_at
-        batch.save(update_fields=["status", "cancelling_at", "cancelled_at"])
         messages.success(request, f"Batch {batch.id} is being cancelled.")
         return redirect("batches")

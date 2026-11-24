@@ -1,0 +1,61 @@
+"""Themes an operator adds as CSS files in THEMES_DIR, beside the built-in light and dark ones.
+
+A file `<id>.css` holds one `[data-theme="<id>"]` rule that declares `color-scheme: light` or
+`dark`. The page starts from that scheme's variables, so the rule sets only the colors and radii
+it changes. The page inlines each file, so a theme needs no collectstatic. A file that breaks a
+rule is logged and left out.
+"""
+
+import functools
+import logging
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from django.conf import settings
+
+log = logging.getLogger("aqueduct")
+
+BUILT_IN = ("system", "light", "dark")
+_ID = re.compile(r"[A-Za-z0-9_-]+")
+_SCHEME = re.compile(r"color-scheme\s*:\s*(light|dark)\b")
+
+
+@dataclass(frozen=True)
+class Theme:
+    id: str
+    label: str
+    scheme: str
+    css: str
+
+
+def custom_themes() -> tuple[Theme, ...]:
+    directory = getattr(settings, "THEMES_DIR", None)
+    return _load(str(directory)) if directory else ()
+
+
+@functools.cache
+def _load(directory: str) -> tuple[Theme, ...]:
+    path = Path(directory)
+    if not path.is_dir():
+        log.error("THEMES_DIR %s is not a directory; no custom themes loaded.", directory)
+        return ()
+    themes = []
+    for file in sorted(path.glob("*.css")):
+        theme_id = file.stem
+        css = file.read_text(encoding="utf-8")
+        scheme = _SCHEME.search(css)
+        if not _ID.fullmatch(theme_id) or theme_id in BUILT_IN:
+            problem = "its name must be letters, digits, - or _, and not system, light or dark"
+        elif not re.search(rf"\[data-theme=[\"']?{theme_id}[\"']?\]", css):
+            problem = f'it has no [data-theme="{theme_id}"] rule'
+        elif not scheme:
+            problem = "it declares no color-scheme: light or dark"
+        elif "</" in css:
+            problem = "it contains </, which would end the page's <style> element"
+        else:
+            label = re.sub(r"[-_]+", " ", theme_id)
+            themes.append(Theme(id=theme_id, label=label, scheme=scheme[1], css=css))
+            continue
+        log.error("Theme %s left out: %s.", file, problem)
+    return tuple(themes)

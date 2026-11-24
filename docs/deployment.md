@@ -42,6 +42,46 @@ running migrations does not update existing keys. Increasing or disabling the li
 does not restore previously shortened expirations; already-expired keys are never
 reactivated by reconciliation.
 
+## Custom themes
+
+The management UI's Settings page offers System, Light and Dark. To offer more, set
+`THEMES_DIR` to a directory of CSS files; in Helm, set `themes` to a map of file name to
+CSS instead. The app reads the files once, so restart it after changing them; Helm
+restarts the web pods when `themes` changes.
+
+A file `<id>.css` becomes the theme `<id>`, labelled with its name, `-` and `_` read as
+spaces. The id may hold letters, digits, `-` and `_`, and cannot be `system`, `light` or
+`dark`. The file holds one `[data-theme="<id>"]` rule, without `html` in front, so the
+Settings page can preview it. The rule declares `color-scheme: light` or `dark`; the theme
+starts from that scheme's variables and sets only the ones it changes:
+
+```css
+[data-theme="tu-wien"] {
+  color-scheme: light;
+  --color-primary: #006699;
+  --color-primary-content: #ffffff;
+  --radius-box: .25rem;
+  --radius-field: .25rem;
+  --aq-btn-radius: .25rem;
+}
+```
+
+A theme may set colors and radii:
+
+- daisyUI's colors: `--color-base-100`, `-200`, `-300` and `--color-base-content`, and
+  `--color-primary`, `secondary`, `accent`, `neutral`, `info`, `success`, `warning` and
+  `error`, each with its `-content` color.
+- Aqueduct's colors: `--aq-muted` for secondary text, `--aq-warn` for warning text,
+  `--aq-band`, `--aq-band-content`, `--aq-band-muted` and `--aq-band-link` for the
+  footer, and for the charts `--viz-in`, `--viz-track`, `--tok-cached`,
+  `--tok-new` and `--tok-out`.
+- Radii: `--radius-box` for cards, `--radius-field` for inputs and small panels,
+  `--radius-selector` for checkboxes and toggles, and `--aq-btn-radius` for buttons
+  (`9999px` by default, a pill).
+
+`management/static/css/aqueduct-theme.css` holds the light and dark values. A file that
+breaks a rule is left out and logged at `ERROR`. Each choice is kept in the viewer's browser.
+
 ## Database
 
 The chart ships one PostgreSQL backend, the **CloudNativePG cluster**

@@ -198,6 +198,16 @@ routerConfig: { }
 # MCP configuration
 mcpConfig: { }
 
+# Themes the management UI's Settings page offers beside light and dark, as file name to CSS.
+# See "Custom themes" in docs/deployment.md.
+themes: { }
+#  tu-wien.css: |
+#    [data-theme="tu-wien"] {
+#      color-scheme: light;
+#      --color-primary: #006699;
+#      --radius-box: .25rem;
+#    }
+
 # Files API configuration (external API for file upload and batch processing)
 filesApi:
   # External API URL (required) - used for both Files and Batches API

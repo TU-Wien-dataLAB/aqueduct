@@ -1,0 +1,15 @@
+{% comment %}One choice on the Settings page's Appearance card: id, label and, but for system, scheme. The preview draws with the theme's own variables.{% endcomment %}
+<label class="theme-option flex cursor-pointer flex-col gap-2 rounded-box border border-base-300 bg-base-100 p-2">
+    <span class="theme-option-previews grid grid-cols-2 overflow-hidden rounded-field" aria-hidden="true">
+        {% if scheme %}
+            {% include "management/_theme_preview.html" with theme=id scheme=scheme wide=True %}
+        {% else %}
+            {% include "management/_theme_preview.html" with theme="light" scheme="light" %}
+            {% include "management/_theme_preview.html" with theme="dark" scheme="dark" %}
+        {% endif %}
+    </span>
+    <span class="flex items-center gap-2 px-1 text-sm font-medium">
+        <input type="radio" name="theme" value="{{ id }}" class="radio radio-sm radio-primary"{% if id == "system" %} checked{% endif %}>
+        {{ label }}
+    </span>
+</label>

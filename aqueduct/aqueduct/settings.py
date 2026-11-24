@@ -173,6 +173,9 @@ EXTRA_NAV_LINKS = {
     # 'About Us': 'about_page',  # Example named URL (assuming you have url(..., name='about_page'))
 }
 
+# A directory of theme files (<id>.css) that Settings offers beside light and dark. See management/themes.py.
+THEMES_DIR = os.getenv("THEMES_DIR") or None
+
 RELAY_REQUEST_TIMEOUT = 60
 
 REQUEST_RETENTION_ENABLED = True

@@ -9,7 +9,9 @@
   --spray: #8FD6F5;
 }
 
-html[data-theme="light"] {
+/* The variables of the light and dark schemes. A theme (management/themes.py) starts from its scheme's and overrides
+   some; the Settings page draws each theme's preview with them, so they are not tied to the root. */
+[data-scheme="light"] {
   color-scheme: light;
   --color-base-100: var(--paper);
   --color-base-200: var(--foam);
@@ -39,7 +41,7 @@ html[data-theme="light"] {
   --tok-cached: #449FD6; --tok-new: #0A84C6; --tok-out: #07486B;
 }
 
-html[data-theme="dark"] {
+[data-scheme="dark"] {
   color-scheme: dark;
   --color-base-100: var(--abyss);
   --color-base-200: var(--ocean-800);
@@ -68,11 +70,13 @@ html[data-theme="dark"] {
   --tok-cached: #0A84C6; --tok-new: #6BBAE6; --tok-out: #D0EBF7;
 }
 
-html[data-theme] {
+[data-scheme] {
+  --aq-band-content: var(--paper);
   --aq-hover: color-mix(in oklab, var(--color-base-content) 10%, transparent);
   --radius-selector: 1rem;
   --radius-field: 0.5rem;
   --radius-box: 1rem;
+  --aq-btn-radius: 9999px;
   --border: 1px;
   --depth: 0;
   --noise: 0;
@@ -95,7 +99,7 @@ body { font-variant-numeric: tabular-nums; }
 /* The type scale is 30, 24, 20, 14 and 12 px; daisyUI's smallest button is 11 px. */
 .btn-xs { --fontsize: .75rem; }
 
-.btn:not(.btn-square) { --radius-field: 9999px; }
+.btn:not(.btn-square) { --radius-field: var(--aq-btn-radius); }
 .card { box-shadow: none; }
 /* A button group marks its choice with a tint of the primary color, as the sidebar marks the current page; a solid
    primary button is an action. */
@@ -129,21 +133,21 @@ body { font-variant-numeric: tabular-nums; }
   .aq-org-switch > select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
   .aq-org-switch:has(> select:focus-visible) { outline: 3px solid var(--color-primary); outline-offset: 2px; }
 }
-.aq-rail-tip { position: fixed; z-index: 60; translate: 0 -50%; padding: .25rem .625rem; border-radius: .5rem; pointer-events: none; white-space: nowrap;
+.aq-rail-tip { position: fixed; z-index: 60; translate: 0 -50%; padding: .25rem .625rem; border-radius: var(--radius-field); pointer-events: none; white-space: nowrap;
   background: var(--color-neutral); color: var(--color-neutral-content); font: 500 14px/1.3 var(--font-sans); }
 
 .st-ok { color: var(--color-success); } .st-warn { color: var(--aq-warn); } .st-err { color: var(--color-error); } .st-off { color: var(--aq-muted); }
 
-.aq-band { background: var(--aq-band); color: var(--paper); }
+.aq-band { background: var(--aq-band); color: var(--aq-band-content); }
 .aq-band .muted { color: var(--aq-band-muted); }
 .aq-band a { color: var(--aq-band-link); text-decoration: none; }
 .aq-band a:hover { text-decoration: underline; }
 .aq-band .section-label { color: var(--aq-band-link); }
 .aq-band :focus-visible { outline-color: var(--aq-band-link); }
 .aq-band .btn-ghost { color: var(--aq-band-link); }
-.aq-band .btn-ghost:hover { background: color-mix(in oklab, var(--paper) 12%, transparent); border-color: transparent; }
+.aq-band .btn-ghost:hover { background: color-mix(in oklab, var(--aq-band-content) 12%, transparent); border-color: transparent; }
 
-html[data-theme="light"] .only-dark, html[data-theme="dark"] .only-light { display: none !important; }
+html[data-scheme="light"] .only-dark, html[data-scheme="dark"] .only-light { display: none !important; }
 
 .menu { --menu-active-bg: color-mix(in oklab, var(--color-primary) 12%, transparent); --menu-active-fg: var(--color-primary); }
 .menu :where(li) > a.menu-active { font-weight: 600; }
@@ -196,7 +200,7 @@ a.row-link:focus-visible::after { outline: 3px solid var(--color-primary); outli
 @media (width >= 90rem) { .usage-table { --min: 904px; } .usage-table.by-model { --min: 1008px; } }
 
 .copy-field { display: flex; align-items: center; gap: .25rem; min-width: 0; height: 2.5rem; padding: 0 .25rem 0 .75rem;
-  border: 1px solid var(--color-base-300); border-radius: .5rem; background: var(--color-base-100);
+  border: 1px solid var(--color-base-300); border-radius: var(--radius-field); background: var(--color-base-100);
   font: 400 14px/1 var(--font-mono); }
 .copy-field > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -234,7 +238,7 @@ a.link-plain:hover { text-decoration: underline; }
 .chart-top { position: absolute; top: 0; left: 0; line-height: 1rem; }
 .aq-tip { position: absolute; z-index: 30; bottom: calc(var(--bar, 100%) + 6px); left: 50%; translate: -50% 0;
   display: none; flex-direction: column; gap: 2px; width: max-content; max-width: 16rem; padding: .5rem .75rem;
-  border-radius: .5rem; background: var(--color-neutral); color: var(--color-neutral-content);
+  border-radius: var(--radius-field); background: var(--color-neutral); color: var(--color-neutral-content);
   font: 400 14px/1.35 var(--font-sans); text-align: left; pointer-events: none; }
 .aq-tip-host:hover .aq-tip { display: flex; }
 .aq-tip-heading { font: 600 12px/1.3 var(--font-sans); opacity: .8; }
@@ -242,6 +246,17 @@ a.link-plain:hover { text-decoration: underline; }
 .aq-tip-row > b { margin-left: auto; padding-left: 1rem; font-weight: 500; }
 .aq-tip .sw { outline: 1px solid var(--color-neutral-content); }
 
+
+/* A choice on the Settings page's Appearance card (_theme_option.html); the outline keeps a preview off a page of its color. */
+.theme-option:has(:checked) { border-color: var(--color-primary); }
+.theme-option-previews { outline: 1px solid var(--color-base-300); }
+/* A theme in small (_theme_preview.html): its page, a card with a line of text and a button, and its accent. */
+.theme-preview { position: relative; display: flex; align-items: flex-end; height: 4.5rem; padding: .5rem;
+  background: var(--color-base-100); color: var(--color-base-content); }
+.theme-preview-card { display: flex; flex: 1; flex-direction: column; gap: .375rem; padding: .5rem; border-radius: var(--radius-box); background: var(--color-base-200); }
+.theme-preview-card > i { width: 70%; height: .375rem; border-radius: 9999px; background: currentColor; opacity: .5; }
+.theme-preview-card > b { width: 2.5rem; height: .875rem; border-radius: var(--aq-btn-radius); background: var(--color-primary); }
+.theme-preview-dot { position: absolute; top: .5rem; right: .5rem; width: .625rem; height: .625rem; border-radius: 9999px; background: var(--color-accent); }
 
 /* A log row's <details> toggle opens the row of details below it. */
 .row-details { display: none; }

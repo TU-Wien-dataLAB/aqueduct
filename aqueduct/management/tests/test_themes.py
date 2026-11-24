@@ -18,6 +18,7 @@ BUILT_IN = [
     ("cupcake", "light"),
     ("night", "dark"),
     ("nord", "light"),
+    ("synthwave", "dark"),
     ("wireframe", "light"),
 ]
 

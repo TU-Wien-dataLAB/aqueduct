@@ -47,8 +47,8 @@ reactivated by reconciliation.
 On the management UI's Settings page, each person picks a light theme, a dark theme, and
 whether to follow the device or stay light or dark; the sun and moon button switches between
 the two picks. Beside Light and Dark, it offers Cupcake, Nord and Wireframe as light themes
-and Black and Night as dark ones, from `management/builtin_themes/`: daisyUI's themes, with
-a calmer primary color in Cupcake, Night and Nord. To offer more, set
+and Black, Night and Synthwave as dark ones, from `management/builtin_themes/`: daisyUI's themes, with
+a calmer primary color in Cupcake, Night and Nord, and calmer colors overall in Synthwave. To offer more, set
 `THEMES_DIR` to a directory of CSS files; in Helm, set `themes` to a map of file name to
 CSS instead. A file named like a built-in theme replaces it. The app reads the files once, so restart it after changing them; Helm
 restarts the web pods when `themes` changes.

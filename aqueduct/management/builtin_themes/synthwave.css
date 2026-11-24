@@ -1,0 +1,57 @@
+/* daisyUI 5.8.2's synthwave theme, unchanged: https://cdn.jsdelivr.net/npm/daisyui@5.8.2/theme/synthwave.css
+   daisyUI is MIT licensed, Copyright (c) 2020 Pouya Saadeghi. Aqueduct's changes follow it. */
+:root:has(input.theme-controller[value=synthwave]:checked),[data-theme="synthwave"] {
+color-scheme: dark;
+--color-base-100: oklch(15% 0.09 281.288);
+--color-base-200: oklch(20% 0.09 281.288);
+--color-base-300: oklch(25% 0.09 281.288);
+--color-base-content: oklch(78% 0.115 274.713);
+--color-primary: oklch(71% 0.202 349.761);
+--color-primary-content: oklch(28% 0.109 3.907);
+--color-secondary: oklch(82% 0.111 230.318);
+--color-secondary-content: oklch(29% 0.066 243.157);
+--color-accent: oklch(75% 0.183 55.934);
+--color-accent-content: oklch(26% 0.079 36.259);
+--color-neutral: oklch(45% 0.24 277.023);
+--color-neutral-content: oklch(87% 0.065 274.039);
+--color-info: oklch(74% 0.16 232.661);
+--color-info-content: oklch(29% 0.066 243.157);
+--color-success: oklch(77% 0.152 181.912);
+--color-success-content: oklch(27% 0.046 192.524);
+--color-warning: oklch(90% 0.182 98.111);
+--color-warning-content: oklch(42% 0.095 57.708);
+--color-error: oklch(73.7% 0.121 32.639);
+--color-error-content: oklch(23.501% 0.096 290.329);
+--radius-selector: 1rem;
+--radius-field: 0.5rem;
+--radius-box: 1rem;
+--size-selector: 0.25rem;
+--size-field: 0.25rem;
+--border: 1px;
+--depth: 0;
+--noise: 0;
+}
+
+/* Aqueduct's changes: a calmer purple page, neutral and pink primary: the same hues, less saturated; and
+   Aqueduct's variables from the theme's colors. Text colors reach 4.5:1 on base-100 and base-200. */
+[data-theme="synthwave"] {
+  --color-base-100: oklch(17% 0.05 281.288);
+  --color-base-200: oklch(21% 0.05 281.288);
+  --color-base-300: oklch(26% 0.05 281.288);
+  --color-base-content: oklch(82% 0.06 274.713);
+  --color-primary: oklch(72% 0.13 349.761);
+  --color-primary-content: oklch(22% 0.05 349.761);
+  --color-neutral: oklch(38% 0.12 277.023);
+  --aq-btn-radius: var(--radius-field);
+  --aq-link: var(--color-primary);
+  --aq-muted: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
+  --aq-band: color-mix(in oklab, var(--color-base-100) 55%, black);
+  --aq-band-content: var(--color-base-content);
+  --aq-band-muted: var(--aq-muted);
+  --aq-band-link: var(--aq-link);
+  --tok-cached: color-mix(in oklab, var(--aq-link) 45%, var(--color-base-100));
+  --tok-new: color-mix(in oklab, var(--aq-link) 75%, var(--color-base-100));
+  --tok-out: var(--aq-link);
+  --viz-in: var(--tok-new);
+  --viz-track: color-mix(in oklab, var(--color-base-content) 14%, var(--color-base-100));
+}

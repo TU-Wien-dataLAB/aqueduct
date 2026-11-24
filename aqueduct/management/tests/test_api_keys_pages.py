@@ -1,6 +1,9 @@
+import re
 from datetime import datetime, time, timedelta
 
+from django.db import connection
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -85,6 +88,17 @@ class KeyListTest(RoleWorld):
             [bar["text"] for bar in page.context["tokens"][0].week],
             ["1 request", *["0 requests"] * 4, "1 request", "1 request"],
         )
+
+    def test_the_bars_read_only_the_key_and_time_of_each_request(self):
+        """Any other column keeps PostgreSQL from answering from the (token, timestamp) index."""
+        Request.objects.create(token=self.member_key)
+        for user, url in ((self.member, "tokens"), (self.org_admin, "all_keys")):
+            with self.subTest(url=url), CaptureQueriesContext(connection) as queries:
+                self.as_user(user).get(reverse(url))
+            (bars,) = [query["sql"] for query in queries if '"day6"' in query["sql"]]
+            self.assertEqual(
+                set(re.findall(r'"management_request"\."(\w+)"', bars)), {"token_id", "timestamp"}
+            )
 
 
 class KeyPageTest(RoleWorld):

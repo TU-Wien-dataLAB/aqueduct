@@ -62,9 +62,11 @@ def add_week(tokens: Iterable[Token]) -> None:
     ]
     tokens = list(tokens)
     # A row per key with a count per day, not a row per key and day: PostgreSQL then expects
-    # as few groups as there are keys and aggregates in parallel.
+    # as few groups as there are keys and aggregates in parallel. Counting the timestamp, which
+    # every request has, keeps the query to the columns of the (token, timestamp) index, so
+    # PostgreSQL can answer from the index without reading the requests.
     per_day = {
-        f"day{n}": Count("id", filter=Q(timestamp__gte=start, timestamp__lt=end))
+        f"day{n}": Count("timestamp", filter=Q(timestamp__gte=start, timestamp__lt=end))
         for n, (start, end) in enumerate(itertools.pairwise(midnights))
     }
     counts = {

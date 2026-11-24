@@ -1,6 +1,6 @@
 {% comment %}One choice on the Settings page's Appearance card: id, label and, but for system, scheme. The preview draws with the theme's own variables.{% endcomment %}
 <label class="theme-option flex cursor-pointer flex-col gap-2 rounded-box border border-base-300 bg-base-100 p-2">
-    <span class="theme-option-previews grid grid-cols-2 overflow-hidden rounded-field" aria-hidden="true">
+    <span class="theme-option-previews grid grid-cols-2 overflow-hidden" aria-hidden="true">
         {% if scheme %}
             {% include "management/_theme_preview.html" with theme=id scheme=scheme wide=True %}
         {% else %}

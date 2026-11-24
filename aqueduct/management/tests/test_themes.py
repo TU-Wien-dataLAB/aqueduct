@@ -13,7 +13,13 @@ TU_WIEN = """[data-theme="TU-Wien"] {
   --radius-box: .25rem;
 }
 """
-BUILT_IN = [("cupcake", "light"), ("night", "dark"), ("nord", "light")]
+BUILT_IN = [
+    ("black", "dark"),
+    ("cupcake", "light"),
+    ("night", "dark"),
+    ("nord", "light"),
+    ("wireframe", "light"),
+]
 
 
 def ids(themes) -> list[str]:
@@ -65,7 +71,7 @@ class ThemesDirTest(RoleWorld):
         with self.assertNoLogs("aqueduct", "ERROR"):
             themes = custom_themes()
         self.assertEqual([(theme.id, theme.scheme) for theme in themes], BUILT_IN)
-        self.assertEqual(themes[0].label, "Cupcake")
+        self.assertEqual(themes[0].label, "Black")
 
     def test_an_operator_theme_replaces_the_built_in_one_of_its_name(self):
         nord = '[data-theme="nord"] { color-scheme: dark; }'

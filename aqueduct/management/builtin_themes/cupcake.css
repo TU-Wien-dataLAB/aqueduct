@@ -1,5 +1,5 @@
 /* daisyUI 5.8.2's cupcake theme, unchanged: https://cdn.jsdelivr.net/npm/daisyui@5.8.2/theme/cupcake.css
-   daisyUI is MIT licensed, Copyright (c) 2020 Pouya Saadeghi. */
+   daisyUI is MIT licensed, Copyright (c) 2020 Pouya Saadeghi. Aqueduct's changes follow it. */
 :root:has(input.theme-controller[value=cupcake]:checked),[data-theme="cupcake"] {
 color-scheme: light;
 --color-base-100: oklch(97.788% 0.004 56.375);
@@ -32,18 +32,21 @@ color-scheme: light;
 --noise: 0;
 }
 
-/* Aqueduct's variables, from the theme's colors. Text colors reach 4.5:1 on base-100 and base-200. */
+/* Aqueduct's changes: a deeper primary, saturated but calm, that reads as text too; and Aqueduct's variables
+   from the theme's colors. Text colors reach 4.5:1 on base-100 and base-200. */
 [data-theme="cupcake"] {
+  --color-primary: oklch(45% 0.1 181.071);
+  --color-primary-content: oklch(98% 0.01 181.071);
   --aq-btn-radius: var(--radius-field);
-  --aq-link: var(--color-primary-content);
+  --aq-link: var(--color-primary);
   --aq-muted: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
   --aq-ok: color-mix(in oklab, var(--color-success) 45%, var(--color-base-content));
   --aq-warn: color-mix(in oklab, var(--color-warning) 45%, var(--color-base-content));
   --aq-err: color-mix(in oklab, var(--color-error) 65%, var(--color-base-content));
   --aq-band: var(--color-neutral);
   --aq-band-content: var(--color-neutral-content);
-  --aq-band-muted: color-mix(in oklab, var(--color-neutral-content) 75%, var(--aq-band));
-  --aq-band-link: var(--color-primary);
+  --aq-band-muted: color-mix(in oklab, var(--aq-band-content) 75%, var(--aq-band));
+  --aq-band-link: color-mix(in oklab, var(--color-primary) 40%, white);
   --tok-cached: color-mix(in oklab, var(--aq-link) 45%, var(--color-base-100));
   --tok-new: color-mix(in oklab, var(--aq-link) 75%, var(--color-base-100));
   --tok-out: color-mix(in oklab, var(--aq-link) 80%, var(--color-base-content));

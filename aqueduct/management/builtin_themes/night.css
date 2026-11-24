@@ -1,5 +1,5 @@
 /* daisyUI 5.8.2's night theme, unchanged: https://cdn.jsdelivr.net/npm/daisyui@5.8.2/theme/night.css
-   daisyUI is MIT licensed, Copyright (c) 2020 Pouya Saadeghi. */
+   daisyUI is MIT licensed, Copyright (c) 2020 Pouya Saadeghi. Aqueduct's changes follow it. */
 :root:has(input.theme-controller[value=night]:checked),[data-theme="night"] {
 color-scheme: dark;
 --color-base-100: oklch(20.768% 0.039 265.754);
@@ -32,17 +32,21 @@ color-scheme: dark;
 --noise: 0;
 }
 
-/* Aqueduct's variables, from the theme's colors. Text colors reach 4.5:1 on base-100 and base-200. */
+/* Aqueduct's changes: a calmer primary, saturated but not glowing; and Aqueduct's variables from the theme's
+   colors. Text colors reach 4.5:1 on base-100 and base-200. */
 [data-theme="night"] {
+  --color-primary: oklch(70% 0.11 232.661);
+  --color-primary-content: oklch(15.07% 0.027 232.661);
   --aq-btn-radius: var(--radius-field);
+  --aq-link: var(--color-primary);
   --aq-muted: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
   --aq-band: color-mix(in oklab, var(--color-base-100) 55%, black);
   --aq-band-content: var(--color-base-content);
   --aq-band-muted: var(--aq-muted);
-  --aq-band-link: var(--color-primary);
-  --tok-cached: color-mix(in oklab, var(--color-primary) 45%, var(--color-base-100));
-  --tok-new: color-mix(in oklab, var(--color-primary) 75%, var(--color-base-100));
-  --tok-out: var(--color-primary);
+  --aq-band-link: var(--aq-link);
+  --tok-cached: color-mix(in oklab, var(--aq-link) 45%, var(--color-base-100));
+  --tok-new: color-mix(in oklab, var(--aq-link) 75%, var(--color-base-100));
+  --tok-out: var(--aq-link);
   --viz-in: var(--tok-new);
   --viz-track: color-mix(in oklab, var(--color-base-content) 14%, var(--color-base-100));
 }

@@ -1,5 +1,5 @@
 /* daisyUI 5.8.2's nord theme, unchanged: https://cdn.jsdelivr.net/npm/daisyui@5.8.2/theme/nord.css
-   daisyUI is MIT licensed, Copyright (c) 2020 Pouya Saadeghi. */
+   daisyUI is MIT licensed, Copyright (c) 2020 Pouya Saadeghi. Aqueduct's changes follow it. */
 :root:has(input.theme-controller[value=nord]:checked),[data-theme="nord"] {
 color-scheme: light;
 --color-base-100: oklch(95.127% 0.007 260.731);
@@ -32,18 +32,21 @@ color-scheme: light;
 --noise: 0;
 }
 
-/* Aqueduct's variables, from the theme's colors. Text colors reach 4.5:1 on base-100 and base-200. */
+/* Aqueduct's changes: a deeper primary, saturated but calm, that reads as text too; and Aqueduct's variables
+   from the theme's colors. Text colors reach 4.5:1 on base-100 and base-200. */
 [data-theme="nord"] {
+  --color-primary: oklch(46% 0.09 254.027);
+  --color-primary-content: oklch(97% 0.01 254.027);
   --aq-btn-radius: var(--radius-field);
-  --aq-link: color-mix(in oklab, var(--color-primary) 55%, var(--color-base-content));
+  --aq-link: var(--color-primary);
   --aq-muted: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
   --aq-ok: color-mix(in oklab, var(--color-success) 35%, var(--color-base-content));
   --aq-warn: color-mix(in oklab, var(--color-warning) 30%, var(--color-base-content));
   --aq-err: color-mix(in oklab, var(--color-error) 65%, var(--color-base-content));
   --aq-band: color-mix(in oklab, var(--color-neutral) 70%, black);
   --aq-band-content: var(--color-neutral-content);
-  --aq-band-muted: color-mix(in oklab, var(--color-neutral-content) 75%, var(--aq-band));
-  --aq-band-link: color-mix(in oklab, var(--color-primary) 45%, white);
+  --aq-band-muted: color-mix(in oklab, var(--aq-band-content) 75%, var(--aq-band));
+  --aq-band-link: color-mix(in oklab, var(--color-primary) 40%, white);
   --tok-cached: color-mix(in oklab, var(--aq-link) 45%, var(--color-base-100));
   --tok-new: color-mix(in oklab, var(--aq-link) 75%, var(--color-base-100));
   --tok-out: color-mix(in oklab, var(--aq-link) 80%, var(--color-base-content));

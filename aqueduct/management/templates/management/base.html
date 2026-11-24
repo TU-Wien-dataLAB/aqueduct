@@ -7,6 +7,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{% translate "Aqueduct AI Gateway" %}{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{% static 'images/aqueduct.svg' %}">
     <link rel="shortcut icon" type="image/png" href="{% static 'images/Aqueduct_Icon_80x80.png' %}">
     {% include "management/_cdn.html" %}
 </head>
@@ -25,7 +26,7 @@
             <div class="navbar border-b border-base-300 bg-base-100 lg:hidden print:hidden">
                 <label for="nav-drawer" class="btn btn-ghost btn-square" aria-label="{% translate 'Open navigation' %}">{% icon "menu" %}</label>
                 <a href="{% url 'tokens' %}" class="flex items-center gap-3 px-2">
-                    <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="" class="h-8 w-8">
+                    {% include "management/_logo.html" with size="h-8 w-8" %}
                     <span class="text-xl font-semibold">{% translate "Aqueduct" %}</span>
                 </a>
             </div>

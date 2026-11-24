@@ -251,6 +251,9 @@ a.link-plain:hover { text-decoration: underline; }
 .aq-tip-row > b { margin-left: auto; padding-left: 1rem; font-weight: 500; }
 .aq-tip .sw { outline: 1px solid var(--color-neutral-content); }
 
+/* The logo (_logo.html) in the theme's primary color, with its ground in the color for text on it. */
+.aq-logo-ground { fill: var(--color-primary-content); }
+.aq-logo-mark { fill: var(--color-primary); }
 
 /* A choice on the Settings page's Appearance card (_theme_option.html); the outline keeps a preview off a page of its color. */
 .theme-option:has(:checked) { border-color: var(--aq-link); }

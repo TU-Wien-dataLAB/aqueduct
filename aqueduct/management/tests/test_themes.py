@@ -13,13 +13,7 @@ TU_WIEN = """[data-theme="TU-Wien"] {
   --radius-box: .25rem;
 }
 """
-BUILT_IN = [
-    ("cupcake", "light"),
-    ("dim", "dark"),
-    ("night", "dark"),
-    ("nord", "light"),
-    ("pastel", "light"),
-]
+BUILT_IN = [("cupcake", "light"), ("dim", "dark"), ("night", "dark"), ("nord", "light")]
 
 
 def ids(themes) -> list[str]:

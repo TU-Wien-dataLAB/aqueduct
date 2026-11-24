@@ -56,6 +56,7 @@ class UsagePageTest(RoleWorld):
         )
         self.assertEqual((row["rate_limited"], row["avg_ms"], row["mode"]), (1, 1200, "chat"))
         self.assertContains(page, '<td class="text-right tabular-nums">2K</td>', html=True)
+        self.assertContains(page, '<h2 id="per-model-title" class="card-title">By model</h2>')
         self.assertContains(
             page, '<td class="whitespace-nowrap text-right tabular-nums">1.2 s</td>'
         )

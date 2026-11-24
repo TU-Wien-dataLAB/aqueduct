@@ -1,0 +1,38 @@
+{% comment %}Each model's figures: `per_model` comes from views.usage.model_rows.{% endcomment %}
+{% load i18n ui %}<section class="card bg-base-200" aria-labelledby="per-model-title">
+    <div class="card-body table-card gap-2">
+        <div class="card-head flex flex-wrap items-center justify-between gap-3">
+            <h2 id="per-model-title" class="card-title">{{ heading|default:_("By model") }}</h2>
+            <div class="hidden items-center gap-4 text-sm md:flex">{% include "management/_token_legend.html" %}</div>
+        </div>
+        <div class="aq-scroll-x">
+            <table class="table usage-table by-model">
+                <colgroup><col><col class="c-bar"><col class="c-input"><col class="c-cached"><col class="c-output"><col class="c-requests"><col class="c-failed"><col class="c-median"><col class="c-share"></colgroup>
+                <thead>
+                    <tr>
+                        <th>{% translate "Model" %}</th><th class="hidden min-[90rem]:table-cell">{% translate "Tokens" %}</th>
+                        <th class="text-right">{% translate "Input tokens" %}</th><th class="text-right">{% translate "From cache" %}</th><th class="text-right">{% translate "Output tokens" %}</th>
+                        <th class="text-right">{% translate "Requests" %}</th><th class="text-right">{% translate "Failed" %}</th>
+                        <th class="text-right">{% translate "Avg. time" %}</th><th class="text-right">{% translate "Share" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in per_model %}
+                        <tr>
+                            <td>
+                                <a class="link-plain row-link block truncate font-mono" href="{{ row.log_url }}" title="{{ row.model }}" aria-label="{% blocktranslate with name=row.model %}{{ name }}, open its requests in the request log{% endblocktranslate %}">{{ row.model }}</a>
+                                <div class="muted truncate text-xs">{% include "management/_model_mode.html" with mode=row.mode %}</div>
+                            </td>
+                            {% include "management/_token_bar.html" with busiest=per_model.0.tokens %}
+                            {% include "management/_usage_cells.html" %}
+                            <td class="whitespace-nowrap text-right tabular-nums">{{ row.avg_ms|duration }}</td>
+                            <td class="muted text-right tabular-nums">{{ row.share }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="9" class="muted">{% translate "No requests in this time frame." %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>

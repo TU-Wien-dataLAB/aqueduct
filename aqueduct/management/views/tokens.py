@@ -8,13 +8,14 @@ from django.contrib import messages
 from django.contrib.messages import get_messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Count, Max, Q, QuerySet, Sum
-from django.db.models.functions import TruncDate
+from django.db.models import Count, Max, Q, QuerySet
+from django.db.models.functions import TruncDate, TruncDay
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.http import urlencode
 from django.views import View
 from django.views.decorators.http import require_POST
 from django.views.generic import (
@@ -31,6 +32,7 @@ from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
 from management.models import LimitSet, ServiceAccount, Token, UserProfile
 from management.views.base import BaseAqueductView
+from management.views.usage import get_all_buckets, model_rows, usage_charts, usage_series
 
 NEW_KEY_TAG = "token-regenerated-key"
 """The message tag that carries a new key's secret to the next page, which shows it once."""
@@ -196,20 +198,16 @@ class TokenDetailView(BaseAqueductView, DetailView):
         token: Token = self.object
         limits = token.get_limits()
         usage = get_per_token_usage([token.id])[token.id]
-        days = add_week(self.profile, [token])
+        # The last 7 days, drawn as the Usage page draws them.
+        now = timezone.now()
+        week = self.profile.visible_requests().filter(
+            token=token, timestamp__gte=now - timedelta(days=7)
+        )
+        buckets = get_all_buckets(now - timedelta(days=7), now, "1w")
+        log = f"{reverse('requests')}?key={token.pk}&span=7d"
         context.update(
-            week_chart=[[day.isoformat(), n] for day, n in token.week],  # type: ignore[attr-defined]
-            by_model=list(
-                self.profile.visible_requests()
-                .filter(token=token, timestamp__date__gte=days[0])
-                .values("model")
-                .annotate(
-                    count=Count("id"),
-                    input=Sum("input_tokens", default=0),
-                    output=Sum("output_tokens", default=0),
-                )
-                .order_by("-count", "model")
-            ),
+            charts=usage_charts(usage_series(week, TruncDay("timestamp"), buckets), "day"),
+            per_model=model_rows(week, lambda model: f"{log}&{urlencode({'model': model})}"),
             can_manage=self.profile.manageable_tokens().filter(pk=token.pk).exists(),
             team=token.service_account.team if token.service_account else None,
             own=token.user_id == self.request.user.id and token.service_account is None,

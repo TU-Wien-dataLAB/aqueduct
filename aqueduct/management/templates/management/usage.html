@@ -76,52 +76,7 @@
     </section>
 
     <section class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div class="card bg-base-200 lg:col-span-2" data-metric-scope>
-            <div class="card-body gap-4">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                    <h2 class="card-title">{% for metric, title, top, bars in charts.metrics %}<span data-metric="{{ metric }}">{{ title }}</span>{% endfor %}</h2>
-                    <div class="flex flex-wrap items-center gap-4">
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" data-metric="tokens">
-                            {% include "management/_token_legend.html" %}
-                        </div>
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" data-metric="requests">
-                            <span class="flex items-center gap-2"><span class="sw i"></span>{% translate "OK" %}</span>
-                            <span class="flex items-center gap-2 whitespace-nowrap"><span class="sw r"></span>{% translate "Rate-limited" %}</span>
-                            <span class="flex items-center gap-2 whitespace-nowrap"><span class="sw f"></span>{% translate "Failed" %}</span>
-                        </div>
-                        <div class="join" role="radiogroup" aria-label="{% translate 'Chart metric' %}">
-                            <input type="radio" name="metric" value="tokens" class="btn btn-sm join-item" aria-label="{% translate 'Tokens' %}" checked>
-                            <input type="radio" name="metric" value="requests" class="btn btn-sm join-item" aria-label="{% translate 'Requests' %}">
-                        </div>
-                        <script>try { const kept = document.currentScript.previousElementSibling.querySelector(`[value="${sessionStorage.getItem('metric')}"]`); if (kept) kept.checked = true; } catch { }</script>
-                    </div>
-                </div>
-                {% if not totals.requests %}
-                    <p class="muted flex h-72 items-center justify-center text-sm">{% translate "No requests in this time frame." %}</p>
-                {% else %}
-                    {% for metric, title, top, bars in charts.metrics %}
-                        <div class="chart-plot" data-metric="{{ metric }}">
-                            <span class="chart-top muted text-xs tabular-nums">{{ top }}</span>
-                            <div class="flex h-72 gap-px sm:gap-1">
-                                {% for bar in bars %}
-                                    <div class="aq-tip-host chart-col flex min-w-0 flex-1 flex-col items-center" role="img" aria-label="{{ bar.heading }}: {{ bar.text }}">
-                                        <div class="vbar w-full max-w-10 flex-1" style="--bar: {{ bar.height|unlocalize }}%">
-                                            {% for css, height in bar.segments %}<i class="{{ css }}" style="height: {{ height|unlocalize }}%"></i>{% endfor %}
-                                            {% include "management/_tip.html" with heading=bar.heading total=bar.text parts=bar.parts %}
-                                        </div>
-                                    </div>
-                                {% endfor %}
-                            </div>
-                            <div class="mt-2 grid h-4 gap-px sm:gap-1" style="grid-template-columns: repeat({{ charts.columns }}, minmax(0, 1fr))" aria-hidden="true">
-                                {% for tick in charts.axis %}
-                                    <span class="muted whitespace-nowrap text-xs" style="grid-column: {{ tick.column }} / span {{ tick.span }}; padding-left: calc(50% / {{ tick.span }})"><span class="inline-block -translate-x-1/2">{{ tick.label }}</span></span>
-                                {% endfor %}
-                            </div>
-                        </div>
-                    {% endfor %}
-                {% endif %}
-            </div>
-        </div>
+        {% include "management/_usage_chart.html" with card_class="lg:col-span-2" %}
 
         <div class="card bg-base-200">
             <div class="card-body gap-4">
@@ -149,43 +104,7 @@
         </div>
     </section>
 
-    <section class="card bg-base-200" aria-labelledby="per-model-title">
-        <div class="card-body table-card gap-2">
-            <div class="card-head flex flex-wrap items-center justify-between gap-3">
-                <h2 id="per-model-title" class="card-title">{% translate "By model" %}</h2>
-                <div class="hidden items-center gap-4 text-sm md:flex">{% include "management/_token_legend.html" %}</div>
-            </div>
-            <div class="aq-scroll-x">
-                <table class="table usage-table by-model">
-                    <colgroup><col><col class="c-bar"><col class="c-input"><col class="c-cached"><col class="c-output"><col class="c-requests"><col class="c-failed"><col class="c-median"><col class="c-share"></colgroup>
-                    <thead>
-                        <tr>
-                            <th>{% translate "Model" %}</th><th class="hidden min-[90rem]:table-cell">{% translate "Tokens" %}</th>
-                            <th class="text-right">{% translate "Input tokens" %}</th><th class="text-right">{% translate "From cache" %}</th><th class="text-right">{% translate "Output tokens" %}</th>
-                            <th class="text-right">{% translate "Requests" %}</th><th class="text-right">{% translate "Failed" %}</th>
-                            <th class="text-right">{% translate "Avg. time" %}</th><th class="text-right">{% translate "Share" %}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in per_model %}
-                            <tr>
-                                <td>
-                                    <a class="link-plain row-link block truncate font-mono" href="{{ row.log_url }}" title="{{ row.model }}" aria-label="{% blocktranslate with name=row.model %}{{ name }}, open its requests in the request log{% endblocktranslate %}">{{ row.model }}</a>
-                                    <div class="muted truncate text-xs">{% include "management/_model_mode.html" with mode=row.mode %}</div>
-                                </td>
-                                {% include "management/_token_bar.html" with busiest=models_busiest %}
-                                {% include "management/_usage_cells.html" %}
-                                <td class="whitespace-nowrap text-right tabular-nums">{{ row.avg_ms|duration }}</td>
-                                <td class="muted text-right tabular-nums">{% if row.tokens %}{{ row.tokens|percent:totals.tokens }}{% else %}—{% endif %}</td>
-                            </tr>
-                        {% empty %}
-                            <tr><td colspan="9" class="muted">{% translate "No requests in this time frame." %}</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </section>
+    {% include "management/_by_model.html" %}
 
     <section class="card bg-base-200" aria-labelledby="top-items-title">
         <div class="card-body table-card gap-2">

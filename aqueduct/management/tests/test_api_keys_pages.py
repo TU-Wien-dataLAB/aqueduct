@@ -118,9 +118,10 @@ class KeyPageTest(RoleWorld):
         )
         page = self.page(self.member, self.pipeline_key)
         self.assertEqual(
-            [(row["model"], row["count"], row["input"]) for row in page.context["by_model"]],
+            [(row["model"], row["requests"], row["input"]) for row in page.context["per_model"]],
             [("gpt-4.1-nano", 2, 15), ("whisper-1", 1, 1)],
         )
-        self.assertEqual([n for _day, n in page.context["week_chart"]], [0, 0, 0, 0, 0, 0, 3])
-        self.assertContains(page, 'id="key-week-data"')
-        self.assertContains(page, "2 requests")
+        _metric, _title, _top, bars = page.context["charts"]["metrics"][1]
+        self.assertEqual([bar["text"] for bar in bars][-2:], ["0 requests", "3 requests"])
+        self.assertContains(page, "Models, last 7 days")
+        self.assertContains(page, f"key={self.pipeline_key.pk}&amp;span=7d&amp;model=whisper-1")

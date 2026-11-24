@@ -134,6 +134,80 @@ def _bars(
     return bars, top
 
 
+def usage_series(reqs: QuerySet[Request], trunc: Any, buckets: list[int]) -> list[dict[str, Any]]:
+    """The figures of each time bucket, labelled for the charts."""
+    found = {
+        int(row.pop("period").timestamp() * 1000): row
+        for row in reqs.annotate(period=trunc).values("period").annotate(**TOTALS).order_by()
+    }
+    return _with_shares(
+        [
+            {
+                **found.get(ms, dict.fromkeys(TOTALS, 0)),
+                "label": date_format(
+                    timezone.localtime(dt.datetime.fromtimestamp(ms / 1000, dt.UTC)),
+                    STEPS[trunc.kind][0],
+                ),
+            }
+            for ms in buckets
+        ]
+    )
+
+
+def usage_charts(rows: list[dict[str, Any]], step: str) -> dict[str, Any]:
+    """The tokens and the requests chart, a stacked column per time bucket, and their axis."""
+    groups = [(row["label"], row) for row in rows]
+    tokens, most_tokens = _bars(
+        groups,
+        lambda row: (
+            ("c", gettext("From cache"), row["cached"]),
+            ("n", gettext("New input"), row["new_input"]),
+            ("o", gettext("Output"), row["output"]),
+        ),
+        _tokens,
+    )
+    requests, most_requests = _bars(
+        groups,
+        lambda row: (
+            ("i", gettext("OK"), row["requests"] - row["failed"] - row["rate_limited"]),
+            ("r", gettext("Rate-limited"), row["rate_limited"]),
+            ("f", gettext("Failed"), row["failed"]),
+        ),
+        _requests,
+    )
+    every = math.ceil(len(rows) / AXIS_LABELS) or 1
+    return {
+        "empty": not most_requests,
+        "columns": len(rows),
+        "axis": [
+            {"label": row["label"], "column": index + 1, "span": min(every, len(rows) - index)}
+            for index, row in enumerate(rows)
+            if index % every == 0
+        ],
+        "metrics": [
+            ("tokens", STEPS[step][1], _tokens(most_tokens), tokens),
+            ("requests", STEPS[step][2], _requests(most_requests), requests),
+        ],
+    }
+
+
+def model_rows(requests: QuerySet[Request], link: Callable[[str], str]) -> list[dict[str, Any]]:
+    """Each model's figures, most tokens first, with its type, share of tokens and log link."""
+    # LiteLLM treats a model without a mode as chat.
+    modes = {
+        m["model_name"]: (m.get("model_info") or {}).get("mode") or "chat"
+        for m in get_router_config().get("model_list", [])
+    }
+    rows = _with_shares(
+        list(requests.values("model").annotate(**TOTALS, avg_ms=Avg("response_time_ms")).order_by())
+    )
+    tokens = sum(row["tokens"] for row in rows)
+    for row in rows:
+        row["mode"], row["log_url"] = modes.get(row["model"]), link(row["model"])
+        row["share"] = percent(row["tokens"], tokens) if row["tokens"] else "—"
+    return sorted(rows, key=lambda row: (-row["tokens"], -row["requests"], row["model"]))
+
+
 class UsageDashboardView(BaseAqueductView, TemplateView):
     """
     Usage dashboard page: switch between all orgs (global) and per-org token usage.
@@ -244,7 +318,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
 
         # Figures in total and per time bucket
         totals = _with_shares([reqs_span.aggregate(**TOTALS)])[0]
-        series = self._series(
+        series = usage_series(
             reqs_span, span_cfg["trunc"], get_all_buckets(start_time, end_time, selected_span)
         )
 
@@ -259,20 +333,6 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             .values_list("pk", flat=True)
         )
 
-        # LiteLLM treats a model without a mode as chat.
-        modes = {
-            m["model_name"]: (m.get("model_info") or {}).get("mode") or "chat"
-            for m in router_models
-        }
-        per_model = _with_shares(
-            list(
-                reqs_span.values("model")
-                .annotate(**TOTALS, avg_ms=Avg("response_time_ms"))
-                .order_by()
-            )
-        )
-        per_model.sort(key=lambda row: (-row["tokens"], -row["requests"], row["model"]))
-
         # Links into the Requests log under the same filters
         log_filters = {
             "span": LOG_SPANS.get(selected_span),
@@ -283,10 +343,6 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         def log_url(**params: str) -> str:
             query = {name: v for name, v in {**log_filters, **params}.items() if v}
             return f"{reverse('requests')}?{urlencode(query)}"
-
-        for row in per_model:
-            row["mode"] = modes.get(row["model"])
-            row["log_url"] = log_url(model=row["model"])
 
         # Retention warning
         retention_days = getattr(settings, "REQUEST_RETENTION_DAYS", 7)
@@ -312,7 +368,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 "totals": totals,
                 "total_requests": totals["requests"],
                 "kpis": self._kpis(series, totals),
-                "charts": self._charts(series, span_cfg["trunc"].kind),
+                "charts": usage_charts(series, span_cfg["trunc"].kind),
                 "statuses": [
                     {
                         "label": label,
@@ -326,8 +382,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                     for value, label, codes, icon, tone in STATUS_ROWS
                 ],
                 "log_url": log_url(),
-                "per_model": per_model,
-                "models_busiest": max((row["tokens"] for row in per_model), default=0),
+                "per_model": model_rows(reqs_span, lambda model: log_url(model=model)),
                 "top_items": top_items[:limit],
                 "more_items": len(top_items) > limit,
                 "items_busiest": max((item["tokens"] for item in top_items), default=0),
@@ -416,26 +471,6 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         return selected_token
 
     @staticmethod
-    def _series(reqs: QuerySet[Request], trunc: Any, buckets: list[int]) -> list[dict[str, Any]]:
-        """The figures of each time bucket, labelled for the charts."""
-        found = {
-            int(row.pop("period").timestamp() * 1000): row
-            for row in reqs.annotate(period=trunc).values("period").annotate(**TOTALS).order_by()
-        }
-        return _with_shares(
-            [
-                {
-                    **found.get(ms, dict.fromkeys(TOTALS, 0)),
-                    "label": date_format(
-                        timezone.localtime(dt.datetime.fromtimestamp(ms / 1000, dt.UTC)),
-                        STEPS[trunc.kind][0],
-                    ),
-                }
-                for ms in buckets
-            ]
-        )
-
-    @staticmethod
     def _kpis(rows: list[dict[str, Any]], totals: dict[str, Any]) -> list[dict[str, Any]]:
         """The four stat cards, each with a bar chart of at most `SPARK_BARS` bars."""
         size = math.ceil(len(rows) / SPARK_BARS) or 1
@@ -484,42 +519,6 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 lambda v: gettext("%(share)s failed") % {"share": f"{round(v)}%"},
             ),
         ]
-
-    @staticmethod
-    def _charts(rows: list[dict[str, Any]], step: str) -> dict[str, Any]:
-        """The tokens and the requests chart, a stacked column per time bucket, and their axis."""
-        groups = [(row["label"], row) for row in rows]
-        tokens, most_tokens = _bars(
-            groups,
-            lambda row: (
-                ("c", gettext("From cache"), row["cached"]),
-                ("n", gettext("New input"), row["new_input"]),
-                ("o", gettext("Output"), row["output"]),
-            ),
-            _tokens,
-        )
-        requests, most_requests = _bars(
-            groups,
-            lambda row: (
-                ("i", gettext("OK"), row["requests"] - row["failed"] - row["rate_limited"]),
-                ("r", gettext("Rate-limited"), row["rate_limited"]),
-                ("f", gettext("Failed"), row["failed"]),
-            ),
-            _requests,
-        )
-        every = math.ceil(len(rows) / AXIS_LABELS) or 1
-        return {
-            "columns": len(rows),
-            "axis": [
-                {"label": row["label"], "column": index + 1, "span": min(every, len(rows) - index)}
-                for index, row in enumerate(rows)
-                if index % every == 0
-            ],
-            "metrics": [
-                ("tokens", STEPS[step][1], _tokens(most_tokens), tokens),
-                ("requests", STEPS[step][2], _requests(most_requests), requests),
-            ],
-        }
 
     def _get_top_items(
         self, reqs: QuerySet[Request], selected_org: Org | None, selected_token: Token | None

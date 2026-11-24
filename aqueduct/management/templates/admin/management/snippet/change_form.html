@@ -83,6 +83,39 @@
   </style>
 {% endblock %}
 
+{% block after_related_objects %}
+  {{ block.super }}
+  {% if plugin_endpoints %}
+  <div id="plugin-endpoint-panel" style="display:none; margin-top:1rem;">
+    <fieldset class="module aligned">
+      <h2>Plugin endpoints</h2>
+      <div class="form-row">
+        <div class="help" style="margin-bottom:0.5rem;">
+          Check the API endpoints this plugin should run on, then click
+          <strong>Generate plugin stub</strong> to fill the code editor. Endpoints
+          are auto-discovered from the <code>@run_plugins(...)</code> registry.
+        </div>
+        <div id="plugin-endpoint-checkboxes">
+          {% for ep in plugin_endpoints %}
+          <label class="plugin-endpoint-label" style="display:block;margin:0.25rem 0;">
+            <input type="checkbox" class="plugin-endpoint-checkbox"
+              data-key="{{ ep.key }}" data-type="{{ ep.type_name }}"
+              data-kind="{{ ep.response_kind }}" value="{{ ep.key }}">
+            <code>{{ ep.key }}</code>
+            <span class="plugin-endpoint-meta" style="color:var(--body-quiet-color,#6b7280);font-size:12px;">
+              &mdash; {{ ep.type_name }} &middot; {{ ep.response_kind }}
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        <button type="button" id="plugin-generate-stub" class="button"
+          style="margin-top:0.75rem;">Generate plugin stub</button>
+      </div>
+    </fieldset>
+  </div>
+  {% endif %}
+{% endblock %}
+
 {% block admin_change_form_document_ready %}
   {{ block.super }}
   <script type="module">
@@ -111,6 +144,63 @@
         });
       });
     }
+
+    function buildPluginStub() {
+      const checks = Array.from(document.querySelectorAll(".plugin-endpoint-checkbox:checked"));
+      const selected = checks.map(function (c) {
+        return {key: c.dataset.key, type_name: c.dataset.type, response_kind: c.dataset.kind};
+      });
+      const keys = Array.from(new Set(selected.map(function (e) { return e.key; }))).sort();
+      const types = Array.from(new Set(selected.map(function (e) { return e.type_name; }).filter(Boolean))).sort();
+      const hasJson = selected.some(function (e) {
+        return e.response_kind === "json" || e.response_kind === "json_or_streaming";
+      });
+      const hasStreaming = selected.some(function (e) {
+        return e.response_kind === "streaming" || e.response_kind === "json_or_streaming";
+      });
+      const lines = ["class MyPlugin(PluginSnippet):"];
+      if (keys.length) {
+        lines.push("    # Runs on: " + keys.join(", "));
+        lines.push("    endpoints = [" + keys.map(function (k) { return JSON.stringify(k); }).join(", ") + "]");
+      } else {
+        lines.push("    # No endpoints selected: the plugin runs on every endpoint.");
+        lines.push("    endpoints = []");
+      }
+      lines.push("");
+      lines.push("    def before_request(self, request, token, body: dict) -> dict | None:");
+      if (types.length) {
+        lines.push("        # Request body is validated against: " + types.join(", "));
+      }
+      lines.push('        """Optionally transform/replace the request body.');
+      lines.push("");
+      lines.push("        Return the (possibly mutated) body to pass downstream, or ``None`` to");
+      lines.push("        leave the body unchanged. Raise ``BlockedByPlugin`` to stop the request.");
+      lines.push('        """');
+      lines.push("        return body");
+      lines.push("");
+      if (hasJson) {
+        lines.push("    def after_response(self, response) -> None:");
+        lines.push('        """Non-streaming only. Return a replacement response, or ``None`` to keep unchanged."""');
+        lines.push("        return None");
+        lines.push("");
+      }
+      if (hasStreaming) {
+        lines.push("    def after_streaming_response(self, response) -> None:");
+        lines.push('        """Streaming wrapper only (headers/status, not content)."""');
+        lines.push("        return None");
+      }
+      return lines.join("\n") + "\n";
+    }
+
+    const genBtn = document.getElementById("plugin-generate-stub");
+    if (genBtn && editors.length) {
+      genBtn.addEventListener("click", function () {
+        const code = buildPluginStub();
+        editors[0].view.dispatch({
+          changes: {from: 0, to: editors[0].view.state.doc.length, insert: code}
+        });
+      });
+    }
   </script>
   <script>
     // `order` only applies to plugins; lock it live when the type is config.
@@ -131,6 +221,32 @@
       }
       sync();
       typeSel.addEventListener("change", sync);
+    })();
+
+    // Show the plugin endpoint panel only for plugin-type snippets and
+    // pre-select checkboxes matching the current code's `endpoints = [...]`.
+    (function () {
+      var typeSel = document.getElementById("id_type");
+      var panel = document.getElementById("plugin-endpoint-panel");
+      function syncPanel() {
+        if (!panel) return;
+        panel.style.display = (typeSel && typeSel.value === "plugin") ? "" : "none";
+      }
+      syncPanel();
+      if (typeSel) typeSel.addEventListener("change", syncPanel);
+
+      var codeTa = document.querySelector("textarea.snippet-code-input");
+      if (codeTa) {
+        var m = codeTa.value.match(/endpoints\s*=\s*\[([^\]]*)\]/);
+        if (m) {
+          var keys = m[1].split(",").map(function (s) {
+            return s.trim().replace(/^['"]|['"]$/g, "");
+          }).filter(Boolean);
+          document.querySelectorAll(".plugin-endpoint-checkbox").forEach(function (c) {
+            c.checked = keys.indexOf(c.dataset.key) !== -1;
+          });
+        }
+      }
     })();
   </script>
 {% endblock %}

@@ -41,7 +41,11 @@ from management.models import Request, Token
 @resolve_alias
 @check_model_availability
 @log_request
-@run_plugins
+@run_plugins(
+    endpoint_key="decisions",
+    pydantic_type=openai.types.decision_create_params.DecisionCreateParams,
+    response_kind="json",
+)
 @catch_router_exceptions
 async def decisions(
     request: ASGIRequest,

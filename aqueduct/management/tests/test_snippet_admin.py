@@ -409,3 +409,16 @@ class PluginConsoleTestCase(TestCase):
         resp = self.client.post(self.url, {"code": PLUGIN_CODE, "payload": "{not json"})
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "Invalid JSON test input")
+
+    def test_plugin_change_form_shows_endpoint_registry(self):
+        snippet = Snippet.objects.create(
+            name="ep-guard",
+            type=SnippetType.PLUGIN,
+            active=True,
+            code="class P(PluginSnippet):\n    pass\n",
+        )
+        resp = self.client.get(reverse("admin:management_snippet_change", args=[snippet.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "plugin-endpoint-panel")
+        self.assertContains(resp, 'data-key="chat/completions"')
+        self.assertContains(resp, "plugin-generate-stub")

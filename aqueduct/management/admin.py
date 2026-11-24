@@ -20,6 +20,7 @@ from django.urls.resolvers import URLPattern
 from django.utils.html import format_html
 
 from gateway.config import get_files_api_client, get_router_config
+from gateway.decorators.plugins import get_plugin_endpoint_registry
 from gateway.rate_limiting import get_per_token_usage
 from gateway.response_type import RawJsonResponse
 from management.models import (
@@ -1138,6 +1139,17 @@ class SnippetAdmin(admin.ModelAdmin):
         if not self._is_allowed_superuser(request.user):
             return False
         return super().has_delete_permission(request, obj)
+
+    def changeform_view(
+        self, request, object_id=None, form_url="", extra_context=None
+    ) -> HttpResponse:
+        extra_context = extra_context or {}
+        registry = get_plugin_endpoint_registry()
+        extra_context["plugin_endpoints"] = [
+            {"key": ep.key, "type_name": ep.type_name, "response_kind": ep.response_kind}
+            for ep in registry.values()
+        ]
+        return super().changeform_view(request, object_id, form_url, extra_context)
 
     def get_urls(self) -> list[URLPattern]:
         custom_urls = [

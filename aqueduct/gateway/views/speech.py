@@ -41,7 +41,11 @@ from management.models import Request
 @ensure_usage
 @check_model_availability
 @log_request
-@run_plugins
+@run_plugins(
+    endpoint_key="audio/speech",
+    pydantic_type=openai.types.audio.SpeechCreateParams,
+    response_kind="streaming",
+)
 @catch_router_exceptions
 async def speech(
     request: ASGIRequest,

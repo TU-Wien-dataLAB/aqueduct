@@ -47,7 +47,11 @@ class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
 @resolve_alias
 @check_model_availability
 @log_request
-@run_plugins
+@run_plugins(
+    endpoint_key="audio/transcriptions",
+    pydantic_type=TranscriptionCreateParams,
+    response_kind="json_or_streaming",
+)
 @catch_router_exceptions
 async def transcriptions(
     request: ASGIRequest,

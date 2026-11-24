@@ -42,7 +42,11 @@ from management.models import Request
 @resolve_alias
 @check_model_availability
 @log_request
-@run_plugins
+@run_plugins(
+    endpoint_key="completions",
+    pydantic_type=openai.types.CompletionCreateParams,
+    response_kind="json_or_streaming",
+)
 @catch_router_exceptions
 async def completions(
     request: ASGIRequest,

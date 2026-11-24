@@ -46,7 +46,11 @@ from management.models import Request
 @check_model_availability
 @normalize_reasoning_fields
 @log_request
-@run_plugins
+@run_plugins(
+    endpoint_key="chat/completions",
+    pydantic_type=openai.types.chat.CompletionCreateParams,
+    response_kind="json_or_streaming",
+)
 @catch_router_exceptions
 async def chat_completions(
     request: ASGIRequest,

@@ -48,7 +48,11 @@ from management.models import Request, Token
 @check_model_availability
 @check_tool_availability
 @log_request
-@run_plugins
+@run_plugins(
+    endpoint_key="responses",
+    pydantic_type=openai.types.responses.ResponseCreateParams,
+    response_kind="json_or_streaming",
+)
 @catch_router_exceptions
 async def create_response(
     request: ASGIRequest,

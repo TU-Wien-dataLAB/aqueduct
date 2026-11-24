@@ -59,7 +59,7 @@ ImageParams = ImageGenerateParamsWithSeed | ImageGenerateStreamingParamsWithSeed
 @resolve_alias
 @check_model_availability
 @log_request
-@run_plugins
+@run_plugins(endpoint_key="images/generations", pydantic_type=ImageParams, response_kind="json")
 @catch_router_exceptions
 async def image_generation(
     request: ASGIRequest,

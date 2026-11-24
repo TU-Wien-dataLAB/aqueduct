@@ -43,7 +43,11 @@ if TYPE_CHECKING:
 @resolve_alias
 @check_model_availability
 @log_request
-@run_plugins
+@run_plugins(
+    endpoint_key="embeddings",
+    pydantic_type=openai.types.EmbeddingCreateParams,
+    response_kind="json",
+)
 @catch_router_exceptions
 async def embeddings(
     request: ASGIRequest,

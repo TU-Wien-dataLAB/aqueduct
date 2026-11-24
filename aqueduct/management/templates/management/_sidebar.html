@@ -1,7 +1,7 @@
 {% load i18n static ui %}
 <aside class="aq-sidebar sticky top-0 flex h-screen w-64 flex-col gap-3 overflow-y-auto border-r border-base-300 bg-base-200 p-4">
     <a href="{% url 'tokens' %}" class="flex items-center gap-3 px-3 py-1">
-        <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="" class="h-9 w-9">
+        {% include "management/_logo.html" with size="h-9 w-9" %}
         <span class="text-xl font-semibold">{% translate "Aqueduct" %}</span>
     </a>
 

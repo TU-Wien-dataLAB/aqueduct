@@ -190,5 +190,24 @@ class WebScalingTests(unittest.TestCase):
             self.assertNotIn("LITELLM_REDIS_URL", {item["name"] for item in container["env"]})
 
 
+
+class ThemesTests(unittest.TestCase):
+    def test_themes_are_mounted_into_web_and_named_in_the_environment(self):
+        css = '[data-theme="tu-wien"] { color-scheme: light; }\n'
+        resources = render({"themes": {"tu-wien.css": css}})
+        self.assertEqual(resources["ConfigMap", "test-themes"]["data"], {"tu-wien.css": css})
+        pod = resources["Deployment", "test"]["spec"]["template"]["spec"]
+        django = pod["containers"][0]
+        self.assertIn({"name": "themes", "mountPath": "/etc/aqueduct/themes"}, django["volumeMounts"])
+        self.assertIn({"name": "THEMES_DIR", "value": "/etc/aqueduct/themes"}, django["env"])
+        self.assertIn({"name": "themes", "configMap": {"name": "test-themes"}}, pod["volumes"])
+
+    def test_no_themes_render_nothing(self):
+        resources = render()
+        self.assertNotIn(("ConfigMap", "test-themes"), resources)
+        django = resources["Deployment", "test"]["spec"]["template"]["spec"]["containers"][0]
+        self.assertNotIn("THEMES_DIR", {item["name"] for item in django["env"]})
+
+
 if __name__ == "__main__":
     unittest.main()

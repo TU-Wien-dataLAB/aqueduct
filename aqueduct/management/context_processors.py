@@ -3,10 +3,12 @@ from django.http import HttpRequest
 from django.utils.functional import SimpleLazyObject
 
 from management.models import UserProfile
+from management.themes import custom_themes
 
 
 def settings(request: HttpRequest) -> dict:
-    """Settings (EXTRA_NAV_LINKS, TOS_ENABLED, SILKY_ENABLED) and the viewer, for the shell."""
+    """Settings (EXTRA_NAV_LINKS, TOS_ENABLED, SILKY_ENABLED), the viewer and the custom themes,
+    for the shell."""
 
     def viewer() -> UserProfile | None:
         if not request.user.is_authenticated:
@@ -21,4 +23,5 @@ def settings(request: HttpRequest) -> dict:
         "viewer_is_org_admin": SimpleLazyObject(
             lambda: bool(lazy_viewer) and lazy_viewer.is_org_admin(lazy_viewer.org)
         ),
+        "custom_themes": custom_themes(),
     }

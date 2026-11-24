@@ -78,7 +78,7 @@
             </div>
 
             {% if info.deprecation_date %}
-                <div class="flex items-start gap-2 rounded-lg bg-base-100 px-3 py-2 text-sm">
+                <div class="flex items-start gap-2 rounded-field bg-base-100 px-3 py-2 text-sm">
                     {% icon "warning" small=True extra_class="st-warn mt-0.5" %}
                     <span>{% blocktranslate with date=info.deprecation_date|date|default:info.deprecation_date %}<span class="font-semibold">Deprecated.</span> Retirement date: {{ date }}.{% endblocktranslate %}</span>
                 </div>
@@ -87,13 +87,13 @@
             {% firstof info.contextWindow info.max_input_tokens as context_length %}{% firstof info.maxTokens info.max_output_tokens as max_output %}{% firstof info.max_parallel_requests default_parallel as parallel %}
             {% if context_length or max_output or info.output_vector_size or info.supported_modalities or info.supported_output_modalities or parallel or viewer_is_org_admin and selected.litellm_params.model %}
                 <dl class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {% if context_length %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% if selected.category == "embeddings" %}{% translate "Max input tokens" %}{% else %}{% translate "Context length" %}{% endif %}</dt><dd class="break-words font-semibold">{{ context_length|intcomma }}</dd></div>{% endif %}
-                    {% if max_output %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Max output tokens" %}</dt><dd class="break-words font-semibold">{{ max_output|intcomma }}</dd></div>{% endif %}
-                    {% if info.output_vector_size %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Dimensions" %}</dt><dd class="break-words font-semibold">{{ info.output_vector_size|intcomma }}</dd></div>{% endif %}
-                    {% if info.supported_modalities %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Input" %}</dt><dd class="break-words font-semibold">{{ info.supported_modalities|join:", "|capfirst }}</dd></div>{% endif %}
-                    {% if info.supported_output_modalities %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Output" %}</dt><dd class="break-words font-semibold">{{ info.supported_output_modalities|join:", "|capfirst }}</dd></div>{% endif %}
-                    {% if parallel %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Parallel requests" %}</dt><dd class="break-words font-semibold">{{ parallel|intcomma }}</dd></div>{% endif %}
-                    {% if viewer_is_org_admin and selected.litellm_params.model %}<div class="col-span-full flex flex-col rounded-lg bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Served model" %}</dt><dd class="break-all font-mono text-sm font-semibold">{{ selected.litellm_params.model }}</dd></div>{% endif %}
+                    {% if context_length %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-field bg-base-100 px-3 py-2"><dt class="muted text-xs">{% if selected.category == "embeddings" %}{% translate "Max input tokens" %}{% else %}{% translate "Context length" %}{% endif %}</dt><dd class="break-words font-semibold">{{ context_length|intcomma }}</dd></div>{% endif %}
+                    {% if max_output %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-field bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Max output tokens" %}</dt><dd class="break-words font-semibold">{{ max_output|intcomma }}</dd></div>{% endif %}
+                    {% if info.output_vector_size %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-field bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Dimensions" %}</dt><dd class="break-words font-semibold">{{ info.output_vector_size|intcomma }}</dd></div>{% endif %}
+                    {% if info.supported_modalities %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-field bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Input" %}</dt><dd class="break-words font-semibold">{{ info.supported_modalities|join:", "|capfirst }}</dd></div>{% endif %}
+                    {% if info.supported_output_modalities %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-field bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Output" %}</dt><dd class="break-words font-semibold">{{ info.supported_output_modalities|join:", "|capfirst }}</dd></div>{% endif %}
+                    {% if parallel %}<div class="flex min-w-0 flex-col justify-between gap-0.5 rounded-field bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Parallel requests" %}</dt><dd class="break-words font-semibold">{{ parallel|intcomma }}</dd></div>{% endif %}
+                    {% if viewer_is_org_admin and selected.litellm_params.model %}<div class="col-span-full flex flex-col rounded-field bg-base-100 px-3 py-2"><dt class="muted text-xs">{% translate "Served model" %}</dt><dd class="break-all font-mono text-sm font-semibold">{{ selected.litellm_params.model }}</dd></div>{% endif %}
                 </dl>
             {% endif %}
 
@@ -101,7 +101,7 @@
                 <div class="flex flex-col gap-2">
                     <span class="text-sm font-semibold">{% translate "Aliases" %}</span>
                     <div class="flex flex-wrap gap-1.5">
-                        {% for alias in info.aliases %}<span class="break-all rounded-md bg-base-100 px-2 py-0.5 font-mono text-xs">{{ alias }}</span>{% endfor %}
+                        {% for alias in info.aliases %}<span class="break-all rounded-field bg-base-100 px-2 py-0.5 font-mono text-xs">{{ alias }}</span>{% endfor %}
                     </div>
                 </div>
             {% endif %}
@@ -140,7 +140,7 @@
                         <span class="text-sm font-semibold">{% translate "Example" %}</span>
                         <button type="button" class="btn btn-ghost btn-xs btn-square" data-copy-from="#model-example" aria-label="{% translate 'Copy example' %}" title="{% translate 'Copy example' %}">{% icon "copy" small=True %}</button>
                     </div>
-                    <pre id="model-example" class="whitespace-pre-wrap rounded-lg bg-base-100 p-3 font-mono text-xs leading-relaxed [overflow-wrap:anywhere]">{% include "management/_curl.txt" with gateway=site_host|add:"/v1" model=selected.model_name %}</pre>
+                    <pre id="model-example" class="whitespace-pre-wrap rounded-field bg-base-100 p-3 font-mono text-xs leading-relaxed [overflow-wrap:anywhere]">{% include "management/_curl.txt" with gateway=site_host|add:"/v1" model=selected.model_name %}</pre>
                 </div>
             {% endif %}
         </div>

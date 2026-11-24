@@ -155,6 +155,10 @@ Usage:
 {{- end }}
 - name: MCP_CONFIG_FILE_PATH
   value: "/etc/aqueduct/mcp.json"
+{{- if .Values.themes }}
+- name: THEMES_DIR
+  value: "/etc/aqueduct/themes"
+{{- end }}
 - name: TOS_ENABLED
 {{- if .Values.tos.enabled }}
   value: "True"

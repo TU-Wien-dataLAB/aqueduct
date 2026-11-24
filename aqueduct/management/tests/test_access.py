@@ -1,8 +1,9 @@
 from datetime import timedelta
+from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -20,6 +21,8 @@ from management.tests.helpers import join, make_token, make_user
 from management.views.base import ORG_SESSION_KEY
 
 User = get_user_model()
+
+ROUTER_CONFIG = Path(__file__).resolve().parents[3] / "example_router_config.yaml"
 
 
 class Matrix(TestCase):
@@ -238,6 +241,52 @@ class CrossOrgPagesTest(Matrix):
         self.assertFalse(
             TeamMembership.objects.get(user_profile=southerner, team=self.south_a).is_admin
         )
+
+
+@override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG)
+class UsagePageTest(Matrix):
+    def usage(self, user, **params):
+        self.client.force_login(user)
+        response = self.client.get(reverse("usage"), params)
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def key(self, name: str) -> Token:
+        return Token.objects.get(name=name)
+
+    def test_a_user_cannot_select_a_key_they_may_not_see(self):
+        for name in ("member-laptop", "north-a-bot"):
+            with self.subTest(key=name):
+                page = self.usage(self.moved, token=self.key(name).id)
+                self.assertIsNone(page.context["selected_token"])
+                self.assertNotContains(page, f'for "{name}"')
+
+    def test_a_user_selects_their_own_key_and_their_teams_key(self):
+        for name in ("member-laptop", "north-a-bot"):
+            with self.subTest(key=name):
+                page = self.usage(self.member, token=self.key(name).id)
+                self.assertEqual(page.context["selected_token"], self.key(name))
+                self.assertContains(page, f'for the key <span class="font-mono">{name}</span>')
+
+    def test_admins_select_any_key_they_can_see(self):
+        for user, params, name in (
+            (self.org_admin, {}, "member-laptop"),
+            (self.org_admin, {}, "north-b-bot"),
+            (self.admin, {"org": "all"}, "south-a-bot"),
+            (self.admin, {"org": self.south.id}, "southerner-laptop"),
+        ):
+            with self.subTest(user=user.username, key=name):
+                page = self.usage(user, token=self.key(name).id, **params)
+                self.assertEqual(page.context["selected_token"], self.key(name))
+        page = self.usage(self.org_admin, token=self.key("south-a-bot").id)
+        self.assertIsNone(page.context["selected_token"])
+
+    def test_a_non_numeric_parameter_selects_nothing(self):
+        for user in (self.member, self.admin):
+            with self.subTest(user=user.username):
+                page = self.usage(user, token="²", org="²")
+                self.assertIsNone(page.context["selected_token"])
+                self.assertEqual(page.context["selected_org"], self.north)
 
 
 class OrgSwitchTest(Matrix):

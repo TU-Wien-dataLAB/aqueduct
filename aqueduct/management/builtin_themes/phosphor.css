@@ -1,0 +1,49 @@
+/* Phosphor: Aqueduct's own dark theme, a green-phosphor terminal. Soft green text on a black screen, bright
+   green for links and fills, amber for warnings; text glows, cards light the glass around them, and scanlines
+   and a dark rim lie over the screen. Text colors reach 4.5:1 on base-100 and base-200. */
+[data-theme="phosphor"] {
+  color-scheme: dark;
+  --color-base-100: #070D09;
+  --color-base-200: #0C1610;
+  --color-base-300: #1A2D20;
+  --color-base-content: #8FE0A3;
+  --color-primary: #3DFF6E;
+  --color-primary-content: #03140A;
+  --color-secondary: #FFB000;
+  --color-secondary-content: #1A1000;
+  --color-accent: #FFB000;
+  --color-accent-content: #1A1000;
+  --color-neutral: #11241A;
+  --color-neutral-content: #8FE0A3;
+  --color-info: #4FD8E0;
+  --color-info-content: #03140A;
+  --color-success: #3DFF6E;
+  --color-success-content: #03140A;
+  --color-warning: #FFB000;
+  --color-warning-content: #1A1000;
+  --color-error: #FF5F57;
+  --color-error-content: #140303;
+  --radius-selector: 0.25rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.75rem;
+  --aq-btn-radius: var(--radius-field);
+  --aq-link: #A6FFBA;
+  --aq-muted: #5E9E6E;
+  --aq-ok: #4DFF7C;
+  --aq-warn: #FFB54A;
+  --aq-err: #FF7A6E;
+  --aq-band: #030604;
+  --aq-band-content: var(--color-base-content);
+  --aq-band-muted: var(--aq-muted);
+  --aq-band-link: var(--aq-link);
+  --tok-cached: #1E6B36;
+  --tok-new: #36C45E;
+  --tok-out: var(--aq-link);
+  --viz-in: var(--tok-new);
+  --viz-track: #16261A;
+  --depth: 1;
+  --aq-texture: repeating-linear-gradient(to bottom, rgb(0 0 0 / .16) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 62%, rgb(0 0 0 / .3));
+  --aq-card-shadow: 0 0 0 1px rgb(61 255 110 / .2), 0 0 32px rgb(61 255 110 / .1), inset 0 0 40px rgb(61 255 110 / .05);
+  --aq-glow: 0 0 .45em color-mix(in oklab, currentColor 55%, transparent);
+}

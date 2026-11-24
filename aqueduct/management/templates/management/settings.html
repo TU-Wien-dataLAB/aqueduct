@@ -32,6 +32,28 @@
         </div>
     </section>
 
+    <section class="card bg-base-200" aria-labelledby="appearance-title">
+        <div class="card-body gap-4">
+            <div class="flex flex-col gap-1">
+                <h2 id="appearance-title" class="card-title">{% translate "Appearance" %}</h2>
+                <p class="muted text-sm">{% translate "Saved in this browser." %}</p>
+            </div>
+            <fieldset class="flex flex-col gap-2">
+                <legend class="section-label mb-2">{% translate "Mode" %}</legend>
+                <div class="join">
+                    <input type="radio" name="mode" value="system" class="btn btn-sm join-item" aria-label="{% translate 'System' %}" data-appearance checked>
+                    <input type="radio" name="mode" value="light" class="btn btn-sm join-item" aria-label="{% translate 'Light' %}" data-appearance>
+                    <input type="radio" name="mode" value="dark" class="btn btn-sm join-item" aria-label="{% translate 'Dark' %}" data-appearance>
+                </div>
+                <p class="muted text-xs">{% translate "System follows your device. The sun and moon button switches between your light and dark theme." %}</p>
+            </fieldset>
+            {% translate "Light theme" as legend %}{% translate "Light" as label %}
+            {% include "management/_theme_scheme.html" with scheme="light" %}
+            {% translate "Dark theme" as legend %}{% translate "Dark" as label %}
+            {% include "management/_theme_scheme.html" with scheme="dark" %}
+        </div>
+    </section>
+
     {% if settings.TOS_ENABLED %}
         <section class="card bg-base-200">
             <div class="card-body flex-row flex-wrap items-center justify-between gap-3">

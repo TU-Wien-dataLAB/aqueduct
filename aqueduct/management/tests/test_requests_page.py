@@ -110,8 +110,14 @@ class RequestLogExtrasTest(RoleWorld):
         self.assertEqual(self.paths(model="text-embedding-ada-002"), ["/v1/embeddings"])
         self.assertEqual(len(self.paths(span="1h")), 2)
         self.assertEqual(len(self.paths(span="1d")), 3)
-        self.assertEqual(len(self.paths(span="30d")), 4)
+        self.assertEqual(len(self.paths(span="1m")), 4)
         self.assertEqual(len(self.paths(span="forever")), 4)
+
+    def test_colours_a_row_as_its_status_tab_counts_it(self):
+        Request.objects.create(token=self.solo_key, path="/v1/moved", status_code=302)
+        self.assertEqual(self.paths(status="ok", q="moved"), ["/v1/moved"])
+        page = self.page(q="moved")
+        self.assertContains(page, '<span class="st-ok font-medium">302</span>', html=True)
 
     def test_filters_by_client_and_server_errors_for_the_usage_page(self):
         self.assertEqual(self.paths(status="server_error"), ["/v1/audio/speech"])

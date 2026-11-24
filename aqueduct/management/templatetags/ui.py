@@ -1,17 +1,21 @@
 """Presentation helpers for the management templates: icons, copy buttons, confirm dialogs,
-short numbers."""
+short numbers, expiry."""
+
+from datetime import datetime, timedelta
 
 from django import template
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.forms import BoundField
 from django.template.defaultfilters import floatformat
 from django.template.loader import get_template
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import SafeString, mark_safe
 from django.utils.translation import gettext
 
 register = template.Library()
 THOUSAND = 1000
+EXPIRES_SOON = timedelta(days=14)
 
 
 @register.simple_tag
@@ -89,3 +93,12 @@ def duration(ms: float | None) -> str:
     if ms < THOUSAND:
         return f"{intcomma(round(ms))} ms"
     return f"{floatformat(ms / THOUSAND, 1)} s"
+
+
+@register.filter
+def expiry(moment: datetime | None) -> str:
+    """`expired` once `moment` has passed, `soon` within two weeks of it, else nothing."""
+    now = timezone.now()
+    if moment is None or moment > now + EXPIRES_SOON:
+        return ""
+    return "expired" if moment <= now else "soon"

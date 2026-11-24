@@ -42,17 +42,18 @@ class KeyListTest(RoleWorld):
         Request.objects.create(token=self.solo_key, timestamp=now)
         page = self.as_user(self.member).get(reverse("tokens"))
         member_key, pipeline_key = page.context["tokens"][0], page.context["service_accounts"][0]
-        self.assertEqual([n for _day, n in member_key.week], [0, 0, 0, 0, 0, 1, 2])
-        self.assertEqual(member_key.week_max, 2)
-        self.assertEqual([n for _day, n in pipeline_key.token.week], [0] * 7)
-        self.assertContains(page, "Requests per day, last 7 days: 0, 0, 0, 0, 0, 1, 2")
+        self.assertEqual([bar["height"] for bar in member_key.week], [0, 0, 0, 0, 0, 50, 100])
+        self.assertEqual(member_key.week[-1]["text"], "2 requests")
+        self.assertEqual([bar["height"] for bar in pipeline_key.token.week], [0] * 7)
+        today = timezone.localdate()
+        self.assertContains(page, f'title="{today:%a} {today.day} {today:%b}: 2 requests"')
 
     def test_all_keys_show_their_requests_per_day(self):
         Request.objects.create(token=self.solo_key)
         page = self.as_user(self.org_admin).get(reverse("all_keys"))
-        weeks = {key.name: [n for _day, n in key.week] for key in page.context["keys"]}
-        self.assertEqual(weeks["solo-laptop"], [0, 0, 0, 0, 0, 0, 1])
-        self.assertEqual(weeks["member-laptop"], [0] * 7)
+        weeks = {key.name: [bar["text"] for bar in key.week] for key in page.context["keys"]}
+        self.assertEqual(weeks["solo-laptop"], ["0 requests"] * 6 + ["1 request"])
+        self.assertEqual(weeks["member-laptop"], ["0 requests"] * 7)
 
 
 class KeyPageTest(RoleWorld):
@@ -85,12 +86,10 @@ class KeyPageTest(RoleWorld):
             reverse("service_account_edit", args=[self.pipeline.id]),
         )
 
-    def test_shows_limits_and_latest_requests(self):
-        Request.objects.create(token=self.solo_key, model="gpt-4.1-nano", status_code=429)
+    def test_shows_limits_and_links_to_its_requests(self):
         page = self.page(self.solo, self.solo_key)
         self.assertContains(page, "This hour")
-        self.assertContains(page, "gpt-4.1-nano")
-        self.assertContains(page, '<span class="st-warn font-medium">429</span>', html=True)
+        self.assertContains(page, f'href="{reverse("requests")}?key={self.solo_key.pk}"')
 
     def test_a_new_key_lands_on_its_page_and_shows_once(self):
         self.as_user(self.solo)
@@ -124,4 +123,4 @@ class KeyPageTest(RoleWorld):
         _metric, _title, _top, bars = page.context["charts"]["metrics"][1]
         self.assertEqual([bar["text"] for bar in bars][-2:], ["0 requests", "3 requests"])
         self.assertContains(page, "Models, last 7 days")
-        self.assertContains(page, f"key={self.pipeline_key.pk}&amp;span=7d&amp;model=whisper-1")
+        self.assertContains(page, f"key={self.pipeline_key.pk}&amp;span=1w&amp;model=whisper-1")

@@ -19,9 +19,10 @@ STATUSES = {
 SPANS = {
     "1h": timedelta(hours=1),
     "1d": timedelta(days=1),
-    "7d": timedelta(days=7),
-    "30d": timedelta(days=30),
+    "1w": timedelta(days=7),
+    "1m": timedelta(days=30),
 }
+"""The time frames of the log and the Usage page, and their lengths."""
 SORTS = {
     "time": "timestamp",
     "model": "model",

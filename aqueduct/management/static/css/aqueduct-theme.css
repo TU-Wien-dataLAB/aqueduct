@@ -180,14 +180,14 @@ a.row-link:focus-visible::after { outline: 3px solid var(--color-primary); outli
     linear-gradient(to right, var(--shade), transparent) left / .75rem 100% no-repeat scroll,
     linear-gradient(to left, var(--shade), transparent) right / .75rem 100% no-repeat scroll; }
 
-/* Column widths of the usage tables (_usage_cols.html): a number column is as wide as its one-line heading plus the cell padding;
+/* Column widths of the usage tables (_by_model.html and usage.html): a number column is as wide as its one-line heading plus the cell padding;
    the name column takes the rest. --min is the fixed columns plus 200px for the name, so a table never squeezes a name and the
    card scrolls only where the window cannot hold it. The token bar needs a 1440px window. */
-.usage-table { table-layout: fixed; min-width: var(--min); --min: 744px; --input: 6.5rem; --cached: 6.25rem; --output: 7.25rem; --requests: 5.5rem; --failed: 4.5rem; --median: 6.5rem; --share: 4rem; }
+.usage-table { table-layout: fixed; min-width: var(--min); --min: 744px; --input: 6.5rem; --cached: 6.25rem; --output: 7.25rem; --requests: 5.5rem; --failed: 4.5rem; --time: 6.5rem; --share: 4rem; }
 .usage-table.by-model { --min: 848px; }
 .usage-table .c-bar { width: 14%; }
 .usage-table .c-input { width: var(--input); } .usage-table .c-cached { width: var(--cached); } .usage-table .c-output { width: var(--output); }
-.usage-table .c-requests { width: var(--requests); } .usage-table .c-failed { width: var(--failed); } .usage-table .c-median { width: var(--median); } .usage-table .c-share { width: var(--share); }
+.usage-table .c-requests { width: var(--requests); } .usage-table .c-failed { width: var(--failed); } .usage-table .c-time { width: var(--time); } .usage-table .c-share { width: var(--share); }
 @media (width < 90rem) { .usage-table .c-bar { display: none; } }
 @media (width >= 90rem) { .usage-table { --min: 904px; } .usage-table.by-model { --min: 1008px; } }
 
@@ -215,7 +215,7 @@ a.link-plain:hover { text-decoration: underline; }
 .sw.f, .vbar .f { background: var(--color-error); }
 .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
 .spark { display: flex; gap: 3px; height: 28px; }
-.spark > span { position: relative; display: flex; align-items: flex-end; flex: 1; max-width: 10px; }
+.spark > span { display: flex; align-items: flex-end; flex: 1; max-width: 10px; }
 .spark i { display: block; width: 100%; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--viz-in); opacity: .55; }
 .spark > span:last-child > i, .spark > span:hover > i { opacity: 1; }
 .vbar { position: relative; display: flex; flex-direction: column-reverse; gap: 2px; height: 100%; border-radius: 4px 4px 0 0; }
@@ -237,7 +237,6 @@ a.link-plain:hover { text-decoration: underline; }
 .aq-tip-row { display: flex; align-items: center; gap: .5rem; }
 .aq-tip-row > b { margin-left: auto; padding-left: 1rem; font-weight: 500; }
 .aq-tip .sw { outline: 1px solid var(--color-neutral-content); }
-.spark .aq-tip { bottom: auto; top: calc(100% + 6px); }
 
 
 /* A log row's <details> toggle opens the row of details below it. */

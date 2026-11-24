@@ -116,27 +116,9 @@ class VectorStoreDetailView(BaseAqueductView, TemplateView):
                 files.append(vf)
             vector_store.size_bytes = total_size
 
-            # Prepare batches with progress calculation
             batches = []
             for batch in vector_store.file_batches.all():
                 batch.created_dt = datetime.fromtimestamp(batch.created_at, tz=UTC)
-                file_counts = batch.file_counts or {}
-                total = file_counts.get("total", 0)
-                completed = file_counts.get("completed", 0)
-                failed = file_counts.get("failed", 0)
-                in_progress = file_counts.get("in_progress", 0)
-
-                batch.total_files = total
-                batch.completed_files = completed
-                batch.failed_files = failed
-                batch.in_progress_files = in_progress
-
-                # Calculate progress percentage
-                if total > 0:
-                    batch.progress_pct = int(((completed + failed) / total) * 100)
-                else:
-                    batch.progress_pct = 0
-
                 batches.append(batch)
 
             context["vector_store"] = vector_store

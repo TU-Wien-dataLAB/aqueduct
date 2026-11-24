@@ -25,7 +25,7 @@
     <section class="card bg-base-200">
         <div class="card-body table-card gap-2">
             <h2 class="card-head card-title">{% translate "Files" %}</h2>
-            <div class="overflow-x-auto">
+            <div class="aq-scroll-x">
                 <table class="table table-sm">
                     <thead><tr><th>{% translate "File" %}</th><th>{% translate "Status" %}</th><th class="text-right">{% translate "Size" %}</th><th class="max-md:hidden">{% translate "Added" %}</th></tr></thead>
                     <tbody>
@@ -48,7 +48,7 @@
     <section class="card bg-base-200">
         <div class="card-body table-card gap-2">
             <h2 class="card-head card-title">{% translate "File batches" %}</h2>
-            <div class="overflow-x-auto">
+            <div class="aq-scroll-x">
                 <table class="table table-sm">
                     <thead><tr><th>{% translate "Batch" %}</th><th>{% translate "Status" %}</th><th class="min-w-48">{% translate "Files" %}</th><th class="max-md:hidden">{% translate "Created" %}</th></tr></thead>
                     <tbody>
@@ -56,10 +56,7 @@
                             <tr>
                                 <td class="font-mono text-xs">{{ batch.id }}</td>
                                 <td>{% include "management/_status.html" with status=batch.status %}</td>
-                                <td>
-                                    <div class="text-xs tabular-nums">{% blocktranslate with done=batch.completed_files total=batch.total_files %}{{ done }} of {{ total }} done{% endblocktranslate %}{% if batch.failed_files %} · <span class="st-err">{% blocktranslate with failed=batch.failed_files %}{{ failed }} failed{% endblocktranslate %}</span>{% endif %}{% if batch.in_progress_files %} · {% blocktranslate with running=batch.in_progress_files %}{{ running }} running{% endblocktranslate %}{% endif %}</div>
-                                    <progress class="progress progress-primary mt-1 h-1.5 w-full" value="{{ batch.progress_pct }}" max="100"></progress>
-                                </td>
+                                <td>{% with counts=batch.file_counts %}{% include "management/_progress.html" with done=counts.completed failed=counts.failed total=counts.total running=counts.in_progress %}{% endwith %}</td>
                                 <td class="muted whitespace-nowrap max-md:hidden">{{ batch.created_dt|date:"j M Y H:i" }}</td>
                             </tr>
                         {% empty %}

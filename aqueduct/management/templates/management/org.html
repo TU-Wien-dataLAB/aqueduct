@@ -8,7 +8,7 @@
 {% block body %}
 <section class="card bg-base-200">
     <div class="card-body table-card">
-        <div class="overflow-x-auto">
+        <div class="aq-scroll-x">
             <table class="table">
                 <thead>
                     <tr>
@@ -30,7 +30,7 @@
                             <td class="text-right tabular-nums">{{ team.member_profiles.count }}</td>
                             <td class="text-right tabular-nums max-md:hidden">{{ team.service_accounts.count }}</td>
                             <td class="text-right tabular-nums max-sm:hidden">{{ team.week.requests|default:0|intcomma }}</td>
-                            <td class="text-right tabular-nums max-lg:hidden">{{ team.week.tokens|default:0|intcomma }}</td>
+                            <td class="text-right tabular-nums max-lg:hidden">{{ team.week.tokens|compact }}</td>
                             <td>
                                 {% if is_org_admin %}
                                     {% blocktranslate with name=team.name asvar question %}Delete {{ name }}?{% endblocktranslate %}

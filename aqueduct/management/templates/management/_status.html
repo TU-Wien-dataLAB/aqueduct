@@ -1,1 +1,2 @@
-{% if status == "completed" %}<span class="st-ok">{{ status }}</span>{% elif status == "failed" or status == "expired" %}<span class="st-err">{{ status }}</span>{% elif status == "in_progress" %}<span class="st-warn">{{ status }}</span>{% else %}<span class="muted">{{ status }}</span>{% endif %}
+{% comment %}A batch's, file's or vector store's status: done, failed, cancelled, or still going.{% endcomment %}
+{% if status == "completed" %}<span class="st-ok">{{ status }}</span>{% elif status == "failed" or status == "expired" %}<span class="st-err">{{ status }}</span>{% elif status == "cancelled" or status == "cancelling" %}<span class="muted">{{ status }}</span>{% else %}<span class="st-warn">{{ status }}</span>{% endif %}

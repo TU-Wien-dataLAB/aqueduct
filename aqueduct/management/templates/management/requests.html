@@ -35,8 +35,8 @@
             <option value="">{% translate "Any time" %}</option>
             <option value="1h"{% if span == "1h" %} selected{% endif %}>{% translate "Last hour" %}</option>
             <option value="1d"{% if span == "1d" %} selected{% endif %}>{% translate "Last 24 hours" %}</option>
-            <option value="7d"{% if span == "7d" %} selected{% endif %}>{% translate "Last 7 days" %}</option>
-            <option value="30d"{% if span == "30d" %} selected{% endif %}>{% translate "Last 30 days" %}</option>
+            <option value="1w"{% if span == "1w" %} selected{% endif %}>{% translate "Last 7 days" %}</option>
+            <option value="1m"{% if span == "1m" %} selected{% endif %}>{% translate "Last 30 days" %}</option>
         </select>
     </label>
     <noscript><button type="submit" class="btn btn-sm">{% translate "Filter" %}</button></noscript>
@@ -79,7 +79,7 @@
                             <td>{% include "management/_request_status.html" %}</td>
                             <td class="text-right">{{ request.input_tokens|default_if_none:"—"|intcomma }}</td>
                             <td class="text-right">{{ request.output_tokens|default_if_none:"—"|intcomma }}</td>
-                            <td class="whitespace-nowrap text-right">{% if request.response_time_ms is not None %}{{ request.response_time_ms|intcomma }} ms{% else %}—{% endif %}</td>
+                            <td class="whitespace-nowrap text-right">{{ request.response_time_ms|duration }}</td>
                         </tr>
                         <tr class="row-details">
                             <td></td>
@@ -87,7 +87,7 @@
                                 <dl class="grid grid-cols-1 gap-x-8 gap-y-3 pb-3 sm:grid-cols-2 md:grid-cols-4" aria-label="{% blocktranslate with id=request.id %}Details of request {{ id }}{% endblocktranslate %}">
                                     <div><dt class="muted text-xs">{% translate "Request ID" %}</dt><dd class="font-mono text-sm">{{ request.id }}</dd></div>
                                     <div class="min-w-0 sm:col-span-2"><dt class="muted text-xs">{% translate "Path" %}</dt><dd class="break-words font-mono text-sm">{{ request.method }} {{ request.path|default:"—" }}</dd></div>
-                                    <div><dt class="muted text-xs">{% translate "Processing" %}</dt><dd class="text-sm tabular-nums">{% if request.processing_time_ms is not None %}{{ request.processing_time_ms|intcomma }} ms{% else %}—{% endif %}</dd></div>
+                                    <div><dt class="muted text-xs">{% translate "Processing" %}</dt><dd class="text-sm tabular-nums">{{ request.processing_time_ms|duration }}</dd></div>
                                     <div><dt class="muted text-xs">{% translate "Input from cache" %}</dt><dd class="text-sm tabular-nums">{{ request.cached_input_tokens|intcomma }}</dd></div>
                                     <div><dt class="muted text-xs">{% translate "Reasoning tokens" %}</dt><dd class="text-sm tabular-nums">{{ request.reasoning_tokens|intcomma }}</dd></div>
                                     {% if request.user_id %}<div class="min-w-0 sm:col-span-2"><dt class="muted text-xs">{% translate "User ID" %}</dt><dd class="break-all text-sm">{{ request.user_id }}</dd></div>{% endif %}

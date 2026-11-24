@@ -7,7 +7,7 @@
 {% block body %}
 <section class="card bg-base-200">
     <div class="card-body table-card">
-        <div class="overflow-x-auto">
+        <div class="aq-scroll-x">
             <table class="table table-sm">
                 <thead>
                     <tr>
@@ -29,7 +29,7 @@
                             <td>{{ file.purpose }}</td>
                             <td class="whitespace-nowrap text-right">{{ file.bytes|filesizeformat }}</td>
                             <td class="muted whitespace-nowrap max-md:hidden">{{ file.created_dt|date:"j M Y H:i" }}</td>
-                            <td class="whitespace-nowrap max-md:hidden">{% include "management/_expiration_badge.html" with obj=file %}</td>
+                            <td class="whitespace-nowrap max-md:hidden">{% include "management/_expires.html" with at=file.expires_dt %}</td>
                             <td>
                                 <div class="flex justify-end gap-1">
                                     {% with dialog_id="preview-"|add:file.id %}{% include "management/_preview.html" with name=file.filename text=file.preview more=file.num_lines %}{% endwith %}

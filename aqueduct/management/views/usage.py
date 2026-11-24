@@ -20,7 +20,7 @@ from gateway.config import get_router_config
 from management.models import Org, Request, Token
 from management.templatetags.ui import compact, percent
 from management.views.base import BaseAqueductView
-from management.views.requests import STATUSES
+from management.views.requests import SPANS, STATUSES
 
 TOTALS = {
     "requests": Count("id"),
@@ -31,67 +31,27 @@ TOTALS = {
     "reasoning": Sum("reasoning_tokens", default=0),
 }
 """The figures of a group of requests: counts per status and token sums."""
-STEPS = {
-    "minute": ("H:i", _("Tokens per minute"), _("Requests per minute")),
-    "hour": ("H:00", _("Tokens per hour"), _("Requests per hour")),
-    "day": ("j M", _("Tokens per day"), _("Requests per day")),
+STEPS: dict[str, tuple[timedelta, Any, str, str, str]] = {
+    "minute": (
+        timedelta(minutes=1),
+        TruncMinute,
+        "H:i",
+        _("Tokens per minute"),
+        _("Requests per minute"),
+    ),
+    "hour": (timedelta(hours=1), TruncHour, "H:00", _("Tokens per hour"), _("Requests per hour")),
+    "day": (timedelta(days=1), TruncDay, "j M", _("Tokens per day"), _("Requests per day")),
 }
-"""How the chart labels a time bucket of each size, and its titles."""
+"""Each time bucket's length, its database function, its label format and the chart titles."""
+SPAN_STEPS = {"1h": "minute", "1d": "hour", "1w": "day", "1m": "day"}
+"""The time bucket of each time frame; the Requests log's SPANS give the time frames' lengths."""
 STATUS_ROWS = (
-    ("ok", _("OK"), "2xx", "ok", "st-ok"),
+    ("ok", _("OK"), "2xx, 3xx", "ok", "st-ok"),
     ("rate_limited", _("Rate-limited"), "429", "warning", "st-warn"),
     ("client_error", _("Client error"), "4xx", "off", "st-off"),
     ("server_error", _("Server error"), "5xx", "failed", "st-err"),
 )
-LOG_SPANS = {"1h": "1h", "1d": "1d", "1w": "7d", "1m": "30d"}
-"""The Requests log's time filter for each time frame, for links into the log."""
 AXIS_LABELS, SPARK_BARS, TOP_ROWS, FAILED_ALERT_PERCENT = 8, 12, 10, 2
-
-
-def _bucket_config_for_range(
-    start_time: dt.datetime, end_time: dt.datetime
-) -> tuple[timedelta, Any]:
-    """Determine bucket delta and round function for a custom time range."""
-    duration = end_time - start_time
-    if duration <= timedelta(hours=2):
-        delta = timedelta(minutes=1)
-        round_time = lambda d: d.replace(second=0, microsecond=0)
-    elif duration <= timedelta(days=2):
-        delta = timedelta(hours=1)
-        round_time = lambda d: d.replace(minute=0, second=0, microsecond=0)
-    else:
-        delta = timedelta(days=1)
-        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
-    return delta, round_time
-
-
-def get_all_buckets(start_time: dt.datetime, now: dt.datetime, freq_label: str) -> list[int]:
-    points = []
-    if freq_label == "1h":
-        # one point per minute
-        delta = timedelta(minutes=1)
-        round_time = lambda d: d.replace(second=0, microsecond=0)
-    elif freq_label == "1d":
-        # one point per hour
-        delta = timedelta(hours=1)
-        round_time = lambda d: d.replace(minute=0, second=0, microsecond=0)
-    elif freq_label == "1m":
-        # one point per day
-        delta = timedelta(days=1)
-        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
-    elif freq_label == "custom":
-        delta, round_time = _bucket_config_for_range(start_time, now)
-    else:
-        # one point per day (1w fallback)
-        delta = timedelta(days=1)
-        round_time = lambda d: d.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    d = round_time(start_time)
-    end_time = round_time(now)
-    while d <= end_time:
-        points.append(int(d.timestamp() * 1000))
-        d = d + delta
-    return points
 
 
 def _with_shares(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -103,17 +63,17 @@ def _with_shares(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def _tokens(count: float) -> str:
+def show_tokens(count: float) -> str:
     return ngettext("%(count)s token", "%(count)s tokens", count) % {"count": compact(count)}
 
 
-def _requests(count: float) -> str:
+def show_requests(count: float) -> str:
     return ngettext("%(count)s request", "%(count)s requests", count) % {"count": intcomma(count)}
 
 
 def _bars(
-    groups: list[tuple[str, dict[str, Any]]],
-    parts_of: Callable[[dict[str, Any]], tuple[tuple[str, str, float], ...]],
+    groups: list[tuple[str, Any]],
+    parts_of: Callable[[Any], tuple[tuple[str, str, float], ...]],
     show: Callable[[float], str],
 ) -> tuple[list[dict[str, Any]], float]:
     """A bar per labelled group of figures, stacked from its (CSS class, name, amount) parts,
@@ -134,22 +94,35 @@ def _bars(
     return bars, top
 
 
-def usage_series(reqs: QuerySet[Request], trunc: Any, buckets: list[int]) -> list[dict[str, Any]]:
-    """The figures of each time bucket, labelled for the charts."""
+def spark(points: list[tuple[str, float]], show: Callable[[float], str]) -> list[dict[str, Any]]:
+    """A small bar chart for _spark.html: a bar per (heading, amount), scaled to the largest."""
+    return _bars(points, lambda amount: (("i", "", amount),), show)[0]
+
+
+def usage_series(
+    reqs: QuerySet[Request], step: str, start: dt.datetime, end: dt.datetime
+) -> list[dict[str, Any]]:
+    """The figures of each `step` long time bucket from `start` to `end`, labelled for the
+    charts. Buckets start at whole minutes, hours or days in UTC, as the database cuts them."""
+    length, trunc, label_format, *_ = STEPS[step]
+    seconds = int(length.total_seconds())
     found = {
-        int(row.pop("period").timestamp() * 1000): row
-        for row in reqs.annotate(period=trunc).values("period").annotate(**TOTALS).order_by()
+        int(row.pop("period").timestamp()): row
+        for row in reqs.annotate(period=trunc("timestamp"))
+        .values("period")
+        .annotate(**TOTALS)
+        .order_by()
     }
+    first, last = (int(moment.timestamp()) // seconds * seconds for moment in (start, end))
     return _with_shares(
         [
             {
-                **found.get(ms, dict.fromkeys(TOTALS, 0)),
+                **found.get(bucket, dict.fromkeys(TOTALS, 0)),
                 "label": date_format(
-                    timezone.localtime(dt.datetime.fromtimestamp(ms / 1000, dt.UTC)),
-                    STEPS[trunc.kind][0],
+                    timezone.localtime(dt.datetime.fromtimestamp(bucket, dt.UTC)), label_format
                 ),
             }
-            for ms in buckets
+            for bucket in range(first, last + 1, seconds)
         ]
     )
 
@@ -164,7 +137,7 @@ def usage_charts(rows: list[dict[str, Any]], step: str) -> dict[str, Any]:
             ("n", gettext("New input"), row["new_input"]),
             ("o", gettext("Output"), row["output"]),
         ),
-        _tokens,
+        show_tokens,
     )
     requests, most_requests = _bars(
         groups,
@@ -173,7 +146,7 @@ def usage_charts(rows: list[dict[str, Any]], step: str) -> dict[str, Any]:
             ("r", gettext("Rate-limited"), row["rate_limited"]),
             ("f", gettext("Failed"), row["failed"]),
         ),
-        _requests,
+        show_requests,
     )
     every = math.ceil(len(rows) / AXIS_LABELS) or 1
     return {
@@ -185,8 +158,8 @@ def usage_charts(rows: list[dict[str, Any]], step: str) -> dict[str, Any]:
             if index % every == 0
         ],
         "metrics": [
-            ("tokens", STEPS[step][1], _tokens(most_tokens), tokens),
-            ("requests", STEPS[step][2], _requests(most_requests), requests),
+            ("tokens", STEPS[step][3], show_tokens(most_tokens), tokens),
+            ("requests", STEPS[step][4], show_requests(most_requests), requests),
         ],
     }
 
@@ -254,12 +227,6 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         reqs = reqs.filter(model__in=allowed_models)
 
         # Time frame selection: 1 hour, 1 day, 1 week, 1 month, or custom range
-        span_choices = {
-            "1h": {"delta": timedelta(hours=1), "trunc": TruncMinute("timestamp")},
-            "1d": {"delta": timedelta(days=1), "trunc": TruncHour("timestamp")},
-            "1w": {"delta": timedelta(days=7), "trunc": TruncDay("timestamp")},
-            "1m": {"delta": timedelta(days=30), "trunc": TruncDay("timestamp")},
-        }
         now = timezone.now()
 
         # Parse optional custom date range
@@ -269,28 +236,21 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             custom_start_str, custom_end_str, now
         )
 
-        selected_span = self.request.GET.get("span", "1d")
+        selected_span = self.request.GET.get("span", "")
         if custom_start and custom_end:
-            selected_span = "custom"
-        elif selected_span not in span_choices:
-            selected_span = "1d"
-
-        if selected_span == "custom" and custom_start and custom_end:
-            start_time = custom_start
-            end_time = custom_end
-            # Determine trunc based on range duration
-            duration = end_time - start_time
-            if duration <= timedelta(hours=2):
-                trunc_fn = TruncMinute("timestamp")
-            elif duration <= timedelta(days=2):
-                trunc_fn = TruncHour("timestamp")
-            else:
-                trunc_fn = TruncDay("timestamp")
-            span_cfg: dict[str, Any] = {"delta": duration, "trunc": trunc_fn}
+            selected_span, start_time, end_time = "custom", custom_start, custom_end
+            length = end_time - start_time
+            step = (
+                "minute"
+                if length <= timedelta(hours=2)
+                else "hour"
+                if length <= timedelta(days=2)
+                else "day"
+            )
         else:
-            span_cfg = span_choices[selected_span]
-            start_time = now - span_cfg["delta"]
-            end_time = now
+            selected_span = selected_span if selected_span in SPAN_STEPS else "1d"
+            start_time, end_time = now - SPANS[selected_span], now
+            step = SPAN_STEPS[selected_span]
 
         # Filter requests based on selected time span
         reqs_span = reqs.filter(timestamp__gte=start_time)
@@ -318,9 +278,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
 
         # Figures in total and per time bucket
         totals = _with_shares([reqs_span.aggregate(**TOTALS)])[0]
-        series = usage_series(
-            reqs_span, span_cfg["trunc"], get_all_buckets(start_time, end_time, selected_span)
-        )
+        series = usage_series(reqs_span, step, start_time, end_time)
 
         # Top entities: orgs global, or tokens per org, or user IDs per token
         limit = 100 if self.request.GET.get("rows") == "all" else TOP_ROWS
@@ -335,7 +293,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
 
         # Links into the Requests log under the same filters
         log_filters = {
-            "span": LOG_SPANS.get(selected_span),
+            "span": selected_span if selected_span in SPANS else None,
             "key": selected_token.pk if selected_token else None,
             "model": selected_model,
         }
@@ -368,7 +326,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 "totals": totals,
                 "total_requests": totals["requests"],
                 "kpis": self._kpis(series, totals),
-                "charts": usage_charts(series, span_cfg["trunc"].kind),
+                "charts": usage_charts(series, step),
                 "statuses": [
                     {
                         "label": label,
@@ -488,18 +446,18 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         def card(
             label: str, value: str, note: str, field: str, show: Callable[[float], str]
         ) -> dict[str, Any]:
-            spark, _ = _bars(slots, lambda figures: (("i", "", figures[field]),), show)
-            return {"label": label, "value": value, "note": note, "spark": spark}
+            bars = spark([(heading, figures[field]) for heading, figures in slots], show)
+            return {"label": label, "value": value, "note": note, "spark": bars}
 
         share = percent(totals["cached"], totals["input"])
         return [
-            card(gettext("Requests"), intcomma(totals["requests"]), "", "requests", _requests),
+            card(gettext("Requests"), intcomma(totals["requests"]), "", "requests", show_requests),
             card(
                 gettext("Input tokens"),
                 compact(totals["input"]),
                 gettext("%(share)s from cache") % {"share": share} if totals["input"] else "",
                 "input",
-                _tokens,
+                show_tokens,
             ),
             card(
                 gettext("Output tokens"),
@@ -508,7 +466,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                 if totals["reasoning"]
                 else "",
                 "output",
-                _tokens,
+                show_tokens,
             ),
             card(
                 gettext("Failed"),

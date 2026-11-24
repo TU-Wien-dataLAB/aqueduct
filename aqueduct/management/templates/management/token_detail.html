@@ -9,8 +9,9 @@
         <span>{% if team %}{% translate "Service account" %} · <a class="link-plain" href="{% url 'team' team.id %}">{{ team.name }}</a>{% elif own %}{% translate "Personal" %}{% else %}{% translate "Personal" %} · {{ token.user.email }}{% endif %}</span>
         <span class="font-mono">{{ token.key_preview }}</span>
         <span>{% blocktranslate with date=token.created_at|date:"j M Y" %}Created {{ date }}{% endblocktranslate %}</span>
-        <span>{% translate "Expires" %}: {% include "management/_expires.html" %}</span>
+        <span>{% translate "Expires" %}: {% include "management/_expires.html" with at=token.expires_at %}</span>
         <span>{% if last_used %}{% blocktranslate with time=last_used|naturaltime %}Last used {{ time }}{% endblocktranslate %}{% else %}{% translate "Never used" %}{% endif %}</span>
+        <a class="link-plain" href="{{ log_url }}">{% translate "All requests of this key" %}</a>
     </div>
 {% endblock %}
 {% block actions %}
@@ -58,7 +59,7 @@
 <section class="card bg-base-200" aria-labelledby="limits-title">
     <div class="card-body table-card gap-2">
         <h2 id="limits-title" class="card-head card-title">{% translate "Limits" %}</h2>
-        <div class="overflow-x-auto">
+        <div class="aq-scroll-x">
             <table class="table table-sm">
                 <thead>
                     <tr>
@@ -72,9 +73,9 @@
                     {% for row in limit_rows %}
                         <tr>
                             <th scope="row" class="whitespace-nowrap text-sm font-medium">{% if row.window == "min" %}{% translate "This minute" %}{% elif row.window == "hour" %}{% translate "This hour" %}{% else %}{% translate "Today" %}{% endif %}</th>
-                            {% with cell=row.requests %}{% include "management/_limit_cell.html" %}{% endwith %}
-                            {% with cell=row.input_tokens %}{% include "management/_limit_cell.html" %}{% endwith %}
-                            {% with cell=row.output_tokens %}{% include "management/_limit_cell.html" %}{% endwith %}
+                            <td class="align-top">{% include "management/_meter.html" with used=row.requests.0 limit=row.requests.1 %}</td>
+                            <td class="align-top">{% include "management/_meter.html" with used=row.input_tokens.0 limit=row.input_tokens.1 %}</td>
+                            <td class="align-top">{% include "management/_meter.html" with used=row.output_tokens.0 limit=row.output_tokens.1 %}</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -84,39 +85,6 @@
             {% if concurrent_limit is not None %}{% blocktranslate count n=concurrent_limit %}At most {{ n }} request at once.{% plural %}At most {{ n }} requests at once.{% endblocktranslate %} {% endif %}
             {% translate "Over a limit the gateway answers 429 until the window resets." %}
         </p>
-    </div>
-</section>
-
-<section class="card bg-base-200" aria-labelledby="latest-title">
-    <div class="card-body table-card gap-2">
-        <div class="card-head flex flex-wrap items-center justify-between gap-3">
-            <h2 id="latest-title" class="card-title">{% translate "Latest requests" %}</h2>
-            <a class="link-plain text-sm" href="{% url 'requests' %}?key={{ token.id }}">{% translate "All requests of this key" %}</a>
-        </div>
-        <div class="overflow-x-auto">
-            <table class="table table-sm">
-                <thead>
-                    <tr>
-                        <th>{% translate "Time" %}</th><th>{% translate "Model" %}</th><th>{% translate "Status" %}</th>
-                        <th class="text-right">{% translate "Input" %}</th><th class="text-right">{% translate "Output" %}</th><th class="text-right">{% translate "Response" %}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for request in latest %}
-                        <tr>
-                            <td class="muted whitespace-nowrap" title="{{ request.timestamp|date:'Y-m-d H:i:s' }} UTC">{{ request.timestamp|naturaltime }}</td>
-                            <td><span class="font-mono">{{ request.model|default:"—" }}</span><div class="muted truncate font-mono text-xs">{{ request.path }}</div></td>
-                            <td>{% include "management/_request_status.html" %}</td>
-                            <td class="text-right">{{ request.input_tokens|default_if_none:"—"|intcomma }}</td>
-                            <td class="text-right">{{ request.output_tokens|default_if_none:"—"|intcomma }}</td>
-                            <td class="whitespace-nowrap text-right">{% if request.response_time_ms is not None %}{{ request.response_time_ms|intcomma }} ms{% else %}—{% endif %}</td>
-                        </tr>
-                    {% empty %}
-                        <tr><td colspan="6" class="muted">{% translate "This key has made no requests yet." %}</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
     </div>
 </section>
 {% endblock %}

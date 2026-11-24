@@ -1,6 +1,9 @@
+from datetime import timedelta
+
 from django.template import Context, Template
 from django.test import SimpleTestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from management.models import Request
 from management.tests.helpers import RoleWorld
@@ -104,7 +107,7 @@ class UsagePageTest(RoleWorld):
         server = page.context["statuses"][-1]
         self.assertEqual((server["count"], server["share"]), (1, "100%"))
         self.assertEqual(
-            server["url"], f"{reverse('requests')}?span=7d&model=gpt-4.1-nano&status=server_error"
+            server["url"], f"{reverse('requests')}?span=1w&model=gpt-4.1-nano&status=server_error"
         )
 
 
@@ -125,4 +128,11 @@ class UsageFiltersTest(SimpleTestCase):
                 "{{ a|duration }} {{ b|duration }} {{ c|duration }}", a=258, b=4560, c=None
             ),
             "258 ms 4.6 s —",
+        )
+
+    def test_expiry(self):
+        now = timezone.now()
+        days = [None, *(now + timedelta(days=n) for n in (-0.01, 13, 15))]
+        self.assertEqual(
+            [self.render("{{ at|expiry }}", at=at) for at in days], ["", "expired", "soon", ""]
         )

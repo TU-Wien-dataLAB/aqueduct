@@ -5,13 +5,12 @@ Requests this hour and today against the key's limits.
     ("min"/"hour"/"day"), each {"req": float, "in": int, "out": int}.
   - limits: a LimitSet; windows() yields (name, secs, rpm, itpm, otpm), finest first.
 
-A window without a request limit shows "—" and no bar. Warning from 80%, error from 100%.
 {% endcomment %}
-{% load i18n humanize %}
+{% load i18n %}
 <div class="flex w-full gap-4">
     {% translate "This hour" as hour_label %}{% translate "Today" as day_label %}
     {% for window in limits.windows %}{% if window.0 != "min" %}
-        {% if window.0 == "hour" %}{% with used=usage.hour.req limit=window.2 label=hour_label %}{% include "management/_usage_bar.html" %}{% endwith %}
-        {% else %}{% with used=usage.day.req limit=window.2 label=day_label %}{% include "management/_usage_bar.html" %}{% endwith %}{% endif %}
+        {% if window.0 == "hour" %}{% include "management/_meter.html" with used=usage.hour.req limit=window.2 label=hour_label %}
+        {% else %}{% include "management/_meter.html" with used=usage.day.req limit=window.2 label=day_label %}{% endif %}
     {% endif %}{% endfor %}
 </div>

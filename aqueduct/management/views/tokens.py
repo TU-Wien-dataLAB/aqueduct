@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import ClassVar
 
 from django import forms
@@ -9,12 +9,13 @@ from django.contrib.messages import get_messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Max, Q, QuerySet
-from django.db.models.functions import TruncDate, TruncDay
+from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.formats import date_format
 from django.utils.http import urlencode
 from django.views import View
 from django.views.decorators.http import require_POST
@@ -32,14 +33,14 @@ from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
 from management.models import LimitSet, ServiceAccount, Token, UserProfile
 from management.views.base import BaseAqueductView
-from management.views.usage import get_all_buckets, model_rows, usage_charts, usage_series
+from management.views.usage import model_rows, show_requests, spark, usage_charts, usage_series
 
 NEW_KEY_TAG = "token-regenerated-key"
 """The message tag that carries a new key's secret to the next page, which shows it once."""
 
 
-def add_week(profile: UserProfile, tokens: Iterable[Token]) -> list[date]:
-    """Give each key `week`, its requests on each of the last 7 days, and `week_max`."""
+def add_week(profile: UserProfile, tokens: Iterable[Token]) -> None:
+    """Give each key `week`, a spark of its requests on each of the last 7 days."""
     days = [timezone.localdate() - timedelta(days=n) for n in range(6, -1, -1)]
     tokens = list(tokens)
     counts = {
@@ -51,9 +52,10 @@ def add_week(profile: UserProfile, tokens: Iterable[Token]) -> list[date]:
         .order_by()
     }
     for token in tokens:
-        token.week = [(day, counts.get((token.id, day), 0)) for day in days]  # type: ignore[attr-defined]
-        token.week_max = max(n for _day, n in token.week)  # type: ignore[attr-defined]
-    return days
+        token.week = spark(  # type: ignore[attr-defined]
+            [(date_format(day, "D j M"), counts.get((token.id, day), 0)) for day in days],
+            show_requests,
+        )
 
 
 class UserTokensView(BaseAqueductView, TemplateView):
@@ -184,7 +186,7 @@ class AllKeysView(BaseAqueductView, ListView):
 
 
 class TokenDetailView(BaseAqueductView, DetailView):
-    """One key: who owns it, its limits and current use, and its latest requests."""
+    """One key: who owns it, its use in the last 7 days, and its limits and current use."""
 
     template_name = "management/token_detail.html"
     pk_url_kwarg = "id"
@@ -200,14 +202,15 @@ class TokenDetailView(BaseAqueductView, DetailView):
         usage = get_per_token_usage([token.id])[token.id]
         # The last 7 days, drawn as the Usage page draws them.
         now = timezone.now()
-        week = self.profile.visible_requests().filter(
-            token=token, timestamp__gte=now - timedelta(days=7)
-        )
-        buckets = get_all_buckets(now - timedelta(days=7), now, "1w")
-        log = f"{reverse('requests')}?key={token.pk}&span=7d"
+        start = now - timedelta(days=7)
+        week = self.profile.visible_requests().filter(token=token, timestamp__gte=start)
+        log = f"{reverse('requests')}?key={token.pk}"
         context.update(
-            charts=usage_charts(usage_series(week, TruncDay("timestamp"), buckets), "day"),
-            per_model=model_rows(week, lambda model: f"{log}&{urlencode({'model': model})}"),
+            charts=usage_charts(usage_series(week, "day", start, now), "day"),
+            per_model=model_rows(
+                week, lambda model: f"{log}&span=1w&{urlencode({'model': model})}"
+            ),
+            log_url=log,
             can_manage=self.profile.manageable_tokens().filter(pk=token.pk).exists(),
             team=token.service_account.team if token.service_account else None,
             own=token.user_id == self.request.user.id and token.service_account is None,
@@ -222,7 +225,6 @@ class TokenDetailView(BaseAqueductView, DetailView):
             ],
             concurrent_limit=limits.concurrent_requests_limit,
             last_used=token.requests.aggregate(last=Max("timestamp"))["last"],
-            latest=token.requests.order_by("-timestamp")[:10],
             new_key=next(
                 (
                     str(message.message)

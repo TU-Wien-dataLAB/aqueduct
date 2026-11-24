@@ -22,7 +22,7 @@
     <div class="card-body table-card gap-2">
         <h2 id="sa-title" class="card-head card-title">{% translate "Service accounts" %} <span class="muted text-sm font-normal">{{ service_accounts|length }}/{{ max_service_accounts }}</span></h2>
         {% if service_accounts %}
-            <div class="overflow-x-auto">
+            <div class="aq-scroll-x">
                 <table class="table">
                     <thead>
                         <tr>
@@ -40,7 +40,7 @@
                                     <div class="muted text-xs"><span class="font-mono">{{ sa.token.key_preview }}</span>{% if sa.description %} · {{ sa.description|truncatechars:60 }}{% endif %}</div>
                                 </td>
                                 <td class="max-w-56 truncate max-md:hidden">{{ sa.token.user.email|default:_("(No owner)") }}</td>
-                                <td class="whitespace-nowrap max-md:hidden">{% if sa.token %}{% include "management/_expires.html" with token=sa.token %}{% endif %}</td>
+                                <td class="whitespace-nowrap max-md:hidden">{% if sa.token %}{% include "management/_expires.html" with at=sa.token.expires_at %}{% endif %}</td>
                                 <td>
                                     {% if is_team_admin %}
                                         <div class="relative z-10 flex justify-end gap-1">
@@ -75,7 +75,7 @@
     <div class="card-body table-card gap-2">
         <h2 id="members-title" class="card-head card-title">{% translate "Members" %} <span class="muted text-sm font-normal">{{ member_badges|length }}</span></h2>
         {% if member_badges %}
-            <div class="overflow-x-auto">
+            <div class="aq-scroll-x">
                 <table class="table">
                     <thead>
                         <tr>

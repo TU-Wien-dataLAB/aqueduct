@@ -6,7 +6,6 @@ from asgiref.sync import async_to_sync
 from django.contrib import messages
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
-from django.utils import timezone
 from django.views.generic import TemplateView, View
 
 from gateway.config import get_files_api_client
@@ -31,8 +30,6 @@ class UserBatchesView(BaseAqueductView, TemplateView):
         profile = self.profile
 
         batches = Batch.objects.filter(token__in=profile.my_tokens()).order_by("-created_at")
-
-        now_ts = int(timezone.now().timestamp())
 
         # Convert Unix timestamp to datetime for template date filter
         for b in batches:
@@ -63,18 +60,7 @@ class UserBatchesView(BaseAqueductView, TemplateView):
                 b.error_file_preview = ""
                 b.error_file_has_preview = False
                 b.error_file_id_preview = "-"
-            # expiration display
-            if b.expires_at is not None:
-                b.expires_dt = datetime.fromtimestamp(b.expires_at, tz=UTC)
-                if b.expires_at <= now_ts:
-                    b.expiration_status = "expired"
-                elif b.expires_at <= now_ts + 86400 * 14:  # within 2 weeks
-                    b.expiration_status = "expiring_soon"
-                else:
-                    b.expiration_status = "active"
-            else:
-                b.expires_dt = None
-                b.expiration_status = "never"
+            b.expires_dt = b.expires_at and datetime.fromtimestamp(b.expires_at, tz=UTC)
 
         context["batches"] = batches
         context["manageable_token_ids"] = set(

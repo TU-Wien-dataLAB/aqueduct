@@ -26,36 +26,38 @@
 
 <section class="grid grid-cols-1 gap-4 xl:grid-cols-5">
     <div class="card min-w-0 self-start bg-base-200 xl:col-span-3">
-        <div class="card-body table-card overflow-x-auto">
-            <table class="table table-fixed">
-                <thead>
-                    <tr>
-                        <th>{% translate "Model" %}</th>
-                        <th class="hidden w-52 xl:table-cell">{% translate "Aliases" %}</th>
-                        <th class="w-24 text-right">{% translate "Context" %}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for model in model_list %}
-                        {% with info=model.model_info %}
+        <div class="card-body table-card">
+            <div class="aq-scroll-x">
+                <table class="table table-fixed">
+                    <thead>
                         <tr>
-                            <td>
-                                <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                                    <a class="row-link min-w-0 max-w-full truncate font-mono font-semibold" title="{{ model.model_name }}" href="{% querystring model=model.model_name %}#model-detail"{% if model == selected %} aria-current="true"{% endif %}>{{ model.model_name }}</a>
-                                    {% if info.deprecation_date %}<span class="badge badge-outline badge-sm flex-none uppercase">{% translate "Deprecated" %}</span>{% endif %}
-                                </div>
-                                <p class="muted mt-0.5 truncate text-xs"{% if info.description %} title="{{ info.description }}"{% endif %}>{% include "management/_model_mode.html" with mode=model.mode %}{% if info.description %} · {{ info.description }}{% endif %}</p>
-                                {% if info.aliases %}<p class="muted mt-0.5 truncate font-mono text-xs xl:hidden" title="{{ info.aliases|join:', ' }}">{{ info.aliases|join:", " }}</p>{% endif %}
-                            </td>
-                            <td class="muted hidden break-words font-mono text-xs xl:table-cell">{{ info.aliases|join:", " }}</td>
-                            <td class="text-right tabular-nums">{% firstof info.contextWindow info.max_input_tokens "—" as context_length %}{{ context_length|intcomma }}</td>
+                            <th>{% translate "Model" %}</th>
+                            <th class="hidden w-52 xl:table-cell">{% translate "Aliases" %}</th>
+                            <th class="w-24 text-right">{% translate "Context" %}</th>
                         </tr>
-                        {% endwith %}
-                    {% empty %}
-                        <tr><td colspan="3" class="muted">{% translate "No model matches." %}</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {% for model in model_list %}
+                            {% with info=model.model_info %}
+                            <tr>
+                                <td>
+                                    <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                                        <a class="row-link min-w-0 max-w-full truncate font-mono font-semibold" title="{{ model.model_name }}" href="{% querystring model=model.model_name %}#model-detail"{% if model == selected %} aria-current="true"{% endif %}>{{ model.model_name }}</a>
+                                        {% if info.deprecation_date %}<span class="badge badge-outline badge-sm flex-none uppercase">{% translate "Deprecated" %}</span>{% endif %}
+                                    </div>
+                                    <p class="muted mt-0.5 truncate text-xs"{% if info.description %} title="{{ info.description }}"{% endif %}>{% include "management/_model_mode.html" with mode=model.mode %}{% if info.description %} · {{ info.description }}{% endif %}</p>
+                                    {% if info.aliases %}<p class="muted mt-0.5 truncate font-mono text-xs xl:hidden" title="{{ info.aliases|join:', ' }}">{{ info.aliases|join:", " }}</p>{% endif %}
+                                </td>
+                                <td class="muted hidden break-words font-mono text-xs xl:table-cell">{{ info.aliases|join:", " }}</td>
+                                <td class="text-right tabular-nums">{% firstof info.contextWindow info.max_input_tokens "—" as context_length %}{{ context_length|intcomma }}</td>
+                            </tr>
+                            {% endwith %}
+                        {% empty %}
+                            <tr><td colspan="3" class="muted">{% translate "No model matches." %}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 

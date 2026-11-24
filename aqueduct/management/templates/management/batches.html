@@ -7,7 +7,7 @@
 {% block body %}
 <section class="card bg-base-200">
     <div class="card-body table-card">
-        <div class="overflow-x-auto">
+        <div class="aq-scroll-x">
             <table class="table table-sm">
                 <thead>
                     <tr>
@@ -25,26 +25,15 @@
                         {% with counts=batch.request_counts %}
                         <tr>
                             <td class="max-w-64"><div class="flex items-center gap-1 font-mono text-xs"><span class="truncate">{{ batch.id }}</span>{% translate "Copy batch ID" as copy_label %}{% copy_button batch.id copy_label %}</div></td>
-                            <td class="whitespace-nowrap">
-                                {% if batch.status == "completed" %}<span class="st-ok">{{ batch.status }}</span>
-                                {% elif batch.status == "failed" or batch.status == "expired" %}<span class="st-err">{{ batch.status }}</span>
-                                {% elif batch.status == "cancelled" or batch.status == "cancelling" %}<span class="muted">{{ batch.status }}</span>
-                                {% else %}<span class="st-warn">{{ batch.status }}</span>{% endif %}
-                            </td>
-                            <td>
-                                {% if counts.total %}
-                                    {% widthratio counts.completed counts.total 100 as done %}{% widthratio counts.failed counts.total 100 as failed %}
-                                    <div class="text-xs tabular-nums">{% blocktranslate with done=counts.completed total=counts.total %}{{ done }} of {{ total }} done{% endblocktranslate %}{% if counts.failed %} · <span class="st-err">{% blocktranslate with failed=counts.failed %}{{ failed }} failed{% endblocktranslate %}</span>{% endif %}</div>
-                                    <div class="pbar mt-1" role="img" aria-label="{% blocktranslate %}{{ done }}% done, {{ failed }}% failed{% endblocktranslate %}"><i class="i" style="width: {{ done }}%"></i><i class="f" style="width: {{ failed }}%"></i></div>
-                                {% else %}<span class="muted">—</span>{% endif %}
-                            </td>
+                            <td class="whitespace-nowrap">{% include "management/_status.html" with status=batch.status %}</td>
+                            <td>{% include "management/_progress.html" with done=counts.completed failed=counts.failed total=counts.total %}</td>
                             <td class="whitespace-nowrap">
                                 <div class="flex items-center gap-1 text-xs"><span class="muted w-12">{% translate "Input" %}</span>{% with dialog_id="input-"|add:batch.id %}{% include "management/_preview.html" with name=batch.input_file_id_preview text=batch.input_file_preview more=counts.total %}{% endwith %}</div>
                                 {% if batch.output_file %}<div class="flex items-center gap-1 text-xs"><span class="muted w-12">{% translate "Output" %}</span>{% with dialog_id="output-"|add:batch.id %}{% include "management/_preview.html" with name=batch.output_file_id_preview text=batch.output_file_preview more=counts.completed %}{% endwith %}</div>{% endif %}
                                 {% if batch.error_file %}<div class="flex items-center gap-1 text-xs"><span class="muted w-12">{% translate "Errors" %}</span>{% with dialog_id="error-"|add:batch.id %}{% include "management/_preview.html" with name=batch.error_file_id_preview text=batch.error_file_preview more=counts.failed %}{% endwith %}</div>{% endif %}
                             </td>
                             <td class="muted whitespace-nowrap max-md:hidden">{{ batch.created_dt|date:"j M Y H:i" }}</td>
-                            <td class="whitespace-nowrap max-md:hidden">{% include "management/_expiration_badge.html" with obj=batch %}</td>
+                            <td class="whitespace-nowrap max-md:hidden">{% include "management/_expires.html" with at=batch.expires_dt %}</td>
                             <td>
                                 {% if batch.token_id in manageable_token_ids and batch.status in "validating in_progress finalizing" %}
                                     {% blocktranslate with id=batch.id asvar question %}Cancel batch {{ id }}?{% endblocktranslate %}

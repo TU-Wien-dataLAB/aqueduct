@@ -1,3 +1,0 @@
-{% load i18n humanize %}<div class="spark" role="img" aria-label="{% translate 'Requests per day, last 7 days:' %} {% for day, n in week %}{{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}">
-    {% for day, n in week %}<span title="{{ day|date:'D j M' }}: {{ n|intcomma }}"><i style="height: {% widthratio n week_max 100 %}%"></i></span>{% endfor %}
-</div>

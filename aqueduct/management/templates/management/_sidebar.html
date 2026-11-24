@@ -1,8 +1,8 @@
 {% load i18n static ui %}
 <aside class="aq-sidebar sticky top-0 flex h-screen w-64 flex-col gap-3 overflow-y-auto border-r border-base-300 bg-base-200 p-4">
-    <a href="{% url 'tokens' %}" class="flex items-center gap-3 px-3 py-1" data-tip="{% translate 'Aqueduct' %}">
+    <a href="{% url 'tokens' %}" class="flex items-center gap-3 px-3 py-1">
         {% include "management/_logo.html" with size="h-9 w-9" %}
-        <span class="rail-label text-xl font-semibold">{% translate "Aqueduct" %}</span>
+        <span class="text-xl font-semibold">{% translate "Aqueduct" %}</span>
     </a>
 
     {% if viewer.is_admin %}{% include "management/_org_switch.html" %}{% endif %}
@@ -20,8 +20,8 @@
                 {% for team in teams %}
                     {% url 'team' team.id as href %}
                     <li>
-                        <a href="{{ href }}"{% if request.resolver_match.url_name == "team" and request.resolver_match.kwargs.id == team.id %} class="menu-active" aria-current="page"{% endif %} data-tip="{{ team.name }}">
-                            {% icon "teams" %}<span class="rail-label">{{ team.name }}</span>
+                        <a href="{{ href }}"{% if request.resolver_match.url_name == "team" and request.resolver_match.kwargs.id == team.id %} class="menu-active" aria-current="page"{% endif %}>
+                            {% icon "teams" %}<span>{{ team.name }}</span>
                         </a>
                     </li>
                 {% endfor %}
@@ -51,9 +51,9 @@
     </ul>
 
     <div class="border-t border-base-300 pt-3">
-        <div class="aq-account grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-2 pl-3 pr-1.5">
-            <span class="flex" data-tip="{{ user.email }}">{% icon "user" %}</span>
-            <span class="rail-label col-start-2 row-start-1 truncate text-sm font-medium" title="{{ user.email }}">{{ user.email }}</span>
+        <div class="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-2 pl-3 pr-1.5">
+            <span class="flex">{% icon "user" %}</span>
+            <span class="col-start-2 row-start-1 truncate text-sm font-medium" title="{{ user.email }}">{{ user.email }}</span>
             {% include "management/_role.html" %}
             {% include "management/_theme_toggle.html" %}
             <form action="{% url 'oidc_logout' %}" method="post" class="flex">

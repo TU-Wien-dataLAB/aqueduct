@@ -49,7 +49,11 @@ class RequestLogTest(RoleWorld):
 
     def test_another_persons_key_filters_to_nothing(self):
         self.assertEqual(self.paths(self.solo, key=self.member_key.id), set())
-        self.assertEqual(self.paths(self.solo, key="not-a-number"), {"/solo-ok", "/solo-429"})
+
+    def test_a_key_that_is_not_an_id_filters_to_nothing(self):
+        for key in ("not-a-number", "\u00b2", "\u0663"):
+            with self.subTest(key=key):
+                self.assertEqual(self.paths(self.solo, key=key), set())
 
     def test_fifty_per_page(self):
         Request.objects.bulk_create(

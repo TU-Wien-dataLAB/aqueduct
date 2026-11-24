@@ -1,9 +1,10 @@
-"""Define the local demo's users: one per role, with teams, keys, and ten days of requests.
+"""Define the local demo's users: one per role, with teams, keys, requests, files and batches.
 
 start.sh pipes this into `manage.py shell` on every start, before Dex starts. It rewrites the
 login snippet, the Dex logins (appended to `DEX_CONFIG`), and the Dex login page (`DEX_PAGE`),
-which shows one button per user. A person's teams, keys, and requests are added only when this
-script creates the person, so restarts keep the data. Prints the users for the hand-off.
+which shows one button per user. A person's teams and keys are added only when this script
+creates the person, so restarts keep the data. Requests are topped up to `DEMO_REQUESTS`, and
+the keys in `FILE_KEYS` get files and batches once. Prints the users for the hand-off.
 """
 
 # Standalone script piped into `manage.py shell`, not a package; its numbers are made up.
@@ -20,6 +21,8 @@ from django.utils import timezone
 
 from gateway.config import get_router_config
 from management.models import (
+    Batch,
+    FileObject,
     Org,
     Request,
     ServiceAccount,
@@ -76,6 +79,29 @@ PATHS = {
 }
 """The path of each router model mode, without its plural `s`; chat is the default."""
 AGENTS = ["OpenAI/Python 1.82.0", "curl/8.7.1", "python-httpx/0.28.1", "Open WebUI"]
+REQUESTS = int(os.environ.get("DEMO_REQUESTS", "1500"))
+"""How many requests the database holds after seeding, over all keys."""
+DAYS = int(os.environ.get("DEMO_DAYS", "10"))
+"""How many days back the requests reach."""
+CHUNK = 5000
+FILE_KEYS = ["you-laptop", "eval-pipeline", "ada-laptop", "marie-workstation"]
+"""The keys that get files and batches: a personal key, a team key, a member's, the other org's."""
+BATCHES = [
+    ("validating", 500, 0, 0),
+    ("in_progress", 500, 180, 4),
+    ("finalizing", 500, 500, 0),
+    ("completed", 500, 500, 0),
+    ("completed", 500, 492, 8),
+    ("failed", 0, 0, 0),
+    ("cancelling", 500, 120, 0),
+    ("cancelled", 500, 75, 2),
+    ("expired", 500, 310, 5),
+]
+"""A batch per status: its status and how many of its requests are done and failed."""
+LINE = (
+    '{"custom_id": "request-%d", "method": "POST", "url": "/v1/chat/completions", '
+    '"body": {"model": "%s", "messages": [{"role": "user", "content": "Summarise document %d"}]}}'
+)
 PASSWORD, PASSWORD_HASH = "1234", "$2a$12$dvOAiVxM0UtJeMD9oId1bO8fYsymfMc/xZmFzbYdnpbmdc1T5LK9q"
 DEX_PAGE = """{{ template "header.html" . }}
 <div class="theme-panel">
@@ -99,6 +125,7 @@ DEX_BUTTON = """
 User = get_user_model()
 rng = random.Random(7)
 now = timezone.now()
+STAMPED = {field.name for field in Batch._meta.get_fields()}
 
 roles = {person["email"]: person["role"] for person in PEOPLE}
 orgs = {person["email"]: person.get("org", "default") for person in PEOPLE}
@@ -139,14 +166,25 @@ for model in get_router_config().get("model_list", []):
 weights = [4 if path.startswith("/v1/chat") else 1 for path in models.values()]
 
 
-def add_requests(token: Token) -> None:
-    """Give the key a few to a few dozen requests on each of the last ten days."""
-    agent, rate = rng.choice(AGENTS), rng.uniform(0.4, 1.5)
-    requests = []
-    for day in range(10):
-        for _ in range(int(rng.randint(2, 30) * rate * (1.6 if day < 3 else 1))):
-            model, path = rng.choices(list(models.items()), weights=weights)[0]
-            status = rng.choices([200, 429, 400, 500, 503], weights=[88, 5, 3, 2, 2])[0]
+def add_requests(count: int) -> None:
+    """Spread `count` requests over every key and the last `DAYS` days, most on the last three."""
+    tokens = list(Token.objects.all())
+    if count <= 0 or not tokens or not models:
+        return
+    busy = [rng.uniform(0.4, 1.5) for _ in tokens]
+    agents = {token.id: rng.choice(AGENTS) for token in tokens}
+    day_weights = [1.6 if day < 3 else 1 for day in range(DAYS)]
+    for done in range(0, count, CHUNK):
+        size = min(CHUNK, count - done)
+        picks = zip(
+            rng.choices(tokens, weights=busy, k=size),
+            rng.choices(range(DAYS), weights=day_weights, k=size),
+            rng.choices(list(models.items()), weights=weights, k=size),
+            rng.choices([200, 429, 400, 500, 503], weights=[88, 5, 3, 2, 2], k=size),
+            strict=True,
+        )
+        requests = []
+        for token, day, (model, path), status in picks:
             ok, text = status < 400, path.endswith(("completions", "responses"))
             input_tokens = rng.randint(20, 4000) if ok and "images" not in path else 0
             output_tokens = rng.randint(10, 1500) if ok and text else 0
@@ -158,19 +196,70 @@ def add_requests(token: Token) -> None:
                     path=path,
                     method="POST",
                     status_code=status,
-                    timestamp=now - timedelta(days=day, minutes=rng.randint(0, 1439)),
+                    timestamp=now - timedelta(days=day, seconds=rng.randint(0, 86399)),
                     input_tokens=input_tokens,
                     cached_input_tokens=input_tokens // 3 if text and rng.random() < 0.3 else 0,
                     output_tokens=output_tokens,
                     reasoning_tokens=output_tokens // 2 if text and rng.random() < 0.3 else 0,
                     response_time_ms=response_ms,
                     processing_time_ms=response_ms // 20 if ok else None,
-                    user_agent=agent,
+                    user_agent=agents[token.id],
                     ip_address="127.0.0.1",
                     user_id=f"user-{rng.randint(1, 5)}" if token.service_account_id else "",
                 )
             )
-    Request.objects.bulk_create(requests)
+        Request.objects.bulk_create(requests)
+
+
+def add_file(token: Token, name: str, purpose: str, age_hours: float, lines: int = 0) -> FileObject:
+    """A file record of the key; a JSONL file with `lines` lines shows the first ten."""
+    created = int((now - timedelta(hours=age_hours)).timestamp())
+    model = next(iter(models), "model")
+    preview = "\n".join(LINE % (n, model, n) for n in range(1, min(lines, 10) + 1))
+    return FileObject.objects.create(
+        id=f"file-demo{token.id}n{FileObject.objects.count() + 1}",
+        token=token,
+        filename=name,
+        purpose=purpose,
+        bytes=lines * 190 if lines else rng.randint(20_000, 4_000_000),
+        created_at=created,
+        expires_at=created + 30 * 86400 if purpose.startswith("batch") else None,
+        preview=preview,
+    )
+
+
+def add_files_and_batches(token: Token) -> None:
+    """Give the key two plain files and a batch in each status, with its input and result files.
+    The records exist only here, so deleting a file or cancelling a batch fails upstream."""
+    add_file(token, "lecture-notes.pdf", "user_data", age_hours=200)
+    add_file(token, "figure-3.png", "vision", age_hours=30)
+    for number, (status, total, completed, failed) in enumerate(BATCHES, 1):
+        age_hours = number * 7
+        created = int((now - timedelta(hours=age_hours)).timestamp())
+        ended = status in ("completed", "failed", "cancelled", "expired")
+        stamps = {f"{status}_at": created + 3600} if f"{status}_at" in STAMPED else {}
+        Batch.objects.create(
+            id=f"batch_demo{token.id}n{number}",
+            token=token,
+            endpoint="/v1/chat/completions",
+            completion_window="24h",
+            status=status,
+            created_at=created,
+            expires_at=created + 86400,
+            input_file=add_file(token, f"batch-{number}-input.jsonl", "batch", age_hours, 500),
+            output_file=add_file(
+                token, f"batch-{number}-output.jsonl", "batch_output", age_hours - 1, completed
+            )
+            if ended and completed
+            else None,
+            error_file=add_file(
+                token, f"batch-{number}-errors.jsonl", "batch_output", age_hours - 1, failed
+            )
+            if ended and failed
+            else None,
+            request_counts={"total": total, "completed": completed, "failed": failed},
+            **stamps,
+        )
 
 
 def add_key(user: User, name: str, team: Team | None = None) -> None:
@@ -178,8 +267,6 @@ def add_key(user: User, name: str, team: Team | None = None) -> None:
     token = Token(name=name, user=user, service_account=service_account)
     token._set_new_key()
     token.save()
-    if models:
-        add_requests(token)
 
 
 for person in PEOPLE:
@@ -200,3 +287,7 @@ for person in PEOPLE:
         for name, team in person.get("service_keys", {}).items():
             add_key(user, name, teams[team])
     print(f"    {email:<19} {person['role']:<10} {person['note']}")
+
+for token in Token.objects.filter(name__in=FILE_KEYS, files__isnull=True):
+    add_files_and_batches(token)
+add_requests(REQUESTS - Request.objects.count())

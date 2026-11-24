@@ -220,15 +220,7 @@ async def batch_cancel(
     except ValueError:
         return error_response("Files API not configured", status=503)
 
-    remote_batch = await client.batches.cancel(batch_obj.id)
-
-    # Update local record
-    batch_obj.status = remote_batch.status
-    if remote_batch.cancelling_at:
-        batch_obj.cancelling_at = remote_batch.cancelling_at
-    if remote_batch.cancelled_at:
-        batch_obj.cancelled_at = remote_batch.cancelled_at
-    await batch_obj.asave()
+    remote_batch = await batch_obj.acancel_upstream(client)
 
     # Ensure file ID in the response data matches our local records
     remote_batch.input_file_id = batch_obj.input_file_id

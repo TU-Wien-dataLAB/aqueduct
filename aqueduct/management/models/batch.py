@@ -38,6 +38,9 @@ class Batch(models.Model):
     Mirrors the structure of OpenAI's Batch type.
     """
 
+    RUNNING = (BatchStatus.VALIDATING, BatchStatus.IN_PROGRESS, BatchStatus.FINALIZING)
+    """The statuses of a batch that has not finished and can still be cancelled."""
+
     id = models.CharField(
         max_length=100, primary_key=True, editable=False, help_text="The batch identifier."
     )
@@ -141,6 +144,10 @@ class Batch(models.Model):
         return self.id
 
     @property
+    def is_running(self) -> bool:
+        return self.status in self.RUNNING
+
+    @property
     def model(self) -> openai.types.batch.Batch:
         return openai.types.batch.Batch(
             id=self.id,
@@ -213,3 +220,27 @@ class Batch(models.Model):
             self.finalizing_at = remote.finalizing_at
             await self.asave()
             return remote
+
+    async def acancel_upstream(self, client: AsyncOpenAI | None = None) -> openai.types.Batch:
+        """
+        Cancel the batch upstream and record the status and timestamps it reports.
+
+        Args:
+            client: Optional AsyncOpenAI client instance to reuse.
+
+        Returns:
+            The upstream response object.
+        """
+        from gateway.config import get_files_api_client
+
+        if client is None:
+            client = get_files_api_client()
+
+        remote = await client.batches.cancel(self.id)
+        self.status = remote.status
+        if remote.cancelling_at:
+            self.cancelling_at = remote.cancelling_at
+        if remote.cancelled_at:
+            self.cancelled_at = remote.cancelled_at
+        await self.asave(update_fields=["status", "cancelling_at", "cancelled_at"])
+        return remote

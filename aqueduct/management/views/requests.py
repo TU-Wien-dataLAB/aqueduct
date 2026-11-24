@@ -45,8 +45,10 @@ class RequestLogView(BaseAqueductView, ListView):
         """The visible requests under every filter except status, which the tabs count."""
         params = self.request.GET
         requests = self.profile.visible_requests(self.org)
-        if params.get("key", "").isdigit():
-            requests = requests.filter(token_id=params["key"])
+        if key := params.get("key", ""):
+            # A key that is not an id, like "²" which isdigit() accepts, matches nothing.
+            numeric = key.isascii() and key.isdigit()
+            requests = requests.filter(token_id=key) if numeric else requests.none()
         if params.get("model"):
             requests = requests.filter(model=params["model"])
         if params.get("span") in SPANS:

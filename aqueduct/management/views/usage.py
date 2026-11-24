@@ -54,6 +54,11 @@ STATUS_ROWS = (
 AXIS_LABELS, SPARK_BARS, TOP_ROWS, FAILED_ALERT_PERCENT = 8, 12, 10, 2
 
 
+def _is_id(value: str) -> bool:
+    """ASCII digits only: `str.isdigit()` also accepts characters like "²" that `int()` rejects."""
+    return value.isascii() and value.isdigit()
+
+
 def _with_shares(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Add each row's tokens, new input, and whether its failures deserve a red flag."""
     for row in rows:
@@ -364,7 +369,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             try:
                 selected_org = (
                     Org.objects.get(pk=int(sel))
-                    if sel and sel.isdigit() and is_global_admin
+                    if sel and _is_id(sel) and is_global_admin
                     else self.org
                 )
             except Org.DoesNotExist:
@@ -413,20 +418,10 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
     def _get_selected_token(self, selected_org: Org | None) -> Token | None:
         """Optional token selection based on the query param and user permissions"""
         token_param = self.request.GET.get("token")
-        selected_token = None
-        if token_param and token_param.isdigit():
-            try:
-                tok = Token.objects.get(pk=int(token_param))
-                # Ensure the token belongs to the selected_org if scoped
-                if selected_org is not None:
-                    tok_org_id = tok.user.profile.org_id if tok.user else None
-                    sa_org_id = tok.service_account.team.org_id if tok.service_account else None
-                    if selected_org.id not in (tok_org_id, sa_org_id):
-                        raise Token.DoesNotExist
-                selected_token = tok
-            except Token.DoesNotExist:
-                selected_token = None
-        return selected_token
+        if not (token_param and _is_id(token_param)):
+            return None
+        # A key the viewer may not see counts as not selected.
+        return self.profile.visible_tokens(selected_org).filter(pk=int(token_param)).first()
 
     @staticmethod
     def _kpis(rows: list[dict[str, Any]], totals: dict[str, Any]) -> list[dict[str, Any]]:

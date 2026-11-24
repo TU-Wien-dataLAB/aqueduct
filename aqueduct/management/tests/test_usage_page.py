@@ -101,6 +101,15 @@ class UsagePageTest(RoleWorld):
         self.assertEqual([row["user_id"] for row in page.context["top_items"]], ["alice"])
         self.assertContains(page, "By user ID")
 
+    def test_the_time_frame_marks_custom_only_while_a_custom_range_is_shown(self):
+        current = 'id="custom-toggle" class="btn btn-sm join-item" aria-current="true"'
+        self.assertNotContains(self.page(self.solo), current)
+        custom = self.page(
+            self.solo, span="custom", start="2026-01-01T00:00", end="2026-01-02T00:00"
+        )
+        self.assertEqual(custom.context["selected_span"], "custom")
+        self.assertContains(custom, current)
+
     def test_status_rows_link_to_the_request_log_under_the_same_filters(self):
         Request.objects.create(token=self.solo_key, model="gpt-4.1-nano", status_code=503)
         page = self.page(self.solo, span="1w", model="gpt-4.1-nano")

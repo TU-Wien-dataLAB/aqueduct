@@ -99,7 +99,7 @@ body { font-variant-numeric: tabular-nums; }
 .card { box-shadow: none; }
 /* A button group marks its choice with a tint of the primary color, as the sidebar marks the current page; a solid
    primary button is an action. */
-.join > .btn:is([aria-current], [aria-expanded="true"], :checked) { --aq-chosen: color-mix(in oklab, var(--color-primary) 14%, var(--color-base-200));
+.join > .btn:is([aria-current], :checked) { --aq-chosen: color-mix(in oklab, var(--color-primary) 14%, var(--color-base-200));
   background-color: var(--aq-chosen); border-color: var(--aq-chosen); color: var(--color-primary); font-weight: 600; }
 /* daisyUI isolates a checked radio button, which lifts its border over the next button in a join. */
 .join > input.btn:checked { isolation: auto; }

@@ -44,7 +44,7 @@
             {% for value, label in spans %}
                 <a class="btn btn-sm join-item" href="{% querystring span=value start=None end=None %}"{% if value == selected_span %} aria-current="page"{% endif %}>{{ label }}</a>
             {% endfor %}
-            <button type="button" id="custom-toggle" class="btn btn-sm join-item" aria-controls="custom-range" aria-expanded="{% if selected_span == 'custom' %}true{% else %}false{% endif %}">{% translate "Custom" %}</button>
+            <button type="button" id="custom-toggle" class="btn btn-sm join-item"{% if selected_span == 'custom' %} aria-current="true"{% endif %} aria-controls="custom-range" aria-expanded="{% if selected_span == 'custom' %}true{% else %}false{% endif %}">{% translate "Custom" %}</button>
         </nav>
 
         <div id="custom-range" class="flex flex-wrap items-center gap-2{% if selected_span != 'custom' %} hidden{% endif %}">

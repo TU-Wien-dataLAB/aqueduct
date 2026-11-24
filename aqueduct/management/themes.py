@@ -19,6 +19,9 @@ log = logging.getLogger("aqueduct")
 
 BUILT_IN = ("system", "light", "dark")
 BUILTIN_THEMES_DIR = Path(__file__).resolve().parent / "builtin_themes"
+# Settings lists each light theme in the same place as its dark counterpart: Wireframe beside
+# Black, and so on.
+BUILTIN_ORDER = ("wireframe", "black", "nord", "night", "cupcake", "synthwave", "riso", "phosphor")
 _ID = re.compile(r"[A-Za-z0-9_-]+")
 _SCHEME = re.compile(r"color-scheme\s*:\s*(light|dark)\b")
 
@@ -33,7 +36,10 @@ class Theme:
 
 def custom_themes() -> tuple[Theme, ...]:
     directory = getattr(settings, "THEMES_DIR", None)
-    themes = _load(str(BUILTIN_THEMES_DIR)) + (_load(str(directory)) if directory else ())
+    built_in = sorted(
+        _load(str(BUILTIN_THEMES_DIR)), key=lambda theme: BUILTIN_ORDER.index(theme.id)
+    )
+    themes = (*built_in, *(_load(str(directory)) if directory else ()))
     return tuple({theme.id: theme for theme in themes}.values())
 
 

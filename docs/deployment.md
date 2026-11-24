@@ -46,8 +46,9 @@ reactivated by reconciliation.
 
 On the management UI's Settings page, each person picks a light theme, a dark theme, and
 whether to follow the device or stay light or dark; the sun and moon button switches between
-the two picks. Beside Light and Dark, it offers Cupcake, Nord, Riso and Wireframe as light themes
-and Black, Night, Phosphor and Synthwave as dark ones, from `management/builtin_themes/`: daisyUI's themes, with
+the two picks. Beside Light and Dark, it offers Wireframe, Nord, Cupcake and Riso as light themes
+and Black, Night, Synthwave and Phosphor as dark ones, each in the same place as its light
+counterpart, from `management/builtin_themes/`: daisyUI's themes, with
 a calmer primary color in Cupcake, Night and Nord, and calmer colors overall in Synthwave; Riso, a risograph
 print, and Phosphor, a green-phosphor terminal, are Aqueduct's own. To offer more, set
 `THEMES_DIR` to a directory of CSS files; in Helm, set `themes` to a map of file name to
@@ -84,9 +85,9 @@ A theme may set colors, radii and effects:
 - Radii: `--radius-box` for cards, `--radius-field` for inputs and small panels,
   `--radius-selector` for checkboxes and toggles, and `--aq-btn-radius` for buttons
   (`9999px` by default, a pill).
-- Effects, all off by default: daisyUI's `--border` for the width of borders, `--depth` (`0` or `1`)
-  for shading on buttons and inputs, and `--noise` (`0` or `1`) for grain on buttons and badges; and
-  Aqueduct's `--aq-texture`, a background image laid over the whole page, text included, so keep it
+- Effects: daisyUI's `--border` for the width of borders (`1px` by default), and, off by default,
+  `--depth` (`0` or `1`) for shading on buttons and inputs and `--noise` (`0` or `1`) for grain on
+  buttons and badges; and Aqueduct's, also off by default: `--aq-texture`, a background image laid over the whole page, text included, so keep it
   faint; `--aq-texture-position`, `fixed` to keep the texture on the screen (Phosphor's scanlines) or
   `absolute` to scroll it with the page (Riso's paper); `--aq-card-shadow`, a `box-shadow` for cards; and `--aq-glow`, a `text-shadow` for all text.
   Riso and Phosphor use each of them. A theme's file cannot contain `</`, so write `<` in a

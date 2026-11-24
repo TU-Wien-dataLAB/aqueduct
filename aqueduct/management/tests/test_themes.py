@@ -14,14 +14,14 @@ TU_WIEN = """[data-theme="TU-Wien"] {
 }
 """
 BUILT_IN = [
-    ("black", "dark"),
-    ("cupcake", "light"),
-    ("night", "dark"),
-    ("nord", "light"),
-    ("phosphor", "dark"),
-    ("riso", "light"),
-    ("synthwave", "dark"),
     ("wireframe", "light"),
+    ("black", "dark"),
+    ("nord", "light"),
+    ("night", "dark"),
+    ("cupcake", "light"),
+    ("synthwave", "dark"),
+    ("riso", "light"),
+    ("phosphor", "dark"),
 ]
 
 
@@ -70,11 +70,11 @@ class ThemesDirTest(RoleWorld):
         ):
             self.assertEqual(ids(custom_themes()), [theme_id for theme_id, _ in BUILT_IN])
 
-    def test_daisyui_themes_are_built_in_with_their_scheme(self):
+    def test_built_in_themes_pair_each_light_theme_with_a_dark_one(self):
         with self.assertNoLogs("aqueduct", "ERROR"):
             themes = custom_themes()
         self.assertEqual([(theme.id, theme.scheme) for theme in themes], BUILT_IN)
-        self.assertEqual(themes[0].label, "Black")
+        self.assertEqual(themes[1].label, "Black")
 
     def test_an_operator_theme_replaces_the_built_in_one_of_its_name(self):
         nord = '[data-theme="nord"] { color-scheme: dark; }'

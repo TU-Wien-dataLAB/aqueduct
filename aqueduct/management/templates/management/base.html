@@ -57,7 +57,7 @@
 {% block dialogs %}{% if viewer %}{% include "management/_confirm_dialog.html" %}{% endif %}{% endblock %}
 
 {% if messages %}
-    <div class="fixed bottom-4 right-4 z-50 flex w-auto max-w-xl flex-col gap-2">
+    <div class="fixed bottom-4 right-4 z-[102] flex w-auto max-w-xl flex-col gap-2">
         {% for message in messages %}
             {% if message.extra_tags == "token-regenerated-key" %}{% if not new_key %}
                 <div class="alert alert-info shadow-lg" role="status">

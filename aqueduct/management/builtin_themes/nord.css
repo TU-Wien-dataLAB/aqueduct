@@ -35,7 +35,7 @@ color-scheme: light;
 /* Aqueduct's variables, from the theme's colors. Text colors reach 4.5:1 on base-100 and base-200. */
 [data-theme="nord"] {
   --aq-btn-radius: var(--radius-field);
-  --aq-link: color-mix(in oklab, var(--color-primary) 65%, var(--color-base-content));
+  --aq-link: color-mix(in oklab, var(--color-primary) 55%, var(--color-base-content));
   --aq-muted: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
   --aq-ok: color-mix(in oklab, var(--color-success) 35%, var(--color-base-content));
   --aq-warn: color-mix(in oklab, var(--color-warning) 30%, var(--color-base-content));

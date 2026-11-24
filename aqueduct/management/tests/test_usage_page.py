@@ -172,6 +172,29 @@ class UsagePageTest(RoleWorld):
         self.assertContains(page, reverse("token_detail", args=[self.solo_key.id]))
         self.assertNotContains(page, reverse("token_detail", args=[self.member_key.id]))
 
+    def test_key_menu_offers_the_keys_with_requests_in_the_time_frame(self):
+        now = timezone.now()
+        Request.objects.create(token=self.member_key, model="gpt-4.1-nano")
+        Request.objects.create(
+            token=self.pipeline_key, model="gpt-4.1-nano", timestamp=now - timedelta(days=3)
+        )
+        # A request of a model the router no longer has is on no part of the page.
+        Request.objects.create(token=self.pipeline_key, model="not-on-this-gateway")
+        custom = {
+            "start": (now - timedelta(days=4)).isoformat(),
+            "end": (now - timedelta(days=2)).isoformat(),
+        }
+        for params, names in (
+            ({"span": "1d"}, ["member-laptop"]),
+            ({"span": "1w"}, ["member-laptop", "pipeline"]),
+            (custom, ["pipeline"]),
+            # Picking a key or a model leaves the menu as it is.
+            ({"span": "1w", "token": self.member_key.id}, ["member-laptop", "pipeline"]),
+        ):
+            with self.subTest(**params):
+                page = self.page(self.member, **params)
+                self.assertEqual([key.name for key in page.context["keys"]], names)
+
     def test_a_picked_key_shows_its_user_ids(self):
         Request.objects.create(token=self.pipeline_key, model="gpt-4.1-nano", user_id="alice")
         Request.objects.create(token=self.solo_key, model="gpt-4.1-nano", user_id="bob")

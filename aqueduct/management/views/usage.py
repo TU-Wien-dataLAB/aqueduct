@@ -6,7 +6,7 @@ from typing import Any
 
 from django.conf import settings
 from django.contrib.humanize.templatetags.humanize import intcomma
-from django.db.models import Count, F, Q, QuerySet, Sum
+from django.db.models import Count, Exists, F, OuterRef, Q, QuerySet, Sum
 from django.db.models.functions import TruncDay, TruncHour, TruncMinute
 from django.urls import reverse
 from django.utils import timezone
@@ -288,15 +288,17 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             step = SPAN_STEPS[selected_span]
 
         # Filter requests based on selected time span
-        reqs_span = reqs.filter(timestamp__gte=start_time)
+        in_span = Q(timestamp__gte=start_time)
         if selected_span == "custom":
-            reqs_span = reqs_span.filter(timestamp__lt=end_time)
+            in_span &= Q(timestamp__lt=end_time)
+        reqs_span = reqs.filter(in_span)
 
-        # The keys to pick from: those of the org the viewer may open that sent requests
+        # The keys to pick from: those of the org the viewer may open that sent requests. Every
+        # request of such a key is in scope, so each key looks for one request of its own in
+        # the (token, timestamp) index, where a join to the requests in scope reads them all.
+        sent = Request.objects.filter(in_span, token=OuterRef("pk"), model__in=allowed_models)
         keys = (
-            profile.visible_tokens(selected_org)
-            .filter(pk__in=reqs_span.values("token_id"))
-            .order_by("name")
+            profile.visible_tokens(selected_org).filter(Exists(sent)).order_by("name")
             if selected_org is not None
             else Token.objects.none()
         )

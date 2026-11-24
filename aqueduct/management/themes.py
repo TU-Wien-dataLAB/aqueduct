@@ -2,9 +2,9 @@
 THEMES_DIR, which replace a built-in theme of the same name.
 
 A file `<id>.css` holds one `[data-theme="<id>"]` rule that declares `color-scheme: light` or
-`dark`. The page starts from that scheme's variables, so the rule sets only the colors and radii
-it changes. The page inlines each file, so a theme needs no collectstatic. A file that breaks a
-rule is logged and left out.
+`dark`. The page starts from that scheme's variables, so the rule sets only the colors, radii and
+effects it changes. The page inlines each file, so a theme needs no collectstatic. A file that
+breaks a rule is logged and left out.
 """
 
 import functools

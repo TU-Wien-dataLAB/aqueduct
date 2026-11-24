@@ -81,6 +81,12 @@
   --radius-field: 0.5rem;
   --radius-box: 1rem;
   --aq-btn-radius: 9999px;
+  /* Effects, off by default: an image laid over the whole page (grain, scanlines), which stays on the screen (fixed)
+     or scrolls with the page (absolute); a shadow under each card; and a shadow behind all text (a glow). */
+  --aq-texture: none;
+  --aq-texture-position: fixed;
+  --aq-card-shadow: none;
+  --aq-glow: none;
   --border: 1px;
   --depth: 0;
   --noise: 0;
@@ -105,7 +111,13 @@ body { font-variant-numeric: tabular-nums; }
 
 .btn:not(.btn-square) { --radius-field: var(--aq-btn-radius); }
 .btn-outline.btn-primary { --btn-rest-fg: var(--aq-link); --btn-border: var(--aq-link); }
-.card { box-shadow: none; }
+.card { box-shadow: var(--aq-card-shadow); }
+body { text-shadow: var(--aq-glow); }
+/* The texture lies over everything, text too, so it must stay faint; clicks pass through it. Body holds an absolute
+   texture, so it covers the whole page and scrolls with it. */
+body { position: relative; }
+body::after { content: ""; position: var(--aq-texture-position); inset: 0; z-index: 100; pointer-events: none; background-image: var(--aq-texture); }
+@media print { body::after { display: none; } }
 /* A button group marks its choice with a tint of the primary color, as the sidebar marks the current page; a solid
    primary button is an action. */
 .join > .btn:is([aria-current], :checked) { --aq-chosen: color-mix(in oklab, var(--aq-link) 14%, var(--color-base-200));
@@ -260,8 +272,9 @@ a.link-plain:hover { text-decoration: underline; }
 /* The preview sits .5rem inside the option, so its corners follow the option's corners at that distance. */
 .theme-option-preview { border-radius: max(0rem, var(--radius-box) - .5rem); outline: 1px solid var(--color-base-300); }
 .theme-preview { position: relative; display: flex; align-items: flex-end; height: 4.5rem; padding: .5rem;
-  background: var(--color-base-100); color: var(--color-base-content); }
-.theme-preview-card { display: flex; flex: 1; flex-direction: column; gap: .375rem; padding: .5rem; border-radius: var(--radius-box); background: var(--color-base-200); }
+  background: var(--aq-texture), var(--color-base-100); color: var(--color-base-content); }
+.theme-preview-card { display: flex; flex: 1; flex-direction: column; gap: .375rem; padding: .5rem; border-radius: var(--radius-box); background: var(--color-base-200);
+  box-shadow: var(--aq-card-shadow); }
 .theme-preview-card > i { width: 70%; height: .375rem; border-radius: 9999px; background: currentColor; opacity: .5; }
 .theme-preview-card > b { width: 2.5rem; height: .875rem; border-radius: var(--aq-btn-radius); background: var(--color-primary); }
 .theme-preview-dot { position: absolute; top: .5rem; right: .5rem; width: .625rem; height: .625rem; border-radius: 9999px; background: var(--color-accent); }

@@ -193,13 +193,20 @@ class _LeaseLifetime:
         self._loop.call_soon_threadsafe(self._start_release)
 
     async def _wrap_stream(self, stream: AsyncIterator[bytes]) -> AsyncGenerator[bytes]:
-        """Renew before forwarding non-empty chunks; stop if renewal fails."""
+        """Renew before forwarding non-empty chunks; stop if the lease has expired."""
         try:
             async for chunk in stream:
                 if chunk:
-                    renewed = await self._limiter.refresh(self._key, self._lease)
-                    if not renewed:
-                        return
+                    try:
+                        renewed = await self._limiter.refresh(self._key, self._lease)
+                    except Exception:
+                        # This wrapper sits outside `log_request`, so an exception here
+                        # would escape the response. Keep streaming; the lease expires
+                        # by itself if it cannot be renewed.
+                        log.warning("Error refreshing concurrency lease", exc_info=True)
+                    else:
+                        if not renewed:
+                            return
                 yield chunk
         finally:
             await self.aclose()

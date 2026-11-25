@@ -55,6 +55,20 @@ print, and Phosphor, a green-phosphor terminal, are Aqueduct's own. To offer mor
 CSS instead. A file named like a built-in theme replaces it. The app reads the files once, so restart it after changing them; Helm
 restarts the web pods when `themes` changes.
 
+`BUILTIN_LIGHT_THEMES` and `BUILTIN_DARK_THEMES` name the built-in themes Settings offers,
+comma-separated and in order: the Nth light theme sits beside the Nth dark one. Unset, they
+offer all eight in the order above; set to an empty string, none. Light and Dark are always
+offered, and your own themes follow the built-in ones in file name order. In Helm, set
+`builtinLightThemes` and `builtinDarkThemes` to lists.
+
+`DEFAULT_LIGHT_THEME` and `DEFAULT_DARK_THEME` name the theme each scheme shows to people who
+have not picked one, or whose pick is no longer offered: any offered theme of that scheme,
+built-in or your own. Unset, it is Light or Dark. In Helm, set `defaultLightTheme` and
+`defaultDarkTheme`. A theme someone picked stays picked.
+
+A name in these settings that is not an offered theme of the right scheme is ignored and logged
+at `ERROR`.
+
 A file `<id>.css` becomes the theme `<id>`, labelled with its name, capitalized, with `-`
 and `_` read as spaces. The id may hold letters, digits, `-` and `_`, and cannot be `system`, `light` or
 `dark`. The file holds one `[data-theme="<id>"]` rule, without `html` in front, so the
@@ -62,7 +76,7 @@ Settings page can preview it. The rule declares `color-scheme: light` or `dark`,
 it starts from that scheme's variables and sets only the ones it changes:
 
 ```css
-[data-theme="tu-wien"] {
+[data-theme="aqueduct"] {
   color-scheme: light;
   --color-primary: #006699;
   --color-primary-content: #ffffff;

@@ -1,7 +1,9 @@
 (() => {
   // The mode is system, light or dark, stored under main's key; each scheme shows the theme picked for it: light or dark, or a
-  // theme of that scheme from management/themes.py, whose <style> names its scheme.
+  // theme of that scheme from management/themes.py, whose <style> names its scheme. Without a pick, the script tag names the
+  // operator's default theme of each scheme.
   const root = document.documentElement;
+  const defaults = document.currentScript?.dataset ?? {};
   const storageKeys = { mode: 'selectedTheme', 'light-theme': 'lightTheme', 'dark-theme': 'darkTheme' };
   const prefersDark = matchMedia('(prefers-color-scheme: dark)');
 
@@ -17,7 +19,8 @@
   }
   function schemeTheme(scheme) {
     const id = stored(`${scheme}-theme`);
-    return id && document.querySelector(`style[data-theme-id="${CSS.escape(id)}"]`)?.dataset.scheme === scheme ? id : scheme;
+    const offered = id === scheme || (id && document.querySelector(`style[data-theme-id="${CSS.escape(id)}"]`)?.dataset.scheme === scheme);
+    return offered ? id : defaults[`${scheme}Theme`] || scheme;
   }
   function markThemeChoices() {
     const choices = { mode: themeMode(), 'light-theme': schemeTheme('light'), 'dark-theme': schemeTheme('dark') };

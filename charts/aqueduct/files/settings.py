@@ -375,7 +375,8 @@ elif DATABASE_ENGINE == "django.db.backends.postgresql":
     # for details. The times are in seconds.
     POSTGRESQL_POOL_MIN_SIZE = int(os.getenv("POSTGRESQL_POOL_MIN_SIZE", 4))
     POSTGRESQL_POOL_MAX_SIZE = int(os.getenv("POSTGRESQL_POOL_MAX_SIZE", 20))
-    POSTGRESQL_POOL_TIMEOUT = int(os.getenv("POSTGRESQL_POOL_TIMEOUT", 30))
+    # Keep the pool wait well below daphne's --application-close-timeout (see #246).
+    POSTGRESQL_POOL_TIMEOUT = int(os.getenv("POSTGRESQL_POOL_TIMEOUT", 5))
     POSTGRESQL_POOL_MAX_WAITING = int(os.getenv("POSTGRESQL_POOL_MAX_WAITING", 0))
     POSTGRESQL_POOL_MAX_IDLE = int(os.getenv("POSTGRESQL_POOL_MAX_IDLE", 10 * 60))
     POSTGRESQL_POOL_NUM_WORKERS = int(os.getenv("POSTGRESQL_POOL_NUM_WORKERS", 3))
@@ -400,6 +401,9 @@ elif DATABASE_ENGINE == "django.db.backends.postgresql":
     )
 else:
     raise ImproperlyConfigured(f"Unsupported database engine: {DATABASE_ENGINE}")
+
+# Seconds `/health/ready` waits for a database connection before reporting 503.
+HEALTH_DB_TIMEOUT = float(os.getenv("HEALTH_DB_TIMEOUT", "2"))
 
 CACHES = {
     "default": {

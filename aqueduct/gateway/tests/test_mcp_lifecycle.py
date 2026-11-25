@@ -142,14 +142,15 @@ class MCPRelayLifecycleTest(TransactionTestCase):
                 await self.post()
             self.assertTrue(clients[0].is_closed)
 
-    async def test_sse_read_failure_closes_upstream_response_and_client(self):
+    async def test_sse_read_failure_ends_stream_and_closes_upstream_response_and_client(self):
         stream = FailingStream()
         response = httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=stream)
         with upstream(lambda request: response) as clients:
             downstream = await self.post()
             chunks = aiter(downstream)
             self.assertEqual(await anext(chunks), b"partial response")
-            with self.assertRaises(httpx.ReadError):
+            # The error is logged and ends the stream instead of escaping it (#246)
+            with self.assertLogs("aqueduct", level="ERROR"), self.assertRaises(StopAsyncIteration):
                 await anext(chunks)
             self.assertTrue(stream.closed)
             self.assertTrue(response.is_closed)

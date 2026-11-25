@@ -25,10 +25,9 @@ class UserTokensView(BaseAqueductView, TemplateView):
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         profile = self.profile  # Provided by BaseAqueductView
-        user = profile.user
 
-        tokens = Token.objects.filter(user=user, service_account__isnull=True)
-        teams = profile.teams.all()
+        tokens = profile.own_tokens()
+        teams = profile.member_teams()
         service_accounts = ServiceAccount.objects.filter(team__in=teams).select_related(
             "team__org", "token"
         )
@@ -116,7 +115,7 @@ class TokenEditView(AccessKeyExpirationContextMixin, BaseAqueductView, UpdateVie
     success_url = reverse_lazy("tokens")
 
     def get_queryset(self) -> QuerySet:
-        return Token.objects.filter(user=self.request.user, service_account__isnull=True)
+        return self.profile.own_tokens()
 
     def get_form_kwargs(self) -> dict:
         kwargs = super().get_form_kwargs()
@@ -138,7 +137,7 @@ class TokenDeleteView(BaseAqueductView, DeleteView):
 
     def get_queryset(self) -> QuerySet:
         # Only allow deleting tokens owned by the user and not associated with a service account
-        return Token.objects.filter(user=self.request.user, service_account__isnull=True)
+        return self.profile.own_tokens()
 
     def form_valid(self, form) -> HttpResponse:
         token_name = self.object.name

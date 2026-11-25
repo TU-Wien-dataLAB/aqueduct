@@ -1,3 +1,6 @@
+from functools import cached_property
+from typing import Final
+
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ImproperlyConfigured
@@ -12,6 +15,9 @@ from django.utils import timezone
 from django.views import View
 
 from management.models import Org, ServiceAccount, Team, Token, UserProfile
+
+ORG_SESSION_KEY: Final = "org"
+"""Where a platform admin's org switch keeps the chosen org's id."""
 
 
 class AccessKeyExpirationContextMixin:
@@ -53,12 +59,16 @@ class BaseAqueductView(LoginRequiredMixin, View):
             self._profile = self.request.user.profile
         return self._profile
 
-    @property
+    @cached_property
     def org(self) -> Org:
-        """
-        Returns the Organization associated with the user's profile.
-        """
-        return self.profile.org
+        """The org this page shows: the one a platform admin switched to, else the own org."""
+        profile = self.profile
+        if profile.is_admin():
+            chosen = self.request.session.get(ORG_SESSION_KEY)
+            org = Org.objects.filter(pk=chosen).first() if isinstance(chosen, int) else None
+            if org is not None:
+                return org
+        return profile.org
 
     def is_admin(self) -> bool:
         """Checks if the current user is a global admin."""
@@ -73,16 +83,10 @@ class BaseAqueductView(LoginRequiredMixin, View):
     def get_teams_for_user(self) -> QuerySet[Team]:
         """
         Returns a queryset of teams accessible by the current user.
-        - Org admins see all teams in their org.
-        - Regular users see only teams they are members of.
+        - Org admins see all teams of the org the page shows.
+        - Regular users see only the teams of their own org they are members of.
         """
-        # profile and org are guaranteed by the properties above for logged-in users.
-        if self.is_org_admin():
-            # Org admin sees all teams in their organization.
-            return self.org.teams.all()
-        # Regular user sees only teams they are a member of via the ManyToManyField.
-        # The 'teams' attribute is guaranteed to exist due to the M2M definition.
-        return self.profile.teams.all()
+        return self.profile.visible_teams(self.org)
 
 
 # --- Mixins for Permission Checks ---
@@ -213,6 +217,10 @@ class BaseTeamView(BaseAqueductView):
     def team(self) -> Team:
         """Returns the cached Team instance, fetching it if necessary."""
         return self.get_team_object()
+
+    def is_org_admin(self) -> bool:
+        """On a page about a team, an org admin is an admin of the team's org."""
+        return self.profile.is_org_admin(self.team_org)
 
     @property
     def team_org(self) -> Org:

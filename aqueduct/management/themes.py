@@ -1,5 +1,7 @@
-"""Themes beside light and dark: the built-in ones in builtin_themes/, then an operator's in
-THEMES_DIR, which replace a built-in theme of the same name.
+"""Themes beside light and dark: the built-in ones in builtin_themes/ that BUILTIN_LIGHT_THEMES and
+BUILTIN_DARK_THEMES name, in their order, then an operator's in THEMES_DIR, which replace a
+built-in theme of the same name. DEFAULT_LIGHT_THEME and DEFAULT_DARK_THEME name the theme of
+each scheme for people who have not picked one.
 
 A file `<id>.css` holds one `[data-theme="<id>"]` rule that declares `color-scheme: light` or
 `dark`. The page starts from that scheme's variables, so the rule sets only the colors, radii and
@@ -19,9 +21,6 @@ log = logging.getLogger("aqueduct")
 
 BUILT_IN = ("system", "light", "dark")
 BUILTIN_THEMES_DIR = Path(__file__).resolve().parent / "builtin_themes"
-# Settings lists each light theme in the same place as its dark counterpart: Wireframe beside
-# Black, and so on.
-BUILTIN_ORDER = ("wireframe", "black", "nord", "night", "cupcake", "synthwave", "riso", "phosphor")
 _ID = re.compile(r"[A-Za-z0-9_-]+")
 _SCHEME = re.compile(r"color-scheme\s*:\s*(light|dark)\b")
 
@@ -35,12 +34,47 @@ class Theme:
 
 
 def custom_themes() -> tuple[Theme, ...]:
-    directory = getattr(settings, "THEMES_DIR", None)
-    built_in = sorted(
-        _load(str(BUILTIN_THEMES_DIR)), key=lambda theme: BUILTIN_ORDER.index(theme.id)
+    return _themes(
+        tuple(settings.BUILTIN_LIGHT_THEMES),
+        tuple(settings.BUILTIN_DARK_THEMES),
+        getattr(settings, "THEMES_DIR", None),
     )
-    themes = (*built_in, *(_load(str(directory)) if directory else ()))
+
+
+def default_themes() -> dict[str, str]:
+    """The theme of each scheme for people who have not picked one: light or dark, or the
+    offered theme of that scheme that DEFAULT_LIGHT_THEME or DEFAULT_DARK_THEME names."""
+    return _defaults(settings.DEFAULT_LIGHT_THEME, settings.DEFAULT_DARK_THEME, custom_themes())
+
+
+@functools.cache
+def _themes(
+    light: tuple[str, ...], dark: tuple[str, ...], directory: str | None
+) -> tuple[Theme, ...]:
+    built_in = {theme.id: theme for theme in _load(str(BUILTIN_THEMES_DIR))}
+    offered = []
+    for scheme, theme_ids in (("light", light), ("dark", dark)):
+        for theme_id in theme_ids:
+            theme = built_in.get(theme_id)
+            if theme and theme.scheme == scheme:
+                offered.append(theme)
+            else:
+                log.error("Theme %s left out: it is not a built-in %s theme.", theme_id, scheme)
+    themes = (*offered, *(_load(str(directory)) if directory else ()))
     return tuple({theme.id: theme for theme in themes}.values())
+
+
+@functools.cache
+def _defaults(light: str, dark: str, themes: tuple[Theme, ...]) -> dict[str, str]:
+    defaults = {}
+    for scheme, theme_id in (("light", light), ("dark", dark)):
+        offered = {scheme} | {theme.id for theme in themes if theme.scheme == scheme}
+        if theme_id in offered:
+            defaults[scheme] = theme_id
+        else:
+            log.error("Default %s theme %s ignored: it is not offered.", scheme, theme_id)
+            defaults[scheme] = scheme
+    return defaults
 
 
 @functools.cache

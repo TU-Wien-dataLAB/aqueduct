@@ -193,20 +193,46 @@ class WebScalingTests(unittest.TestCase):
 
 class ThemesTests(unittest.TestCase):
     def test_themes_are_mounted_into_web_and_named_in_the_environment(self):
-        css = '[data-theme="tu-wien"] { color-scheme: light; }\n'
-        resources = render({"themes": {"tu-wien.css": css}})
-        self.assertEqual(resources["ConfigMap", "test-themes"]["data"], {"tu-wien.css": css})
+        css = '[data-theme="aqueduct"] { color-scheme: light; }\n'
+        resources = render({"themes": {"aqueduct.css": css}})
+        self.assertEqual(resources["ConfigMap", "test-themes"]["data"], {"aqueduct.css": css})
         pod = resources["Deployment", "test"]["spec"]["template"]["spec"]
         django = pod["containers"][0]
         self.assertIn({"name": "themes", "mountPath": "/etc/aqueduct/themes"}, django["volumeMounts"])
         self.assertIn({"name": "THEMES_DIR", "value": "/etc/aqueduct/themes"}, django["env"])
         self.assertIn({"name": "themes", "configMap": {"name": "test-themes"}}, pod["volumes"])
 
+    def test_the_built_in_lists_and_defaults_are_named_in_the_environment(self):
+        resources = render(
+            {
+                "builtinLightThemes": ["riso", "nord"],
+                "builtinDarkThemes": [],
+                "defaultLightTheme": "riso",
+                "defaultDarkTheme": "phosphor",
+            }
+        )
+        django = resources["Deployment", "test"]["spec"]["template"]["spec"]["containers"][0]
+        for item in [
+            {"name": "BUILTIN_LIGHT_THEMES", "value": "riso,nord"},
+            {"name": "BUILTIN_DARK_THEMES", "value": ""},
+            {"name": "DEFAULT_LIGHT_THEME", "value": "riso"},
+            {"name": "DEFAULT_DARK_THEME", "value": "phosphor"},
+        ]:
+            self.assertIn(item, django["env"])
+
     def test_no_themes_render_nothing(self):
         resources = render()
         self.assertNotIn(("ConfigMap", "test-themes"), resources)
         django = resources["Deployment", "test"]["spec"]["template"]["spec"]["containers"][0]
-        self.assertNotIn("THEMES_DIR", {item["name"] for item in django["env"]})
+        names = {item["name"] for item in django["env"]}
+        for name in (
+            "THEMES_DIR",
+            "BUILTIN_LIGHT_THEMES",
+            "BUILTIN_DARK_THEMES",
+            "DEFAULT_LIGHT_THEME",
+            "DEFAULT_DARK_THEME",
+        ):
+            self.assertNotIn(name, names)
 
 
 if __name__ == "__main__":

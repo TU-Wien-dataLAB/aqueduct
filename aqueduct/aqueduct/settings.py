@@ -175,6 +175,17 @@ EXTRA_NAV_LINKS = {
 
 # A directory of theme files (<id>.css) that Settings offers beside light and dark. See management/themes.py.
 THEMES_DIR = os.getenv("THEMES_DIR") or None
+# The built-in themes (management/builtin_themes/) Settings offers beside light and dark, in order:
+# the Nth light theme sits beside the Nth dark one. Set to an empty string to offer none.
+BUILTIN_LIGHT_THEMES = [
+    t.strip() for t in os.getenv("BUILTIN_LIGHT_THEMES", "wireframe,nord,cupcake,riso").split(",") if t.strip()
+]
+BUILTIN_DARK_THEMES = [
+    t.strip() for t in os.getenv("BUILTIN_DARK_THEMES", "black,night,synthwave,phosphor").split(",") if t.strip()
+]
+# The theme of each scheme for people who have not picked one: an offered theme's id, or light or dark.
+DEFAULT_LIGHT_THEME = os.getenv("DEFAULT_LIGHT_THEME") or "light"
+DEFAULT_DARK_THEME = os.getenv("DEFAULT_DARK_THEME") or "dark"
 
 RELAY_REQUEST_TIMEOUT = 60
 

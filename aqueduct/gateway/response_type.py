@@ -8,6 +8,7 @@ from typing import Any, Literal, TypeVar
 
 from asgiref.sync import sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
+from django.db import connection
 from django.http.response import HttpResponseBase, StreamingHttpResponse
 from litellm.types.utils import (
     EmbeddingResponse,
@@ -25,6 +26,36 @@ from management.models import Request, Usage
 log = logging.getLogger("aqueduct")
 
 T = TypeVar("T", bound=ModelResponseStream | JSONRPCMessage)
+
+# Sent instead of `data: [DONE]` when an OpenAI stream fails. The exception text
+# is only logged, never sent to the client.
+STREAM_ERROR_EVENT = (
+    "data: "
+    + json.dumps(
+        {"error": {"message": "Upstream stream failed", "type": "server_error", "code": 500}}
+    )
+    + "\n\n"
+).encode()
+
+
+def release_db_connection() -> None:
+    """Return this thread's database connection to the pool.
+
+    Django only returns it on `request_finished`, which never runs when an
+    exception escapes a streaming response, so the pool slot leaks (#246).
+    Must run in the thread that uses the connection (i.e. via `sync_to_async`).
+    A connection inside an atomic block is kept: closing it would abort the
+    transaction (e.g. the one wrapping each Django `TestCase`).
+    """
+    if not connection.in_atomic_block:
+        connection.close()
+
+
+def _save_and_release(request_log: Request) -> None:
+    try:
+        request_log.save()
+    finally:
+        release_db_connection()
 
 
 class RawJsonResponse(HttpResponseBase):
@@ -131,7 +162,9 @@ class RawStreamingResponse(StreamingHttpResponse):
                 return
             self.request_log.status_code = status
             self.request_log.response_time_ms = int((time.monotonic() - start_time) * 1000)
-            await self.request_log.asave()
+            # Save and release in one call, so no connection is held if an
+            # exception or cancellation escapes afterwards.
+            await sync_to_async(_save_and_release)(self.request_log)
 
         try:
             async for raw_chunk in streaming_content:
@@ -168,7 +201,11 @@ class RawStreamingResponse(StreamingHttpResponse):
         except Exception:
             log.exception("Error while streaming response: %r", streaming_content)
             await _record_status(500)
-            raise
+            if not is_openai:
+                raise
+            # An exception escaping the stream would leave the client hanging,
+            # so end the stream with an error event instead (without [DONE]).
+            yield STREAM_ERROR_EVENT
 
 
 def get_token_usage(data: dict[str, Any] | BaseModel) -> Usage:

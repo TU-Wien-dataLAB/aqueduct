@@ -1,5 +1,5 @@
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.test import SimpleTestCase
 from litellm.types.utils import ModelResponseStream
@@ -80,7 +80,8 @@ class TestRawStreamingResponse(SimpleTestCase):
             return chunk
 
         mock_request_log = AsyncMock(token_usage=None, response_time_ms=None, token_id=42)
-        mock_request_log.asave = AsyncMock()
+        # Saved synchronously, together with releasing the DB connection
+        mock_request_log.save = MagicMock()
 
         response = RawStreamingResponse(
             streaming_content=streaming_content(),
@@ -95,7 +96,7 @@ class TestRawStreamingResponse(SimpleTestCase):
         payload = json.loads(chunks[0].decode().removeprefix("data: "))
         self.assertEqual(payload["choices"][0]["delta"]["reasoning"], "Deep chain of thought...")
 
-        mock_request_log.asave.assert_called_once()
+        mock_request_log.save.assert_called_once()
         self.assertIsNotNone(mock_request_log.response_time_ms)
         self.assertEqual(mock_request_log.token_usage, Usage(input_tokens=10, output_tokens=5))
 

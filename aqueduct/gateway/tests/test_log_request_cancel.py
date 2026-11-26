@@ -5,9 +5,10 @@ import time
 from types import SimpleNamespace
 from typing import ClassVar
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from gateway.decorators import log_request
+from gateway.tests.utils.base import ROUTER_CONFIG_PATH
 from management.models import Request, Token
 
 
@@ -21,6 +22,7 @@ def _make_request(path: str = "/v1/chat/completions") -> SimpleNamespace:
     )
 
 
+@override_settings(LITELLM_ROUTER_CONFIG_FILE_PATH=ROUTER_CONFIG_PATH)
 class LogRequestCancelledTests(TestCase):
     fixtures: ClassVar[list[str]] = ["gateway_data.json"]
 

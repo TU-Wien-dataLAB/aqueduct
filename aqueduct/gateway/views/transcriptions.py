@@ -39,13 +39,13 @@ class TranscriptionCreateParams(RootModel):  # type: ignore[type-arg]
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(TranscriptionCreateParams))
+@log_request
 @check_token_concurrency_limits
 @check_model_concurrency_limits
 @check_token_rate_limits
 @check_model_rate_limits
 @resolve_alias
 @check_model_availability
-@log_request
 @catch_router_exceptions
 async def transcriptions(
     request: ASGIRequest,

@@ -11,6 +11,7 @@ from django.core.handlers.asgi import ASGIRequest
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 
+from gateway.config import resolve_model
 from gateway.decorators.types import AsyncView, ViewResult
 from gateway.rate_limiting import record_token_usage
 from gateway.response_type import release_db_connection
@@ -48,11 +49,15 @@ def log_request(view_func: AsyncView) -> AsyncView:
     @wraps(view_func)
     async def wrapper(request: ASGIRequest, *args: Any, **kwargs: Any) -> ViewResult:
         pydantic_model: dict[str, Any] | None = kwargs.get("pydantic_model")
+        model = "" if not pydantic_model else pydantic_model.get("model", "")
+        if model:
+            # Log the name `resolve_alias` routes with, also for requests that a limit
+            # decorator (which runs after this one) rejects before `resolve_alias` runs.
+            model = resolve_model(model).routing_name
         token = kwargs.get("token")
         request_log = Request(
             token=token,
-            model="" if not pydantic_model else pydantic_model.get("model", ""),
-            # Use the resolved model from self
+            model=model,
             timestamp=timezone.now(),
             method=request.method,
             user_agent=request.headers.get("User-Agent", ""),

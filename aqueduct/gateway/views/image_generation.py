@@ -51,13 +51,13 @@ ImageParams = ImageGenerateParamsWithSeed | ImageGenerateStreamingParamsWithSeed
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(ImageParams, config=ConfigDict(extra="forbid")))
+@log_request
 @check_token_concurrency_limits
 @check_model_concurrency_limits
 @check_token_rate_limits
 @check_model_rate_limits
 @resolve_alias
 @check_model_availability
-@log_request
 @catch_router_exceptions
 async def image_generation(
     request: ASGIRequest,

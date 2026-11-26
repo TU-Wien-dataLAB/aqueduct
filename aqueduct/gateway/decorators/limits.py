@@ -200,9 +200,8 @@ class _LeaseLifetime:
                     try:
                         renewed = await self._limiter.refresh(self._key, self._lease)
                     except Exception:
-                        # This wrapper sits outside `log_request`, so an exception here
-                        # would escape the response. Keep streaming; the lease expires
-                        # by itself if it cannot be renewed.
+                        # An exception here would end the stream for the client. Keep
+                        # streaming; the lease expires by itself if it cannot be renewed.
                         log.warning("Error refreshing concurrency lease", exc_info=True)
                     else:
                         if not renewed:

@@ -92,12 +92,16 @@ def token_concurrency_limit(token: "Token") -> int:
     return token.get_limits().concurrent_requests_limit
 
 
-def model_concurrency_key(model_name: str) -> str:
+def model_concurrency_name(model_name: str) -> str:
+    """The name a model's concurrency is tracked under: its accounting or else routing name."""
     resolved = resolve_model(model_name)
-    name = (
-        resolved.accounting_name if resolved.accounting_name is not None else resolved.routing_name
-    )
-    return f"model:concurrency:{name}:leases"
+    if resolved.accounting_name is not None:
+        return resolved.accounting_name
+    return resolved.routing_name
+
+
+def model_concurrency_key(model_name: str) -> str:
+    return f"model:concurrency:{model_concurrency_name(model_name)}:leases"
 
 
 def model_concurrency_limit(model: str) -> int:
@@ -134,6 +138,16 @@ class RedisConcurrencyLimiter:
         """Release the concurrent requests slot for the given lease ID."""
         ok = await self.release_script(keys=[key], args=[lease])
         return bool(ok)
+
+    async def count_unexpired(self, keys: list[str]) -> list[int]:
+        """Count each key's unexpired leases; expired ones stay until the next acquire."""
+        seconds, microseconds = await self.redis.time()
+        now = seconds + microseconds / 1_000_000
+        async with self.redis.pipeline(transaction=False) as pipe:
+            for key in keys:
+                pipe.zcount(key, now, "+inf")
+            counts: list[int] = await pipe.execute()
+        return counts
 
 
 class _LeaseLifetime:

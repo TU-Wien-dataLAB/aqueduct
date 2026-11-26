@@ -1,5 +1,9 @@
-from datetime import timedelta
+import re
+from datetime import datetime, time, timedelta
 
+from django.db import connection
+from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -18,6 +22,24 @@ class KeyListTest(RoleWorld):
         self.assertContains(page, "2\xa0hours ago")
         self.assertContains(page, "Never")
         self.assertNotContains(page, reverse("token_detail", args=[self.solo_key.id]))
+
+    def test_last_use_is_the_newest_request_of_each_key(self):
+        now = timezone.now()
+        for key, hours_ago in [(self.member_key, 5), (self.member_key, 2), (self.pipeline_key, 3)]:
+            Request.objects.create(token=key, timestamp=now - timedelta(hours=hours_ago))
+        Request.objects.create(token=self.pipeline_key, timestamp=now - timedelta(days=9))
+        page = self.as_user(self.member).get(reverse("tokens"))
+        self.assertEqual(page.context["tokens"][0].last_used, now - timedelta(hours=2))
+        self.assertEqual(page.context["service_accounts"][0].last_used, now - timedelta(hours=3))
+        page = self.as_user(self.org_admin).get(reverse("all_keys"))
+        self.assertEqual(
+            {key.name: key.last_used for key in page.context["keys"]},
+            {
+                "member-laptop": now - timedelta(hours=2),
+                "pipeline": now - timedelta(hours=3),
+                "solo-laptop": None,
+            },
+        )
 
     def test_team_keys_have_no_personal_actions(self):
         page = self.as_user(self.member).get(reverse("tokens"))
@@ -54,6 +76,29 @@ class KeyListTest(RoleWorld):
         weeks = {key.name: [bar["text"] for bar in key.week] for key in page.context["keys"]}
         self.assertEqual(weeks["solo-laptop"], ["0 requests"] * 6 + ["1 request"])
         self.assertEqual(weeks["member-laptop"], ["0 requests"] * 7)
+
+    @override_settings(TIME_ZONE="Europe/Vienna")
+    def test_a_day_runs_from_local_midnight_to_midnight(self):
+        today = timezone.make_aware(datetime.combine(timezone.localdate(), time.min))
+        first = today - timedelta(days=6)
+        for moment in (first - timedelta(seconds=1), first, today - timedelta(seconds=1), today):
+            Request.objects.create(token=self.member_key, timestamp=moment)
+        page = self.as_user(self.member).get(reverse("tokens"))
+        self.assertEqual(
+            [bar["text"] for bar in page.context["tokens"][0].week],
+            ["1 request", *["0 requests"] * 4, "1 request", "1 request"],
+        )
+
+    def test_the_bars_read_only_the_key_and_time_of_each_request(self):
+        """Any other column keeps PostgreSQL from answering from the (token, timestamp) index."""
+        Request.objects.create(token=self.member_key)
+        for user, url in ((self.member, "tokens"), (self.org_admin, "all_keys")):
+            with self.subTest(url=url), CaptureQueriesContext(connection) as queries:
+                self.as_user(user).get(reverse(url))
+            (bars,) = [query["sql"] for query in queries if '"day6"' in query["sql"]]
+            self.assertEqual(
+                set(re.findall(r'"management_request"\."(\w+)"', bars)), {"token_id", "timestamp"}
+            )
 
 
 class KeyPageTest(RoleWorld):

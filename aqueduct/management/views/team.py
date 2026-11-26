@@ -265,13 +265,15 @@ class TeamDetailView(BaseTeamView, DetailView):
 
         current_member_profile_ids = self.team.member_profiles.values_list("id", flat=True)
         # Show profiles from the TEAM's org, not necessarily the user's org if different
-        context["available_profiles"] = self.team_org.user_profiles.exclude(
-            id__in=current_member_profile_ids
+        context["available_profiles"] = (
+            self.team_org.user_profiles.exclude(id__in=current_member_profile_ids)
+            .select_related("user")
+            .order_by("pk")
         )
 
         # --- Build member_badges: list of dicts for each member with badge info ---
         member_badges = []
-        for member in self.team.member_profiles.all():
+        for member in self.team.member_profiles.select_related("user").order_by("pk"):
             badge = {
                 "profile": member,
                 "group": member.group,

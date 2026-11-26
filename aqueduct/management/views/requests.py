@@ -1,10 +1,13 @@
 from datetime import timedelta
+from functools import cached_property
 from typing import Any
 
+from django.core.paginator import Paginator
 from django.db.models import Count, Q, QuerySet
 from django.utils import timezone
 from django.views.generic import ListView
 
+from gateway.config import get_router_config
 from management.models import Request
 from management.views.base import BaseAqueductView
 
@@ -62,27 +65,44 @@ class RequestLogView(BaseAqueductView, ListView):
         sort = self.request.GET.get("sort", "")
         return sort if sort.removeprefix("-") in SORTS else "-time"
 
+    @property
+    def status(self) -> str:
+        status = self.request.GET.get("status", "")
+        return status if status in STATUSES else ""
+
+    @cached_property
+    def counts(self) -> dict[str, int]:
+        """The rows of each status tab, and of all of them."""
+        return self.narrowed().aggregate(
+            all=Count("id"), **{name: Count("id", filter=q) for name, q in STATUSES.items()}
+        )
+
     def get_queryset(self) -> QuerySet[Request]:
         requests = self.narrowed().select_related("token")
-        status = STATUSES.get(self.request.GET.get("status", ""))
-        if status is not None:
-            requests = requests.filter(status)
+        if self.status:
+            requests = requests.filter(STATUSES[self.status])
         field = SORTS[self.sort.removeprefix("-")]
         return requests.order_by(f"-{field}" if self.sort.startswith("-") else field, "-id")
 
+    def get_paginator(self, *args: Any, **kwargs: Any) -> Paginator:
+        """A paginator that takes its count from the status tab shown, which counted the rows."""
+        paginator = super().get_paginator(*args, **kwargs)
+        paginator.count = self.counts[self.status or "all"]
+        return paginator
+
     def get_context_data(self, **kwargs: Any) -> dict[str, object]:
         params = self.request.GET
+        # The router's models, as on the Usage page: reading them from the requests is a pass
+        # over all of them. A model gone from the router stays listed while a link selects it.
+        models = [model["model_name"] for model in get_router_config().get("model_list", [])]
+        if params.get("model") and params["model"] not in models:
+            models.append(params["model"])
         return super().get_context_data(
             keys=self.profile.visible_tokens(self.org).order_by("name"),
-            models=self.profile.visible_requests(self.org)
-            .order_by("model")
-            .values_list("model", flat=True)
-            .distinct(),
-            counts=self.narrowed().aggregate(
-                all=Count("id"), **{name: Count("id", filter=q) for name, q in STATUSES.items()}
-            ),
+            models=models,
+            counts=self.counts,
             key=params.get("key", ""),
-            status=params["status"] if params.get("status") in STATUSES else "",
+            status=self.status,
             model=params.get("model", ""),
             span=params.get("span", ""),
             query=params.get("q", "").strip(),

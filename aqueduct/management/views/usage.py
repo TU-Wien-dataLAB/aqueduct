@@ -1,12 +1,12 @@
 import datetime as dt
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
 from django.contrib.humanize.templatetags.humanize import intcomma
-from django.db.models import Avg, Count, F, Q, QuerySet, Sum
+from django.db.models import Count, Exists, F, OuterRef, Q, QuerySet, Sum
 from django.db.models.functions import TruncDay, TruncHour, TruncMinute
 from django.urls import reverse
 from django.utils import timezone
@@ -31,6 +31,12 @@ TOTALS = {
     "reasoning": Sum("reasoning_tokens", default=0),
 }
 """The figures of a group of requests: counts per status and token sums."""
+FIGURES = {
+    **TOTALS,
+    "response_ms": Sum("response_time_ms", default=0),
+    "responses": Count("response_time_ms"),
+}
+"""TOTALS, and the sum and number of response times that an average over groups needs."""
 STEPS: dict[str, tuple[timedelta, Any, str, str, str]] = {
     "minute": (
         timedelta(minutes=1),
@@ -104,19 +110,38 @@ def spark(points: list[tuple[str, float]], show: Callable[[float], str]) -> list
     return _bars(points, lambda amount: (("i", "", amount),), show)[0]
 
 
+def usage_rows(reqs: QuerySet[Request], step: str, by: str | None = None) -> list[dict[str, Any]]:
+    """The FIGURES of the requests per `step` long time bucket (`period`), model, and the
+    request field `by` (`item`), in one pass. The page's totals, charts and tables are sums of
+    these rows, not a pass each over the same requests."""
+    groups = {"period": STEPS[step][1]("timestamp"), **({"item": F(by)} if by else {})}
+    return list(reqs.annotate(**groups).values("model", *groups).annotate(**FIGURES).order_by())
+
+
+def _grouped(rows: list[dict[str, Any]], key: Callable[[dict[str, Any]], Any]) -> dict[Any, list]:
+    """The rows per `key(row)`, in the order the keys first appear."""
+    groups: dict[Any, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(key(row), []).append(row)
+    return groups
+
+
+def _sum(rows: list[dict[str, Any]], names: Iterable[str] = TOTALS) -> dict[str, Any]:
+    """The figures `names` of all `rows` together."""
+    return {name: sum(row[name] for row in rows) for name in names}
+
+
 def usage_series(
-    reqs: QuerySet[Request], step: str, start: dt.datetime, end: dt.datetime
+    rows: list[dict[str, Any]], step: str, start: dt.datetime, end: dt.datetime
 ) -> list[dict[str, Any]]:
-    """The figures of each `step` long time bucket from `start` to `end`, labelled for the
-    charts. Buckets start at whole minutes, hours or days in UTC, as the database cuts them."""
-    length, trunc, label_format, *_ = STEPS[step]
+    """The figures of each `step` long time bucket from `start` to `end`, summed from
+    `usage_rows` of the same step and labelled for the charts. Buckets start at whole minutes,
+    hours or days in UTC, as the database cuts them."""
+    length, _, label_format, *_ = STEPS[step]
     seconds = int(length.total_seconds())
     found = {
-        int(row.pop("period").timestamp()): row
-        for row in reqs.annotate(period=trunc("timestamp"))
-        .values("period")
-        .annotate(**TOTALS)
-        .order_by()
+        bucket: _sum(group)
+        for bucket, group in _grouped(rows, lambda row: int(row["period"].timestamp())).items()
     }
     first, last = (int(moment.timestamp()) // seconds * seconds for moment in (start, end))
     return _with_shares(
@@ -169,16 +194,21 @@ def usage_charts(rows: list[dict[str, Any]], step: str) -> dict[str, Any]:
     }
 
 
-def model_rows(requests: QuerySet[Request], link: Callable[[str], str]) -> list[dict[str, Any]]:
-    """Each model's figures, most tokens first, with its type, share of tokens and log link."""
+def model_rows(usage: list[dict[str, Any]], link: Callable[[str], str]) -> list[dict[str, Any]]:
+    """Each model's figures of `usage_rows`, most tokens first, with its type, share of tokens,
+    average response time and log link."""
     # LiteLLM treats a model without a mode as chat.
     modes = {
         m["model_name"]: (m.get("model_info") or {}).get("mode") or "chat"
         for m in get_router_config().get("model_list", [])
     }
-    rows = _with_shares(
-        list(requests.values("model").annotate(**TOTALS, avg_ms=Avg("response_time_ms")).order_by())
-    )
+    rows = []
+    for model, group in _grouped(usage, lambda row: row["model"]).items():
+        figures = _sum(group, FIGURES)
+        response_ms, responses = figures.pop("response_ms"), figures.pop("responses")
+        average = response_ms / responses if responses else None
+        rows.append({"model": model, **figures, "avg_ms": average})
+    rows = _with_shares(rows)
     tokens = sum(row["tokens"] for row in rows)
     for row in rows:
         row["mode"], row["log_url"] = modes.get(row["model"]), link(row["model"])
@@ -258,15 +288,17 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             step = SPAN_STEPS[selected_span]
 
         # Filter requests based on selected time span
-        reqs_span = reqs.filter(timestamp__gte=start_time)
+        in_span = Q(timestamp__gte=start_time)
         if selected_span == "custom":
-            reqs_span = reqs_span.filter(timestamp__lt=end_time)
+            in_span &= Q(timestamp__lt=end_time)
+        reqs_span = reqs.filter(in_span)
 
-        # The keys to pick from: those of the org the viewer may open that sent requests
+        # The keys to pick from: those of the org the viewer may open that sent requests. Every
+        # request of such a key is in scope, so each key looks for one request of its own in
+        # the (token, timestamp) index, where a join to the requests in scope reads them all.
+        sent = Request.objects.filter(in_span, token=OuterRef("pk"), model__in=allowed_models)
         keys = (
-            profile.visible_tokens(selected_org)
-            .filter(pk__in=reqs_span.values("token_id"))
-            .order_by("name")
+            profile.visible_tokens(selected_org).filter(Exists(sent)).order_by("name")
             if selected_org is not None
             else Token.objects.none()
         )
@@ -281,15 +313,20 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
         if selected_model:
             reqs_span = reqs_span.filter(model=selected_model)
 
-        # Figures in total and per time bucket
-        totals = _with_shares([reqs_span.aggregate(**TOTALS)])[0]
-        series = usage_series(reqs_span, step, start_time, end_time)
-
-        # Top entities: orgs global, or tokens per org, or user IDs per token
-        limit = 100 if self.request.GET.get("rows") == "all" else TOP_ROWS
-        top_items = _with_shares(
-            list(self._get_top_items(reqs_span, selected_org, selected_token)[: limit + 1])
+        # One pass over the requests, per time bucket, model, and what the top table lists:
+        # orgs for all orgs, else keys, or a picked key's user IDs
+        by = (
+            "token__user__profile__org_id"
+            if selected_org is None
+            else "token_id"
+            if selected_token is None
+            else "user_id"
         )
+        rows = usage_rows(reqs_span, step, by)
+        totals = _with_shares([_sum(rows)])[0]
+        series = usage_series(rows, step, start_time, end_time)
+        limit = 100 if self.request.GET.get("rows") == "all" else TOP_ROWS
+        top_items = _with_shares(self._top_items(rows, selected_org, selected_token)[: limit + 1])
         openable = set(
             profile.visible_tokens()
             .filter(pk__in=[item["token_id"] for item in top_items if "token_id" in item])
@@ -345,7 +382,7 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
                     for value, label, codes, icon, tone in STATUS_ROWS
                 ],
                 "log_url": log_url(),
-                "per_model": model_rows(reqs_span, lambda model: log_url(model=model)),
+                "per_model": model_rows(rows, lambda model: log_url(model=model)),
                 "top_items": top_items[:limit],
                 "more_items": len(top_items) > limit,
                 "items_busiest": max((item["tokens"] for item in top_items), default=0),
@@ -473,30 +510,43 @@ class UsageDashboardView(BaseAqueductView, TemplateView):
             ),
         ]
 
-    def _get_top_items(
-        self, reqs: QuerySet[Request], selected_org: Org | None, selected_token: Token | None
-    ) -> QuerySet[Request, dict[str, Any]]:
-        """Annotate the `Request` queryset and get the top-level entities as dicts"""
+    @staticmethod
+    def _top_items(
+        rows: list[dict[str, Any]], selected_org: Org | None, selected_token: Token | None
+    ) -> list[dict[str, Any]]:
+        """The figures of each `item` of `usage_rows`, most tokens first, with its names."""
+        items = _grouped(rows, lambda row: row["item"])
         if selected_org is None:
-            # Top orgs sorted by tokens - only available for global admins.
-            # Note: service account tokens belong to the same org as the token's user.
-            top_items = reqs.annotate(
-                name=F("token__user__profile__org__name"), org_id=F("token__user__profile__org__id")
-            ).values("name", "org_id")
+            # Top orgs, for global admins. A service account key counts for its user's org.
+            names = dict(Org.objects.filter(pk__in=items).values_list("pk", "name"))
+            labels = {org_id: {"name": names.get(org_id), "org_id": org_id} for org_id in items}
         elif selected_token is None:
-            # Top tokens for the selected org by tokens
-            top_items = reqs.values("token_id").annotate(
-                name=F("token__name"),
-                owner_id=F("token__user_id"),
-                user_email=F("token__user__email"),
-                service_account_name=F("token__service_account__name"),
-                team_name=F("token__service_account__team__name"),
-            )
+            # Top keys of the selected org
+            labels = {
+                key["token_id"]: key
+                for key in Token.objects.filter(pk__in=items).values(
+                    "name",
+                    token_id=F("id"),
+                    owner_id=F("user_id"),
+                    user_email=F("user__email"),
+                    service_account_name=F("service_account__name"),
+                    team_name=F("service_account__team__name"),
+                )
+            }
         else:
-            # Top user IDs for the selected token by tokens
-            top_items = reqs.annotate(name=F("token__name")).values("name", "user_id")
-
-        # Add the figures and ordering common to all cases
-        return top_items.annotate(
-            **TOTALS, total_sum=Sum(F("input_tokens") + F("output_tokens"))
-        ).order_by("-total_sum", "-requests")
+            # Top user IDs of the selected key
+            labels = {
+                user_id: {"name": selected_token.name, "user_id": user_id} for user_id in items
+            }
+        top = []
+        for item, group in items.items():
+            figures = _sum(group)
+            top.append(
+                # A key deleted since the pass has no labels.
+                {
+                    **labels.get(item, {}),
+                    **figures,
+                    "total_sum": figures["input"] + figures["output"],
+                }
+            )
+        return sorted(top, key=lambda row: (-row["total_sum"], -row["requests"]))

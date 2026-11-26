@@ -1,8 +1,11 @@
 from datetime import timedelta
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
+from gateway.config import get_router_config
 from management.models import Request
 from management.tests.helpers import RoleWorld
 
@@ -110,6 +113,16 @@ class RequestLogExtrasTest(RoleWorld):
         )
         self.assertContains(self.page(status="failed"), 'aria-current="page">Failed')
 
+    def test_each_tab_pages_through_the_rows_it_counts(self):
+        tabs = {"": "all", "ok": "ok", "server_error": "server_error", "bogus": "all"}
+        for status, tab in tabs.items():
+            with self.subTest(status=status), CaptureQueriesContext(connection) as queries:
+                page = self.page(status=status)
+                self.assertEqual(page.context["paginator"].count, page.context["counts"][tab])
+                self.assertEqual(len(page.context["requests"]), page.context["counts"][tab])
+            # The tabs' counts serve the paginator too, without a COUNT of its own.
+            self.assertFalse([query for query in queries if '"__count"' in query["sql"]])
+
     def test_filters_by_model_and_time(self):
         self.assertEqual(self.paths(model="text-embedding-ada-002"), ["/v1/embeddings"])
         self.assertEqual(len(self.paths(span="1h")), 2)
@@ -141,8 +154,17 @@ class RequestLogExtrasTest(RoleWorld):
         self.assertEqual(self.page(sort="nope").context["sort"], "-time")
         self.assertContains(self.page(sort="model"), 'aria-sort="ascending"')
 
+    def test_offers_the_router_models_to_filter_by(self):
+        Request.objects.create(token=self.solo_key, path="/v1/old", model="retired-model")
+        models = [model["model_name"] for model in get_router_config()["model_list"]]
+        self.assertEqual(self.page().context["models"], models)
+        self.assertEqual(self.page(user=self.org_admin).context["models"], models)
+        # A model gone from the router config keeps its requests, and a link to them its name.
+        page = self.page(model="retired-model")
+        self.assertEqual([request.path for request in page.context["requests"]], ["/v1/old"])
+        self.assertContains(page, "<option selected>retired-model</option>", html=True)
+
     def test_filters_never_reach_other_peoples_requests(self):
-        self.assertNotIn("whisper-1", self.page().context["models"])
         response = self.page(key=self.member_key.id, model="whisper-1")
         self.assertEqual(list(response.context["requests"]), [])
         self.assertEqual(response.context["counts"]["all"], 0)

@@ -120,6 +120,18 @@ class BatchesPageTest(ResourcePagesTestBase):
         self.assertNotContains(page, self.url(team_run))
         self.assertContains(page, "batch-team")
 
+    def test_reads_every_batch_with_its_files_in_one_query(self):
+        client = self.as_user(self.member)
+        client.get(reverse("batches"))
+        for number in range(3):
+            batch = self.batch(self.member_key, f"batch-{number}", "completed")
+            batch.output_file = self.file(self.member_key, f"batch-{number}-output.jsonl")
+            batch.error_file = self.file(self.member_key, f"batch-{number}-errors.jsonl")
+            batch.save()
+            with self.subTest(batches=number + 1), self.assertNumQueries(8):
+                page = client.get(reverse("batches"))
+        self.assertContains(page, "file-batch-2-errors.jsonl")
+
     def test_cancelling_stores_the_upstream_status(self):
         running = self.batch(self.member_key, "batch-run", "in_progress")
         response = self.as_user(self.member).post(self.url(running), follow=True)

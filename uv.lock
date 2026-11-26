@@ -237,7 +237,7 @@ wheels = [
 
 [[package]]
 name = "aqueduct"
-version = "0.2.3"
+version = "0.2.4"
 source = { virtual = "." }
 dependencies = [
     { name = "asgiref" },

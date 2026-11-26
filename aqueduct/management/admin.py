@@ -1163,6 +1163,7 @@ class SnippetAdmin(admin.ModelAdmin):
         extra_context = extra_context or {}
         extra_context["plugin_endpoints"] = self._plugin_endpoints_context()
         extra_context["plugin_default_code"] = PLUGIN_DEFAULT_CODE
+        extra_context["config_default_code"] = TEST_CODE_EXAMPLE
         return super().changeform_view(request, object_id, form_url, extra_context)
 
     def get_urls(self) -> list[URLPattern]:

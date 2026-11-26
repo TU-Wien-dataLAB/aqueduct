@@ -247,6 +247,17 @@ class SnippetAdminAuthorizationTestCase(TestCase):
         self.assertContains(resp, "snippet-code-input")
         self.assertContains(resp, "@codemirror/lang-python")
 
+    def test_superuser_add_form_includes_both_default_code_templates(self):
+        self.client.force_login(self.superuser)
+        resp = self.client.get(reverse("admin:management_snippet_add"))
+        self.assertEqual(resp.status_code, 200)
+        # Plugin default is exposed for prefill when the type is set to plugin.
+        self.assertContains(resp, 'id="plugin-default-code"')
+        self.assertContains(resp, "class MyPlugin(PluginSnippet)")
+        # Config default is exposed for prefill when the type is set to config.
+        self.assertContains(resp, 'id="config-default-code"')
+        self.assertContains(resp, "class Test(ConfigSnippet)")
+
     def test_non_superuser_staff_forbidden_on_changelist(self):
         self.client.force_login(self.staff)
         resp = self.client.get(self.changelist_url)

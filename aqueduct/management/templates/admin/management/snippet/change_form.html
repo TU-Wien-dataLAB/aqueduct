@@ -119,6 +119,7 @@
 
 {% block admin_change_form_document_ready %}
   {{ block.super }}
+  <script type="text/template" id="config-default-code">{{ config_default_code|safe }}</script>
   <script type="text/template" id="plugin-default-code">{{ plugin_default_code|safe }}</script>
   <script type="module">
     import {EditorView, basicSetup} from "codemirror";
@@ -147,17 +148,26 @@
       });
     }
 
-    // Prefill a brand-new plugin snippet with the default base-class template.
-    const defaultCodeEl = document.getElementById("plugin-default-code");
+    // Prefill a brand-new snippet with the default template for its type:
+    // config -> config default example, plugin -> default plugin code.
+    const configDefaultEl = document.getElementById("config-default-code");
+    const pluginDefaultEl = document.getElementById("plugin-default-code");
     const typeSelect = document.getElementById("id_type");
     function maybePrefillDefault() {
-      if (!defaultCodeEl || !typeSelect) return;
-      if (typeSelect.value !== "plugin") return;
-      if (editors.length && editors[0].view.state.doc.toString().trim() === "") {
-        editors[0].view.dispatch({
-          changes: {from: 0, to: editors[0].view.state.doc.length, insert: defaultCodeEl.textContent.trim()}
-        });
-      }
+      if (!typeSelect || !editors.length) return;
+      const isPlugin = typeSelect.value === "plugin";
+      const isConfig = typeSelect.value === "config";
+      const defaultCodeEl = isPlugin ? pluginDefaultEl : (isConfig ? configDefaultEl : null);
+      if (!defaultCodeEl) return;
+      const current = editors[0].view.state.doc.toString().trim();
+      const configDefault = (configDefaultEl ? configDefaultEl.textContent : "").trim();
+      const pluginDefault = (pluginDefaultEl ? pluginDefaultEl.textContent : "").trim();
+      // Only replace an empty editor or one still holding a default template, so
+      // we never clobber custom code the user has written.
+      if (current !== "" && current !== configDefault && current !== pluginDefault) return;
+      editors[0].view.dispatch({
+        changes: {from: 0, to: editors[0].view.state.doc.length, insert: defaultCodeEl.textContent.trim()}
+      });
     }
     if (typeSelect) typeSelect.addEventListener("change", maybePrefillDefault);
     maybePrefillDefault();

@@ -1,0 +1,21 @@
+{{- if and .Values.metrics.enabled .Values.metrics.podMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  # Web pods only: the Celery pods serve no HTTP.
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      component: web
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.metrics.podMonitor.interval }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ .Values.metrics.existingSecret }}
+          key: {{ .Values.metrics.existingSecretKey }}
+{{- end }}

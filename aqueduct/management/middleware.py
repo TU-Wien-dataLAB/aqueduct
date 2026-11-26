@@ -1,3 +1,4 @@
+import hmac
 import logging
 
 from django.conf import settings
@@ -6,7 +7,10 @@ from django.core.handlers.asgi import ASGIRequest
 from django.db import connection
 from django.http import HttpResponse
 from django.urls import reverse
+from prometheus_client import CONTENT_TYPE_LATEST
 from tos.middleware import UserAgreementMiddleware as TOSUserAgreementMiddleware
+
+from management import metrics
 
 User = get_user_model()
 
@@ -61,6 +65,29 @@ def _database_ready() -> bool:
         log.warning("Readiness check failed, database unavailable: %r", e)
         return False
     return True
+
+
+class MetricsMiddleware:
+    """Answer `/metrics` for the holder of `AQUEDUCT_METRICS_TOKEN`, before sessions and auth."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request: ASGIRequest) -> HttpResponse:
+        expected = settings.AQUEDUCT_METRICS_TOKEN
+        # Disabled, `/metrics` gets the same answer as any other path without a route.
+        if not expected or request.path_info.rstrip("/") != "/metrics":
+            return self.get_response(request)
+
+        scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+        if scheme != "Bearer" or not hmac.compare_digest(token.encode(), expected.encode()):
+            return HttpResponse(
+                "unauthorized",
+                content_type="text/plain",
+                status=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return HttpResponse(metrics.render(), content_type=CONTENT_TYPE_LATEST)
 
 
 class HealthCheckMiddleware:

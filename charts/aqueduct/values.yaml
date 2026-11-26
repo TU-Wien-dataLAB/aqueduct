@@ -186,6 +186,19 @@ web:
     timeoutSeconds: 3
     failureThreshold: 6
 
+# Prometheus `/metrics` on the web pods; while disabled, `/metrics` answers 404. Scrapes
+# must send the token from the Secret below as `Authorization: Bearer <token>`.
+metrics:
+  enabled: false
+  # Secret holding the scrape token; required when metrics are enabled.
+  existingSecret: ""
+  existingSecretKey: METRICS_TOKEN
+  # Needs the Prometheus Operator's CRDs and `metrics.enabled`. Scrapes every web pod
+  # with the token from the same Secret.
+  podMonitor:
+    enabled: false
+    interval: 30s
+
 settingsPy:
   extra: |
     # You can add/override settings here

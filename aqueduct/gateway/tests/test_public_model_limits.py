@@ -15,7 +15,7 @@ from django.urls import reverse
 from gateway.config import get_router, get_router_config
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import INTEGRATION_TEST_BACKEND, GatewayIntegrationTestCase
-from management.models import Token
+from management.models import Request, Token
 
 
 @contextmanager
@@ -67,6 +67,17 @@ class PublicModelLimitTests(GatewayIntegrationTestCase):
             self.assertEqual(response["Retry-After"], "15")
             self.assertIn("(Retry after 15s)", response.json()["error"]["message"])
             upstream.assert_not_awaited()
+
+    def test_rate_limited_request_is_logged(self):
+        """A request rejected by the public model budget is logged with status 429,
+        under the model name its alias resolves to."""
+        self.assertEqual(self.post_embedding("embed").status_code, 200)
+        self.assertEqual(self.post_embedding("embed").status_code, 429)
+
+        rejected = Request.objects.get(status_code=429)
+        self.assertEqual(rejected.token.key_hash, Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
+        self.assertEqual(rejected.model, "text-embedding-ada-002")
+        self.assertEqual(rejected.path, self.url)
 
     def test_excluded_tokens_cannot_consume_a_public_model_budget(self):
         other_token, _ = self.create_new_user()

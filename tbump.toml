@@ -46,6 +46,10 @@ search = 'appVersion: "{current_version}"'
 #  name = "check changelog"
 #  cmd = "grep -q {new_version} Changelog.rst"
 
+[[before_commit]]
+name = "sync lockfile"
+cmd = "uv lock"
+
 # Or run some commands after the git tag and the branch
 # have been pushed:
 #  [[after_push]]

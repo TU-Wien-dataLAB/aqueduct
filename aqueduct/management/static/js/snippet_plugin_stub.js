@@ -33,9 +33,7 @@
     var hasStreaming = selected.some(function (e) {
       return e.response_kind === "streaming" || e.response_kind === "json_or_streaming";
     });
-    var bodyType = types.length === 1 ? types[0] : "dict";
-
-    var lines = ["from __future__ import annotations", "", "class MyPlugin(PluginSnippet):"];
+    var lines = ["class MyPlugin(PluginSnippet):"];
     if (keys.length) {
       lines.push("    # Runs on: " + keys.join(", "));
       lines.push("    endpoints = [" + keys.map(function (k) { return JSON.stringify(k); }).join(", ") + "]");
@@ -44,15 +42,18 @@
       lines.push("    endpoints = []");
     }
     lines.push("");
-    lines.push("    def before_request(self, request, token, body: " + bodyType + ") -> dict | None:");
+    lines.push("    def before_request(self, *args, **kwargs) -> dict | None:");
     if (types.length) {
       lines.push("        # Request body is validated against: " + types.join(", "));
     }
     lines.push('        """Optionally transform/replace the request body.');
     lines.push("");
-    lines.push("        Return the (possibly mutated) body to pass downstream, or ``None`` to");
-    lines.push("        leave the body unchanged. Raise ``BlockedByPlugin`` to stop the request.");
+    lines.push("        The gateway calls this as ``before_request(request, token, body)``; name");
+    lines.push("        only the parameters you need. Return the (possibly mutated) body to pass");
+    lines.push("        downstream, or ``None`` to leave the body unchanged. Raise ``BlockedByPlugin``");
+    lines.push("        to stop the request.");
     lines.push('        """');
+    lines.push("        request, token, body = args");
     lines.push("        return body");
     lines.push("");
     if (hasJson) {

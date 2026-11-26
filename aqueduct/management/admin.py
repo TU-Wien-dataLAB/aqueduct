@@ -1059,20 +1059,29 @@ class Test(ConfigSnippet):
 TEST_PAYLOAD_EXAMPLE = {"email": "you@example.com", "groups": ["E123-Students", "admins"]}
 
 
-PLUGIN_TEST_CODE_EXAMPLE = """\
+PLUGIN_DEFAULT_CODE = '''\
 class MyPlugin(PluginSnippet):
-    endpoints = ["chat/completions"]
+    #: Normalized endpoint paths this plugin applies to (e.g. "chat/completions").
+    #: Empty means the plugin runs on every endpoint.
+    endpoints = []
 
-    def before_request(self, request, token, body):
-        text = " ".join(m.get("content", "") for m in body.get("messages", []))
-        if "block me" in text:
-            raise BlockedByPlugin("blocked by guard", status=403)
-        body["flagged"] = True
-        return body
+    def before_request(self, *args, **kwargs):
+        """Optionally transform/replace the request body.
+
+        Called as ``before_request(request, token, body)``. Return the (possibly
+        mutated) body to pass downstream, or ``None`` to leave it unchanged.
+        Raise ``BlockedByPlugin`` to stop the request.
+        """
+        return None
 
     def after_response(self, response):
-        response.data["audited"] = True
-"""
+        """Non-streaming only. Return a replacement response, or ``None`` to keep unchanged."""
+        return None
+
+    def after_streaming_response(self, response):
+        """Streaming wrapper only (headers/status, not content)."""
+        return None
+'''
 
 PLUGIN_TEST_PAYLOAD_EXAMPLE = {
     "model": "gpt-4.1-nano",
@@ -1153,6 +1162,7 @@ class SnippetAdmin(admin.ModelAdmin):
     ) -> HttpResponse:
         extra_context = extra_context or {}
         extra_context["plugin_endpoints"] = self._plugin_endpoints_context()
+        extra_context["plugin_default_code"] = PLUGIN_DEFAULT_CODE
         return super().changeform_view(request, object_id, form_url, extra_context)
 
     def get_urls(self) -> list[URLPattern]:
@@ -1255,7 +1265,7 @@ class SnippetAdmin(admin.ModelAdmin):
         results = None
 
         if request.method != "POST":
-            code = PLUGIN_TEST_CODE_EXAMPLE
+            code = PLUGIN_DEFAULT_CODE
             payload = json.dumps(PLUGIN_TEST_PAYLOAD_EXAMPLE, indent=2)
 
         if request.method == "POST":

@@ -119,6 +119,7 @@
 
 {% block admin_change_form_document_ready %}
   {{ block.super }}
+  <script type="text/template" id="plugin-default-code">{{ plugin_default_code|safe }}</script>
   <script type="module">
     import {EditorView, basicSetup} from "codemirror";
     import {python} from "@codemirror/lang-python";
@@ -145,6 +146,21 @@
         });
       });
     }
+
+    // Prefill a brand-new plugin snippet with the default base-class template.
+    const defaultCodeEl = document.getElementById("plugin-default-code");
+    const typeSelect = document.getElementById("id_type");
+    function maybePrefillDefault() {
+      if (!defaultCodeEl || !typeSelect) return;
+      if (typeSelect.value !== "plugin") return;
+      if (editors.length && editors[0].view.state.doc.toString().trim() === "") {
+        editors[0].view.dispatch({
+          changes: {from: 0, to: editors[0].view.state.doc.length, insert: defaultCodeEl.textContent.trim()}
+        });
+      }
+    }
+    if (typeSelect) typeSelect.addEventListener("change", maybePrefillDefault);
+    maybePrefillDefault();
 
     const genBtn = document.getElementById("plugin-generate-stub");
     if (genBtn && editors.length) {

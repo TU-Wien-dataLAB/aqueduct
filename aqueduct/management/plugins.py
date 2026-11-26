@@ -19,31 +19,39 @@ log = logging.getLogger("aqueduct")
 class PluginSnippet:
     #: Normalized endpoint paths this plugin applies to (e.g. ``"chat/completions"``).
     #: Empty means the plugin applies to every endpoint.
+    #: Different API URLs have different request types, so pick the matching hook:
+    #: JSON-only endpoints (e.g. ``embeddings``, ``vector_stores/...``) are non-streaming;
+    #: streaming-capable endpoints (e.g. ``chat/completions``, ``responses``) can be streaming.
     endpoints: ClassVar[list[str]] = []
 
     #: Internal bookkeeping for per-hook timing (not part of the plugin API).
     processing_time_ms: int = 0
 
-    def before_request(self, request: Any, token: Any, body: Any) -> Any:
+    def before_request(self, *args: Any, **kwargs: Any) -> Any | None:
         """Optionally transform/replace the request body.
 
-        Return the (possibly mutated) body to pass downstream, or ``None`` to
-        leave the body unchanged. Raise :class:`BlockedByPlugin` to stop the
-        request.
+        The gateway calls this hook as ``before_request(request, token, body)``; the
+        ``*args``/``**kwargs`` signature lets a subclass name only the parameters it
+        needs. Return the (possibly mutated) body to pass downstream, or ``None``
+        to leave the body unchanged. Raise :class:`BlockedByPlugin` to stop the request.
         """
 
     def after_response(self, response: RawJsonResponse) -> RawJsonResponse | None:
-        """Run for non-streaming responses only.
+        """Run for non-streaming responses only (``RawJsonResponse``).
 
+        Requires a non-streaming request type — i.e. a JSON-only API URL.
         Return a replacement response, or ``None`` to keep the response unchanged.
         """
 
     def after_streaming_response(
         self, response: RawStreamingResponse
     ) -> RawStreamingResponse | None:
-        """Run for streaming responses only — a wrapper for headers/status, not content.
+        """Run for streaming responses only (``RawStreamingResponse``) — headers/status,
+        not content.
 
-        Return a replacement response, or ``None`` to keep the response unchanged.
+        Requires a streaming request type — i.e. a streaming-capable API URL
+        (e.g. ``chat/completions``). Return a replacement response, or ``None``
+        to keep the response unchanged.
         """
 
 

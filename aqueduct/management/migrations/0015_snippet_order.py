@@ -10,9 +10,21 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='snippet',
-            name='order',
-            field=models.PositiveSmallIntegerField(default=0, help_text='Execution priority for plugins only: lower order runs first; ties broken by lower id. Ignored for config snippets (only one config is ever active).'),
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.AddField(
+                    model_name='snippet',
+                    name='order',
+                    field=models.PositiveSmallIntegerField(default=0, help_text='Execution priority for plugins only: lower order runs first; ties broken by lower id. Ignored for config snippets (only one config is ever active).'),
+                ),
+            ],
+            database_operations=[
+                migrations.RunSQL(
+                    # Idempotent: safe to re-run if a previous partial run already
+                    # added the column but crashed before recording the migration.
+                    sql='ALTER TABLE "management_snippet" ADD COLUMN IF NOT EXISTS "order" smallint NOT NULL DEFAULT 0;',
+                    reverse_sql='ALTER TABLE "management_snippet" DROP COLUMN IF EXISTS "order";',
+                ),
+            ],
         ),
     ]

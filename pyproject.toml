@@ -19,6 +19,7 @@ dependencies = [
     "mcp==2.2.0",  # v2: stateless 2026-07-28 protocol core
     "mozilla-django-oidc>=4.0.1",
     "openai==3.26.0",
+    "prometheus-client>=0.26.0",
     "whitenoise>=6.9.0",
 ]
 

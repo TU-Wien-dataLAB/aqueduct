@@ -155,6 +155,81 @@ A Redis refresh error also stops forwarding. Release is best effort, as with
 other cleanup paths. A reservation released after its lease expired cannot
 remove a newer reservation.
 
+## Metrics
+
+Every web pod serves Prometheus metrics at `/metrics`. The endpoint is off
+unless `AQUEDUCT_METRICS_TOKEN` is set, and then answers only requests that send
+`Authorization: Bearer <token>`:
+
+| Request | Response |
+|---|---|
+| `AQUEDUCT_METRICS_TOKEN` unset or empty | `404`, as for any path without a route |
+| Token missing or wrong | `401` |
+| Correct token | `200`, Prometheus text format |
+
+### Enabling with Helm
+
+Add the token to an existing Secret, then set:
+
+```yaml
+metrics:
+  enabled: true
+  existingSecret: aqueduct-secrets   # required when enabled
+  existingSecretKey: METRICS_TOKEN   # default
+  podMonitor:
+    enabled: true                    # needs the Prometheus Operator CRDs
+    interval: 30s                    # default
+```
+
+The web pods read `AQUEDUCT_METRICS_TOKEN` from the Secret. The PodMonitor
+selects only the web pods, scrapes their `http` port at `/metrics`, and sends the
+token from the same Secret. It picks up every replica, including the extra pod of
+a rolling update. Rendering fails if `metrics.enabled` is set without
+`metrics.existingSecret`.
+
+### Reported metrics
+
+All values are read when Prometheus scrapes; nothing is counted in the process.
+*Per pod* metrics describe the pod that answered. *Gateway-wide* metrics read
+shared state, so every pod reports the same value: aggregate them with
+`max by (model)` (or `max by (model, status)`), not `sum`.
+
+| Metric | Type | Labels | Scope | Meaning |
+|---|---|---|---|---|
+| `aqueduct_build_info` | gauge | `version` | per pod | Always 1; the running Aqueduct version |
+| `aqueduct_db_up` | gauge | | per pod | 1 if the database answers a query |
+| `aqueduct_redis_up` | gauge | | per pod | 1 if the Redis used for concurrency limiting answers `PING` |
+| `aqueduct_db_pool_size` | gauge | | per pod | Connections open in the pool |
+| `aqueduct_db_pool_available` | gauge | | per pod | Idle connections in the pool; in use = size − available |
+| `aqueduct_db_pool_max` | gauge | | per pod | Maximum pool size |
+| `aqueduct_db_pool_requests_waiting` | gauge | | per pod | Requests waiting for a pool connection |
+| `aqueduct_db_pool_requests_total` | counter | | per pod | Connections requested from the pool |
+| `aqueduct_db_pool_requests_errors_total` | counter | | per pod | Pool requests that failed, for example by timing out |
+| `aqueduct_db_pool_connections_lost_total` | counter | | per pod | Pool connections found broken |
+| `aqueduct_db_pool_wait_seconds_total` | counter | | per pod | Time spent waiting for pool connections |
+| `aqueduct_inflight_requests` | gauge | `model` | gateway-wide | Requests holding a concurrency slot of the model |
+| `aqueduct_model_concurrency_limit` | gauge | `model` | gateway-wide | Concurrent requests allowed for the model |
+| `aqueduct_requests_last_minute` | gauge | `model`, `status` | gateway-wide | Requests in the last 60 seconds by HTTP status code, `pending` while unfinished |
+| `aqueduct_scrape_duration_seconds` | gauge | | per pod | Time spent collecting the Aqueduct metrics |
+
+The standard `process_*` and `python_*` metrics of the Prometheus client are
+included too.
+
+`model` is the model's name in the router config, so requests for an alias count
+under the model it points to. Only models in the router config are reported.
+There are no labels for users, tokens, organizations or paths.
+`aqueduct_requests_last_minute` counts recorded requests, so it leaves out
+requests rejected before a request record exists. The pool counters count since
+the pod's pool started, and the pool metrics are left out when no connection
+pool is configured (SQLite).
+
+A scrape always answers `200`. If the database does not answer,
+`aqueduct_db_up` is 0 and `aqueduct_requests_last_minute` is left out; if Redis
+does not answer, `aqueduct_redis_up` is 0 and `aqueduct_inflight_requests` is
+left out. A scrape takes at most one pool connection, waits for it at most
+`HEALTH_DB_TIMEOUT` seconds and gives it back before answering. PostgreSQL cancels
+its queries after about 1 second, and its Redis calls time out after about 1 second.
+
 ## Upgrading
 
 ### Migration init containers

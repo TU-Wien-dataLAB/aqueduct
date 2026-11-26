@@ -54,6 +54,9 @@ spec:
           env:
             {{- include "aqueduct.env" . | nindent 12 }}
             {{- include "aqueduct.databasePoolEnv" .Values.web.databasePool | nindent 12 }}
+            {{- with include "aqueduct.metricsEnv" . }}
+            {{- . | nindent 12 }}
+            {{- end }}
             {{- with .Values.web.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -70,7 +73,7 @@ spec:
               mountPath: /etc/aqueduct/mcp.json
               subPath: mcp.json
       initContainers:
-        {{- include "aqueduct.migrationInit" (dict "root" . "pool" .Values.web.databasePool "extraEnv" .Values.web.extraEnv) | nindent 8 }}
+        {{- include "aqueduct.migrationInit" (dict "root" . "pool" .Values.web.databasePool "roleEnv" (include "aqueduct.metricsEnv" .) "extraEnv" .Values.web.extraEnv) | nindent 8 }}
         - name: collectstatic
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}

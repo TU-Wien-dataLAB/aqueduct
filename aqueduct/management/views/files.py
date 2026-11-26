@@ -1,6 +1,5 @@
 from datetime import UTC, datetime
 
-from django.db.models import Q
 from django.utils import timezone
 from django.views.generic import TemplateView
 
@@ -18,12 +17,8 @@ class UserFilesView(BaseAqueductView, TemplateView):
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         profile = self.profile
-        user = profile.user
-        teams = profile.teams.all()
 
-        files = FileObject.objects.filter(
-            Q(token__user=user) | Q(token__service_account__team__in=teams)
-        ).order_by("-created_at")
+        files = FileObject.objects.filter(token__in=profile.my_tokens()).order_by("-created_at")
 
         now_ts = int(timezone.now().timestamp())
 

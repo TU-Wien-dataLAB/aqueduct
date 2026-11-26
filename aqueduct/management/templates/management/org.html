@@ -6,7 +6,7 @@
         <div class="flex items-center gap-4 flex-wrap">
             <h1 class="mb-0 mr-4 flex items-center gap-2">
                 <span class="text-xl font-normal text-base-content opacity-75">Org</span>
-                <span class="text-3xl font-semibold ml-1">{{ user.profile.org.name }}</span>
+                <span class="text-3xl font-semibold ml-1">{{ org_object.name }}</span>
             </h1>
             {% if user.profile.is_admin %}
                 <form method="post" action="{% url 'org_switch' %}" class="flex items-center gap-2">
@@ -14,7 +14,7 @@
                     <label for="org-switch" class="mr-1 font-medium text-xs text-base-content opacity-70">Switch Organization:</label>
                     <select name="org_id" id="org-switch" class="select select-bordered select-xs" onchange="this.form.submit()">
                         {% for org in all_orgs %}
-                            <option value="{{ org.id }}" {% if org.id == user.profile.org.id %}selected{% endif %}>
+                            <option value="{{ org.id }}" {% if org.id == org_object.id %}selected{% endif %}>
                                 {{ org.name }}
                             </option>
                         {% endfor %}

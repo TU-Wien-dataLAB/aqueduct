@@ -23,6 +23,8 @@
 
 ## Test Mock API (OpenAI)
 - Test runner: `gateway.tests.utils.test_runner.MockServerTestRunner` (enabled via `TEST_RUNNER` in `aqueduct/aqueduct/settings.py`)
+- The runner clears the Django cache before every test, so tests need no `cache.clear()` in `setUp`
+- Changing `LITELLM_ROUTER_CONFIG_FILE_PATH` with `override_settings` clears the config caches built from it
 - Toggle: `TESTS_USE_MOCK_API` env var (`True` by default) controls starting the mock server
 - Shared server: one FastAPI mock server for entire suite; base class patches `OPENAI_BASE_URL`/`OPENAI_API_KEY` and points files API to mock
 - Default mocks live in `aqueduct/mock_api/mock_configs.py` (`default_post_configs`, `default_get_configs`, `default_delete_configs`, `default_post_stream_configs`)

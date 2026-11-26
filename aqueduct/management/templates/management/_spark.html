@@ -1,0 +1,2 @@
+{% comment %}A small bar chart: `bars` come from views.usage.spark.{% endcomment %}
+{% load l10n %}<div class="spark">{% for bar in bars %}<span role="img" aria-label="{{ bar.heading }}: {{ bar.text }}" title="{{ bar.heading }}: {{ bar.text }}"><i style="height: {{ bar.height|unlocalize }}%"></i></span>{% endfor %}</div>

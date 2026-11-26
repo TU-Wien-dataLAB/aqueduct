@@ -33,7 +33,7 @@ class SignInPageTest(TestCase):
             for unsafe in UNSAFE_NEXT:
                 with self.subTest(login=login, next=unsafe):
                     response = self.client.get(reverse(login), {"next": unsafe})
-                    self.assertRedirects(response, reverse("org"), fetch_redirect_response=False)
+                    self.assertRedirects(response, reverse("tokens"), fetch_redirect_response=False)
 
 
 @override_settings(ROOT_URLCONF=__name__)
@@ -57,3 +57,29 @@ class TermsPromptTest(TestCase):
                 self.assertRedirects(
                     self.accept(target), settings.LOGIN_REDIRECT_URL, fetch_redirect_response=False
                 )
+
+    def test_the_prompt_shows_no_navigation(self):
+        self.client.get(reverse("tokens"))
+        page = self.client.get(reverse("tos_check_tos"))
+        self.assertContains(page, "Accept the terms to continue")
+        self.assertContains(page, "Be kind.")
+        self.assertNotContains(page, 'class="aq-sidebar')
+
+    @override_settings(TOS_ENABLED=True)
+    def test_settings_name_the_day_the_terms_were_accepted(self):
+        self.accept(reverse("tokens"))
+        self.assertContains(self.client.get(reverse("settings")), "Accepted ")
+
+
+class SignInButtonTest(TestCase):
+    def button(self, **params) -> str:
+        page = self.client.get(reverse("sso"), params).content.decode()
+        return page.split('class="btn btn-primary btn-lg', 1)[0].rsplit("<a href=", 1)[1]
+
+    def test_the_button_carries_a_next_on_this_site_only(self):
+        self.assertIn(
+            "?next=/aqueduct/management/files/", self.button(next="/aqueduct/management/files/")
+        )
+        for unsafe in UNSAFE_NEXT:
+            with self.subTest(next=unsafe):
+                self.assertNotIn("next", self.button(next=unsafe))

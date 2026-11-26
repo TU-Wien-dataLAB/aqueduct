@@ -10,7 +10,8 @@ from typing import ClassVar
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test import TestCase, override_settings
+from django.template.loader import render_to_string
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from gateway.rate_limiting import check_and_reserve
@@ -75,21 +76,38 @@ class TokensPageTest(TestCase):
         self.assertContains(resp, 'value="1"')  # hour: 6/600 = 1%
         self.assertContains(resp, 'value="0"')  # day:  6/14400 ~0%
         # Per-window used/limit text reflects the derived caps.
-        self.assertContains(resp, "6/600")  # hour
-        self.assertContains(resp, "6/14,400")  # day (intcomma)
+        self.assertContains(resp, "of 600")  # hour
+        self.assertContains(resp, "of 14,400")  # day (intcomma)
         # The per-minute bar is not rendered.
-        self.assertNotContains(resp, "6/10")
+        self.assertNotContains(resp, "of 10<")
 
-    def test_page_renders_em_dash_when_no_request_limit(self):
-        """No request limit -> no progress bar, only the "—" count text."""
+    def test_page_renders_no_limit_when_no_request_limit(self):
+        """No request limit -> no progress bar, only the count and "no limit"."""
         user = User.objects.get(pk=1)
         self.client.force_login(user)
         resp = self.client.get(reverse("tokens"))
 
         self.assertEqual(resp.status_code, 200)
-        # No request limit -> the include renders the em-dash placeholder, not a fill.
-        self.assertContains(resp, "—")
+        self.assertContains(resp, "no limit")
         # No progress bar is rendered at all (every window has no request cap).
         self.assertNotContains(resp, "progress-primary")
         self.assertNotContains(resp, "progress-neutral")
         self.assertNotContains(resp, "<progress")
+
+
+class MeterTest(SimpleTestCase):
+    def bar(self, used: float, limit: int | None) -> str:
+        """The bar's tone: primary, warning or error; empty without a bar."""
+        html = render_to_string("management/_meter.html", {"used": used, "limit": limit})
+        tones = ("error", "warning", "primary")
+        return next((tone for tone in tones if f"progress-{tone}" in html), "")
+
+    def test_turns_amber_from_80_percent_and_red_from_100(self):
+        self.assertEqual(
+            [self.bar(used, 100) for used in (10, 79, 80, 99, 100, 250)],
+            ["primary", "primary", "warning", "warning", "error", "error"],
+        )
+
+    def test_has_no_bar_without_a_limit(self):
+        self.assertEqual(self.bar(3, None), "")
+        self.assertIn("no limit", render_to_string("management/_meter.html", {"used": 3}))

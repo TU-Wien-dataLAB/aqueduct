@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke-test the local demo's OIDC login and token-create page."""
+"""Smoke-test the local demo's OIDC login through Dex's user buttons and the token-create page."""
 
 import os
 import re
@@ -24,6 +24,8 @@ def main() -> int:
     with httpx.Client(follow_redirects=True, timeout=30) as client:
         login_page = client.get(f"{WEB_URL}/oidc/authenticate/")
         login_page.raise_for_status()
+        if f'name="login" value="{EMAIL}"' not in login_page.text:
+            raise RuntimeError(f"Dex login page has no button for {EMAIL}")
 
         login_action = _capture(r'action="([^"]+)"', login_page.text, "Dex login form").replace(
             "&amp;", "&"
@@ -32,20 +34,15 @@ def main() -> int:
             f"{DEX_URL}{login_action}", data={"login": EMAIL, "password": PASSWORD}
         )
         login_response.raise_for_status()
-
-        approval_req = re.search(r'name="req" value="([^"]+)"', login_response.text)
-        if approval_req:
-            approval_response = client.post(
-                str(login_response.url), data={"req": approval_req.group(1), "approval": "approve"}
-            )
-            approval_response.raise_for_status()
+        if not str(login_response.url).startswith(WEB_URL):
+            raise RuntimeError(f"Dex login stopped at {login_response.url}, not at Aqueduct")
 
         token_page = client.get(f"{WEB_URL}/aqueduct/management/tokens/create/")
         token_page.raise_for_status()
-        if "Create New API Key" not in token_page.text:
+        if 'name="name"' not in token_page.text:  # The key form's name field; titles vary.
             raise RuntimeError("token-create page did not render")
 
-    print("Smoke test passed: OIDC login and token-create page work.")  # noqa: T201
+    print("Smoke test passed: OIDC login through Dex's user buttons and token-create page work.")  # noqa: T201
     return 0
 
 

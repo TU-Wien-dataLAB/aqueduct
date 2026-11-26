@@ -1,0 +1,50 @@
+{% extends "management/base.html" %}
+{% load i18n humanize ui %}
+
+{% block title %}{% translate "All keys" %} · {{ block.super }}{% endblock %}
+{% block heading %}{% translate "All keys" %}{% endblock %}
+{% block subheading %}<span class="muted text-sm">{{ view.org.name }}</span>{% endblock %}
+{% block body %}
+<form method="get" role="search" class="flex flex-wrap items-center gap-2">
+    <label class="input input-sm w-80">
+        {% icon "search" small=True %}
+        <input type="search" name="q" value="{{ query }}" placeholder="{% translate 'Key name, owner email or team' %}" aria-label="{% translate 'Search keys' %}">
+    </label>
+    <button type="submit" class="btn btn-sm">{% translate "Search" %}</button>
+</form>
+
+<section class="card bg-base-200">
+    <div class="card-body table-card">
+        <div class="aq-scroll-x">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>{% translate "Key" %}</th>
+                        <th>{% translate "Owner" %}</th>
+                        <th class="max-md:hidden">{% translate "Last used" %}</th>
+                        <th class="max-sm:hidden">{% translate "Last 7 days" %}</th>
+                        <th class="max-md:hidden">{% translate "Expires" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for token in keys %}
+                        <tr>
+                            <td>
+                                <a class="link-plain row-link block truncate font-mono" href="{% url 'token_detail' token.id %}">{{ token.name }}</a>
+                                <div class="muted font-mono text-xs">{{ token.key_preview }}</div>
+                            </td>
+                            <td class="max-w-64 truncate">{% if token.service_account %}<a class="link-plain relative z-10" href="{% url 'team' token.service_account.team.id %}">{{ token.service_account.team.name }}</a><div class="muted text-xs">{% translate "Service account" %} · {{ token.service_account.name }}</div>{% else %}{{ token.user.email }}<div class="muted text-xs">{% translate "Personal" %}</div>{% endif %}</td>
+                            <td class="muted whitespace-nowrap max-md:hidden">{% if token.last_used %}{{ token.last_used|naturaltime }}{% else %}{% translate "Never" %}{% endif %}</td>
+                            <td class="max-sm:hidden">{% include "management/_spark.html" with bars=token.week %}</td>
+                            <td class="whitespace-nowrap max-md:hidden">{% include "management/_expires.html" with at=token.expires_at %}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5" class="muted">{% if query %}{% translate "No key matches." %}{% else %}{% translate "This organization has no keys yet." %}{% endif %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include "management/_pager.html" with pages=page_obj %}
+    </div>
+</section>
+{% endblock %}

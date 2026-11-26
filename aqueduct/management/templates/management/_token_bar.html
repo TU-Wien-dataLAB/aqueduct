@@ -1,0 +1,3 @@
+{% load i18n l10n %}<td class="hidden min-[90rem]:table-cell">{% if row.tokens %}
+    <div class="tbar" style="width: {% widthratio row.tokens busiest 100 %}%">{% if row.cached %}<i class="c" style="flex: {{ row.cached|unlocalize }} 1 0%"></i>{% endif %}{% if row.new_input %}<i class="n" style="flex: {{ row.new_input|unlocalize }} 1 0%"></i>{% endif %}{% if row.output %}<i class="o" style="flex: {{ row.output|unlocalize }} 1 0%"></i>{% endif %}</div>
+{% else %}<span class="muted whitespace-nowrap text-xs">{% translate "No token count" %}</span>{% endif %}</td>

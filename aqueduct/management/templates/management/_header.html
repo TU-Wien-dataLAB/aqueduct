@@ -1,0 +1,25 @@
+{% load i18n static ui %}
+<header class="navbar sticky top-0 z-50 gap-2 border-b border-base-300 bg-base-100 print:hidden">
+    <div class="navbar-start flex items-center gap-2">
+        <a href="{% url 'tokens' %}" class="flex items-center gap-2">
+            <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="" class="h-8 w-8">
+            <span class="text-xl font-semibold">{% translate "Aqueduct" %}</span>
+        </a>
+        <a href="{% url 'tokens' %}" class="btn btn-ghost btn-sm ml-2">{% icon "chevron" small=True extra_class="rotate-180" %}{% translate "Back to Aqueduct" %}</a>
+    </div>
+    <div class="navbar-end flex items-center gap-1">
+        {% include "management/_theme_toggle.html" %}
+        {% if user.is_authenticated %}
+            <details class="dropdown dropdown-end">
+                <summary class="btn btn-ghost btn-sm btn-square" aria-label="{% translate 'Account' %}">{% icon "user" %}</summary>
+                <div class="dropdown-content z-10 mt-2 flex w-64 flex-col gap-2 rounded-box border border-base-300 bg-base-200 p-3">
+                    <span class="break-all text-sm font-medium">{{ user.email }}</span>
+                    <form action="{% url 'oidc_logout' %}" method="post">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm w-full">{% icon "sign_out" small=True %}{% translate "Sign out" %}</button>
+                    </form>
+                </div>
+            </details>
+        {% endif %}
+    </div>
+</header>

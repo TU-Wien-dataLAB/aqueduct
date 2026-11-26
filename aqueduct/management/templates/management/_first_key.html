@@ -1,0 +1,30 @@
+{% load i18n ui %}
+<section class="card bg-base-200" aria-labelledby="first-key-title">
+    <div class="card-body gap-6 lg:flex-row lg:gap-10">
+        <div class="flex min-w-0 flex-1 flex-col gap-4">
+            <span class="section-label">{% translate "Step 1 of 2" %}</span>
+            <h2 id="first-key-title" class="text-2xl font-semibold">{% translate "Create your first API key" %}</h2>
+            <p class="max-w-prose">{% translate "Your code calls the models with a key. Name it after the project or notebook that will use it." %}</p>
+            <form method="post" action="{% url 'token_create' %}" class="flex max-w-md flex-col gap-4">
+                {% csrf_token %}
+                {% include "management/_form_fields.html" with form=first_key_form %}
+                <div><button type="submit" class="btn btn-primary">{% translate "Create key" %}</button></div>
+            </form>
+        </div>
+        <div class="flex min-w-0 flex-1 flex-col gap-3 lg:border-l lg:border-base-300 lg:pl-10">
+            <span class="section-label">{% translate "Step 2 of 2" %}</span>
+            <h2 class="text-xl font-semibold">{% translate "Make a call" %}</h2>
+            {% if first_model %}
+                <p class="muted">{% blocktranslate with model=first_model.model_name %}Put your key in place of <span class="font-mono">sk-...</span> and run it. It calls <span class="font-mono">{{ model }}</span>.{% endblocktranslate %}</p>
+            {% else %}
+                {% url 'models' as models_url %}
+                <p class="muted">{% blocktranslate %}Put your key in place of <span class="font-mono">sk-...</span> and a model in place of <span class="font-mono">MODEL</span>, and run it. <a href="{{ models_url }}">Models</a> lists what you can call.{% endblocktranslate %}</p>
+            {% endif %}
+            <div class="rounded-box bg-base-100">
+                <div class="flex justify-end px-2 pt-2"><button type="button" class="btn btn-ghost btn-sm btn-square" data-copy-from="#first-call" aria-label="{% translate 'Copy example' %}" title="{% translate 'Copy example' %}">{% icon "copy" small=True %}</button></div>
+                <pre id="first-call" class="overflow-x-auto px-4 pb-4 font-mono text-xs leading-relaxed">{% include "management/_curl.txt" with gateway=request.scheme|add:"://"|add:request.get_host|add:"/v1" model=first_model.model_name %}</pre>
+            </div>
+            <p class="muted text-sm">{% translate "Your call then appears under Requests." %}</p>
+        </div>
+    </div>
+</section>

@@ -1,0 +1,107 @@
+{% extends "management/base.html" %}
+{% load i18n humanize ui %}
+
+{% block title %}{% translate "Requests" %} · {{ block.super }}{% endblock %}
+{% block heading %}{% translate "Requests" %}{% endblock %}
+{% block subheading %}{% if viewer.is_admin or viewer_is_org_admin %}<span class="muted text-sm">{{ view.org.name }}</span>{% endif %}{% endblock %}
+{% block body %}
+<form method="get" role="search" class="flex flex-wrap items-end gap-3">
+    {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+    {% if sort != "-time" %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+    <div class="flex flex-col gap-1">
+        <span class="section-label">{% translate "Search" %}</span>
+        <label class="input input-sm w-64">
+            {% icon "search" small=True %}
+            <input type="search" name="q" value="{{ query }}" placeholder="{% translate 'Model or path' %}" aria-label="{% translate 'Search model or path' %}">
+        </label>
+    </div>
+    <label class="flex flex-col gap-1">
+        <span class="section-label">{% translate "Key" %}</span>
+        <select name="key" class="select select-sm w-56" data-autosubmit>
+            <option value="">{% translate "All keys" %}</option>
+            {% for token in keys %}<option value="{{ token.id }}"{% if key == token.id|stringformat:"d" %} selected{% endif %}>{{ token.name }}</option>{% endfor %}
+        </select>
+    </label>
+    <label class="flex flex-col gap-1">
+        <span class="section-label">{% translate "Model" %}</span>
+        <select name="model" class="select select-sm w-56" data-autosubmit>
+            <option value="">{% translate "All models" %}</option>
+            {% for name in models %}{% if name %}<option{% if model == name %} selected{% endif %}>{{ name }}</option>{% endif %}{% endfor %}
+        </select>
+    </label>
+    <label class="flex flex-col gap-1">
+        <span class="section-label">{% translate "Time" %}</span>
+        <select name="span" class="select select-sm w-40" data-autosubmit>
+            <option value="">{% translate "Any time" %}</option>
+            <option value="1h"{% if span == "1h" %} selected{% endif %}>{% translate "Last hour" %}</option>
+            <option value="1d"{% if span == "1d" %} selected{% endif %}>{% translate "Last 24 hours" %}</option>
+            <option value="1w"{% if span == "1w" %} selected{% endif %}>{% translate "Last 7 days" %}</option>
+            <option value="1m"{% if span == "1m" %} selected{% endif %}>{% translate "Last 30 days" %}</option>
+        </select>
+    </label>
+    <noscript><button type="submit" class="btn btn-sm">{% translate "Filter" %}</button></noscript>
+</form>
+
+<nav class="join max-sm:flex-wrap" aria-label="{% translate 'Status' %}">
+    {% include "management/_status_tab.html" with value="" label=_("All") count=counts.all %}
+    {% include "management/_status_tab.html" with value="ok" label=_("OK") count=counts.ok %}
+    {% include "management/_status_tab.html" with value="rate_limited" label=_("Rate-limited") count=counts.rate_limited %}
+    {% include "management/_status_tab.html" with value="failed" label=_("Failed") count=counts.failed %}
+</nav>
+
+<section class="card bg-base-200">
+    <div class="card-body table-card">
+        <div class="aq-scroll-x">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th class="w-8"><span class="sr-only">{% translate "Details" %}</span></th>
+                        {% include "management/_sort_th.html" with name="time" label=_("Time") %}
+                        <th>{% translate "Key" %}</th>
+                        {% include "management/_sort_th.html" with name="model" label=_("Model") %}
+                        {% include "management/_sort_th.html" with name="status" label=_("Status") %}
+                        {% include "management/_sort_th.html" with name="input" label=_("Input") class="text-right" %}
+                        {% include "management/_sort_th.html" with name="output" label=_("Output") class="text-right" %}
+                        {% include "management/_sort_th.html" with name="response" label=_("Response") class="text-right" %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for request in requests %}
+                        <tr>
+                            <td class="px-2">
+                                <details class="group">
+                                    <summary class="btn btn-ghost btn-xs btn-square list-none" aria-label="{% blocktranslate with id=request.id %}Details of request {{ id }}{% endblocktranslate %}">{% icon "chevron" small=True extra_class="transition-transform group-open:rotate-90" %}</summary>
+                                </details>
+                            </td>
+                            <td class="muted whitespace-nowrap" title="{{ request.timestamp|date:'Y-m-d H:i:s' }} UTC">{{ request.timestamp|date:"j M H:i" }}</td>
+                            <td class="max-w-48 truncate">{% if request.token %}<a class="link-plain font-mono" href="{% url 'token_detail' request.token.id %}">{{ request.token.name }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+                            <td class="max-w-64">{% if request.model %}<a class="font-mono hover:underline" href="{% querystring model=request.model page=None %}" title="{% blocktranslate with model=request.model %}Show only {{ model }}{% endblocktranslate %}">{{ request.model }}</a>{% else %}—{% endif %}<div class="muted truncate font-mono text-xs" title="{{ request.path }}">{{ request.path }}</div></td>
+                            <td>{% include "management/_request_status.html" %}</td>
+                            <td class="text-right">{{ request.input_tokens|default_if_none:"—"|intcomma }}</td>
+                            <td class="text-right">{{ request.output_tokens|default_if_none:"—"|intcomma }}</td>
+                            <td class="whitespace-nowrap text-right">{{ request.response_time_ms|duration }}</td>
+                        </tr>
+                        <tr class="row-details">
+                            <td></td>
+                            <td colspan="7">
+                                <dl class="grid grid-cols-1 gap-x-8 gap-y-3 pb-3 sm:grid-cols-2 md:grid-cols-4" aria-label="{% blocktranslate with id=request.id %}Details of request {{ id }}{% endblocktranslate %}">
+                                    <div><dt class="muted text-xs">{% translate "Request ID" %}</dt><dd class="font-mono text-sm">{{ request.id }}</dd></div>
+                                    <div class="min-w-0 sm:col-span-2"><dt class="muted text-xs">{% translate "Path" %}</dt><dd class="break-words font-mono text-sm">{{ request.method }} {{ request.path|default:"—" }}</dd></div>
+                                    <div><dt class="muted text-xs">{% translate "Processing" %}</dt><dd class="text-sm tabular-nums">{{ request.processing_time_ms|duration }}</dd></div>
+                                    <div><dt class="muted text-xs">{% translate "Input from cache" %}</dt><dd class="text-sm tabular-nums">{{ request.cached_input_tokens|intcomma }}</dd></div>
+                                    <div><dt class="muted text-xs">{% translate "Reasoning tokens" %}</dt><dd class="text-sm tabular-nums">{{ request.reasoning_tokens|intcomma }}</dd></div>
+                                    {% if request.user_id %}<div class="min-w-0 sm:col-span-2"><dt class="muted text-xs">{% translate "User ID" %}</dt><dd class="break-all text-sm">{{ request.user_id }}</dd></div>{% endif %}
+                                    {% if request.user_agent %}<div class="min-w-0 sm:col-span-2 md:col-span-4"><dt class="muted text-xs">{% translate "User agent" %}</dt><dd class="break-words font-mono text-sm">{{ request.user_agent }}</dd></div>{% endif %}
+                                </dl>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="8" class="muted">{% if key or status or model or span or query %}{% translate "No request matches these filters." %}{% else %}{% translate "No requests yet." %}{% endif %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include "management/_pager.html" with pages=page_obj %}
+    </div>
+</section>
+{% endblock %}

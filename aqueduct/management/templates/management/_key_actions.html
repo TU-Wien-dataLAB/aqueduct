@@ -1,0 +1,13 @@
+{% load i18n ui %}
+{% blocktranslate with name=token.name asvar rotate_question %}Rotate {{ name }}?{% endblocktranslate %}
+{% blocktranslate with name=token.name asvar delete_question %}Delete {{ name }}?{% endblocktranslate %}
+{% translate "The current key stops working immediately." as rotate_detail %}
+{% translate "Whatever uses this key stops working. This cannot be undone." as delete_detail %}
+{% translate "Rotate" as rotate_action %}
+<form action="{% url 'token_regenerate' token.id %}" method="post" class="flex">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-ghost btn-sm{% if not labelled %} btn-square{% endif %}" aria-label="{% blocktranslate with name=token.name %}Rotate {{ name }}{% endblocktranslate %}" title="{{ rotate_action }}"
+            {% confirm rotate_question rotate_detail rotate_action %}>{% icon "rotate" small=True %}{% if labelled %}{{ rotate_action }}{% endif %}</button>
+</form>
+<a class="btn btn-ghost btn-sm{% if not labelled %} btn-square{% endif %}" href="{% url 'token_edit' token.id %}" aria-label="{% blocktranslate with name=token.name %}Edit {{ name }}{% endblocktranslate %}" title="{% translate 'Edit' %}">{% icon "admin" small=True %}{% if labelled %}{% translate "Edit" %}{% endif %}</a>
+<a class="btn btn-ghost btn-sm{% if not labelled %} btn-square{% endif %}" href="{% url 'token_delete' token.id %}" {% confirm delete_question delete_detail %} aria-label="{% blocktranslate with name=token.name %}Delete {{ name }}{% endblocktranslate %}" title="{% translate 'Delete' %}">{% icon "delete" small=True %}{% if labelled %}{% translate "Delete" %}{% endif %}</a>

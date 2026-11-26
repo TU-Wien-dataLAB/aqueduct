@@ -1,0 +1,26 @@
+{% if mode == "embedding" or mode == "embeddings" %}curl {{ gateway }}/embeddings \
+  -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ model }}", "input": "Hello"}'{% elif mode == "completion" %}curl {{ gateway }}/completions \
+  -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ model }}", "prompt": "Hello"}'{% elif mode == "responses" %}curl {{ gateway }}/responses \
+  -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ model }}", "input": "Hello"}'{% elif mode == "audio_speech" %}curl {{ gateway }}/audio/speech \
+  -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ model }}", "input": "Hello", "voice": "alloy"}' \
+  --output speech.mp3{% elif mode == "audio_transcription" or mode == "audio_transcriptions" %}curl {{ gateway }}/audio/transcriptions \
+  -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
+  -F model={{ model }} \
+  -F file=@speech.mp3{% elif mode == "image_generation" or mode == "image_generations" %}curl {{ gateway }}/images/generations \
+  -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ model }}", "prompt": "A lighthouse at dawn"}'{% elif mode == "rerank" %}curl {{ gateway }}/rerank \
+  -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ model }}", "query": "Capital of France?", "documents": ["Paris", "Berlin"]}'{% else %}curl {{ gateway }}/chat/completions \
+  -H "Authorization: Bearer {{ key|default:'sk-...' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ model|default:'MODEL' }}", "messages": [{"role": "user", "content": "Hello"}]}'{% endif %}

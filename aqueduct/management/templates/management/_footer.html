@@ -1,0 +1,25 @@
+{% load i18n ui %}
+<footer class="aq-band print:hidden">
+    <div class="mx-auto flex w-full max-w-7xl flex-wrap items-start justify-between gap-x-16 gap-y-8 px-4 py-8 sm:px-8">
+        {% if user.is_authenticated %}
+            {% with gateway=request.scheme|add:"://"|add:request.get_host|add:"/v1" %}
+                <div class="flex min-w-0 flex-col gap-2">
+                    <p class="section-label">{% translate "Gateway" %}</p>
+                    <div class="flex items-center gap-2">
+                        <span class="font-mono text-sm break-all">{{ gateway }}</span>
+                        {% translate "Copy gateway URL" as copy_label %}{% copy_button gateway copy_label %}
+                    </div>
+                </div>
+            {% endwith %}
+        {% endif %}
+        {% if settings.EXTRA_NAV_LINKS or settings.TOS_ENABLED %}
+            <nav class="flex flex-col gap-2 text-sm" aria-labelledby="footer-help">
+                <p id="footer-help" class="section-label">{% translate "Help" %}</p>
+                <ul class="flex flex-col gap-1.5">
+                    {% for name, url in settings.EXTRA_NAV_LINKS.items %}<li class="flex"><a class="inline-flex items-center gap-2" href="{{ url }}">{% if "matrix." in url %}{% icon "matrix" small=True %}{% elif "github.com" in url %}{% icon "github" small=True %}{% else %}{% icon "link" small=True %}{% endif %}<span>{{ name }}</span></a></li>{% endfor %}
+                    {% if settings.TOS_ENABLED %}<li class="flex"><a class="inline-flex items-center gap-2" href="{% url 'tos' %}">{% icon "file" small=True %}<span>{% translate "Terms of service" %}</span></a></li>{% endif %}
+                </ul>
+            </nav>
+        {% endif %}
+    </div>
+</footer>

@@ -15,6 +15,6 @@ if [[ -f "$PID_FILE" ]]; then
 fi
 
 docker rm -f "$DEX_CONTAINER" >/dev/null 2>&1 || true
-rm -f "$DEX_CONFIG"
+rm -f "$DEX_CONFIG" "$DEX_PAGE"
 
 echo "Aqueduct local demo stopped. Data retained in $STATE_DIR"

@@ -6,7 +6,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from .models import ServiceAccount, Team, Token
+from .models import Org, ServiceAccount, Team, Token
 
 
 def _format_expiration_deadline(deadline: dt.datetime) -> str:
@@ -20,9 +20,12 @@ class AccessKeyExpirationFormMixin:
     expiration_field: str
 
     def _describe_expiration_limit(self) -> None:
+        widget = self.fields[self.expiration_field].widget
+        widget.attrs["data-min-expiration"] = timezone.now().isoformat(timespec="seconds")
         deadline = Token.max_expiration()
         if deadline is None:
             return
+        widget.attrs["data-max-expiration"] = deadline.isoformat(timespec="seconds")
         days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS
         self.fields[self.expiration_field].help_text = (
             f"Maximum expiration: {_format_expiration_deadline(deadline)} "
@@ -49,7 +52,7 @@ class ServiceAccountForm(AccessKeyExpirationFormMixin, forms.ModelForm):
     token_expires_at = forms.DateTimeField(
         required=False,
         widget=forms.DateTimeInput(
-            attrs={"type": "datetime-local", "class": "input"}, format="%Y-%m-%dT%H:%M"
+            attrs={"type": "datetime-local", "class": "input w-full"}, format="%Y-%m-%dT%H:%M"
         ),
         label="API Key Expiration Date (optional)",
         help_text="Set an expiration date for the service account API key (optional).",
@@ -59,9 +62,15 @@ class ServiceAccountForm(AccessKeyExpirationFormMixin, forms.ModelForm):
         model = ServiceAccount
         fields: ClassVar[list] = ["name", "description"]
         widgets: ClassVar[dict] = {
-            "name": forms.TextInput(attrs={"placeholder": "Enter service account name"}),
+            "name": forms.TextInput(
+                attrs={"class": "input w-full", "placeholder": "Enter service account name"}
+            ),
             "description": forms.Textarea(
-                attrs={"rows": 3, "placeholder": "Optional description..."}
+                attrs={
+                    "class": "textarea w-full",
+                    "rows": 3,
+                    "placeholder": "Optional description...",
+                }
             ),
         }
         labels: ClassVar[dict] = {"name": "Service Account Name", "description": "Description"}
@@ -127,9 +136,15 @@ class TeamCreateForm(forms.ModelForm):
         model = Team
         fields: ClassVar[list] = ["name", "description"]
         widgets: ClassVar[dict] = {
-            "name": forms.TextInput(attrs={"placeholder": "Enter team name"}),
+            "name": forms.TextInput(
+                attrs={"class": "input w-full", "placeholder": "Enter team name"}
+            ),
             "description": forms.Textarea(
-                attrs={"rows": 3, "placeholder": "Optional description..."}
+                attrs={
+                    "class": "textarea w-full",
+                    "rows": 3,
+                    "placeholder": "Optional description...",
+                }
             ),
         }
         labels: ClassVar[dict] = {"name": "Team Name", "description": "Description"}
@@ -173,9 +188,11 @@ class TokenCreateForm(AccessKeyExpirationFormMixin, forms.ModelForm):
         model = Token
         fields: ClassVar[list] = ["name", "expires_at"]
         widgets: ClassVar[dict] = {
-            "name": forms.TextInput(attrs={"placeholder": "Enter API key name"}),
+            "name": forms.TextInput(
+                attrs={"class": "input w-full", "placeholder": "Enter API key name"}
+            ),
             "expires_at": forms.DateTimeInput(
-                attrs={"type": "datetime-local", "class": "input"}, format="%Y-%m-%dT%H:%M"
+                attrs={"type": "datetime-local", "class": "input w-full"}, format="%Y-%m-%dT%H:%M"
             ),
         }
         labels: ClassVar[dict] = {
@@ -207,3 +224,37 @@ class TokenCreateForm(AccessKeyExpirationFormMixin, forms.ModelForm):
         self._validate_expiration_limit(expires_at)
 
         return cleaned_data
+
+
+class OrgLimitsForm(forms.ModelForm):
+    """The per-key limits an org's admins set for every key that has none of its own."""
+
+    class Meta:
+        model = Org
+        fields: ClassVar[list] = [
+            "requests_per_minute",
+            "input_tokens_per_minute",
+            "output_tokens_per_minute",
+            "concurrent_requests_limit",
+            "hourly_limit_multiplier",
+            "daily_limit_multiplier",
+        ]
+        widgets: ClassVar[dict] = {
+            field: forms.NumberInput(attrs={"class": "input w-full", "min": 0}) for field in fields
+        }
+        labels: ClassVar[dict] = {
+            "requests_per_minute": "Requests per minute",
+            "input_tokens_per_minute": "Input tokens per minute",
+            "output_tokens_per_minute": "Output tokens per minute",
+            "concurrent_requests_limit": "Concurrent requests",
+            "hourly_limit_multiplier": "Per hour, as a multiple of per minute",
+            "daily_limit_multiplier": "Per day, as a multiple of per minute",
+        }
+        help_texts: ClassVar[dict] = {
+            "requests_per_minute": "Leave it empty for no limit.",
+            "input_tokens_per_minute": "Leave it empty for no limit.",
+            "output_tokens_per_minute": "Leave it empty for no limit.",
+            "concurrent_requests_limit": "Leave it empty for the server default.",
+            "hourly_limit_multiplier": "1 to 60. Empty uses the server default.",
+            "daily_limit_multiplier": "1 to 1440. Empty uses the server default.",
+        }

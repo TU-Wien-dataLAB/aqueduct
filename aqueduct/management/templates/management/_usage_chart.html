@@ -1,0 +1,48 @@
+{% comment %}The tokens or requests per time bucket, stacked, with a switch between them: `charts` comes from
+views.usage.usage_charts.{% endcomment %}
+{% load i18n l10n %}<div class="card bg-base-200 {{ card_class }}" data-metric-scope>
+    <div class="card-body gap-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="card-title">{% for metric, title, top, bars in charts.metrics %}<span data-metric="{{ metric }}">{{ title }}</span>{% endfor %}</h2>
+            <div class="flex flex-wrap items-center gap-4">
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" data-metric="tokens">
+                    {% include "management/_token_legend.html" %}
+                </div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" data-metric="requests">
+                    <span class="flex items-center gap-2"><span class="sw i"></span>{% translate "OK" %}</span>
+                    <span class="flex items-center gap-2 whitespace-nowrap"><span class="sw r"></span>{% translate "Rate-limited" %}</span>
+                    <span class="flex items-center gap-2 whitespace-nowrap"><span class="sw f"></span>{% translate "Failed" %}</span>
+                </div>
+                <div class="join" role="radiogroup" aria-label="{% translate 'Chart metric' %}">
+                    <input type="radio" name="metric" value="tokens" class="btn btn-sm join-item" aria-label="{% translate 'Tokens' %}" checked>
+                    <input type="radio" name="metric" value="requests" class="btn btn-sm join-item" aria-label="{% translate 'Requests' %}">
+                </div>
+                <script>try { const kept = document.currentScript.previousElementSibling.querySelector(`[value="${sessionStorage.getItem('metric')}"]`); if (kept) kept.checked = true; } catch { }</script>
+            </div>
+        </div>
+        {% if charts.empty %}
+            <p class="muted flex h-72 items-center justify-center text-sm">{% translate "No requests in this time frame." %}</p>
+        {% else %}
+            {% for metric, title, top, bars in charts.metrics %}
+                <div class="chart-plot" data-metric="{{ metric }}">
+                    <span class="chart-top muted text-xs tabular-nums">{{ top }}</span>
+                    <div class="flex h-72 gap-px sm:gap-1">
+                        {% for bar in bars %}
+                            <div class="aq-tip-host chart-col flex min-w-0 flex-1 flex-col items-center" role="img" aria-label="{{ bar.heading }}: {{ bar.text }}">
+                                <div class="vbar w-full max-w-10 flex-1" style="--bar: {{ bar.height|unlocalize }}%">
+                                    {% for css, height in bar.segments %}<i class="{{ css }}" style="height: {{ height|unlocalize }}%"></i>{% endfor %}
+                                    {% include "management/_tip.html" with heading=bar.heading total=bar.text parts=bar.parts %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <div class="mt-2 grid h-4 gap-px sm:gap-1" style="grid-template-columns: repeat({{ charts.columns }}, minmax(0, 1fr))" aria-hidden="true">
+                        {% for tick in charts.axis %}
+                            <span class="muted whitespace-nowrap text-xs" style="grid-column: {{ tick.column }} / span {{ tick.span }}; padding-left: calc(50% / {{ tick.span }})"><span class="inline-block -translate-x-1/2">{{ tick.label }}</span></span>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+</div>

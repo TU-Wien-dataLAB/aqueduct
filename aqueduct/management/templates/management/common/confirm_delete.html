@@ -1,24 +1,17 @@
-{% extends 'management/base.html' %}
+{% extends "management/base.html" %}
+{% load i18n %}
 
-{% block content %}
-    <div class="max-w-lg mx-auto mt-8">
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title text-xl font-bold mb-4">Confirm Deletion</h2>
-
-                <p>Are you sure you want to delete the {{ object_type_name|default:"item" }}:
-                    <strong>{{ object_name|default:object }}</strong>?
-                </p>
-                <p class="text-sm text-error mt-2">This action cannot be undone.</p>
-
-                <form method="post" action="">
-                    {% csrf_token %}
-                    <div class="card-actions justify-end mt-6">
-                        <a href="{{ cancel_url|default:'javascript:history.back()' }}" class="btn btn-ghost">Cancel</a>
-                        <button type="submit" class="btn btn-error">Confirm Delete</button>
-                    </div>
-                </form>
-            </div>
+{% block title %}{% translate "Delete" %} {{ object_name|default:object }} · {{ block.super }}{% endblock %}
+{% block heading %}{% blocktranslate with name=object_name|default:object %}Delete {{ name }}?{% endblocktranslate %}{% endblock %}
+{% block body %}
+<form method="post" class="card max-w-2xl bg-base-200">
+    {% csrf_token %}
+    <div class="card-body gap-6">
+        <p>{% blocktranslate with kind=object_type_name|default:_("item") %}This deletes the {{ kind }}. It cannot be undone.{% endblocktranslate %}</p>
+        <div class="flex flex-wrap gap-3 border-t border-base-300 pt-5">
+            <button type="submit" class="btn btn-error">{% translate "Delete" %}</button>
+            <a class="btn btn-ghost" href="{{ cancel_url|default:'javascript:history.back()' }}">{% translate "Cancel" %}</a>
         </div>
     </div>
+</form>
 {% endblock %}

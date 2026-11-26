@@ -18,6 +18,7 @@ from typing import Any
 
 from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
+from django.urls import reverse_lazy
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -118,7 +119,7 @@ OIDC_OP_AUTHORIZATION_ENDPOINT = os.environ.get("OIDC_OP_AUTHORIZATION_ENDPOINT"
 OIDC_OP_TOKEN_ENDPOINT = os.environ.get("OIDC_OP_TOKEN_ENDPOINT")
 OIDC_OP_USER_ENDPOINT = os.environ.get("OIDC_OP_USER_ENDPOINT")
 
-LOGIN_REDIRECT_URL = "/"  # Where to redirect after successful login
+LOGIN_REDIRECT_URL = reverse_lazy("tokens")  # Where to redirect after successful login
 LOGOUT_REDIRECT_URL = "/login/"  # Where to redirect after successful logout
 LOGIN_URL = "/login/"  # Where to redirect if user is not logged in
 
@@ -168,6 +169,7 @@ ADMIN_SUPERUSER_EMAILS = [
 EXTRA_NAV_LINKS = {
     "Bug Report": "https://github.com/TU-Wien-dataLAB/aqueduct/issues/new?template=bug_report.md",
     "Documentation": "https://tu-wien-datalab.github.io/aqueduct/",
+    "GitHub repository": "https://github.com/TU-Wien-dataLAB/aqueduct",
     # 'API Status': '/status/',  # Example internal path
     # 'About Us': 'about_page',  # Example named URL (assuming you have url(..., name='about_page'))
 }

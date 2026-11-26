@@ -1,0 +1,1 @@
+{% if request.status_code is None %}<span class="muted">—</span>{% elif request.status_code < 400 %}<span class="st-ok font-medium">{{ request.status_code }}</span>{% elif request.status_code == 429 %}<span class="st-warn font-medium">{{ request.status_code }}</span>{% else %}<span class="st-err font-medium">{{ request.status_code }}</span>{% endif %}

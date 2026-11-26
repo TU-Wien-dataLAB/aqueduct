@@ -1,0 +1,19 @@
+# Dex for the local demo. start.sh rewrites the ports; seed.py appends the users.
+issuer: http://localhost:5556/dex
+storage:
+  type: memory
+web:
+  http: 0.0.0.0:5556
+# Read templates from disk, where start.sh mounts the login page that seed.py writes.
+frontend:
+  dir: /srv/dex/web
+oauth2:
+  skipApprovalScreen: true
+staticClients:
+  - id: example-app
+    redirectURIs:
+      - 'http://localhost:8000/oidc/callback/'
+    name: 'Aqueduct local demo'
+    secret: ZXhhbXBsZS1hcHAtc2VjcmV0
+enablePasswordDB: true
+staticPasswords:

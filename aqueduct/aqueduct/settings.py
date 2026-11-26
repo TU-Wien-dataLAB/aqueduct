@@ -84,6 +84,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "management.middleware.HealthCheckMiddleware",
+    "management.middleware.MetricsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -225,6 +226,9 @@ AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT = int(
     os.getenv("AQUEDUCT_DEFAULT_MODEL_CONCURRENT_REQUESTS_LIMIT", "10")
 )
 
+# Bearer token Prometheus sends to scrape `/metrics`. Unset or empty disables the endpoint.
+AQUEDUCT_METRICS_TOKEN = os.getenv("AQUEDUCT_METRICS_TOKEN", "")
+
 # External Files/Batches API endpoint (required)
 AQUEDUCT_FILES_API_URL = os.environ.get("AQUEDUCT_FILES_API_URL")
 AQUEDUCT_FILES_API_KEY = os.environ.get("AQUEDUCT_FILES_API_KEY", None)
@@ -341,6 +345,15 @@ if SILKY_ENABLED:
     SILKY_LOG_REQUEST_BODY = False
     SILKY_MAX_REQUEST_BODY_SIZE = 0
     SILKY_MAX_RESPONSE_BODY_SIZE = 0
+    # keep probes and scrapes out of the profiling tables (Silk matches paths exactly)
+    SILKY_IGNORE_PATHS = [
+        "/health",
+        "/health/",
+        "/health/ready",
+        "/health/ready/",
+        "/metrics",
+        "/metrics/",
+    ]
 
     CELERY_BEAT_SCHEDULE["delete-silk-logs"] = {
         "task": "aqueduct.celery.delete_silk_models",

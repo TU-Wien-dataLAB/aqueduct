@@ -39,6 +39,7 @@ from management.models import Request, Token
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(openai.types.responses.ResponseCreateParams))
+@log_request
 @check_token_concurrency_limits
 @check_model_concurrency_limits
 @check_token_rate_limits
@@ -46,7 +47,6 @@ from management.models import Request, Token
 @resolve_alias
 @check_model_availability
 @check_tool_availability
-@log_request
 @catch_router_exceptions
 async def create_response(
     request: ASGIRequest,

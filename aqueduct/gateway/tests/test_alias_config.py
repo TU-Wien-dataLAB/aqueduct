@@ -1,4 +1,5 @@
 import json
+import time
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -14,7 +15,9 @@ from gateway.config import (
     get_router_config,
     resolve_model,
 )
+from gateway.decorators import log_request
 from gateway.decorators.body import resolve_alias
+from gateway.tests.test_log_request_cancel import _make_request
 from gateway.tests.utils import _build_chat_headers
 from gateway.tests.utils.base import GatewayIntegrationTestCase
 from management.models import Org, Request, Token
@@ -929,6 +932,36 @@ class ModelAliasRoutingTest(GatewayIntegrationTestCase):
                     f"{endpoint['name']}: Request model should be '{endpoint['resolved_model']}' "
                     f"(resolved from alias '{endpoint['alias']}'), got '{request_log.model}'",
                 )
+
+    async def test_logged_model_is_the_routing_name(self):
+        """`log_request` runs before `resolve_alias`, but logs the model name that
+        `resolve_alias` routes with, as it did when it ran after `resolve_alias`."""
+        config = {
+            "model_list": [
+                {"model_name": "public", "model_info": {"id": "backend-1", "aliases": ["alias"]}}
+            ]
+        }
+        token = await Token.objects.afirst()
+        routed = []
+
+        @log_request
+        @resolve_alias
+        async def view(request, pydantic_model, **kwargs):
+            routed.append(pydantic_model["model"])
+            return HttpResponse()
+
+        with patch("gateway.config.get_router_config", return_value=config):
+            for name in ("alias", "public", "backend-1", "unknown"):
+                with self.subTest(name=name):
+                    await view(
+                        _make_request(),
+                        token=token,
+                        pydantic_model={"model": name},
+                        request_start=time.monotonic(),
+                    )
+                    request_log = await Request.objects.alatest("id")
+                    self.assertEqual(request_log.model, routed[-1])
+        self.assertEqual(routed, ["public", "public", "backend-1", "unknown"])
 
     def test_invalid_alias_returns_error_and_logs_request(self):
         """

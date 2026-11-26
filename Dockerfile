@@ -34,4 +34,4 @@ WORKDIR /app/aqueduct
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "if [ \"$TRUST_PROXY_HEADERS\" = \"true\" ]; then exec daphne --proxy-headers -b 0.0.0.0 -p 8000 aqueduct.asgi:application; else exec daphne -b 0.0.0.0 -p 8000 aqueduct.asgi:application; fi"]
+CMD ["sh", "-c", "if [ \"$TRUST_PROXY_HEADERS\" = \"true\" ]; then exec daphne --application-close-timeout 60 --proxy-headers -b 0.0.0.0 -p 8000 aqueduct.asgi:application; else exec daphne --application-close-timeout 60 -b 0.0.0.0 -p 8000 aqueduct.asgi:application; fi"]

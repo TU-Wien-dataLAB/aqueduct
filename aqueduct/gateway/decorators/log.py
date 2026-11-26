@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import time
+from collections.abc import AsyncGenerator, AsyncIterator
 from functools import wraps
-from typing import Any
+from typing import Any, cast
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -12,9 +13,25 @@ from django.utils import timezone
 
 from gateway.decorators.types import AsyncView, ViewResult
 from gateway.rate_limiting import record_token_usage
+from gateway.response_type import release_db_connection
 from management.models import Request
 
 log = logging.getLogger("aqueduct")
+
+
+async def _guard_stream(stream: AsyncIterator[bytes], path: str) -> AsyncGenerator[bytes]:
+    """Stream without holding a DB connection, and end quietly on errors (#246).
+
+    An exception escaping a stream skips Django's `request_finished`, so the
+    request's DB connection is never returned to the pool. Cancellation and
+    `GeneratorExit` still propagate.
+    """
+    await sync_to_async(release_db_connection)()
+    try:
+        async for chunk in stream:
+            yield chunk
+    except Exception:
+        log.exception("Error while streaming response for %s", path)
 
 
 def client_ip(meta: dict[str, Any]) -> str | None:
@@ -80,6 +97,9 @@ def log_request(view_func: AsyncView) -> AsyncView:
         # wrapper returns), so we skip them here to avoid double-counting.
         if not isinstance(result, StreamingHttpResponse):
             await sync_to_async(record_token_usage)(request_log.token_id, request_log.token_usage)
+        else:
+            streaming_content = cast("AsyncIterator[bytes]", result.streaming_content)
+            result.streaming_content = _guard_stream(streaming_content, request_log.path)
 
         return result
 

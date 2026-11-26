@@ -16,6 +16,7 @@ from django.test.utils import CaptureQueriesContext
 from fakeredis import FakeServer
 from fakeredis.aioredis import FakeRedis
 from openai.types.chat import ChatCompletion
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from gateway.config import get_model_max_parallel_requests
 from gateway.decorators.limits import (
@@ -987,13 +988,15 @@ class ConcurrencyDecoratorLifecycleTests(SimpleTestCase):
             finish.set()
             await redis.aclose()
 
-    async def test_refresh_error_stops_before_forwarding_and_releases(self):
+    async def test_refresh_error_keeps_streaming_and_releases(self):
         redis = FakeRedis(server=FakeServer(), decode_responses=True)
         limiter = RedisConcurrencyLimiter(redis)
         token = Token(id=1, name="refresh-error", concurrent_requests_limit=1)
+        key = token_concurrency_key(token)
 
         async def stream():
-            yield b"must-not-forward"
+            yield b"first"
+            yield b"second"
 
         @check_token_concurrency_limits
         async def streaming_view(request, **kwargs):
@@ -1002,12 +1005,23 @@ class ConcurrencyDecoratorLifecycleTests(SimpleTestCase):
         try:
             with (
                 patch("gateway.decorators.limits.get_limiter", return_value=limiter),
-                patch.object(limiter, "refresh", side_effect=RuntimeError("redis down")),
+                patch.object(
+                    limiter,
+                    "refresh",
+                    side_effect=RedisTimeoutError("Timeout reading from valkey:6379"),
+                ),
+                self.assertLogs("aqueduct", level="WARNING") as caught,
             ):
                 response = await streaming_view(MagicMock(spec=ASGIRequest), token=token)
-                with self.assertRaisesRegex(RuntimeError, "redis down"):
-                    await asyncio.wait_for(anext(response.streaming_content), timeout=1)
-                self.assertEqual(await redis.zcard(token_concurrency_key(token)), 0)
+                self.assertEqual(await redis.zcard(key), 1)
+                chunks = [chunk async for chunk in response.streaming_content]
+
+            # A Redis error must not abort the stream; the lease is still released.
+            self.assertEqual(chunks, [b"first", b"second"])
+            self.assertEqual(await redis.zcard(key), 0)
+            self.assertTrue(
+                any("Error refreshing concurrency lease" in line for line in caught.output)
+            )
         finally:
             await redis.aclose()
 

@@ -1,4 +1,34 @@
-from management.models import Snippet, SnippetType
+from django.contrib.auth import get_user_model
+
+from management.models import (
+    Org,
+    Snippet,
+    SnippetType,
+    Team,
+    TeamMembership,
+    Token,
+    UserGroup,
+    UserProfile,
+)
+
+User = get_user_model()
+
+
+def make_user(name: str, org: Org, group: UserGroup = UserGroup.USER):
+    user = User.objects.create_user(username=name, email=f"{name}@example.com")
+    UserProfile.objects.create(user=user, org=org).group = group
+    return user
+
+
+def make_token(user, name: str, **kwargs) -> Token:
+    token = Token(name=name, user=user, **kwargs)
+    token._set_new_key()
+    token.save()
+    return token
+
+
+def join(user, team: Team, is_admin: bool = False) -> None:
+    TeamMembership.objects.create(user_profile=user.profile, team=team, is_admin=is_admin)
 
 
 def seed_active_config(code: str, name: str = "test-config") -> Snippet:

@@ -20,7 +20,9 @@ from django.urls.resolvers import URLPattern
 from django.utils.html import format_html
 
 from gateway.config import get_files_api_client, get_router_config
+from gateway.decorators.plugins import get_plugin_endpoint_registry
 from gateway.rate_limiting import get_per_token_usage
+from gateway.response_type import RawJsonResponse
 from management.models import (
     Batch,
     FileObject,
@@ -38,6 +40,7 @@ from management.models import (
     VectorStoreFile,
     VectorStoreFileBatch,
 )
+from management.plugins import BlockedByPlugin, PluginSnippet, compile_plugin_class
 from management.snippets import ConfigSnippet, compile_snippet, get_config_snippet
 
 log = logging.getLogger("aqueduct")
@@ -1012,35 +1015,110 @@ class VectorStoreFileBatchAdmin(admin.ModelAdmin):
 
 
 class SnippetAdminForm(forms.ModelForm):
+    order = forms.IntegerField(
+        required=False,
+        min_value=0,
+        initial=0,
+        help_text=(
+            "Execution priority for plugins only: lower order runs first; ties "
+            "broken by lower id. Disabled for config snippets (only one config "
+            "is ever active)."
+        ),
+    )
+
     class Meta:
         model = Snippet
-        fields = ("name", "type", "active", "code")
+        fields = ("name", "type", "active", "order", "code")
 
-    def clean_code(self) -> str:
-        code = self.cleaned_data["code"]
-        require_subclass = self.cleaned_data.get("type") != SnippetType.PLUGIN
-        try:
-            compile_snippet(code, require_subclass=require_subclass)
-        except ValidationError as e:
-            raise forms.ValidationError(str(e)) from e
-        return code
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        snippet_type = self.instance.type if self.instance else SnippetType.CONFIG
+        if snippet_type != SnippetType.PLUGIN:
+            self.fields["order"].widget.attrs["readonly"] = True
+        self.fields["code"].widget.attrs.update(
+            {"class": "vLargeTextField snippet-code-input", "rows": 30}
+        )
+
+
+TEST_CODE_EXAMPLE = """\
+class Test(ConfigSnippet):
+    def org_name(self, claims):
+        return claims.get("org")
+
+    def user_group(self, claims):
+        return (claims.get("groups") or ["default"])[0]
+
+    def team_names(self, claims):
+        return claims.get("groups") or []
+
+    def display_team_names(self, team_names):
+        return [(name, True) for name in team_names]
+"""
 
 
 TEST_PAYLOAD_EXAMPLE = {"email": "you@example.com", "groups": ["E123-Students", "admins"]}
 
 
+PLUGIN_DEFAULT_CODE = '''\
+class MyPlugin(PluginSnippet):
+    #: Normalized endpoint paths this plugin applies to (e.g. "chat/completions").
+    #: Empty means the plugin runs on every endpoint.
+    endpoints = []
+
+    def before_request(self, *args, **kwargs):
+        """Optionally transform/replace the request body.
+
+        Called as ``before_request(request, token, body)``. Return the (possibly
+        mutated) body to pass downstream, or ``None`` to leave it unchanged.
+        Raise ``BlockedByPlugin`` to stop the request.
+        """
+        return None
+
+    def after_response(self, response):
+        """Non-streaming only. Return a replacement response, or ``None`` to keep unchanged."""
+        return None
+
+    def after_streaming_response(self, response):
+        """Streaming wrapper only (headers/status, not content)."""
+        return None
+'''
+
+PLUGIN_TEST_PAYLOAD_EXAMPLE = {
+    "model": "gpt-4.1-nano",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "max_tokens": 50,
+}
+
+
+class _ConsoleUser:
+    email = "you@example.com"
+
+
+class _ConsoleRequest:
+    def __init__(self) -> None:
+        self.META = {"REMOTE_ADDR": "127.0.0.1"}
+        self.headers = {"User-Agent": "aqueduct-plugin-console"}
+        self.user = _ConsoleUser()
+
+
+class _ConsoleToken:
+    name = "Test Token"
+    user = _ConsoleUser()
+
+
 @admin.register(Snippet)
 class SnippetAdmin(admin.ModelAdmin):
     form = SnippetAdminForm
-    list_display: ClassVar[tuple] = ("name", "type", "active", "updated_at")
+    list_display: ClassVar[tuple] = ("id", "name", "type", "order", "active", "updated_at")
     list_filter: ClassVar[list] = ("type", "active")
     search_fields: ClassVar[tuple] = ("name",)
     readonly_fields: ClassVar[tuple] = ("updated_at",)
     fieldsets: ClassVar[tuple] = (
-        (None, {"fields": ("name", "type", "active")}),
+        (None, {"fields": ("name", "type", "active", "order")}),
         ("Code", {"fields": ("code",), "classes": ("wide",)}),
     )
     change_list_template = "admin/management/snippet/change_list.html"
+    change_form_template = "admin/management/snippet/change_form.html"
 
     @staticmethod
     def _allowed_emails() -> set[str]:
@@ -1071,18 +1149,40 @@ class SnippetAdmin(admin.ModelAdmin):
             return False
         return super().has_delete_permission(request, obj)
 
+    def _plugin_endpoints_context(self) -> list[dict[str, str]]:
+        """Plugin-capable endpoint metadata, keyed for the admin UI."""
+        registry = get_plugin_endpoint_registry()
+        return [
+            {"key": ep.key, "type_name": ep.type_name, "response_kind": ep.response_kind}
+            for ep in registry.values()
+        ]
+
+    def changeform_view(
+        self, request, object_id=None, form_url="", extra_context=None
+    ) -> HttpResponse:
+        extra_context = extra_context or {}
+        extra_context["plugin_endpoints"] = self._plugin_endpoints_context()
+        extra_context["plugin_default_code"] = PLUGIN_DEFAULT_CODE
+        extra_context["config_default_code"] = TEST_CODE_EXAMPLE
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
     def get_urls(self) -> list[URLPattern]:
         custom_urls = [
             path(
-                "test-console/",
-                self.admin_site.admin_view(self.test_console_view),
+                "config-test-console/",
+                self.admin_site.admin_view(self.config_test_console_view),
                 name=f"{self.opts.app_label}_{self.opts.model_name}_test_console",
-            )
+            ),
+            path(
+                "plugin-test-console/",
+                self.admin_site.admin_view(self.plugin_test_console_view),
+                name=f"{self.opts.app_label}_{self.opts.model_name}_plugin_test_console",
+            ),
         ]
         urls = super().get_urls()
         return custom_urls + urls
 
-    def test_console_view(self, request) -> HttpResponse:
+    def config_test_console_view(self, request) -> HttpResponse:
         if not self._is_allowed_superuser(request.user):
             raise PermissionDenied
 
@@ -1090,6 +1190,7 @@ class SnippetAdmin(admin.ModelAdmin):
         results = None
 
         if request.method != "POST":
+            code = TEST_CODE_EXAMPLE
             payload = json.dumps(TEST_PAYLOAD_EXAMPLE, indent=2)
 
         if request.method == "POST":
@@ -1116,7 +1217,7 @@ class SnippetAdmin(admin.ModelAdmin):
 
         context = {
             **self.admin_site.each_context(request),
-            "title": "Snippet test console",
+            "title": "Config test console",
             "code": code,
             "payload": payload,
             "results": results,
@@ -1154,5 +1255,89 @@ class SnippetAdmin(admin.ModelAdmin):
             lines.append(f"display_team_names(team names) raised {e!r}")
         else:
             lines.append(f"display_team_names(team names) -> {mapping!r}")
+
+        return lines
+
+    def plugin_test_console_view(self, request) -> HttpResponse:
+        if not self._is_allowed_superuser(request.user):
+            raise PermissionDenied
+
+        code, payload = "", ""
+        results = None
+
+        if request.method != "POST":
+            code = PLUGIN_DEFAULT_CODE
+            payload = json.dumps(PLUGIN_TEST_PAYLOAD_EXAMPLE, indent=2)
+
+        if request.method == "POST":
+            code = request.POST.get("code", "")
+            payload = request.POST.get("payload", "")
+            try:
+                cls = compile_plugin_class(code)
+            except ValidationError as e:
+                self.message_user(request, f"Plugin failed to compile: {e}", messages.ERROR)
+            else:
+                if payload.strip():
+                    try:
+                        parsed = json.loads(payload)
+                    except json.JSONDecodeError as e:
+                        self.message_user(request, f"Invalid JSON test input: {e}", messages.ERROR)
+                    else:
+                        results = self._run_plugin_console(cls, parsed)
+                        self.message_user(
+                            request, "Plugin compiled and ran. Output below.", messages.SUCCESS
+                        )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Plugin test console",
+            "code": code,
+            "payload": payload,
+            "results": results,
+            "plugin_endpoints": self._plugin_endpoints_context(),
+        }
+        request.current_app = self.admin_site.name
+        return TemplateResponse(
+            request, "admin/management/snippet/plugin_test_console.html", context
+        )
+
+    @staticmethod
+    def _run_plugin_console(plugin_cls: type[PluginSnippet], body: Any) -> list[str]:
+        """Run a plugin's hooks against a test payload using simple stand-ins."""
+        lines = []
+        plugin = plugin_cls()
+        request = _ConsoleRequest()
+        token = _ConsoleToken()
+
+        if not isinstance(body, dict):
+            lines.append(
+                f"before_request skipped: test input must be a JSON object, "
+                f"got {type(body).__name__}"
+            )
+            return lines
+
+        try:
+            result = plugin.before_request(request, token, body)
+        except BlockedByPlugin as e:
+            lines.append(f"before_request -> BlockedByPlugin({e.reason!r}, status={e.status})")
+            return lines
+        except Exception as e:
+            lines.append(f"before_request raised {e!r}")
+        else:
+            if result is not None:
+                lines.append(f"before_request returned transformed body: {result!r}")
+            else:
+                lines.append("before_request ran; body unchanged")
+
+        response = RawJsonResponse({"id": "chatcmpl-test", "choices": [], "usage": {}})
+        try:
+            result = plugin.after_response(response)
+        except Exception as e:
+            lines.append(f"after_response raised {e!r}")
+        else:
+            if result is not None:
+                lines.append("after_response returned a replacement response")
+            else:
+                lines.append("after_response ran; response unchanged")
 
         return lines

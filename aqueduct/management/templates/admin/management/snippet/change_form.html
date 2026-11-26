@@ -1,0 +1,236 @@
+{% extends "admin/change_form.html" %}
+{% load static %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'css/admin_custom.css' %}">
+  <script type="importmap">
+  {
+    "imports": {
+      "codemirror": "https://cdn.jsdelivr.net/npm/codemirror@6.0.2/dist/index.js",
+      "@codemirror/state": "https://cdn.jsdelivr.net/npm/@codemirror/state@6.7.1/dist/index.js",
+      "@codemirror/view": "https://cdn.jsdelivr.net/npm/@codemirror/view@6.43.9/dist/index.js",
+      "@codemirror/autocomplete": "https://cdn.jsdelivr.net/npm/@codemirror/autocomplete@6.20.3/dist/index.js",
+      "@codemirror/commands": "https://cdn.jsdelivr.net/npm/@codemirror/commands@6.11.0/dist/index.js",
+      "@codemirror/language": "https://cdn.jsdelivr.net/npm/@codemirror/language@6.12.4/dist/index.js",
+      "@codemirror/lint": "https://cdn.jsdelivr.net/npm/@codemirror/lint@6.9.7/dist/index.js",
+      "@codemirror/search": "https://cdn.jsdelivr.net/npm/@codemirror/search@6.7.1/dist/index.js",
+      "@codemirror/lang-python": "https://cdn.jsdelivr.net/npm/@codemirror/lang-python@6.2.1/dist/index.js",
+      "@codemirror/lang-json": "https://cdn.jsdelivr.net/npm/@codemirror/lang-json@6.0.2/dist/index.js",
+      "@lezer/common": "https://cdn.jsdelivr.net/npm/@lezer/common@1.5.2/dist/index.js",
+      "@lezer/highlight": "https://cdn.jsdelivr.net/npm/@lezer/highlight@1.2.3/dist/index.js",
+      "@lezer/lr": "https://cdn.jsdelivr.net/npm/@lezer/lr@1.4.10/dist/index.js",
+      "@lezer/python": "https://cdn.jsdelivr.net/npm/@lezer/python@1.1.19/dist/index.js",
+      "@lezer/json": "https://cdn.jsdelivr.net/npm/@lezer/json@1.0.3/dist/index.js",
+      "@marijn/find-cluster-break": "https://cdn.jsdelivr.net/npm/@marijn/find-cluster-break@1.0.4/src/index.js",
+      "style-mod": "https://cdn.jsdelivr.net/npm/style-mod@4.1.3/src/style-mod.js",
+      "w3c-keyname": "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
+      "crelt": "https://cdn.jsdelivr.net/npm/crelt@1.0.7/index.js"
+    }
+  }
+  </script>
+  <script src="{% static 'js/snippet_plugin_stub.js' %}"></script>
+{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .cm-host-code {
+      height: 30rem;
+    }
+    .cm-editor {
+      height: 100%;
+      width: 100%;
+      max-width: none;
+      border: 1px solid var(--border-color, #ccc);
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    /* Widen the code editor so it spans the full panel instead of the narrow
+       default input column. */
+    .module .form-row.field-code {
+      width: 100%;
+      max-width: none;
+    }
+    .module .form-row.field-code > div {
+      width: 100%;
+      max-width: none;
+    }
+    .module .form-row.field-code .flex-container {
+      width: 100%;
+      max-width: none;
+    }
+    .module .form-row.field-code .cm-host {
+      width: 100% !important;
+      max-width: none;
+      box-sizing: border-box;
+    }
+    /* Make the locked `order` input read as intentionally locked, not broken. */
+    .module .form-row.field-order input:disabled,
+    .module .form-row.field-order input[readonly] {
+      background: var(--darkened-bg, #f3f4f6);
+      color: var(--body-quiet-color, #6b7280);
+      border: 1px dashed var(--hairline-color, #d1d5db);
+      cursor: not-allowed;
+      opacity: 0.75;
+    }
+    .order-disabled-hint {
+      margin-left: 0.5rem;
+      color: var(--body-quiet-color, #6b7280);
+      font-style: italic;
+      font-size: 12px;
+    }
+  </style>
+{% endblock %}
+
+{% block after_related_objects %}
+  {{ block.super }}
+  {% if plugin_endpoints %}
+  <div id="plugin-endpoint-panel" style="display:none; margin-top:1rem;">
+    <fieldset class="module aligned">
+      <h2>Plugin endpoints</h2>
+      <div class="form-row">
+        <div class="help" style="margin-bottom:0.5rem;">
+          Check the API endpoints this plugin should run on, then click
+          <strong>Generate plugin stub</strong> to fill the code editor. Endpoints
+          are auto-discovered from the <code>@run_plugins(...)</code> registry.
+        </div>
+        <div id="plugin-endpoint-checkboxes">
+          {% for ep in plugin_endpoints %}
+          <label class="plugin-endpoint-label" style="display:block;margin:0.25rem 0;">
+            <input type="checkbox" class="plugin-endpoint-checkbox"
+              data-key="{{ ep.key }}" data-type="{{ ep.type_name }}"
+              data-kind="{{ ep.response_kind }}" value="{{ ep.key }}">
+            <code>{{ ep.key }}</code>
+            <span class="plugin-endpoint-meta" style="color:var(--body-quiet-color,#6b7280);font-size:12px;">
+              &mdash; {{ ep.type_name }} &middot; {{ ep.response_kind }}
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        <button type="button" id="plugin-generate-stub" class="button"
+          style="margin-top:0.75rem;">Generate plugin stub</button>
+      </div>
+    </fieldset>
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block admin_change_form_document_ready %}
+  {{ block.super }}
+  <script type="text/template" id="config-default-code">{{ config_default_code|safe }}</script>
+  <script type="text/template" id="plugin-default-code">{{ plugin_default_code|safe }}</script>
+  <script type="module">
+    import {EditorView, basicSetup} from "codemirror";
+    import {python} from "@codemirror/lang-python";
+
+    const editors = [];
+    document.querySelectorAll("textarea.snippet-code-input").forEach(function (ta) {
+      const host = document.createElement("div");
+      host.className = "cm-host cm-host-code";
+      ta.parentNode.insertBefore(host, ta);
+      const view = new EditorView({
+        doc: ta.value,
+        extensions: [basicSetup, python()],
+        parent: host
+      });
+      ta.hidden = true;
+      editors.push({ta: ta, view: view});
+    });
+
+    if (editors.length) {
+      const form = editors[0].ta.form;
+      form.addEventListener("submit", function () {
+        editors.forEach(function (item) {
+          item.ta.value = item.view.state.doc.toString();
+        });
+      });
+    }
+
+    // Prefill a brand-new snippet with the default template for its type:
+    // config -> config default example, plugin -> default plugin code.
+    const configDefaultEl = document.getElementById("config-default-code");
+    const pluginDefaultEl = document.getElementById("plugin-default-code");
+    const typeSelect = document.getElementById("id_type");
+    function maybePrefillDefault() {
+      if (!typeSelect || !editors.length) return;
+      const isPlugin = typeSelect.value === "plugin";
+      const isConfig = typeSelect.value === "config";
+      const defaultCodeEl = isPlugin ? pluginDefaultEl : (isConfig ? configDefaultEl : null);
+      if (!defaultCodeEl) return;
+      const current = editors[0].view.state.doc.toString().trim();
+      const configDefault = (configDefaultEl ? configDefaultEl.textContent : "").trim();
+      const pluginDefault = (pluginDefaultEl ? pluginDefaultEl.textContent : "").trim();
+      // Only replace an empty editor or one still holding a default template, so
+      // we never clobber custom code the user has written.
+      if (current !== "" && current !== configDefault && current !== pluginDefault) return;
+      editors[0].view.dispatch({
+        changes: {from: 0, to: editors[0].view.state.doc.length, insert: defaultCodeEl.textContent.trim()}
+      });
+    }
+    if (typeSelect) typeSelect.addEventListener("change", maybePrefillDefault);
+    maybePrefillDefault();
+
+    const genBtn = document.getElementById("plugin-generate-stub");
+    if (genBtn && editors.length) {
+      genBtn.addEventListener("click", function () {
+        const checks = Array.from(document.querySelectorAll(".plugin-endpoint-checkbox:checked"));
+        const selected = checks.map(function (c) {
+          return {key: c.dataset.key, type_name: c.dataset.type, response_kind: c.dataset.kind};
+        });
+        const code = window.buildPluginStub(selected);
+        editors[0].view.dispatch({
+          changes: {from: 0, to: editors[0].view.state.doc.length, insert: code}
+        });
+      });
+    }
+  </script>
+  <script>
+    // `order` only applies to plugins; lock it live when the type is config.
+    // We toggle `readOnly` (not `disabled`) so the value is still submitted and
+    // a plugin's order is actually saved server-side.
+    (function () {
+      var typeSel = document.getElementById("id_type");
+      var orderInput = document.getElementById("id_order");
+      if (!typeSel || !orderInput) return;
+      var hint = document.createElement("span");
+      hint.className = "order-disabled-hint";
+      hint.textContent = "Order applies to plugins only.";
+      orderInput.parentNode.appendChild(hint);
+      function sync() {
+        var locked = typeSel.value !== "plugin";
+        orderInput.readOnly = locked;
+        hint.style.display = locked ? "inline" : "none";
+      }
+      sync();
+      typeSel.addEventListener("change", sync);
+    })();
+
+    // Show the plugin endpoint panel only for plugin-type snippets and
+    // pre-select checkboxes matching the current code's `endpoints = [...]`.
+    (function () {
+      var typeSel = document.getElementById("id_type");
+      var panel = document.getElementById("plugin-endpoint-panel");
+      function syncPanel() {
+        if (!panel) return;
+        panel.style.display = (typeSel && typeSel.value === "plugin") ? "" : "none";
+      }
+      syncPanel();
+      if (typeSel) typeSel.addEventListener("change", syncPanel);
+
+      var codeTa = document.querySelector("textarea.snippet-code-input");
+      if (codeTa) {
+        var m = codeTa.value.match(/endpoints\s*=\s*\[([^\]]*)\]/);
+        if (m) {
+          var keys = m[1].split(",").map(function (s) {
+            return s.trim().replace(/^['"]|['"]$/g, "");
+          }).filter(Boolean);
+          document.querySelectorAll(".plugin-endpoint-checkbox").forEach(function (c) {
+            c.checked = keys.indexOf(c.dataset.key) !== -1;
+          });
+        }
+      }
+    })();
+  </script>
+{% endblock %}

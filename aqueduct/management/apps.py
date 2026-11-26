@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.core.cache import caches
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
-from django.db.models.signals import post_migrate, post_save
+from django.db.models.signals import post_delete, post_migrate, post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
@@ -19,6 +19,25 @@ class AqueductManagementConfig(AppConfig):
     name = "management"
 
     def ready(self):
+        from management.plugins import _plugin_class
+
+        Snippet = apps.get_model("management", "Snippet")
+
+        @receiver(
+            post_save, sender=Snippet, dispatch_uid="clear_plugin_class_cache_on_save", weak=False
+        )
+        def clear_plugin_class_cache_on_save(instance, **kwargs):
+            _plugin_class.cache_clear()
+
+        @receiver(
+            post_delete,
+            sender=Snippet,
+            dispatch_uid="clear_plugin_class_cache_on_delete",
+            weak=False,
+        )
+        def clear_plugin_class_cache_on_delete(instance, **kwargs):
+            _plugin_class.cache_clear()
+
         @receiver(post_migrate, sender=self, dispatch_uid="limit_access_key_expiration", weak=False)
         def limit_access_key_expiration(using, **kwargs):
             days = settings.MAX_ACCESS_KEY_EXPIRATION_DAYS

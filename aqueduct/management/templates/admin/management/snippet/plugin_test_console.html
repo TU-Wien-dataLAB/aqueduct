@@ -1,0 +1,200 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'css/admin_custom.css' %}">
+  <style>
+    .cm-host {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .cm-host-code {
+      height: 55vh;
+    }
+    .cm-host-payload {
+      height: 16rem;
+    }
+    .cm-editor {
+      height: 100%;
+      border: 1px solid var(--border-color, #ccc);
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module">
+    <p style="color:#b91c1c;font-weight:600;margin-bottom:1rem;">
+      <strong>Warning:</strong> This test console executes real server code as an
+      authenticated superuser. There is no sandboxing. For this reason this console
+      (and snippet editing) is restricted to superusers.
+    </p>
+    <form method="post">{% csrf_token %}
+      <fieldset class="module aligned">
+        <div class="form-row">
+          <label for="id_code">Plugin code:</label>
+          <textarea id="id_code" name="code" rows="40" class="vLargeTextField plugin-console-input plugin-console-code"
+            placeholder='class MyPlugin(PluginSnippet):
+    def before_request(self, *args, **kwargs):
+        request, token, body = args
+        return body'>{{ code }}</textarea>
+          <div class="help">Python class subclassing <code>PluginSnippet</code> (auto-injected, no import needed). The code editor is prefilled with the default base-class template — copy it and add your logic.</div>
+        </div>
+        <div class="form-row">
+          <label for="id_payload">Test input (JSON):</label>
+          <textarea id="id_payload" name="payload" rows="16" class="vLargeTextField plugin-console-input plugin-console-payload"
+            placeholder='{
+  "model": "gpt-4.1-nano",
+  "messages": [{ "role": "user", "content": "Hello" }]
+}'>{{ payload }}</textarea>
+          <div class="help">
+            Paste a <strong>request body</strong> (what your client sends the gateway).
+            The console chains it through the plugin hooks like the real request flow:
+            <ul style="margin:0.25rem 0 0 1.25rem;">
+              <li><code>before_request(*args, **kwargs)</code> is called as <code>before_request(request, token, body)</code>; a returned dict is shown as the transformed body.</li>
+              <li><code>after_response(response)</code> receives a sample response; a returned object replaces it.</li>
+              <li>Raise <code>BlockedByPlugin(reason, status)</code> in <code>before_request</code> to stop the request.</li>
+            </ul>
+          </div>
+        </div>
+      </fieldset>
+      {% if plugin_endpoints %}
+      <fieldset class="module aligned">
+        <div class="form-row">
+          <label>Plugin endpoints</label>
+          <div class="help" style="margin-bottom:0.5rem;">
+            Check the API endpoints this plugin should run on, then click
+            <strong>Generate plugin stub</strong> to fill the code editor (and a sample
+            request body below). Endpoints are auto-discovered from the
+            <code>@run_plugins(...)</code> registry.
+          </div>
+          <div id="plugin-endpoint-checkboxes">
+            {% for ep in plugin_endpoints %}
+            <label class="plugin-endpoint-label" style="display:block;margin:0.25rem 0;">
+              <input type="checkbox" class="plugin-endpoint-checkbox"
+                data-key="{{ ep.key }}" data-type="{{ ep.type_name }}"
+                data-kind="{{ ep.response_kind }}" value="{{ ep.key }}">
+              <code>{{ ep.key }}</code>
+              <span class="plugin-endpoint-meta" style="color:var(--body-quiet-color,#6b7280);font-size:12px;">
+                &mdash; {{ ep.type_name }} &middot; {{ ep.response_kind }}
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+          <button type="button" id="plugin-generate-stub" class="button"
+            style="margin-top:0.75rem;">Generate plugin stub</button>
+        </div>
+      </fieldset>
+      {% endif %}
+      <div class="submit-row">
+        <input type="submit" value="Run test" class="default">
+      </div>
+    </form>
+
+    {% if results %}
+      <fieldset class="module aligned">
+        <h2>Output</h2>
+        <ul style="margin:0.5rem 1.5rem 0;">
+          {% for line in results %}
+            <li style="font-family:monospace;margin-bottom:0.25rem;">{{ line }}</li>
+          {% endfor %}
+        </ul>
+      </fieldset>
+    {% endif %}
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "codemirror": "https://cdn.jsdelivr.net/npm/codemirror@6.0.2/dist/index.js",
+    "@codemirror/state": "https://cdn.jsdelivr.net/npm/@codemirror/state@6.7.1/dist/index.js",
+    "@codemirror/view": "https://cdn.jsdelivr.net/npm/@codemirror/view@6.43.9/dist/index.js",
+    "@codemirror/autocomplete": "https://cdn.jsdelivr.net/npm/@codemirror/autocomplete@6.20.3/dist/index.js",
+    "@codemirror/commands": "https://cdn.jsdelivr.net/npm/@codemirror/commands@6.11.0/dist/index.js",
+    "@codemirror/language": "https://cdn.jsdelivr.net/npm/@codemirror/language@6.12.4/dist/index.js",
+    "@codemirror/lint": "https://cdn.jsdelivr.net/npm/@codemirror/lint@6.9.7/dist/index.js",
+    "@codemirror/search": "https://cdn.jsdelivr.net/npm/@codemirror/search@6.7.1/dist/index.js",
+    "@codemirror/lang-python": "https://cdn.jsdelivr.net/npm/@codemirror/lang-python@6.2.1/dist/index.js",
+    "@codemirror/lang-json": "https://cdn.jsdelivr.net/npm/@codemirror/lang-json@6.0.2/dist/index.js",
+    "@lezer/common": "https://cdn.jsdelivr.net/npm/@lezer/common@1.5.2/dist/index.js",
+    "@lezer/highlight": "https://cdn.jsdelivr.net/npm/@lezer/highlight@1.2.3/dist/index.js",
+    "@lezer/lr": "https://cdn.jsdelivr.net/npm/@lezer/lr@1.4.10/dist/index.js",
+    "@lezer/python": "https://cdn.jsdelivr.net/npm/@lezer/python@1.1.19/dist/index.js",
+    "@lezer/json": "https://cdn.jsdelivr.net/npm/@lezer/json@1.0.3/dist/index.js",
+    "@marijn/find-cluster-break": "https://cdn.jsdelivr.net/npm/@marijn/find-cluster-break@1.0.4/src/index.js",
+    "style-mod": "https://cdn.jsdelivr.net/npm/style-mod@4.1.3/src/style-mod.js",
+    "w3c-keyname": "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
+    "crelt": "https://cdn.jsdelivr.net/npm/crelt@1.0.7/index.js"
+  }
+}
+</script>
+<script src="{% static 'js/snippet_plugin_stub.js' %}"></script>
+<script type="module">
+  import {EditorView, basicSetup} from "codemirror";
+  import {python} from "@codemirror/lang-python";
+  import {json} from "@codemirror/lang-json";
+
+  const editors = [];
+  function makeEditor(selector, lang, hostClass) {
+    document.querySelectorAll(selector).forEach(function (ta) {
+      const host = document.createElement("div");
+      host.className = "cm-host " + hostClass;
+      ta.parentNode.insertBefore(host, ta);
+      const view = new EditorView({
+        doc: ta.value,
+        extensions: [basicSetup, lang],
+        parent: host
+      });
+      ta.hidden = true;
+      editors.push({ta: ta, view: view});
+    });
+  }
+  makeEditor("textarea.plugin-console-code", python(), "cm-host-code");
+  makeEditor("textarea.plugin-console-payload", json(), "cm-host-payload");
+
+  const form = document.querySelector("textarea.plugin-console-code").form;
+  form.addEventListener("submit", function () {
+    editors.forEach(function (item) {
+      item.ta.value = item.view.state.doc.toString();
+    });
+  });
+
+  const genBtn = document.getElementById("plugin-generate-stub");
+  if (genBtn && editors.length >= 2) {
+    genBtn.addEventListener("click", function () {
+      const checks = Array.from(document.querySelectorAll(".plugin-endpoint-checkbox:checked"));
+      const selected = checks.map(function (c) {
+        return {key: c.dataset.key, type_name: c.dataset.type, response_kind: c.dataset.kind};
+      });
+      // editors[0] = code, editors[1] = payload
+      const code = window.buildPluginStub(selected);
+      editors[0].view.dispatch({
+        changes: {from: 0, to: editors[0].view.state.doc.length, insert: code}
+      });
+      const payload = window.getSamplePayload(selected);
+      editors[1].view.dispatch({
+        changes: {from: 0, to: editors[1].view.state.doc.length, insert: payload}
+      });
+    });
+  }
+
+  // Pre-select checkboxes matching the current code's `endpoints = [...]`.
+  (function () {
+    var codeTa = document.querySelector("textarea.plugin-console-code");
+    if (!codeTa) return;
+    var m = codeTa.value.match(/endpoints\s*=\s*\[([^\]]*)\]/);
+    if (!m) return;
+    var keys = m[1].split(",").map(function (s) {
+      return s.trim().replace(/^['"]|['"]$/g, "");
+    }).filter(Boolean);
+    document.querySelectorAll(".plugin-endpoint-checkbox").forEach(function (c) {
+      c.checked = keys.indexOf(c.dataset.key) !== -1;
+    });
+  })();
+</script>
+{% endblock %}

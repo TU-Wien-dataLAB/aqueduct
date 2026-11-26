@@ -9,4 +9,5 @@
     }
 </style>
 <link href="{% static 'css/aqueduct-theme.css' %}" rel="stylesheet" type="text/css"/>
-<script src="{% static 'js/aqueduct.js' %}"></script>
+{% for theme in custom_themes %}<style data-theme-id="{{ theme.id }}" data-scheme="{{ theme.scheme }}">{{ theme.css|safe }}</style>
+{% endfor %}<script src="{% static 'js/aqueduct.js' %}" data-light-theme="{{ default_themes.light }}" data-dark-theme="{{ default_themes.dark }}"></script>

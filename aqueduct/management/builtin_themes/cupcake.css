@@ -1,0 +1,55 @@
+/* daisyUI 5.8.2's cupcake theme, unchanged: https://cdn.jsdelivr.net/npm/daisyui@5.8.2/theme/cupcake.css
+   daisyUI is MIT licensed, Copyright (c) 2020 Pouya Saadeghi. Aqueduct's changes follow it. */
+:root:has(input.theme-controller[value=cupcake]:checked),[data-theme="cupcake"] {
+color-scheme: light;
+--color-base-100: oklch(97.788% 0.004 56.375);
+--color-base-200: oklch(93.982% 0.007 61.449);
+--color-base-300: oklch(91.586% 0.006 53.44);
+--color-base-content: oklch(23.574% 0.066 313.189);
+--color-primary: oklch(85% 0.138 181.071);
+--color-primary-content: oklch(43% 0.078 188.216);
+--color-secondary: oklch(89% 0.061 343.231);
+--color-secondary-content: oklch(45% 0.187 3.815);
+--color-accent: oklch(90% 0.076 70.697);
+--color-accent-content: oklch(47% 0.157 37.304);
+--color-neutral: oklch(27% 0.006 286.033);
+--color-neutral-content: oklch(92% 0.004 286.32);
+--color-info: oklch(68% 0.169 237.323);
+--color-info-content: oklch(29% 0.066 243.157);
+--color-success: oklch(69% 0.17 162.48);
+--color-success-content: oklch(26% 0.051 172.552);
+--color-warning: oklch(79% 0.184 86.047);
+--color-warning-content: oklch(28% 0.066 53.813);
+--color-error: oklch(64% 0.246 16.439);
+--color-error-content: oklch(27% 0.105 12.094);
+--radius-selector: 1rem;
+--radius-field: 2rem;
+--radius-box: 1rem;
+--size-selector: 0.25rem;
+--size-field: 0.25rem;
+--border: 2px;
+--depth: 1;
+--noise: 0;
+}
+
+/* Aqueduct's changes: a deeper primary, saturated but calm, that reads as text too; and Aqueduct's variables
+   from the theme's colors. Text colors reach 4.5:1 on base-100 and base-200. */
+[data-theme="cupcake"] {
+  --color-primary: oklch(45% 0.1 181.071);
+  --color-primary-content: oklch(98% 0.01 181.071);
+  --aq-btn-radius: var(--radius-field);
+  --aq-link: var(--color-primary);
+  --aq-muted: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
+  --aq-ok: color-mix(in oklab, var(--color-success) 45%, var(--color-base-content));
+  --aq-warn: color-mix(in oklab, var(--color-warning) 45%, var(--color-base-content));
+  --aq-err: color-mix(in oklab, var(--color-error) 65%, var(--color-base-content));
+  --aq-band: var(--color-neutral);
+  --aq-band-content: var(--color-neutral-content);
+  --aq-band-muted: color-mix(in oklab, var(--aq-band-content) 75%, var(--aq-band));
+  --aq-band-link: color-mix(in oklab, var(--color-primary) 40%, white);
+  --tok-cached: color-mix(in oklab, var(--aq-link) 45%, var(--color-base-100));
+  --tok-new: color-mix(in oklab, var(--aq-link) 75%, var(--color-base-100));
+  --tok-out: color-mix(in oklab, var(--aq-link) 80%, var(--color-base-content));
+  --viz-in: var(--tok-new);
+  --viz-track: color-mix(in oklab, var(--color-base-content) 12%, var(--color-base-100));
+}

@@ -42,6 +42,76 @@ running migrations does not update existing keys. Increasing or disabling the li
 does not restore previously shortened expirations; already-expired keys are never
 reactivated by reconciliation.
 
+## Custom themes
+
+On the management UI's Settings page, each person picks a light theme, a dark theme, and
+whether to follow the device or stay light or dark; the sun and moon button switches between
+the two picks. Beside Light and Dark, it offers Wireframe, Nord, Cupcake and Riso as light themes
+and Black, Night, Synthwave and Phosphor as dark ones, each in the same place as its light
+counterpart, from `management/builtin_themes/`: daisyUI's themes, with
+a calmer primary color in Cupcake, Night and Nord, and calmer colors overall in Synthwave; Riso, a risograph
+print, and Phosphor, a green-phosphor terminal, are Aqueduct's own. To offer more, set
+`THEMES_DIR` to a directory of CSS files; in Helm, set `themes` to a map of file name to
+CSS instead. A file named like a built-in theme replaces it. The app reads the files once, so restart it after changing them; Helm
+restarts the web pods when `themes` changes.
+
+`BUILTIN_LIGHT_THEMES` and `BUILTIN_DARK_THEMES` name the built-in themes Settings offers,
+comma-separated and in order: the Nth light theme sits beside the Nth dark one. Unset, they
+offer all eight in the order above; set to an empty string, none. Light and Dark are always
+offered, and your own themes follow the built-in ones in file name order. In Helm, set
+`builtinLightThemes` and `builtinDarkThemes` to lists.
+
+`DEFAULT_LIGHT_THEME` and `DEFAULT_DARK_THEME` name the theme each scheme shows to people who
+have not picked one, or whose pick is no longer offered: any offered theme of that scheme,
+built-in or your own. Unset, it is Light or Dark. In Helm, set `defaultLightTheme` and
+`defaultDarkTheme`. A theme someone picked stays picked.
+
+A name in these settings that is not an offered theme of the right scheme is ignored and logged
+at `ERROR`.
+
+A file `<id>.css` becomes the theme `<id>`, labelled with its name, capitalized, with `-`
+and `_` read as spaces. The id may hold letters, digits, `-` and `_`, and cannot be `system`, `light` or
+`dark`. The file holds one `[data-theme="<id>"]` rule, without `html` in front, so the
+Settings page can preview it. The rule declares `color-scheme: light` or `dark`, which makes it a light or dark theme;
+it starts from that scheme's variables and sets only the ones it changes:
+
+```css
+[data-theme="aqueduct"] {
+  color-scheme: light;
+  --color-primary: #006699;
+  --color-primary-content: #ffffff;
+  --radius-box: .25rem;
+  --radius-field: .25rem;
+  --aq-btn-radius: .25rem;
+}
+```
+
+A theme may set colors, radii and effects:
+
+- daisyUI's colors: `--color-base-100`, `-200`, `-300` and `--color-base-content`, and
+  `--color-primary`, `secondary`, `accent`, `neutral`, `info`, `success`, `warning` and
+  `error`, each with its `-content` color.
+- Aqueduct's colors: `--aq-muted` for secondary text; `--aq-link`, `--aq-ok`, `--aq-warn`
+  and `--aq-err` for the primary, success, warning and error colors as text, which a theme
+  whose colors are light fills darkens; `--aq-band`, `--aq-band-content`, `--aq-band-muted` and `--aq-band-link` for the
+  footer, and for the charts `--viz-in`, `--viz-track`, `--tok-cached`,
+  `--tok-new` and `--tok-out`.
+- Radii: `--radius-box` for cards, `--radius-field` for inputs and small panels,
+  `--radius-selector` for checkboxes and toggles, and `--aq-btn-radius` for buttons
+  (`9999px` by default, a pill).
+- Effects: daisyUI's `--border` for the width of borders (`1px` by default), and, off by default,
+  `--depth` (`0` or `1`) for shading on buttons and inputs and `--noise` (`0` or `1`) for grain on
+  buttons and badges; and Aqueduct's, also off by default: `--aq-texture`, a background image laid over the whole page, text included, so keep it
+  faint; `--aq-texture-position`, `fixed` to keep the texture on the screen (Phosphor's scanlines) or
+  `absolute` to scroll it with the page (Riso's paper); `--aq-card-shadow`, a `box-shadow` for cards; and `--aq-glow`, a `text-shadow` for all text.
+  Riso and Phosphor use each of them. A theme's file cannot contain `</`, so write `<` in a
+  `data:` URL as `%3C`.
+
+`management/static/css/aqueduct-theme.css` holds the light and dark values. The built-in
+daisyUI themes show how to set Aqueduct's colors from a theme's own, keeping text at 4.5:1
+contrast. A file that
+breaks a rule is left out and logged at `ERROR`. Each choice is kept in the viewer's browser.
+
 ## Database
 
 The chart ships one PostgreSQL backend, the **CloudNativePG cluster**

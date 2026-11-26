@@ -13,7 +13,7 @@
         {% else %}
             {{ field|widget }}
         {% endif %}
-        {% if field.errors %}<span class="text-sm text-error">{{ field.errors|striptags }}</span>{% endif %}
+        {% if field.errors %}<span class="text-sm st-err">{{ field.errors|striptags }}</span>{% endif %}
         {% if field.help_text %}<span class="muted text-sm">{{ field.help_text }}</span>{% endif %}
     </div>
     {% if field.name == form.expiration_field %}{% include "management/_expiration_input_script.html" %}{% endif %}

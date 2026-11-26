@@ -2,7 +2,7 @@
 <header class="navbar sticky top-0 z-50 gap-2 border-b border-base-300 bg-base-100 print:hidden">
     <div class="navbar-start flex items-center gap-2">
         <a href="{% url 'tokens' %}" class="flex items-center gap-2">
-            <img src="{% static 'images/Aqueduct_Icon_80x80.png' %}" alt="" class="h-8 w-8">
+            {% include "management/_logo.html" with size="h-8 w-8" %}
             <span class="text-xl font-semibold">{% translate "Aqueduct" %}</span>
         </a>
         <a href="{% url 'tokens' %}" class="btn btn-ghost btn-sm ml-2">{% icon "chevron" small=True extra_class="rotate-180" %}{% translate "Back to Aqueduct" %}</a>

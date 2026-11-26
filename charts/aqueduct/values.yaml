@@ -211,6 +211,25 @@ routerConfig: { }
 # MCP configuration
 mcpConfig: { }
 
+# Themes the management UI's Settings page offers beside light and dark, as file name to CSS.
+# See "Custom themes" in docs/deployment.md.
+themes: { }
+#  aqueduct.css: |
+#    [data-theme="aqueduct"] {
+#      color-scheme: light;
+#      --color-primary: #006699;
+#      --radius-box: .25rem;
+#    }
+
+# The built-in themes Settings offers beside light and dark, in order: the Nth light theme sits
+# beside the Nth dark one. null offers all of them, [] none.
+builtinLightThemes: null  # e.g. [wireframe, nord, cupcake, riso]
+builtinDarkThemes: null  # e.g. [black, night, synthwave, phosphor]
+
+# The theme of each scheme for people who have not picked one; empty means light or dark.
+defaultLightTheme: ""
+defaultDarkTheme: ""
+
 # Files API configuration (external API for file upload and batch processing)
 filesApi:
   # External API URL (required) - used for both Files and Batches API

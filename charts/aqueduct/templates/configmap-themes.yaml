@@ -1,0 +1,8 @@
+{{- if .Values.themes }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-themes
+data:
+  {{- toYaml .Values.themes | nindent 2 }}
+{{- end }}

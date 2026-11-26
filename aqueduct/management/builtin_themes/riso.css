@@ -1,0 +1,49 @@
+/* Riso: Aqueduct's own light theme, a risograph print. Federal-blue ink and fluorescent pink on cream
+   paper, with the yellow drum for the charts; ink grain in the paper, and the pink drum printed a little
+   off register under cards and text. Text colors reach 4.5:1 on base-100 and base-200. */
+[data-theme="riso"] {
+  color-scheme: light;
+  --color-base-100: #F7F2E7;
+  --color-base-200: #EEE6D4;
+  --color-base-300: #DDD2BA;
+  --color-base-content: #1E2858;
+  --color-primary: #FF48B0;
+  --color-primary-content: #141A40;
+  --color-secondary: #3255A4;
+  --color-secondary-content: #F7F2E7;
+  --color-accent: #FFE800;
+  --color-accent-content: #1E2858;
+  --color-neutral: #1E2858;
+  --color-neutral-content: #F7F2E7;
+  --color-info: #0071B5;
+  --color-info-content: #F7F2E7;
+  --color-success: #00A95C;
+  --color-success-content: #141A40;
+  --color-warning: #FF8A3D;
+  --color-warning-content: #141A40;
+  --color-error: #F15060;
+  --color-error-content: #141A40;
+  --radius-selector: 0.25rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.25rem;
+  --aq-link: #A30F64;
+  --aq-muted: #4F5578;
+  --aq-ok: #00703F;
+  --aq-warn: #94480A;
+  --aq-err: #B81F35;
+  --aq-band: var(--color-neutral);
+  --aq-band-content: var(--color-neutral-content);
+  --aq-band-muted: #C9C6D6;
+  --aq-band-link: #FF8FCB;
+  --tok-cached: #E8A800;
+  --tok-new: var(--color-primary);
+  --tok-out: var(--color-secondary);
+  --viz-in: var(--tok-new);
+  --viz-track: #E0D6C0;
+  --border: 2px;
+  --noise: 1;
+  --aq-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .12 0 0 0 0 .16 0 0 0 0 .35 .96 0 0 0 -.55'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  --aq-texture-position: absolute;
+  --aq-card-shadow: 0 0 0 2px var(--color-base-content), 6px 6px 0 2px var(--color-primary);
+  --aq-glow: .06em .05em 0 rgb(255 72 176 / .32);
+}

@@ -443,12 +443,24 @@ class TokenRateLimitTest(ChatCompletionsBase):
             f"Rate limit exceeded. Request limit (1.5/min) (Retry after {retry_after}s).",
         )
 
+    def test_rate_limited_request_is_logged(self):
+        """A request rejected by the token rate limit is logged with status 429."""
+        token = self._setup_limits("token", "requests_per_minute", 1)
+        first = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(first.status_code, 200)
+        blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+
+        rejected = Request.objects.get(status_code=429)
+        self.assertEqual(rejected.token, token)
+        self.assertEqual(rejected.model, self.model)
+        self.assertEqual(rejected.path, self.url)
+
     def test_check_rate_limits_uses_no_request_table_sql(self):
-        """A rate-limited (429) request issues no SQL against ``management_request``.
+        """A rate-limited (429) request does not read ``management_request``.
 
         ``check_rate_limits`` now reads from the cache, not the ``Request`` table.
-        A blocked request returns 429 before ``log_request`` runs, so it must not
-        touch ``management_request`` at all (no aggregate SELECT, no INSERT).
+        A blocked request only writes its own log row (no aggregate SELECT).
         """
         self._setup_limits("org", "requests_per_minute", 1)
         # First request consumes the minute bucket (and creates its Request row).
@@ -459,14 +471,16 @@ class TokenRateLimitTest(ChatCompletionsBase):
         with CaptureQueriesContext(connection) as ctx:
             blocked = self._send_chat_completion(self.MESSAGES, max_completion_tokens=5)
         self.assertEqual(blocked.status_code, 429)
-        request_table_queries = [
-            q["sql"] for q in ctx.captured_queries if "management_request" in q["sql"]
+        request_table_reads = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if "management_request" in q["sql"] and q["sql"].lstrip().upper().startswith("SELECT")
         ]
         self.assertEqual(
-            request_table_queries,
+            request_table_reads,
             [],
             "check_rate_limits must not query the Request table; found: "
-            + " | ".join(request_table_queries),
+            + " | ".join(request_table_reads),
         )
 
 
@@ -505,6 +519,24 @@ class TokenConcurrentRequestsLimitTest(ChatCompletionsBase):
 
         resp = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
         self.assertEqual(resp.status_code, 200)
+
+    @async_to_sync
+    async def test_concurrency_limited_request_is_logged(self):
+        """A request rejected by the token concurrency limit is logged with status 429."""
+        token = await Token.objects.aget(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
+        token.concurrent_requests_limit = 1
+        await token.asave(update_fields=["concurrent_requests_limit"])
+
+        held = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(held.status_code, 200)
+        blocked = await self._send_chat_completion_streaming(self.MESSAGES, max_completion_tokens=5)
+        self.assertEqual(blocked.status_code, 429)
+        await _read_streaming_response_lines(held)
+
+        rejected = await Request.objects.aget(status_code=429)
+        self.assertEqual(rejected.token_id, token.id)
+        self.assertEqual(rejected.model, self.model)
+        self.assertEqual(rejected.path, self.url)
 
     @async_to_sync
     async def test_concurrent_requests_from_different_tokens_same_user(self):
@@ -692,6 +724,31 @@ class ModelConcurrentRequestsLimitTest(ChatCompletionsBase):
         self.assertIn("Too many concurrent requests for model", blocked.json()["error"]["message"])
 
         await asyncio.gather(*(_read_streaming_response_lines(r) for r in held_streams))
+
+    @async_to_sync
+    async def test_concurrency_limited_request_is_logged(self):
+        """A request rejected by the model concurrency limit is logged with status 429,
+        under the model name its alias resolves to."""
+        token = await Token.objects.aget(key_hash=Token._hash_key(self.AQUEDUCT_ACCESS_TOKEN))
+        with patch("gateway.decorators.limits.get_model_max_parallel_requests", return_value=1):
+            held = await self._send_chat_completion_streaming(
+                self.MESSAGES, max_completion_tokens=5
+            )
+            self.assertEqual(held.status_code, 200)
+
+            # "coding" is an alias of `self.model` in the router config.
+            req = self._build_chat_completion_request(self.MESSAGES, stream=True)
+            req["data"] = json.dumps(
+                _build_chat_payload("coding", self.MESSAGES, stream=True, max_completion_tokens=5)
+            )
+            blocked = await self.async_client.post(**req, content_type="application/json")
+            self.assertEqual(blocked.status_code, 429)
+            await _read_streaming_response_lines(held)
+
+        rejected = await Request.objects.aget(status_code=429)
+        self.assertEqual(rejected.token_id, token.id)
+        self.assertEqual(rejected.model, self.model)
+        self.assertEqual(rejected.path, self.url)
 
 
 @override_settings(

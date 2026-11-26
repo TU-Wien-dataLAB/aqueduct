@@ -22,7 +22,6 @@ from gateway.decorators import (
     log_request,
     parse_body,
     resolve_alias,
-    run_plugins,
     token_authenticated,
     tos_accepted,
 )
@@ -52,14 +51,13 @@ ImageParams = ImageGenerateParamsWithSeed | ImageGenerateStreamingParamsWithSeed
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(ImageParams, config=ConfigDict(extra="forbid")))
+@log_request
 @check_token_concurrency_limits
 @check_model_concurrency_limits
 @check_token_rate_limits
 @check_model_rate_limits
 @resolve_alias
 @check_model_availability
-@log_request
-@run_plugins(endpoint_key="images/generations", pydantic_type=ImageParams, response_kind="json")
 @catch_router_exceptions
 async def image_generation(
     request: ASGIRequest,

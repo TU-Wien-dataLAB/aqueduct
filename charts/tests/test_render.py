@@ -190,5 +190,65 @@ class WebScalingTests(unittest.TestCase):
             self.assertNotIn("LITELLM_REDIS_URL", {item["name"] for item in container["env"]})
 
 
+class MetricsTests(unittest.TestCase):
+    ROLES = ("test", "test-celery-worker", "test-celery-beat")
+
+    @staticmethod
+    def token_env(resources, name):
+        pod = resources["Deployment", name]["spec"]["template"]["spec"]
+        return [item for item in pod["containers"][0]["env"]
+                if item["name"] == "AQUEDUCT_METRICS_TOKEN"]
+
+    def test_off_by_default(self):
+        resources = render()
+        self.assertFalse([kind for kind, _ in resources if kind == "PodMonitor"])
+        for name in self.ROLES:
+            self.assertEqual(self.token_env(resources, name), [])
+        # A PodMonitor alone does not turn the endpoint on
+        resources = render({"metrics": {"podMonitor": {"enabled": True}}})
+        self.assertFalse([kind for kind, _ in resources if kind == "PodMonitor"])
+
+    def test_web_pods_read_the_token_from_the_existing_secret(self):
+        resources = render({"metrics": {"enabled": True, "existingSecret": "app"},
+                            "web": {"extraEnv": [{"name": "EXTRA", "value": "last"}]}})
+        secret = {"secretKeyRef": {"name": "app", "key": "METRICS_TOKEN"}}
+        self.assertEqual(self.token_env(resources, "test"),
+                         [{"name": "AQUEDUCT_METRICS_TOKEN", "valueFrom": secret}])
+        # The migration init still gets exactly its role's environment
+        pod = resources["Deployment", "test"]["spec"]["template"]["spec"]
+        self.assertEqual(pod["initContainers"][0]["env"], pod["containers"][0]["env"])
+        self.assertEqual(pod["containers"][0]["env"][-1], {"name": "EXTRA", "value": "last"})
+        for name in self.ROLES[1:]:
+            self.assertEqual(self.token_env(resources, name), [])
+        self.assertFalse([kind for kind, _ in resources if kind == "PodMonitor"])
+
+    def test_enabling_without_a_secret_fails(self):
+        with self.assertRaises(subprocess.CalledProcessError) as error:
+            render({"metrics": {"enabled": True}})
+        self.assertIn("metrics.existingSecret is required", error.exception.stderr)
+
+    def test_pod_monitor_scrapes_web_pods_with_the_same_secret(self):
+        for pod_monitor, interval in (({"enabled": True}, "30s"),
+                                      ({"enabled": True, "interval": "15s"}, "15s")):
+            with self.subTest(interval=interval):
+                resources = render({"metrics": {
+                    "enabled": True, "existingSecret": "app", "existingSecretKey": "scrape",
+                    "podMonitor": pod_monitor,
+                }})
+                spec = resources["PodMonitor", "test"]["spec"]
+                web = resources["Deployment", "test"]["spec"]["selector"]["matchLabels"]
+                self.assertEqual(spec["selector"], {"matchLabels": web})
+                self.assertEqual(spec["podMetricsEndpoints"], [{
+                    "port": "http",
+                    "path": "/metrics",
+                    "interval": interval,
+                    "authorization": {
+                        "type": "Bearer", "credentials": {"name": "app", "key": "scrape"},
+                    },
+                }])
+                self.assertEqual(self.token_env(resources, "test")[0]["valueFrom"],
+                                 {"secretKeyRef": {"name": "app", "key": "scrape"}})
+
+
 if __name__ == "__main__":
     unittest.main()

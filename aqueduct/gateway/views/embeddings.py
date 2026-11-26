@@ -18,7 +18,6 @@ from gateway.decorators import (
     log_request,
     parse_body,
     resolve_alias,
-    run_plugins,
     token_authenticated,
     tos_accepted,
 )
@@ -35,6 +34,7 @@ if TYPE_CHECKING:
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(openai.types.EmbeddingCreateParams))
+@log_request
 @check_token_concurrency_limits
 @check_model_concurrency_limits
 @check_token_rate_limits
@@ -42,12 +42,6 @@ if TYPE_CHECKING:
 @ensure_usage
 @resolve_alias
 @check_model_availability
-@log_request
-@run_plugins(
-    endpoint_key="embeddings",
-    pydantic_type=openai.types.EmbeddingCreateParams,
-    response_kind="json",
-)
 @catch_router_exceptions
 async def embeddings(
     request: ASGIRequest,

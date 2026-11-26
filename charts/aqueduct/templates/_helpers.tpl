@@ -28,6 +28,17 @@ topologySpreadConstraints:
   value: {{ .maxSize | quote }}
 {{- end -}}
 
+{{/* The metrics token, for the web role only. */}}
+{{- define "aqueduct.metricsEnv" -}}
+{{- if .Values.metrics.enabled -}}
+- name: AQUEDUCT_METRICS_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "metrics.existingSecret is required when metrics.enabled is true" .Values.metrics.existingSecret }}
+      key: {{ .Values.metrics.existingSecretKey }}
+{{- end -}}
+{{- end -}}
+
 {{- define "aqueduct.migrationInit" -}}
 {{- $root := .root -}}
 - name: migrate
@@ -41,6 +52,9 @@ topologySpreadConstraints:
   env:
     {{- include "aqueduct.env" $root | nindent 4 }}
     {{- include "aqueduct.databasePoolEnv" .pool | nindent 4 }}
+    {{- with .roleEnv }}
+    {{- . | nindent 4 }}
+    {{- end }}
     {{- with .extraEnv }}
     {{- toYaml . | nindent 4 }}
     {{- end }}

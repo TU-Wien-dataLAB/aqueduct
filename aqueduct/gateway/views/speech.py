@@ -20,7 +20,6 @@ from gateway.decorators import (
     log_request,
     parse_body,
     resolve_alias,
-    run_plugins,
     token_authenticated,
     tos_accepted,
 )
@@ -33,6 +32,7 @@ from management.models import Request
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(openai.types.audio.SpeechCreateParams))
+@log_request
 @check_token_concurrency_limits
 @check_model_concurrency_limits
 @check_token_rate_limits
@@ -40,12 +40,6 @@ from management.models import Request
 @resolve_alias
 @ensure_usage
 @check_model_availability
-@log_request
-@run_plugins(
-    endpoint_key="audio/speech",
-    pydantic_type=openai.types.audio.SpeechCreateParams,
-    response_kind="streaming",
-)
 @catch_router_exceptions
 async def speech(
     request: ASGIRequest,

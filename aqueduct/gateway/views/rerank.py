@@ -49,6 +49,7 @@ class RerankRequestParams(TypedDict):
 @token_authenticated(token_auth_only=True)
 @tos_accepted
 @parse_body(model=TypeAdapter(RerankRequestParams))
+@log_request
 @check_token_concurrency_limits
 @check_model_concurrency_limits
 @check_token_rate_limits
@@ -56,7 +57,6 @@ class RerankRequestParams(TypedDict):
 @ensure_usage
 @resolve_alias
 @check_model_availability
-@log_request
 @catch_router_exceptions
 async def rerank(
     request: ASGIRequest,

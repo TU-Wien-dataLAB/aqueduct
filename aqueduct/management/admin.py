@@ -1140,15 +1140,19 @@ class SnippetAdmin(admin.ModelAdmin):
             return False
         return super().has_delete_permission(request, obj)
 
+    def _plugin_endpoints_context(self) -> list[dict[str, str]]:
+        """Plugin-capable endpoint metadata, keyed for the admin UI."""
+        registry = get_plugin_endpoint_registry()
+        return [
+            {"key": ep.key, "type_name": ep.type_name, "response_kind": ep.response_kind}
+            for ep in registry.values()
+        ]
+
     def changeform_view(
         self, request, object_id=None, form_url="", extra_context=None
     ) -> HttpResponse:
         extra_context = extra_context or {}
-        registry = get_plugin_endpoint_registry()
-        extra_context["plugin_endpoints"] = [
-            {"key": ep.key, "type_name": ep.type_name, "response_kind": ep.response_kind}
-            for ep in registry.values()
-        ]
+        extra_context["plugin_endpoints"] = self._plugin_endpoints_context()
         return super().changeform_view(request, object_id, form_url, extra_context)
 
     def get_urls(self) -> list[URLPattern]:
@@ -1279,6 +1283,7 @@ class SnippetAdmin(admin.ModelAdmin):
             "code": code,
             "payload": payload,
             "results": results,
+            "plugin_endpoints": self._plugin_endpoints_context(),
         }
         request.current_app = self.admin_site.name
         return TemplateResponse(

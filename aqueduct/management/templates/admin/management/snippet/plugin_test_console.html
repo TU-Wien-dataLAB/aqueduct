@@ -61,6 +61,34 @@
           </div>
         </div>
       </fieldset>
+      {% if plugin_endpoints %}
+      <fieldset class="module aligned">
+        <div class="form-row">
+          <label>Plugin endpoints</label>
+          <div class="help" style="margin-bottom:0.5rem;">
+            Check the API endpoints this plugin should run on, then click
+            <strong>Generate plugin stub</strong> to fill the code editor (and a sample
+            request body below). Endpoints are auto-discovered from the
+            <code>@run_plugins(...)</code> registry.
+          </div>
+          <div id="plugin-endpoint-checkboxes">
+            {% for ep in plugin_endpoints %}
+            <label class="plugin-endpoint-label" style="display:block;margin:0.25rem 0;">
+              <input type="checkbox" class="plugin-endpoint-checkbox"
+                data-key="{{ ep.key }}" data-type="{{ ep.type_name }}"
+                data-kind="{{ ep.response_kind }}" value="{{ ep.key }}">
+              <code>{{ ep.key }}</code>
+              <span class="plugin-endpoint-meta" style="color:var(--body-quiet-color,#6b7280);font-size:12px;">
+                &mdash; {{ ep.type_name }} &middot; {{ ep.response_kind }}
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+          <button type="button" id="plugin-generate-stub" class="button"
+            style="margin-top:0.75rem;">Generate plugin stub</button>
+        </div>
+      </fieldset>
+      {% endif %}
       <div class="submit-row">
         <input type="submit" value="Run test" class="default">
       </div>
@@ -104,6 +132,7 @@
   }
 }
 </script>
+<script src="{% static 'js/snippet_plugin_stub.js' %}"></script>
 <script type="module">
   import {EditorView, basicSetup} from "codemirror";
   import {python} from "@codemirror/lang-python";
@@ -133,5 +162,38 @@
       item.ta.value = item.view.state.doc.toString();
     });
   });
+
+  const genBtn = document.getElementById("plugin-generate-stub");
+  if (genBtn && editors.length >= 2) {
+    genBtn.addEventListener("click", function () {
+      const checks = Array.from(document.querySelectorAll(".plugin-endpoint-checkbox:checked"));
+      const selected = checks.map(function (c) {
+        return {key: c.dataset.key, type_name: c.dataset.type, response_kind: c.dataset.kind};
+      });
+      // editors[0] = code, editors[1] = payload
+      const code = window.buildPluginStub(selected);
+      editors[0].view.dispatch({
+        changes: {from: 0, to: editors[0].view.state.doc.length, insert: code}
+      });
+      const payload = window.getSamplePayload(selected);
+      editors[1].view.dispatch({
+        changes: {from: 0, to: editors[1].view.state.doc.length, insert: payload}
+      });
+    });
+  }
+
+  // Pre-select checkboxes matching the current code's `endpoints = [...]`.
+  (function () {
+    var codeTa = document.querySelector("textarea.plugin-console-code");
+    if (!codeTa) return;
+    var m = codeTa.value.match(/endpoints\s*=\s*\[([^\]]*)\]/);
+    if (!m) return;
+    var keys = m[1].split(",").map(function (s) {
+      return s.trim().replace(/^['"]|['"]$/g, "");
+    }).filter(Boolean);
+    document.querySelectorAll(".plugin-endpoint-checkbox").forEach(function (c) {
+      c.checked = keys.indexOf(c.dataset.key) !== -1;
+    });
+  })();
 </script>
 {% endblock %}

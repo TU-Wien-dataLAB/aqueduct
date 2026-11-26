@@ -101,7 +101,13 @@ def generate_plugin_stub(endpoints: list[dict[str, Any]], class_name: str = "MyP
         e.get("response_kind") in ("streaming", "json_or_streaming") for e in endpoints
     )
 
-    lines = [f"class {class_name}(PluginSnippet):"]
+    # When a single endpoint is chosen, type ``body`` with its request-body model so
+    # the generated hook documents the fields available. Multiple types (or none) fall
+    # back to ``dict``; ``from __future__ import annotations`` keeps the annotation a
+    # string so it never needs the model imported at runtime.
+    body_type = type_names[0] if len(type_names) == 1 else "dict"
+
+    lines = ["from __future__ import annotations", "", f"class {class_name}(PluginSnippet):"]
     if keys:
         lines.append(f"    # Runs on: {', '.join(keys)}")
         lines.append(f"    endpoints = [{', '.join(repr(k) for k in keys)}]")
@@ -109,7 +115,7 @@ def generate_plugin_stub(endpoints: list[dict[str, Any]], class_name: str = "MyP
         lines.append("    # No endpoints selected: the plugin runs on every endpoint.")
         lines.append("    endpoints = []")
     lines.append("")
-    lines.append("    def before_request(self, request, token, body: dict) -> dict | None:")
+    lines.append(f"    def before_request(self, request, token, body: {body_type}) -> dict | None:")
     if type_names:
         lines.append(f"        # Request body is validated against: {', '.join(type_names)}")
     lines.append(

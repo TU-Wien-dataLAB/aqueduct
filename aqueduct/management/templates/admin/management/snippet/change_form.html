@@ -29,6 +29,7 @@
     }
   }
   </script>
+  <script src="{% static 'js/snippet_plugin_stub.js' %}"></script>
 {% endblock %}
 
 {% block extrastyle %}
@@ -145,57 +146,14 @@
       });
     }
 
-    function buildPluginStub() {
-      const checks = Array.from(document.querySelectorAll(".plugin-endpoint-checkbox:checked"));
-      const selected = checks.map(function (c) {
-        return {key: c.dataset.key, type_name: c.dataset.type, response_kind: c.dataset.kind};
-      });
-      const keys = Array.from(new Set(selected.map(function (e) { return e.key; }))).sort();
-      const types = Array.from(new Set(selected.map(function (e) { return e.type_name; }).filter(Boolean))).sort();
-      const hasJson = selected.some(function (e) {
-        return e.response_kind === "json" || e.response_kind === "json_or_streaming";
-      });
-      const hasStreaming = selected.some(function (e) {
-        return e.response_kind === "streaming" || e.response_kind === "json_or_streaming";
-      });
-      const lines = ["class MyPlugin(PluginSnippet):"];
-      if (keys.length) {
-        lines.push("    # Runs on: " + keys.join(", "));
-        lines.push("    endpoints = [" + keys.map(function (k) { return JSON.stringify(k); }).join(", ") + "]");
-      } else {
-        lines.push("    # No endpoints selected: the plugin runs on every endpoint.");
-        lines.push("    endpoints = []");
-      }
-      lines.push("");
-      lines.push("    def before_request(self, request, token, body: dict) -> dict | None:");
-      if (types.length) {
-        lines.push("        # Request body is validated against: " + types.join(", "));
-      }
-      lines.push('        """Optionally transform/replace the request body.');
-      lines.push("");
-      lines.push("        Return the (possibly mutated) body to pass downstream, or ``None`` to");
-      lines.push("        leave the body unchanged. Raise ``BlockedByPlugin`` to stop the request.");
-      lines.push('        """');
-      lines.push("        return body");
-      lines.push("");
-      if (hasJson) {
-        lines.push("    def after_response(self, response) -> None:");
-        lines.push('        """Non-streaming only. Return a replacement response, or ``None`` to keep unchanged."""');
-        lines.push("        return None");
-        lines.push("");
-      }
-      if (hasStreaming) {
-        lines.push("    def after_streaming_response(self, response) -> None:");
-        lines.push('        """Streaming wrapper only (headers/status, not content)."""');
-        lines.push("        return None");
-      }
-      return lines.join("\n") + "\n";
-    }
-
     const genBtn = document.getElementById("plugin-generate-stub");
     if (genBtn && editors.length) {
       genBtn.addEventListener("click", function () {
-        const code = buildPluginStub();
+        const checks = Array.from(document.querySelectorAll(".plugin-endpoint-checkbox:checked"));
+        const selected = checks.map(function (c) {
+          return {key: c.dataset.key, type_name: c.dataset.type, response_kind: c.dataset.kind};
+        });
+        const code = window.buildPluginStub(selected);
         editors[0].view.dispatch({
           changes: {from: 0, to: editors[0].view.state.doc.length, insert: code}
         });

@@ -78,3 +78,23 @@ class GeneratePluginStubTestCase(TestCase):
         )
         cls = compile_plugin_class(stub)
         self.assertEqual(cls.endpoints, ["chat/completions"])
+
+    def test_stub_single_endpoint_annotates_body_type(self):
+        stub = generate_plugin_stub(
+            [self._ep("chat/completions", "CompletionCreateParams", "json_or_streaming")]
+        )
+        self.assertIn("from __future__ import annotations", stub)
+        self.assertIn("body: CompletionCreateParams", stub)
+        self.assertIn("CompletionCreateParams", stub)
+
+    def test_stub_multiple_endpoints_keeps_body_dict(self):
+        stub = generate_plugin_stub(
+            [
+                self._ep("chat/completions", "CompletionCreateParams", "json_or_streaming"),
+                self._ep("embeddings", "EmbeddingCreateParams", "json"),
+            ]
+        )
+        self.assertIn("body: dict", stub)
+        self.assertNotIn("body: CompletionCreateParams", stub)
+        # Both request-body types are still documented for the author.
+        self.assertIn("CompletionCreateParams, EmbeddingCreateParams", stub)

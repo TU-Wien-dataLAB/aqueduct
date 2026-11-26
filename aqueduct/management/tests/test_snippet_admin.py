@@ -422,3 +422,10 @@ class PluginConsoleTestCase(TestCase):
         self.assertContains(resp, "plugin-endpoint-panel")
         self.assertContains(resp, 'data-key="chat/completions"')
         self.assertContains(resp, "plugin-generate-stub")
+
+    def test_plugin_console_shows_endpoint_registry(self):
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "plugin-endpoint-checkboxes")
+        self.assertContains(resp, 'data-key="chat/completions"')
+        self.assertContains(resp, "plugin-generate-stub")

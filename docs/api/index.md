@@ -27,6 +27,8 @@ vLLM-specific structured-decisions API that is **not** part of the OpenAI API (s
 | `/batches/{batch_id}/cancel` | POST        | Cancel a batch job                      |
 | `/audio/speech`              | POST        | Generate audio from text                |
 | `/images/generations`        | POST        | Generate images from text               |
+| `/images/edits`              | POST        | Edit images from a text prompt          |
+| `/decisions`                 | POST        | Evaluate structured classification and scoring questions |
 | `/vector_stores`             | GET, POST   | Create and list vector stores           |
 | `/vector_stores/{id}`        | GET, POST, DELETE | Manage vector stores                    |
 | `/vector_stores/{id}/search` | POST        | Search vector stores                    |
@@ -51,6 +53,8 @@ Click an endpoint below to learn more:
 - [Vector Stores](vector-stores.md)
 - [Audio Speech](speech.md)
 - [Image generation](image_generation.md)
+- [Image Edit](image-edit.md)
+- [Decisions](decisions.md)
 - [Model Context Protocol (MCP)](mcp.md)
 - [SystemOne](systemone.md)
 

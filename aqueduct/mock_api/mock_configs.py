@@ -199,6 +199,14 @@ def responses_detail_response(ids: PathIds) -> dict[str, Any]:
     ).model_dump()
 
 
+def systemone_detail_response(ids: PathIds) -> dict[str, Any]:
+    return {
+        "model": "LiquidAI/d1-3B",
+        "answers": {"visible_damage": {"type": "noul", "noul": 0.92}},
+        "usage": {"input_tokens": 15, "output_tokens": 9, "total_tokens": 24},
+    }
+
+
 def vector_store_detail_response(ids: PathIds) -> dict[str, Any]:
     """Return VectorStore with the ID from the URL (retrieve) or a newly generated one (create)."""
     vs_id = ids[0] if ids else _unique_id("vs")
@@ -439,6 +447,7 @@ default_post_configs = {
         ).model_dump()
     ),
     "responses": MockConfig(response_data=responses_detail_response),
+    "systemone": MockConfig(response_data=systemone_detail_response),
     "rerank": MockConfig(
         # Jina-style wire format, returned as-is by the upstream. The gateway
         # reads usage.prompt_tokens for token accounting (get_token_usage).
@@ -471,7 +480,7 @@ default_post_configs = {
                     name="visible_damage", probability=0.92, type="predicate"
                 )
             ],
-            model="gpt-6-luna",
+            model="LiquidAI/d1-3B",
             usage=DecisionUsage(
                 input_tokens=15,
                 input_tokens_details=DecisionUsageInputTokensDetails(

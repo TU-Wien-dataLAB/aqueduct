@@ -15,7 +15,7 @@ _SAMPLE_IMAGE_B64 = (
 class DecisionsIntegrationTest(GatewayIntegrationTestCase):
     """Integration tests for POST /v1/decisions (non-streaming)."""
 
-    model = "gpt-6-luna"
+    model = "LiquidAI/d1-3B"
 
     @classmethod
     def setUpClass(cls):
@@ -130,7 +130,7 @@ class DecisionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertIn("answers", response.json())
 
     async def test_decision_alias_resolved(self):
-        """Requesting the 'decision' alias resolves to gpt-6-luna upstream."""
+        """Requesting the 'decision' alias resolves to LiquidAI/d1-3B upstream."""
         headers = _build_chat_headers(self.AQUEDUCT_ACCESS_TOKEN)
 
         payload = {
@@ -157,7 +157,7 @@ class DecisionsIntegrationTest(GatewayIntegrationTestCase):
         self.assertIn("answers", response.json())
 
         req = await Request.objects.aget()
-        self.assertEqual(req.model, "gpt-6-luna")
+        self.assertEqual(req.model, "LiquidAI/d1-3B")
 
     async def test_decision_missing_model(self):
         """A request without a model returns a 400 error."""

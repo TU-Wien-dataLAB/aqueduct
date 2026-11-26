@@ -6,8 +6,9 @@ nav_order: 5
 # API Reference
 
 The API Reference provides detailed information on the HTTP endpoints exposed by the Aqueduct AI Gateway.
-All endpoints are fully compatible with the OpenAI API, so you can use existing OpenAI clients (such as the OpenAI Python SDK)
-or plain HTTP clients (e.g., `curl`) to make requests.
+Nearly all endpoints are fully compatible with the OpenAI API, so you can use existing OpenAI clients (such as the OpenAI Python SDK)
+or plain HTTP clients (e.g., `curl`) to make requests. The one exception is [`/systemone`](systemone.md), which proxies a
+vLLM-specific structured-decisions API that is **not** part of the OpenAI API (see the [design decisions](../systemone-design.md)).
 
 ## Available Endpoints
 
@@ -26,6 +27,8 @@ or plain HTTP clients (e.g., `curl`) to make requests.
 | `/batches/{batch_id}/cancel` | POST        | Cancel a batch job                      |
 | `/audio/speech`              | POST        | Generate audio from text                |
 | `/images/generations`        | POST        | Generate images from text               |
+| `/images/edits`              | POST        | Edit images from a text prompt          |
+| `/decisions`                 | POST        | Evaluate structured classification and scoring questions |
 | `/vector_stores`             | GET, POST   | Create and list vector stores           |
 | `/vector_stores/{id}`        | GET, POST, DELETE | Manage vector stores                    |
 | `/vector_stores/{id}/search` | POST        | Search vector stores                    |
@@ -35,6 +38,7 @@ or plain HTTP clients (e.g., `curl`) to make requests.
 | `/vector_stores/{id}/file_batches`  | POST        | Create file batches                    |
 | `/vector_stores/{id}/file_batches/{batch_id}` | GET, POST | Retrieve or cancel batches      |
 | `/vector_stores/{id}/file_batches/{batch_id}/files` | GET | List files in batch            |
+| `/systemone`                | POST        | Structured decisions (vLLM-specific, not OpenAI-compatible) |
 | `/mcp-servers/{name}/mcp`    | GET, POST, DELETE | Model Context Protocol server interaction |
 
 Click an endpoint below to learn more:
@@ -49,7 +53,10 @@ Click an endpoint below to learn more:
 - [Vector Stores](vector-stores.md)
 - [Audio Speech](speech.md)
 - [Image generation](image_generation.md)
+- [Image Edit](image-edit.md)
+- [Decisions](decisions.md)
 - [Model Context Protocol (MCP)](mcp.md)
+- [SystemOne](systemone.md)
 
 ---
 

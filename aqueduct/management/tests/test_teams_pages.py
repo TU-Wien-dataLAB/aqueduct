@@ -5,6 +5,7 @@ from django.utils import timezone
 
 from management.models import Request, Team
 from management.tests.helpers import RoleWorld
+from management.views.base import ORG_SESSION_KEY
 
 
 class TeamsListTest(RoleWorld):
@@ -85,6 +86,28 @@ class TeamPageTest(RoleWorld):
         page = self.page(self.member)
         self.assertContains(page, "Organization default")
         self.assertContains(page, "1,000")
+
+    def test_a_platform_admin_switched_to_another_org_opens_an_own_org_team(self):
+        self.as_user(self.admin)
+        session = self.client.session
+        session[ORG_SESSION_KEY] = self.other_org.pk
+        session.save()
+        page = self.client.get(reverse("team", args=[self.team.id]))
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.context["team"], self.team)
+
+    def test_a_platform_admin_opens_a_team_of_another_org(self):
+        page = self.as_user(self.admin).get(reverse("team", args=[self.foreign_team.id]))
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.context["team"], self.foreign_team)
+
+    def test_an_org_admin_cannot_open_a_team_of_another_org(self):
+        page = self.as_user(self.org_admin).get(reverse("team", args=[self.foreign_team.id]))
+        self.assertRedirects(page, reverse("org"))
+
+    def test_a_member_cannot_open_a_team_they_are_not_in(self):
+        page = self.as_user(self.member).get(reverse("team", args=[self.side_team.id]))
+        self.assertRedirects(page, reverse("org"))
 
 
 class TeamFormsTest(RoleWorld):

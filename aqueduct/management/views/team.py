@@ -225,7 +225,8 @@ class TeamDetailView(BaseTeamView, DetailView):
 
         # Now check if the user has permission to view this team
         # Users should see teams they are members of OR if they are admin of the team's org.
-        if self.team not in self.get_teams_for_user():
+        # Checked against the team's org, not the org a platform admin switched to.
+        if not self.profile.visible_teams(self.team_org).filter(pk=self.team.pk).exists():
             messages.error(
                 request, f"You do not have permission to view the team '{self.team.name}'."
             )

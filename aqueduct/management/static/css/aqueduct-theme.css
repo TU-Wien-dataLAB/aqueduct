@@ -216,7 +216,8 @@ a.link-plain:hover { text-decoration: underline; }
 .chart-plot::before { top: 1.25rem; border-top: 1px dashed var(--color-base-300); }
 .chart-plot::after { bottom: 1.5rem; border-top: 1px solid var(--color-base-300); }
 .chart-top { position: absolute; top: 0; left: 0; line-height: 1rem; }
-.aq-tip { position: absolute; z-index: 30; bottom: calc(var(--bar, 100%) + 6px); left: 50%; translate: -50% 0;
+/* --tip-at (0 to 100) slides the tip from right of its column (the first) to left of it (the last) so it stays in the chart. */
+.aq-tip { position: absolute; z-index: 30; bottom: calc(var(--bar, 100%) + 6px); left: 50%; translate: calc(var(--tip-at, 50) * -1%) 0;
   display: none; flex-direction: column; gap: 2px; width: max-content; max-width: 16rem; padding: .5rem .75rem;
   border-radius: .5rem; background: var(--color-neutral); color: var(--color-neutral-content);
   font: 400 14px/1.35 var(--font-sans); text-align: left; pointer-events: none; }

@@ -29,7 +29,7 @@ views.usage.usage_charts.{% endcomment %}
                     <div class="flex h-72 gap-px sm:gap-1">
                         {% for bar in bars %}
                             <div class="aq-tip-host chart-col flex min-w-0 flex-1 flex-col items-center" role="img" aria-label="{{ bar.heading }}: {{ bar.text }}">
-                                <div class="vbar w-full max-w-10 flex-1" style="--bar: {{ bar.height|unlocalize }}%">
+                                <div class="vbar w-full max-w-10 flex-1" style="--bar: {{ bar.height|unlocalize }}%; --tip-at: {% widthratio forloop.counter0 charts.columns|add:-1 100 %}">
                                     {% for css, height in bar.segments %}<i class="{{ css }}" style="height: {{ height|unlocalize }}%"></i>{% endfor %}
                                     {% include "management/_tip.html" with heading=bar.heading total=bar.text parts=bar.parts %}
                                 </div>

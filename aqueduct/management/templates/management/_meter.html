@@ -1,0 +1,9 @@
+{% comment %}`used` against `limit`, under an optional `label`: amber from 80% of the limit, red from 100%, no bar without a
+limit. widthratio gives a string, so `|add:0` makes it a number to compare.{% endcomment %}
+{% load i18n humanize %}<div class="min-w-0 flex-1">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-2 tabular-nums">
+        {% if label %}<span class="muted text-xs">{{ label }}</span>{% endif %}
+        <span class="whitespace-nowrap">{{ used|floatformat:"0"|intcomma }} <span class="muted text-xs">{% if limit is not None %}{% blocktranslate with limit=limit|intcomma %}of {{ limit }}{% endblocktranslate %}{% else %}· {% translate "no limit" %}{% endif %}</span></span>
+    </div>
+    {% if limit %}{% widthratio used limit 100 as pct %}<progress class="progress mt-1 block h-1.5 w-full {% if pct|add:0 >= 100 %}progress-error{% elif pct|add:0 >= 80 %}progress-warning{% else %}progress-primary{% endif %}" value="{{ pct }}" max="100"></progress>{% endif %}
+</div>

@@ -74,8 +74,8 @@ recompiles it.
 ### Auto-admin via `ADMIN_GROUP`
 
 Set the `ADMIN_GROUP` environment variable to the name of a group whose
-members should automatically become admins (`is_staff` + `is_superuser`) on
-login — e.g. `ADMIN_GROUP=default`. Leave `ADMIN_GROUP` empty (default) to
+members should automatically become admins (the `admin` role, plus `is_staff` +
+`is_superuser`) on login — e.g. `ADMIN_GROUP=default`. Leave `ADMIN_GROUP` empty (default) to
 disable this. It only applies when OAuth group management is enabled (see
 `ENABLE_OAUTH_GROUP_MANAGEMENT`).
 
@@ -86,8 +86,24 @@ disable this. It only applies when OAuth group management is enabled (see
 ### Auto-admin via `ADMIN_SUPERUSER_EMAILS`
 
 Set the `ADMIN_SUPERUSER_EMAILS` environment variable to a comma-separated list
-of emails that are always made admins (`is_staff` + `is_superuser`) on login,
-regardless of their group. Leave it empty (default) to disable this.
+of emails that always get `is_staff` + `is_superuser` (Django Admin access) on
+login, regardless of their group. Leave it empty (default) to disable this.
+
+This does **not** give them the `admin` role in the Aqueduct UI: their role
+stays what `user_group(claims)` returns (`user` by default), so they can't, for
+example, create service accounts or appoint team admins unless they are a team
+admin or org admin. To make someone a platform admin, put them in the
+`ADMIN_GROUP` or return `"admin"` from the snippet's `user_group`, e.g. for an
+OAuth group:
+
+```python
+class MyConfig(ConfigSnippet):
+    def user_group(self, claims):
+        groups = claims.get("groups") or []
+        if "aqueduct-admin" in groups:
+            return "admin"
+        return "user"
+```
 
 Only emails on this list are allowed to use the Snippet admin (editing and the
 test console).

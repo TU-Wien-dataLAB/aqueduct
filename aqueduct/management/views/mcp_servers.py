@@ -14,12 +14,7 @@ class MCPServersView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
         try:
-            mcp_config = get_mcp_config()
-            # Add default icon_url fallback for servers that don't have it
-            for server_config in mcp_config.values():
-                if "icon_url" not in server_config:
-                    server_config["icon_url"] = "/static/icons/mcp.svg"
-            context["mcp_servers"] = mcp_config
+            context["mcp_servers"] = get_mcp_config()
             # Add the current site's domain for constructing full URLs
             context["site_host"] = f"{self.request.scheme}://{self.request.get_host()}"
         except RuntimeError as e:

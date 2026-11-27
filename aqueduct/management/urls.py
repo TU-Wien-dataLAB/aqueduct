@@ -6,12 +6,15 @@ from . import views
 urlpatterns = [
     path("tokens/", views.UserTokensView.as_view(), name="tokens"),
     path("tokens/create/", views.TokenCreateView.as_view(), name="token_create"),
+    path("keys/", views.AllKeysView.as_view(), name="all_keys"),
+    path("tokens/<int:id>/", views.TokenDetailView.as_view(), name="token_detail"),
     path("tokens/<int:id>/delete/", views.TokenDeleteView.as_view(), name="token_delete"),
     path("tokens/<int:id>/edit/", views.TokenEditView.as_view(), name="token_edit"),
     path(
         "tokens/<int:id>/regenerate/", views.TokenRegenerateView.as_view(), name="token_regenerate"
     ),
     path(r"org/", views.OrgView.as_view(), name="org"),
+    path("org/<int:id>/limits/", views.OrgLimitsEditView.as_view(), name="org_limits"),
     path("org/switch/", views.OrgSwitchView.as_view(), name="org_switch"),
     path("team/create/", views.TeamCreateView.as_view(), name="team_create"),
     path("team/<int:id>/delete/", views.TeamDeleteView.as_view(), name="team_delete"),
@@ -42,9 +45,13 @@ urlpatterns = [
     ),
     # New URL for Model/Endpoint list
     path("models/", views.ModelListView.as_view(), name="models"),
+    path("settings/", views.SettingsView.as_view(), name="settings"),
+    path("requests/", views.RequestLogView.as_view(), name="requests"),
     path("usage/", views.UsageDashboardView.as_view(), name="usage"),
     path("files/", views.UserFilesView.as_view(), name="files"),
+    path("files/<str:id>/delete/", views.FileDeleteView.as_view(), name="file_delete"),
     path("batches/", views.UserBatchesView.as_view(), name="batches"),
+    path("batches/<str:id>/cancel/", views.BatchCancelView.as_view(), name="batch_cancel"),
     path("mcp-servers/", views.MCPServersView.as_view(), name="mcp_servers"),
     path("vector-stores/", views.UserVectorStoresView.as_view(), name="vector_stores"),
     path(

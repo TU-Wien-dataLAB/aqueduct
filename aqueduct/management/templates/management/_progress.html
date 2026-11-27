@@ -1,0 +1,5 @@
+{% comment %}How far a job got: `done` and `failed` of `total` items, and how many are `running` when given.{% endcomment %}
+{% load i18n %}{% if total %}{% widthratio done total 100 as done_share %}{% widthratio failed total 100 as failed_share %}
+    <div class="text-xs tabular-nums">{% blocktranslate %}{{ done }} of {{ total }} done{% endblocktranslate %}{% if failed %} · <span class="st-err">{% blocktranslate %}{{ failed }} failed{% endblocktranslate %}</span>{% endif %}{% if running %} · {% blocktranslate %}{{ running }} running{% endblocktranslate %}{% endif %}</div>
+    <div class="pbar mt-1" role="img" aria-label="{% blocktranslate with done=done_share failed=failed_share %}{{ done }}% done, {{ failed }}% failed{% endblocktranslate %}"><i class="i" style="width: {{ done_share }}%"></i><i class="f" style="width: {{ failed_share }}%"></i></div>
+{% else %}<span class="muted">—</span>{% endif %}

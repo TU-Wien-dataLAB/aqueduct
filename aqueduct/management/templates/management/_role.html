@@ -1,0 +1,1 @@
+{% load i18n %}{% if viewer.is_admin %}{% translate "Admin" as role %}{% elif viewer_is_org_admin %}{% translate "Org admin" as role %}{% endif %}{% if role %}<span class="muted col-span-3 col-start-2 row-start-2 -mt-1.5 text-xs">{{ role }}</span>{% endif %}

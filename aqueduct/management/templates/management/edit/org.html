@@ -1,0 +1,6 @@
+{% extends "management/form_page.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}<li><a href="{% url 'org' %}">{% translate "Teams" %}</a></li><li>{% translate "Limits" %}</li>{% endblock %}
+{% block submit %}{% translate "Save" %}{% endblock %}
+{% block cancel_url %}{% url 'org' %}{% endblock %}

@@ -1,0 +1,6 @@
+{% comment %}A usage row's figures: `row` comes from the Usage view, with tokens, input, cached, output, requests, failed and failing.{% endcomment %}
+{% load humanize ui %}<td class="text-right tabular-nums">{% if row.tokens %}{{ row.input|compact }}{% else %}—{% endif %}</td>
+<td class="text-right tabular-nums">{% if row.tokens %}{{ row.cached|percent:row.input }}{% else %}—{% endif %}</td>
+<td class="text-right tabular-nums">{% if row.tokens %}{{ row.output|compact }}{% else %}—{% endif %}</td>
+<td class="text-right tabular-nums">{{ row.requests|intcomma }}</td>
+<td class="text-right tabular-nums{% if row.failing %} st-err font-semibold{% endif %}">{{ row.failed|percent:row.requests }}</td>

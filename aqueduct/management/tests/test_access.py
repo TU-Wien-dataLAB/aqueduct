@@ -266,7 +266,7 @@ class UsagePageTest(Matrix):
             with self.subTest(key=name):
                 page = self.usage(self.member, token=self.key(name).id)
                 self.assertEqual(page.context["selected_token"], self.key(name))
-                self.assertContains(page, f'for "{name}"')
+                self.assertContains(page, f'for the key <span class="font-mono">{name}</span>')
 
     def test_admins_select_any_key_they_can_see(self):
         for user, params, name in (
@@ -310,7 +310,7 @@ class OrgSwitchTest(Matrix):
         page = self.client.get(reverse("org"))
         self.assertEqual(page.context["org_object"], self.south)
         self.assertEqual(set(page.context["teams"]), {self.south_a})
-        self.assertContains(page, '<span class="text-3xl font-semibold ml-1">south</span>')
+        self.assertContains(page, '<span class="muted text-sm">south</span>')
         self.assertContains(page, f'<option value="{self.south.id}" selected>', html=False)
 
     def test_a_new_team_lands_in_the_chosen_org(self):

@@ -1,0 +1,2 @@
+{% comment %}When something expires, `at`: never, its date, amber within two weeks of it, and "Expired" in red after.{% endcomment %}
+{% load i18n ui %}{% if not at %}<span class="muted">{% translate "Never" %}</span>{% else %}{% with state=at|expiry %}<span{% if state == "expired" %} class="st-err"{% elif state == "soon" %} class="st-warn"{% endif %} title="{{ at|date:'Y-m-d H:i' }} UTC">{% if state == "expired" %}{% translate "Expired" %}{% else %}{{ at|date:"j M Y" }}{% endif %}</span>{% endwith %}{% endif %}

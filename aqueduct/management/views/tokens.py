@@ -1,22 +1,61 @@
+from collections.abc import Iterable
+from datetime import timedelta
 from typing import ClassVar
 
 from django import forms
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.messages import get_messages
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Count, Max, Q, QuerySet
+from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.formats import date_format
+from django.utils.http import urlencode
 from django.views import View
 from django.views.decorators.http import require_POST
-from django.views.generic import CreateView, DeleteView, TemplateView, UpdateView
+from django.views.generic import (
+    CreateView,
+    DeleteView,
+    DetailView,
+    ListView,
+    TemplateView,
+    UpdateView,
+)
 
+from gateway.config import get_router_config
 from gateway.rate_limiting import get_per_token_usage
 from management.forms import TokenCreateForm
-from management.models import LimitSet, ServiceAccount, Token
-from management.views.base import AccessKeyExpirationContextMixin, BaseAqueductView
+from management.models import LimitSet, ServiceAccount, Token, UserProfile
+from management.views.base import BaseAqueductView
+from management.views.usage import model_rows, show_requests, spark, usage_charts, usage_series
+
+NEW_KEY_TAG = "token-regenerated-key"
+"""The message tag that carries a new key's secret to the next page, which shows it once."""
+
+
+def add_week(profile: UserProfile, tokens: Iterable[Token]) -> None:
+    """Give each key `week`, a spark of its requests on each of the last 7 days."""
+    days = [timezone.localdate() - timedelta(days=n) for n in range(6, -1, -1)]
+    tokens = list(tokens)
+    counts = {
+        (row["token_id"], row["day"]): row["n"]
+        for row in profile.visible_requests()
+        .filter(token__in=tokens, timestamp__date__gte=days[0])
+        .values("token_id", day=TruncDate("timestamp"))
+        .annotate(n=Count("id"))
+        .order_by()
+    }
+    for token in tokens:
+        token.week = spark(  # type: ignore[attr-defined]
+            [(date_format(day, "D j M"), counts.get((token.id, day), 0)) for day in days],
+            show_requests,
+        )
 
 
 class UserTokensView(BaseAqueductView, TemplateView):
@@ -26,10 +65,12 @@ class UserTokensView(BaseAqueductView, TemplateView):
         context = super().get_context_data(**kwargs)
         profile = self.profile  # Provided by BaseAqueductView
 
-        tokens = profile.own_tokens()
+        tokens = profile.own_tokens().annotate(last_used=Max("requests__timestamp"))
         teams = profile.member_teams()
-        service_accounts = ServiceAccount.objects.filter(team__in=teams).select_related(
-            "team__org", "token"
+        service_accounts = (
+            ServiceAccount.objects.filter(team__in=teams)
+            .select_related("team__org", "token")
+            .annotate(last_used=Max("token__requests__timestamp"))
         )
 
         max_tokens = getattr(settings, "MAX_USER_TOKENS", 3)
@@ -52,6 +93,7 @@ class UserTokensView(BaseAqueductView, TemplateView):
         for sa in service_accounts:
             sa.effective_limits = LimitSet.from_objects(sa.team, [sa.team.org])  # type: ignore[attr-defined]
             sa.usage = per_sa_token_usage[sa.token.id]  # type: ignore[attr-defined]
+        add_week(profile, [*tokens, *(sa.token for sa in service_accounts)])
 
         context.update(
             {
@@ -62,10 +104,20 @@ class UserTokensView(BaseAqueductView, TemplateView):
                 "user_limits": user_limits,
             }
         )
+        if can_add_token and not tokens:
+            try:
+                models = get_router_config().get("model_list", [])
+            except RuntimeError:  # Without a router config the example names no model.
+                models = []
+            context["first_key_form"] = TokenCreateForm(
+                user=self.request.user, initial={"name": "my-first-key"}
+            )
+            modes = [(m.get("model_info") or {}).get("mode") or "chat" for m in models]
+            context["first_model"] = models[modes.index("chat")] if "chat" in modes else None
         return context
 
 
-class TokenCreateView(AccessKeyExpirationContextMixin, BaseAqueductView, CreateView):
+class TokenCreateView(BaseAqueductView, CreateView):
     model = Token
     form_class = TokenCreateForm
     template_name = "management/create/token.html"
@@ -96,9 +148,9 @@ class TokenCreateView(AccessKeyExpirationContextMixin, BaseAqueductView, CreateV
 
         # Use the returned secret_key in the success message
         messages.success(self.request, f"API key '{self.object.name}' created successfully.")
-        messages.info(self.request, f"{secret_key}", extra_tags="token-regenerated-key")
+        messages.info(self.request, f"{secret_key}", extra_tags=NEW_KEY_TAG)
 
-        return redirect(self.get_success_url())
+        return redirect("token_detail", id=self.object.id)
 
     def get_context_data(self, **kwargs) -> dict[str, object]:
         context = super().get_context_data(**kwargs)
@@ -107,7 +159,85 @@ class TokenCreateView(AccessKeyExpirationContextMixin, BaseAqueductView, CreateV
         return context
 
 
-class TokenEditView(AccessKeyExpirationContextMixin, BaseAqueductView, UpdateView):
+class AllKeysView(BaseAqueductView, ListView):
+    """Every key of the org the page shows, for its admins, with owner and last use."""
+
+    template_name = "management/all_keys.html"
+    context_object_name = "keys"
+    paginate_by = 50
+
+    def get_queryset(self) -> QuerySet[Token]:
+        if not self.profile.is_org_admin(self.org):
+            raise PermissionDenied
+        keys = self.profile.visible_tokens(self.org).select_related("service_account__team", "user")
+        query = self.request.GET.get("q", "").strip()
+        if query:
+            keys = keys.filter(
+                Q(name__icontains=query)
+                | Q(user__email__icontains=query)
+                | Q(service_account__team__name__icontains=query)
+            )
+        return keys.annotate(last_used=Max("requests__timestamp")).order_by("name", "id")
+
+    def get_context_data(self, **kwargs) -> dict[str, object]:
+        context = super().get_context_data(query=self.request.GET.get("q", "").strip(), **kwargs)
+        add_week(self.profile, context["keys"])
+        return context
+
+
+class TokenDetailView(BaseAqueductView, DetailView):
+    """One key: who owns it, its use in the last 7 days, and its limits and current use."""
+
+    template_name = "management/token_detail.html"
+    pk_url_kwarg = "id"
+    context_object_name = "token"
+
+    def get_queryset(self) -> QuerySet[Token]:
+        return self.profile.visible_tokens().select_related("service_account__team", "user")
+
+    def get_context_data(self, **kwargs) -> dict[str, object]:
+        context = super().get_context_data(**kwargs)
+        token: Token = self.object
+        limits = token.get_limits()
+        usage = get_per_token_usage([token.id])[token.id]
+        # The last 7 days, drawn as the Usage page draws them.
+        now = timezone.now()
+        start = now - timedelta(days=7)
+        week = self.profile.visible_requests().filter(token=token, timestamp__gte=start)
+        log = f"{reverse('requests')}?key={token.pk}"
+        context.update(
+            charts=usage_charts(usage_series(week, "day", start, now), "day"),
+            per_model=model_rows(
+                week, lambda model: f"{log}&span=1w&{urlencode({'model': model})}"
+            ),
+            log_url=log,
+            can_manage=self.profile.manageable_tokens().filter(pk=token.pk).exists(),
+            team=token.service_account.team if token.service_account else None,
+            own=token.user_id == self.request.user.id and token.service_account is None,
+            limit_rows=[
+                {
+                    "window": name,
+                    "requests": (usage[name]["req"], requests),
+                    "input_tokens": (usage[name]["in"], input_tokens),
+                    "output_tokens": (usage[name]["out"], output_tokens),
+                }
+                for name, _seconds, requests, input_tokens, output_tokens in limits.windows()
+            ],
+            concurrent_limit=limits.concurrent_requests_limit,
+            last_used=token.requests.aggregate(last=Max("timestamp"))["last"],
+            new_key=next(
+                (
+                    str(message.message)
+                    for message in get_messages(self.request)
+                    if message.extra_tags == NEW_KEY_TAG
+                ),
+                None,
+            ),
+        )
+        return context
+
+
+class TokenEditView(BaseAqueductView, UpdateView):
     model = Token
     form_class = TokenCreateForm
     template_name = "management/edit/token.html"
@@ -200,16 +330,17 @@ class TokenRegenerateView(BaseAqueductView, View):
 
             # --- Regeneration --- #
             if can_regenerate:
+                redirect_url = reverse("token_detail", kwargs={"id": token.id})
                 new_key = token.regenerate_key()  # Assumes regenerate_key() saves the token
                 messages.success(
                     request,
-                    f"API key '{token_name}' has been regenerated. The new key is displayed below. "
+                    f"API key '{token_name}' has been regenerated. "
                     f"Please update any clients using the old key.",
                 )
                 messages.info(
                     request,
                     f"{new_key}",  # Only include the key itself in the message
-                    extra_tags="token-regenerated-key",  # Use a specific tag
+                    extra_tags=NEW_KEY_TAG,
                 )
             # Else: error message already added during permission check
 

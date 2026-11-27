@@ -1,12 +1,19 @@
+import logging
 from datetime import UTC, datetime
 
-from django.utils import timezone
-from django.views.generic import TemplateView
+import openai
+from asgiref.sync import async_to_sync
+from django.contrib import messages
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect
+from django.views.generic import TemplateView, View
 
 from management.models import Batch
 from management.views.base import BaseAqueductView
 
 INPUT_FILE_ID_PREVIEW_THRESHOLD = 12
+
+log = logging.getLogger("aqueduct")
 
 
 class UserBatchesView(BaseAqueductView, TemplateView):
@@ -21,8 +28,6 @@ class UserBatchesView(BaseAqueductView, TemplateView):
         profile = self.profile
 
         batches = Batch.objects.filter(token__in=profile.my_tokens()).order_by("-created_at")
-
-        now_ts = int(timezone.now().timestamp())
 
         # Convert Unix timestamp to datetime for template date filter
         for b in batches:
@@ -53,18 +58,30 @@ class UserBatchesView(BaseAqueductView, TemplateView):
                 b.error_file_preview = ""
                 b.error_file_has_preview = False
                 b.error_file_id_preview = "-"
-            # expiration display
-            if b.expires_at is not None:
-                b.expires_dt = datetime.fromtimestamp(b.expires_at, tz=UTC)
-                if b.expires_at <= now_ts:
-                    b.expiration_status = "expired"
-                elif b.expires_at <= now_ts + 86400 * 14:  # within 2 weeks
-                    b.expiration_status = "expiring_soon"
-                else:
-                    b.expiration_status = "active"
-            else:
-                b.expires_dt = None
-                b.expiration_status = "never"
+            b.expires_dt = b.expires_at and datetime.fromtimestamp(b.expires_at, tz=UTC)
 
         context["batches"] = batches
+        context["manageable_token_ids"] = set(
+            profile.manageable_tokens().values_list("id", flat=True)
+        )
         return context
+
+
+class BatchCancelView(BaseAqueductView, View):
+    """Cancels a running batch the page lists, upstream, and keeps the status it reports."""
+
+    def post(self, request, *args, **kwargs) -> HttpResponse:
+        batch = get_object_or_404(
+            Batch.objects.filter(
+                token__in=self.profile.manageable_tokens(), status__in=Batch.RUNNING
+            ),
+            pk=kwargs["id"],
+        )
+        try:
+            async_to_sync(batch.acancel_upstream)()
+        except (ValueError, openai.OpenAIError):
+            log.exception("Could not cancel batch %s upstream", batch.id)
+            messages.error(request, f"Could not cancel batch {batch.id}. Try again later.")
+            return redirect("batches")
+        messages.success(request, f"Batch {batch.id} is being cancelled.")
+        return redirect("batches")

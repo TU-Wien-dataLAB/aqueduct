@@ -169,6 +169,26 @@ Usage:
 {{- end }}
 - name: MCP_CONFIG_FILE_PATH
   value: "/etc/aqueduct/mcp.json"
+{{- if .Values.themes }}
+- name: THEMES_DIR
+  value: "/etc/aqueduct/themes"
+{{- end }}
+{{- if not (kindIs "invalid" .Values.builtinLightThemes) }}
+- name: BUILTIN_LIGHT_THEMES
+  value: {{ join "," .Values.builtinLightThemes | quote }}
+{{- end }}
+{{- if not (kindIs "invalid" .Values.builtinDarkThemes) }}
+- name: BUILTIN_DARK_THEMES
+  value: {{ join "," .Values.builtinDarkThemes | quote }}
+{{- end }}
+{{- with .Values.defaultLightTheme }}
+- name: DEFAULT_LIGHT_THEME
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.defaultDarkTheme }}
+- name: DEFAULT_DARK_THEME
+  value: {{ . | quote }}
+{{- end }}
 - name: TOS_ENABLED
 {{- if .Values.tos.enabled }}
   value: "True"

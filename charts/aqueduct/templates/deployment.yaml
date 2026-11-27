@@ -19,6 +19,7 @@ spec:
         checksum/migration: {{ .Files.Get "files/migrate.py" | sha256sum }}
         checksum/config: {{ .Values.routerConfig | toString | sha256sum }}
         checksum/mcp-config: {{ .Values.mcpConfig | toString | sha256sum }}
+        checksum/themes: {{ .Values.themes | toString | sha256sum }}
         checksum/settings: {{ include (print $.Template.BasePath "/configmap-settings.yaml") . | toString | sha256sum }}
       labels:
         app: {{ .Release.Name }}
@@ -72,6 +73,10 @@ spec:
             - name: mcp-config
               mountPath: /etc/aqueduct/mcp.json
               subPath: mcp.json
+            {{- if .Values.themes }}
+            - name: themes
+              mountPath: /etc/aqueduct/themes
+            {{- end }}
       initContainers:
         {{- include "aqueduct.migrationInit" (dict "root" . "pool" .Values.web.databasePool "roleEnv" (include "aqueduct.metricsEnv" .) "extraEnv" .Values.web.extraEnv) | nindent 8 }}
         - name: collectstatic
@@ -100,3 +105,8 @@ spec:
         - name: mcp-config
           configMap:
             name: {{ .Release.Name }}-mcp-config
+        {{- if .Values.themes }}
+        - name: themes
+          configMap:
+            name: {{ .Release.Name }}-themes
+        {{- end }}

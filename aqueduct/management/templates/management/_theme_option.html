@@ -1,0 +1,13 @@
+{% comment %}A theme on the Settings page's Appearance card: id, label and scheme, which also names its radio group. The preview draws with the theme's own variables: its page, a card with a line of text and a button, and its accent.{% endcomment %}
+<label class="theme-option flex cursor-pointer flex-col gap-2 rounded-box border border-base-300 bg-base-100 p-2">
+    <span class="theme-option-preview overflow-hidden" aria-hidden="true">
+        <span class="theme-preview" data-theme="{{ id }}" data-scheme="{{ scheme }}">
+            <span class="theme-preview-card"><i></i><b></b></span>
+            <span class="theme-preview-dot"></span>
+        </span>
+    </span>
+    <span class="flex items-center gap-2 px-1 text-sm font-medium">
+        <input type="radio" name="{{ scheme }}-theme" value="{{ id }}" class="radio radio-sm radio-primary" data-appearance{% if id == scheme %} checked{% endif %}>
+        {{ label }}
+    </span>
+</label>

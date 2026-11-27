@@ -1,0 +1,51 @@
+/* daisyUI 5.8.2's black theme, unchanged: https://cdn.jsdelivr.net/npm/daisyui@5.8.2/theme/black.css
+   daisyUI is MIT licensed, Copyright (c) 2020 Pouya Saadeghi. Aqueduct's changes follow it. */
+:root:has(input.theme-controller[value=black]:checked),[data-theme="black"] {
+color-scheme: dark;
+--color-base-100: oklch(0% 0 0);
+--color-base-200: oklch(19% 0 0);
+--color-base-300: oklch(22% 0 0);
+--color-base-content: oklch(87.609% 0 0);
+--color-primary: oklch(35% 0 0);
+--color-primary-content: oklch(100% 0 0);
+--color-secondary: oklch(35% 0 0);
+--color-secondary-content: oklch(100% 0 0);
+--color-accent: oklch(35% 0 0);
+--color-accent-content: oklch(100% 0 0);
+--color-neutral: oklch(35% 0 0);
+--color-neutral-content: oklch(100% 0 0);
+--color-info: oklch(45.201% 0.313 264.052);
+--color-info-content: oklch(89.04% 0.062 264.052);
+--color-success: oklch(51.975% 0.176 142.495);
+--color-success-content: oklch(90.395% 0.035 142.495);
+--color-warning: oklch(96.798% 0.211 109.769);
+--color-warning-content: oklch(19.359% 0.042 109.769);
+--color-error: oklch(62.795% 0.257 29.233);
+--color-error-content: oklch(12.559% 0.051 29.233);
+--radius-selector: 0rem;
+--radius-field: 0rem;
+--radius-box: 0rem;
+--size-selector: 0.25rem;
+--size-field: 0.25rem;
+--border: 1px;
+--depth: 0;
+--noise: 0;
+}
+
+/* Aqueduct's changes: its gray primary stays; its text color is the color for links and charts; and
+   Aqueduct's variables from the theme's colors. Text colors reach 4.5:1 on base-100 and base-200. */
+[data-theme="black"] {
+  --aq-btn-radius: var(--radius-field);
+  --aq-link: var(--color-base-content);
+  --aq-muted: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
+  --aq-ok: color-mix(in oklab, var(--color-success) 70%, white);
+  --aq-band: color-mix(in oklab, var(--color-base-100) 55%, black);
+  --aq-band-content: var(--color-base-content);
+  --aq-band-muted: var(--aq-muted);
+  --aq-band-link: var(--aq-link);
+  --tok-cached: color-mix(in oklab, var(--aq-link) 45%, var(--color-base-100));
+  --tok-new: color-mix(in oklab, var(--aq-link) 75%, var(--color-base-100));
+  --tok-out: var(--aq-link);
+  --viz-in: var(--tok-new);
+  --viz-track: color-mix(in oklab, var(--color-base-content) 14%, var(--color-base-100));
+}

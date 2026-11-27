@@ -1,15 +1,45 @@
 (() => {
+  // The mode is system, light or dark, stored under main's key; each scheme shows the theme picked for it: light or dark, or a
+  // theme of that scheme from management/themes.py, whose <style> names its scheme. Without a pick, the script tag names the
+  // operator's default theme of each scheme.
   const root = document.documentElement;
-  const storageKey = 'selectedTheme';
+  const defaults = document.currentScript?.dataset ?? {};
+  const storageKeys = { mode: 'selectedTheme', 'light-theme': 'lightTheme', 'dark-theme': 'darkTheme' };
+  const prefersDark = matchMedia('(prefers-color-scheme: dark)');
 
-  let stored = null;
-  try { stored = localStorage.getItem(storageKey); } catch { }
-  root.dataset.theme = stored === 'dark' ? 'dark' : 'light';
+  function stored(name) {
+    try { return localStorage.getItem(storageKeys[name]); } catch { return null; }
+  }
+  function store(name, value) {
+    try { localStorage.setItem(storageKeys[name], value); } catch { }
+  }
+  function themeMode() {
+    const mode = stored('mode');
+    return mode === 'light' || mode === 'dark' ? mode : 'system';
+  }
+  function schemeTheme(scheme) {
+    const id = stored(`${scheme}-theme`);
+    const offered = id === scheme || (id && document.querySelector(`style[data-theme-id="${CSS.escape(id)}"]`)?.dataset.scheme === scheme);
+    return offered ? id : defaults[`${scheme}Theme`] || scheme;
+  }
+  function markThemeChoices() {
+    const choices = { mode: themeMode(), 'light-theme': schemeTheme('light'), 'dark-theme': schemeTheme('dark') };
+    document.querySelectorAll('input[data-appearance]').forEach((input) => { input.checked = input.value === choices[input.name]; });
+  }
+  function applyTheme() {
+    const mode = themeMode();
+    const scheme = mode === 'system' ? (prefersDark.matches ? 'dark' : 'light') : mode;
+    root.dataset.theme = schemeTheme(scheme);
+    root.dataset.scheme = scheme;
+    markThemeChoices();
+  }
+  applyTheme();
+  prefersDark.addEventListener('change', () => { if (themeMode() === 'system') applyTheme(); });
 
+  // The sun and moon button switches to the theme picked for the other scheme.
   function toggleTheme() {
-    const theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
-    root.dataset.theme = theme;
-    try { localStorage.setItem(storageKey, theme); } catch { }
+    store('mode', root.dataset.scheme === 'dark' ? 'light' : 'dark');
+    applyTheme();
   }
 
   function copy(button) {
@@ -86,6 +116,10 @@
   }
   document.addEventListener('change', (event) => {
     if (event.target.matches('[data-autosubmit]')) event.target.form.submit();
+    if (event.target.matches('input[data-appearance]')) {
+      store(event.target.name, event.target.value);
+      applyTheme();
+    }
     // The usage chart restores the pick while it parses, so the chart does not flash.
     if (event.target.name === 'metric') {
       try { sessionStorage.setItem('metric', event.target.value); } catch { }
@@ -93,5 +127,6 @@
   });
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-autodismiss]').forEach(autodismiss);
+    markThemeChoices();
   });
 })();

@@ -1,0 +1,10 @@
+{% comment %}The themes of one scheme on the Settings page's Appearance card: the built-in one of its name, then the custom ones.{% endcomment %}
+<fieldset>
+    <legend class="section-label mb-2">{{ legend }}</legend>
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3">
+        {% include "management/_theme_option.html" with id=scheme label=label scheme=scheme %}
+        {% for theme in custom_themes %}
+            {% if theme.scheme == scheme %}{% include "management/_theme_option.html" with id=theme.id label=theme.label scheme=theme.scheme %}{% endif %}
+        {% endfor %}
+    </div>
+</fieldset>

@@ -15,7 +15,7 @@
     <article class="card bg-base-200">
         <div class="card-body gap-4">
             <div class="flex items-start gap-3">
-                {% if server_config.icon_url %}<img src="{{ server_config.icon_url }}" alt="" class="h-10 w-10 flex-none object-contain">{% else %}<span class="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-base-100">{% icon "mcp" %}</span>{% endif %}
+                {% if server_config.icon_url %}<img src="{{ server_config.icon_url }}" alt="" class="h-10 w-10 flex-none object-contain">{% else %}<span class="flex h-10 w-10 flex-none items-center justify-center rounded-field bg-base-100">{% icon "mcp" %}</span>{% endif %}
                 <div class="flex min-w-0 flex-col gap-1">
                     <h2 class="text-lg font-semibold">{{ server_name|title }}</h2>
                     {% if server_config.description %}<p class="muted line-clamp-3 text-sm">{{ server_config.description }}</p>{% endif %}
@@ -25,7 +25,7 @@
             <div class="copy-field mt-auto"><span title="{{ url }}">{{ url }}</span>{% translate "Copy URL" as copy_label %}{% copy_button url copy_label %}</div>
             <details class="group">
                 <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium">{% icon "chevron" small=True extra_class="transition-transform group-open:rotate-90" %}{% translate "Client configuration" %}</summary>
-                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-100 p-3 font-mono text-xs leading-relaxed">{
+                <pre class="mt-2 overflow-x-auto rounded-field bg-base-100 p-3 font-mono text-xs leading-relaxed">{
   "mcpServers": {
     "{{ server_name }}": {
       "url": "{{ url }}",

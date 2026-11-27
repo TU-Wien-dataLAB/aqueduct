@@ -3,7 +3,7 @@
 <dialog id="{{ dialog_id }}" class="modal" aria-labelledby="{{ dialog_id }}-title">
     <div class="modal-box flex max-w-3xl flex-col gap-3">
         <h3 id="{{ dialog_id }}-title" class="break-all font-mono font-semibold">{{ name }}</h3>
-        <pre class="max-h-80 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs">{{ text|default:_("No preview.") }}</pre>
+        <pre class="max-h-80 overflow-auto rounded-field bg-base-200 p-3 font-mono text-xs">{{ text|default:_("No preview.") }}</pre>
         {% if more > 15 %}<p class="muted text-sm">{% blocktranslate with n=more|add:"-15" %}{{ n }} more lines{% endblocktranslate %}</p>{% endif %}
         <form method="dialog"><button class="btn btn-sm">{% translate "Close" %}</button></form>
     </div>

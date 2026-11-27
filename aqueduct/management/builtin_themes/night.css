@@ -1,0 +1,52 @@
+/* daisyUI 5.8.2's night theme, unchanged: https://cdn.jsdelivr.net/npm/daisyui@5.8.2/theme/night.css
+   daisyUI is MIT licensed, Copyright (c) 2020 Pouya Saadeghi. Aqueduct's changes follow it. */
+:root:has(input.theme-controller[value=night]:checked),[data-theme="night"] {
+color-scheme: dark;
+--color-base-100: oklch(20.768% 0.039 265.754);
+--color-base-200: oklch(19.314% 0.037 265.754);
+--color-base-300: oklch(17.86% 0.034 265.754);
+--color-base-content: oklch(84.153% 0.007 265.754);
+--color-primary: oklch(75.351% 0.138 232.661);
+--color-primary-content: oklch(15.07% 0.027 232.661);
+--color-secondary: oklch(68.011% 0.158 276.934);
+--color-secondary-content: oklch(13.602% 0.031 276.934);
+--color-accent: oklch(72.36% 0.176 350.048);
+--color-accent-content: oklch(14.472% 0.035 350.048);
+--color-neutral: oklch(27.949% 0.036 260.03);
+--color-neutral-content: oklch(85.589% 0.007 260.03);
+--color-info: oklch(68.455% 0.148 237.251);
+--color-info-content: oklch(0% 0 0);
+--color-success: oklch(78.452% 0.132 181.911);
+--color-success-content: oklch(15.69% 0.026 181.911);
+--color-warning: oklch(83.242% 0.139 82.95);
+--color-warning-content: oklch(16.648% 0.027 82.95);
+--color-error: oklch(71.785% 0.17 13.118);
+--color-error-content: oklch(14.357% 0.034 13.118);
+--radius-selector: 1rem;
+--radius-field: 0.5rem;
+--radius-box: 1rem;
+--size-selector: 0.25rem;
+--size-field: 0.25rem;
+--border: 1px;
+--depth: 0;
+--noise: 0;
+}
+
+/* Aqueduct's changes: a calmer primary, saturated but not glowing; and Aqueduct's variables from the theme's
+   colors. Text colors reach 4.5:1 on base-100 and base-200. */
+[data-theme="night"] {
+  --color-primary: oklch(70% 0.11 232.661);
+  --color-primary-content: oklch(15.07% 0.027 232.661);
+  --aq-btn-radius: var(--radius-field);
+  --aq-link: var(--color-primary);
+  --aq-muted: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
+  --aq-band: color-mix(in oklab, var(--color-base-100) 55%, black);
+  --aq-band-content: var(--color-base-content);
+  --aq-band-muted: var(--aq-muted);
+  --aq-band-link: var(--aq-link);
+  --tok-cached: color-mix(in oklab, var(--aq-link) 45%, var(--color-base-100));
+  --tok-new: color-mix(in oklab, var(--aq-link) 75%, var(--color-base-100));
+  --tok-out: var(--aq-link);
+  --viz-in: var(--tok-new);
+  --viz-track: color-mix(in oklab, var(--color-base-content) 14%, var(--color-base-100));
+}

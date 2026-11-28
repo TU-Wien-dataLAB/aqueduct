@@ -14,7 +14,7 @@ from django.utils import timezone
 from gateway.config import resolve_model
 from gateway.decorators.types import AsyncView, ViewResult
 from gateway.rate_limiting import record_token_usage
-from gateway.response_type import release_db_connection
+from gateway.response_type import RawStreamingResponse, release_db_connection
 from management.models import Request
 
 log = logging.getLogger("aqueduct")
@@ -103,6 +103,8 @@ def log_request(view_func: AsyncView) -> AsyncView:
         if not isinstance(result, StreamingHttpResponse):
             await sync_to_async(record_token_usage)(request_log.token_id, request_log.token_usage)
         else:
+            if isinstance(result, RawStreamingResponse) and result.request_body is None:
+                result.request_body = pydantic_model
             streaming_content = cast("AsyncIterator[bytes]", result.streaming_content)
             result.streaming_content = _guard_stream(streaming_content, request_log.path)
 

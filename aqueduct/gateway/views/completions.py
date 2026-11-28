@@ -56,7 +56,9 @@ async def completions(
         **router_kwargs(pydantic_model, openai.types.CompletionCreateParams)
     )
     if isinstance(completion, TextCompletionStreamWrapper):
-        return RawStreamingResponse(streaming_content=completion, request_log=request_log)
+        return RawStreamingResponse(
+            streaming_content=completion, request_log=request_log, request_body=pydantic_model
+        )
     if isinstance(completion, TextCompletionResponse):
         request_log.token_usage = get_token_usage(completion)
         return RawJsonResponse(data=completion, status=200)

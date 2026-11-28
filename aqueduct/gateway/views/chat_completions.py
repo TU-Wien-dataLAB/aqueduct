@@ -58,7 +58,9 @@ async def chat_completions(
         **router_kwargs(pydantic_model, openai.types.chat.CompletionCreateParams)
     )
     if isinstance(chat_completion, CustomStreamWrapper):
-        return RawStreamingResponse(streaming_content=chat_completion, request_log=request_log)
+        return RawStreamingResponse(
+            streaming_content=chat_completion, request_log=request_log, request_body=pydantic_model
+        )
     if isinstance(chat_completion, ModelResponse):
         request_log.token_usage = get_token_usage(chat_completion)
         return RawJsonResponse(data=chat_completion, status=200)

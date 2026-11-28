@@ -84,7 +84,9 @@ async def create_response(
 
     if isinstance(resp, AsyncStream):
         registered_resp = ResponseRegistrationWrapper(resp, model=model, email=token.user.email)
-        return RawStreamingResponse(streaming_content=registered_resp, request_log=request_log)
+        return RawStreamingResponse(
+            streaming_content=registered_resp, request_log=request_log, request_body=pydantic_model
+        )
     if isinstance(resp, Response):
         register_response_in_cache(resp.id, model=model, email=token.user.email)
         request_log.token_usage = get_token_usage(resp)
